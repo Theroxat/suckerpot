@@ -1,16 +1,26 @@
 # Architecture
 
-This page describes how SuckerPot is built. It covers the services, the networks, the queue, the database and the API. For the threat model and the controls, see [Security](SECURITY.md).
+This page describes how SuckerPot is built: the services, the networks, the queue, the database and the API. For the threat model and the controls, see [Security](SECURITY.md).
 
 ```{admonition} Build status
 :class: note
 
-Milestone M1 is built: Redis, the database and its migrations, ingest, and the API with its REST endpoints and a live WebSocket feed. The sensors (M2 and M6), enrichment (M4), the full web UI (M3 and M5) and dashboard login (M8) are **planned**. Each planned item is marked as such.
+**Built and wired in Compose:** Redis, the database and its migrations, ingest (multi-stream, with GeoIP, reputation and tagging), the API with its REST endpoints and live WebSocket feed, the SSH, RDP and Telnet sensors, and the web UI (served by the API once built).
+
+**Code exists, not yet in Compose:** the web sensor (M6), which is still under security review.
+
+**In progress:** the analytics API (M5).
+
+**In progress:** the Live globe (M7).
+
+**Built since:** insights, trends and malware endpoints and pages (M7), and dashboard login (M8).
+
+**Planned:** retention and backups (M8).
 ```
 
 ## Overview
 
-SuckerPot runs as a set of Docker Compose services on one host. Fake services, called sensors, take the attacks. Each attack becomes an event. Events go through a Redis stream, are checked and stored by ingest, and end up in PostgreSQL with TimescaleDB. The API reads the database and serves the dashboard.
+SuckerPot runs as a set of Docker Compose services on one host. Fake services, called sensors, take the attacks. Each attack becomes an event. Events go through Redis streams (one per sensor), are checked, enriched and stored by ingest, and end up in PostgreSQL with TimescaleDB. The API reads the database and serves the dashboard.
 
 ```
 Internet
@@ -19,55 +29,71 @@ Internet
 Router or hypervisor firewall
    │
    ▼
-Host
+Host (nftables table "suckerpot_host", see Deployment)
    │
-   ├─► sensor-ssh     (planned, M2)
-   ├─► sensor-telnet  (planned, M6)
-   ├─► sensor-web     (planned, M6)
-   └─► sensor-rdp     (planned, M6)
-                │  events (XADD)
+   ├─► sensor-ssh     ─┐  each sensor: sp-ingress (inbound only)
+   ├─► sensor-web      │  + its own internal network to Redis
+   ├─► sensor-rdp      │  (web: not yet in Compose)
+   └─► sensor-telnet  ─┘
+                │  XADD events:<sensor>   (one Redis user per sensor)
                 ▼
-          Redis Streams  ◄── demo (just demo, M1)
-                │  XREADGROUP / XACK / XTRIM
+          Redis Streams  ◄── demo (just demo, network "tools")
+                │  XREADGROUP / XACK / XTRIM / XAUTOCLAIM
                 ▼
-             ingest ──► enrichment and tagging (planned, M4)
+             ingest ──► GeoIP, reputation, tagging (egress network only)
                 │
                 │  INSERT / UPDATE (role suckerpot_ingest)
                 ▼
      PostgreSQL + TimescaleDB
                 │  SELECT (role suckerpot_api)
                 ▼
-     API (FastAPI: REST, WebSocket, built SPA)
+     API (FastAPI: REST, WebSocket, built SPA)   network "dashboard"
                 ▲
                 │  reverse tunnel, such as cloudflared
                 │
-           Web UI (planned, M3 and M5)
+           Web UI (browser)
 ```
 
 ## Services
 
-| Service | Networks | Role | Milestone |
+| Service | Networks | Role | Status |
 | --- | --- | --- | --- |
-| `redis` | `sensors`, `backend` | Redis Streams queue. Four ACL users (`admin`, `sensor`, `ingest`, `health`). AOF persistence on `redis-data`. | M1 |
-| `db` | `backend` | PostgreSQL 17 with TimescaleDB 2.22.1, on `db-data`. Runs only as the owner role. | M1 |
-| `migrate` | `backend` | One-shot. Checks the secrets policy, runs `alembic upgrade head` (schema and roles), and exits with code 0. | M1 |
-| `ingest` | `backend`, `egress` | Reads the stream, validates events, writes them to the database. | M1 (enrichment in M4) |
-| `api` | `backend`, `dashboard` | FastAPI. REST endpoints, WebSocket feed, `/healthz`, and the built web UI when present. The only published port. | M1 |
-| `demo` | `sensors` | Synthetic attack generator. Runs only with `--profile tools`. | M1 |
-| `sensor-ssh`, `sensor-telnet`, `sensor-web`, `sensor-rdp` | `sensors` (and `ingress` in M2) | Fake services that log attacks. | M2, M6 |
+| `redis` | `sensors-ssh`, `sensors-rdp`, `sensors-telnet`, `tools`, `backend` | Redis Streams queue. Named ACL users (see below). AOF persistence on `redis-data`. | Built |
+| `db` | `backend` | PostgreSQL 17 with TimescaleDB 2.22.1, on `db-data`. Runs only as the owner role. | Built |
+| `migrate` | `backend` | One-shot. Checks the secrets policy, runs `alembic upgrade head`, then re-applies the application roles and their passwords, and exits with code 0. | Built |
+| `ingest` | `backend`, `egress` | Reads all sensor streams, validates events, enriches and tags them, writes them to the database. | Built. GeoIP files live on the `geoip-data` volume. |
+| `api` | `backend`, `dashboard` | FastAPI (512 MB memory limit). REST endpoints, WebSocket feed, `/healthz`, and the built web UI when present. The only service with a dashboard port. | Built |
+| `sensor-ssh` | `ingress`, `sensors-ssh` | SSH honeypot. See [SSH sensor](sensors/ssh.md). | Built |
+| `sensor-rdp` | `ingress`, `sensors-rdp` | RDP handshake sensor. See [RDP](sensors/rdp.md). Stream `events:rdp`. | Built |
+| `sensor-telnet` | `ingress`, `sensors-telnet` | BusyBox-style Telnet sensor. See [Telnet](sensors/telnet.md). Stream `events:telnet`. | Built |
+| `sensor-web` | `ingress`, `sensors-web` | See [Web](sensors/web.md). Stream `events:web`. | Code exists, not yet in Compose (under security review) |
+| `demo` | `tools` | Synthetic attack generator. Runs only with `--profile tools`. | Built |
 
-Start order: `redis` and `db` first. `migrate` runs once the database is healthy. `ingest` and `api` start after `migrate` has finished with code 0.
+Start order: `redis` and `db` first. `migrate` runs once the database is healthy. `ingest` and `api` start after `migrate` has finished with code 0. Sensors start after Redis is healthy.
 
 ## Networks
 
-The stack has four networks. Each one has a single job.
+Each network has a single job. The point of the layout is that a compromised sensor can talk to Redis and to nothing else, and cannot reach another sensor.
 
-| Network | Internet access | Connected services | Why |
-| --- | --- | --- | --- |
-| `sensors` | None (`internal: true`) | `redis`, `demo`, sensors (planned) | Sensors can reach the queue and nothing else |
-| `backend` | None (`internal: true`) | `redis`, `db`, `migrate`, `ingest`, `api` | Storage and processing stay off the internet |
-| `egress` | Outbound | `ingest` only | The one place for outbound calls (enrichment, planned) |
-| `dashboard` | Inbound only (intended) | `api` only | Published dashboard port, with IP masquerading off |
+| Network | Docker name | Outbound internet | Connected services | Why |
+| --- | --- | --- | --- | --- |
+| `ingress` | `sp-ingress` | None. Masquerading off, inter-container communication off. | Every sensor | Inbound traffic from attackers. Sensors cannot reach each other or the internet. |
+| `sensors-ssh`, `sensors-rdp`, `sensors-telnet` (and `sensors-web` later) | (project prefix) | None (`internal: true`) | `redis` and one sensor | The one link between a sensor and Redis. One network per sensor. |
+| `tools` | (project prefix) | None (`internal: true`) | `redis`, `demo` | The demo generator reaches Redis and nothing else. |
+| `backend` | (project prefix) | None (`internal: true`) | `redis`, `db`, `migrate`, `ingest`, `api` | Storage and processing stay off the internet. |
+| `egress` | (project prefix) | Outbound | `ingest` only | The one place for outbound calls (GeoIP downloads, reputation lookups). |
+| `dashboard` | `sp-dashboard` | None. Masquerading off. | `api` only | The published dashboard port. |
+
+`sp-ingress` and `sp-dashboard` have fixed bridge names, so the [host firewall](deployment.md#host-firewall) can match them by name.
+
+### Sensors need two networks
+
+Docker does not publish ports on an `internal: true` network. So each sensor joins two networks:
+
+- `sp-ingress` receives the attacker's connection. With masquerading off, the sensor has no usable route back out to the internet, and with inter-container communication off it cannot talk to the other sensors.
+- Its own internal network (`sensors-ssh`, ...) links it to Redis. Because the network is per sensor, one sensor cannot even see another sensor's traffic to Redis.
+
+Each sensor also gets `dns: ["127.0.0.1"]` (external names do not resolve), and is published on an explicit IPv4 address (`0.0.0.0:<port>`), so Docker does not also listen on `[::]`.
 
 ### Why `backend` is internal
 
@@ -75,43 +101,40 @@ The `backend` network is created with `internal: true`. Docker gives it no route
 
 ### The `dashboard` network, and what it does not do
 
-The `dashboard` network is a normal bridge with IP masquerading turned off (`com.docker.network.bridge.enable_ip_masquerade: "false"`). The published dashboard port works for inbound traffic. The API container also gets `dns: 127.0.0.1`, so it cannot resolve external names through Docker's resolver.
+The `dashboard` network is a normal bridge with IP masquerading turned off. The published dashboard port works for inbound traffic. The API container also gets `dns: 127.0.0.1`, so it cannot resolve external names through Docker's resolver.
 
 ```{warning}
-This is **not** a complete block on outbound traffic from the API. Without masquerading, packets from the API keep their container address. If the host has a route for that address and no firewall rule drops them, they can still leave. The DNS setting does not stop a connection to a raw IP address. Egress must also be filtered on the host or on the hypervisor. This is an owner action, listed in [Deployment](deployment.md).
+This is **not** a complete block on outbound traffic. Without masquerading, packets from the container keep their container address. If the host has a route for that address and no firewall rule drops them, they can still leave. The DNS setting does not stop a connection to a raw IP address. The host firewall in [Deployment](deployment.md#host-firewall) drops new connections from `sp-ingress` and `sp-dashboard`. Keep it loaded, and filter egress upstream as well.
 ```
 
 ### Why only `ingest` has `egress`
 
-Only `ingest` needs outbound calls: GeoIP lookups, AbuseIPDB and GreyNoise checks, and optional payload fetches (M4 and later). The database and Redis are not reachable from the internet, and a sensor cannot reach the database.
-
-### Planned: sensor networking (M2)
-
-Sensors must receive connections from attackers, and Docker does not publish ports on an `internal: true` network. The planned design for M2 is:
-
-- A separate `ingress` bridge network with a fixed name, masquerading off and inter-container communication off.
-- Sensors join `ingress` for inbound traffic and `sensors` for Redis.
-- Each sensor is published on an explicit IPv4 address and port.
-- `dns: 127.0.0.1` on each sensor.
-- One Redis stream and one ACL user per sensor, so a compromised sensor cannot write as another sensor.
-
-This is not built yet. The M2 security review will check it.
+Only `ingest` needs outbound calls: GeoIP database downloads, AbuseIPDB and GreyNoise checks, and (in the future) optional payload fetches. The database and Redis are not reachable from the internet, and a sensor cannot reach the database.
 
 ## Redis
 
+### Streams
+
+Each sensor writes to its own stream: `events:ssh`, `events:telnet`, `events:web` and `events:rdp`. The demo generator writes to the same streams. One stream per sensor means a flood on one sensor cannot hide the events of another, and each stream is trimmed on its own.
+
 ### Users and permissions
 
-Redis runs with the default user disabled. Four named users exist. Each has its own password from `.env`. The entrypoint writes the ACL file to a tmpfs at start-up, storing SHA-256 hashes instead of clear-text passwords.
+Redis runs with the `default` user disabled. Each named user has its own password from `.env`. The entrypoint writes the ACL file to a `tmpfs` at start-up, storing SHA-256 hashes instead of clear-text passwords. Permissions below are copied from `redis/entrypoint.sh`.
 
-| User | Password variable | Permissions (from `redis/entrypoint.sh`) | Used by |
+| User | Password variable | ACL | Used by |
 | --- | --- | --- | --- |
-| `default` | none | Off | Nothing. Anonymous access is refused. |
-| `admin` | `REDIS_PASSWORD` | All keys, all commands (`~* &* +@all`) | Operators only |
-| `sensor` | `REDIS_SENSOR_PASSWORD` | Key `events` only: `XADD`, plus `HELLO` and `AUTH` | Sensors and the demo generator |
-| `ingest` | `REDIS_INGEST_PASSWORD` | Key `events` only: `XREADGROUP`, `XACK`, `XGROUP CREATE`, `XAUTOCLAIM`, `XTRIM`, plus `HELLO` and `AUTH` | `ingest` |
-| `health` | `REDIS_HEALTH_PASSWORD` | `PING`, `HELLO` and `AUTH` only | The Redis health check |
+| `default` | none | `off` | Nothing. Anonymous access is refused. |
+| `admin` | `REDIS_PASSWORD` | `~* &* +@all` | Operators only |
+| `health` | `REDIS_HEALTH_PASSWORD` | `resetkeys -@all +ping +hello +auth` | The Redis health check |
+| `sensor-ssh` | `REDIS_SENSOR_SSH_PASSWORD` | `resetkeys ~events:ssh -@all +xadd +hello +auth` | `sensor-ssh` |
+| `sensor-rdp` | `REDIS_SENSOR_RDP_PASSWORD` | `resetkeys ~events:rdp -@all +xadd +hello +auth` | `sensor-rdp` |
+| `sensor-telnet` | `REDIS_SENSOR_TELNET_PASSWORD` | `resetkeys ~events:telnet -@all +xadd +hello +auth` | `sensor-telnet` |
+| `demo` | `REDIS_DEMO_PASSWORD` | `resetkeys ~events:* -@all +xadd +hello +auth` | The demo generator |
+| `ingest` | `REDIS_INGEST_PASSWORD` | `resetkeys ~events:* -@all +xreadgroup +xack +xgroup\|create +xautoclaim +xtrim +hello +auth` | `ingest` |
 
-The sensor user cannot read the stream, delete it or change its settings. The publisher turns off client info commands so the sensor user does not need `CLIENT SETINFO`.
+A `sensor-web` user is added to the entrypoint together with the web sensor. Like the others, it will be limited to `XADD` on its own stream (`~events:web`).
+
+A sensor user can only append to its own stream. It cannot read it, delete it or change its settings. The publisher turns off client info commands so the sensor users do not need `CLIENT SETINFO`. All Redis passwords must be at least 24 characters and pairwise different, or the container refuses to start.
 
 ### Server settings
 
@@ -128,14 +151,27 @@ Redis is never published on the host. It listens only on the internal networks.
 
 ## Event flow
 
-1. A sensor (or the demo generator) builds an `Event` and calls `XADD` on the `events` stream. The stream is capped with `MAXLEN ~ EVENTS_MAXLEN` (default 10,000 entries).
-2. If Redis is unavailable, full or refusing the write, the publisher does not raise. It drops the event, counts it, and logs the error at most once every 30 seconds per error kind. It keeps no buffer, so memory stays bounded.
-3. `ingest` reads the stream as part of the consumer group `ingest`. It creates the group if it does not exist.
+1. A sensor (or the demo generator) builds an `Event` and calls `XADD` on its own stream. The stream is capped with `MAXLEN ~ EVENTS_MAXLEN` (default 10,000 entries per stream).
+2. If Redis is unavailable, full or refusing the write, the publisher does not raise. It drops the event, counts it, and logs the error at most once every 30 seconds per error kind. It keeps no unbounded buffer.
+3. `ingest` reads all streams (`INGEST_STREAMS`) as one consumer in the group `ingest`, with a single `XREADGROUP` call. It creates the group on each stream if needed.
 4. An entry with a raw `event` field larger than 64 KiB is rejected before JSON parsing. Any other invalid entry is logged, truncated, and acknowledged so it does not block the stream.
-5. Valid events are written in batches. The batch size is `INGEST_BATCH_SIZE` (default 100, maximum 500). The `sessions` table is updated with the counters for each session.
-6. After the database commit, `ingest` acknowledges the entries. Entries are never acknowledged before they are stored.
-7. After the acknowledgement, `ingest` trims the stream with `XTRIM MINID ~` up to the last acknowledged ID. This assumes one consumer. Several consumers would need a different rule.
-8. A message that fails writing 5 times in a row is logged with its ID and acknowledged, so it is dead-lettered. The count is kept in memory.
+5. **Sensor/stream check.** An event whose `sensor` field differs from the stream suffix (`sensor = rdp` on `events:ssh`) is dropped, counted and acknowledged. A compromised sensor cannot write as another sensor, even if Redis permissions were wrong.
+6. Valid events are enriched (GeoIP, ASN, cached reputation) and tagged, then written in batches. The batch size is `INGEST_BATCH_SIZE` (default 100, maximum 500). The `sessions` table is updated with the counters for each session, and session-level tag rules run on the updated counters.
+7. After the database commit, `ingest` acknowledges the entries. Entries are never acknowledged before they are stored.
+8. After the acknowledgement, `ingest` trims **that stream** with `XTRIM MINID ~` up to the last acknowledged ID. This assumes one consumer, so run exactly one ingest instance.
+9. A message that fails writing 5 times in a row because of its own content (a data error) is logged with its ID and acknowledged: dead-lettered. Outages, timeouts and permission errors are never counted. They retry forever, which turns the heartbeat stale and the container unhealthy.
+
+### Per-stream trimming and recovery
+
+State is kept per stream, so one slow or broken stream does not affect the others.
+
+- **Start-up.** Ingest takes over every pending entry on every stream (`XAUTOCLAIM` with no idle minimum), whoever it was delivered to. Then it re-reads each stream from the start of its pending list ("draining") before it reads new entries.
+- **No trim while draining.** A stream is trimmed only once its pending list is empty, so entries that were never read cannot be trimmed away.
+- **Periodic reclaim.** Every `INGEST_RECLAIM_INTERVAL_S` (60 s), entries idle for more than `INGEST_CLAIM_IDLE_MS` are reclaimed, and the stream goes back to draining.
+- **After an error** (Redis or database), all streams go back to draining and the loop retries with a backoff from 1 s to 30 s.
+- **Forged IDs.** A producer that sends an explicit entry ID far in the future would make `MINID` trimming wipe the stream. Ingest reports such IDs and never uses them as a trim target.
+
+Delivery is at least once. A batch replayed after a crash between the database commit and the acknowledgement can count twice. Idempotent replay is on the [roadmap](ROADMAP.md).
 
 The exact field layout is in [Event schema](event-schema.md).
 
@@ -145,10 +181,11 @@ PostgreSQL 17 with TimescaleDB, managed by Alembic migrations in `db/`.
 
 | Object | Kind | Content |
 | --- | --- | --- |
-| `events` | Hypertable on `ts`, one chunk per day | One row per event |
-| `sessions` | Regular table | One row per session, with counters and the first and last times |
-
-Enrichment columns (`country`, `city`, `asn`, `org`, `abuse_score`, `known_scanner`) and `tags` exist in M1 but stay empty until M4.
+| `events` | Hypertable on `ts`, one chunk per day | One row per event, with enrichment columns and `tags` |
+| `sessions` | Regular table | One row per session, with counters, first and last times, enrichment and tags |
+| `ip_reputation` | Regular table | Cached AbuseIPDB and GreyNoise answers per IP (24 hours) |
+| `enrichment_quota` | Regular table | Lookups used per provider and day |
+| `enrichment_status` | Regular table | Status of the GeoIP database and the reputation providers, shown in Settings |
 
 Retention (deleting raw events after 90 days) is planned for M8. Until then, raw events are kept.
 
@@ -159,10 +196,24 @@ Each service connects with its own role. Only the migration step can change the 
 | Role | Used by | Rights | Statement timeout |
 | --- | --- | --- | --- |
 | Owner (`POSTGRES_USER`) | `db`, `migrate` | Owns the schema. Used for migrations only. | Not set |
-| `suckerpot_ingest` | `ingest` | `SELECT`, `INSERT` on `events`. `SELECT`, `INSERT`, `UPDATE` on `sessions`. Sequence use. | 30 s |
-| `suckerpot_api` | `api` | `SELECT` on `events` and `sessions` | 5 s |
+| `suckerpot_ingest` | `ingest` | Insert and update on the tables ingest writes. No schema changes, no role changes. | 30 s |
+| `suckerpot_api` | `api` | `SELECT` only | 5 s |
 
-Neither application role is a superuser. Neither can create databases or roles. Migration 0002 creates the roles and sets their passwords from the environment at migration time. The passwords are never written to a file or to the log.
+Neither application role is a superuser. Neither can create databases or roles. The `migrate` service sets both role passwords on **every** run, from the environment. The password is sent as a SCRAM-SHA-256 verifier, so it never appears in the database logs. This is how you rotate them: see [Rotating secrets](deployment.md#rotating-secrets).
+
+## Enrichment and tagging
+
+```{admonition} Status
+:class: note
+
+Built (M4) and wired into Compose: ingest gets the provider variables and the `geoip-data` volume. Without keys it uses the key-less DB-IP Lite database, and reputation lookups stay off.
+```
+
+- **GeoIP and ASN** are read from local MMDB files, never from a web service per event. The provider is MaxMind GeoLite2 when `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` are set, otherwise DB-IP Lite (no key, CC BY 4.0, attribution shown in the dashboard). Ingest downloads and refreshes the files itself, with a size cap and a check that the file opens. `GEOIP_PROVIDER=off` turns it off.
+- **Reputation** (AbuseIPDB and GreyNoise Community) runs in a background worker, not in the event path. It picks the busiest addresses with no fresh answer, spends one unit of a persisted daily quota per lookup (`ABUSEIPDB_DAILY_QUOTA`, `GREYNOISE_DAILY_QUOTA`), caches the answer for 24 hours, and pauses for an hour after a rate-limit answer. It only reads. Nothing is ever reported to AbuseIPDB.
+- **Tags** come from a declarative rules engine. Rules are YAML files in `ingest/rules/` (`shell.yaml` for commands, `web.yaml` for HTTP, `session.yaml` for session counters). A rule can match URL patterns, typical shell commands, user agents or CVE signatures. Tags include `recon`, `mirai`, `crypto-miner`, `exec-attempt`, `malware-drop`, `credential-stuffing`, `scanner` and `php2shell`. A broken rule file stops ingest at start-up.
+
+A **session** is one connection. It is the unit the dashboard tells as a story, such as "tried 37 SSH passwords, then ran a crypto-miner".
 
 ## API
 
@@ -171,39 +222,32 @@ The API is FastAPI. It serves:
 - REST endpoints under `/api/v1`, listed in [API](api.md).
 - A WebSocket feed at `/api/v1/live`.
 - A health check at `/healthz`.
-- The built web UI, when `WEB_DIST_DIR` contains an `index.html`. M1 has no UI build yet, so only the API is served.
+- Dashboard authentication (`/api/v1/auth/*`): one admin account, a signed `HttpOnly` session cookie and CSRF protection. A middleware guards every other `/api/v1` path, and the WebSocket checks the cookie in its handshake. Its state is in memory, so the API runs as **one** worker. See [API](api.md#authentication).
+- The built web UI, when `WEB_DIST_DIR` contains an `index.html`. Unknown paths return the app shell so client-side routes work, and `/api/*` paths never fall back to it.
 - The OpenAPI documents at `/docs`, `/redoc` and `/openapi.json`. These are **off** unless `API_ENABLE_DOCS=true`.
 
 The API has no Redis access. It reads the database only.
 
 ### Live feed
 
-One background task in the API polls the `events` table for rows newer than the last one it sent (at most once per second, up to 500 rows per tick). It then sends the new rows to each connected WebSocket client through a bounded queue. The queue has 200 slots per client, and the hub accepts at most 50 clients. A slow client loses its oldest messages, and is told how many were lost.
+One background task in the API polls the `events` table for rows newer than the last one it sent (once per second, up to 500 rows per tick). It sends the new rows to each connected WebSocket client through a bounded queue of 200 messages. A slow client loses its oldest messages, and is told how many were lost. The hub accepts at most 50 clients in total and 5 per source address. Details are in [API](api.md#live-feed).
 
 ### Security headers
 
-Every response carries `nosniff`, `Referrer-Policy: no-referrer`, a restrictive `Permissions-Policy`, and `Cross-Origin-Resource-Policy: same-origin`. Pages carry a Content Security Policy. Only the documentation pages relax it, and only when `API_ENABLE_DOCS=true`.
+Every response carries `nosniff`, `Referrer-Policy: no-referrer`, a restrictive `Permissions-Policy` and `Cross-Origin-Resource-Policy: same-origin`. Pages carry a Content Security Policy (`default-src 'self'`, `connect-src 'self'`, no framing). API responses are `Cache-Control: no-store`. Only the documentation pages relax the policy, and only when `API_ENABLE_DOCS=true`.
 
-The WebSocket checks the `Origin` header. Requests with no `Origin` (non-browser clients) are accepted. Browser requests must come from the same host, or from a host listed in `API_ALLOWED_ORIGINS`.
-
-## Enrichment and tagging (planned, M4)
-
-Enrichment adds GeoIP, ASN and organisation data (MaxMind GeoLite2, read locally), AbuseIPDB scores and GreyNoise classifications. Results are cached per IP for 24 hours, and daily quotas are enforced.
-
-Tags come from a declarative rules engine. Rules are YAML files in `ingest/rules/`. A rule can match URL patterns, typical shell commands, user agents or CVE signatures. Examples of tags: `recon`, `mirai`, `crypto-miner`, `malware-drop` and `php2shell`.
-
-A **session** is one connection, or a group of events that belong to the same attack. It is the unit the dashboard will tell as a story. Each session will have a one-line summary, for example "tried 37 SSH passwords, then ran a crypto-miner".
+The WebSocket checks the `Origin` header. Requests with no `Origin` (non-browser clients) are accepted. Browser requests must come from the same host, or from an origin listed in `API_ALLOWED_ORIGINS`.
 
 ## Stack
 
 | Layer | Choice |
 | --- | --- |
-| Sensors | Python 3.13, asyncio, asyncssh (SSH), raw asyncio (Telnet and RDP), Starlette (web). Planned. |
+| Sensors | Python 3.13, asyncio, asyncssh (SSH), raw asyncio (Telnet and RDP), a hand-written HTTP server (web) |
 | Ingest and API | FastAPI, SQLAlchemy 2 with asyncpg, Alembic |
 | Queue | Redis 7.4 Streams |
 | Database | PostgreSQL 17 with TimescaleDB 2.22.1 |
-| Enrichment | MaxMind GeoLite2, AbuseIPDB, GreyNoise Community. Planned, M4. |
-| Web UI | React, Vite, TypeScript (strict), Tailwind, shadcn/ui, globe.gl, xterm.js. Planned, M3 and later. |
+| Enrichment | MaxMind GeoLite2 or DB-IP Lite (local files), AbuseIPDB, GreyNoise Community |
+| Web UI | React, Vite, TypeScript (strict), Tailwind, shadcn/ui, TanStack Query. Globe and terminal replay planned. |
 | Python tooling | uv, ruff, mypy (strict), pytest |
 | Web tooling | pnpm, eslint, prettier, vitest, Playwright |
 | Task runner | `justfile`. See [Development](development.md). |
@@ -216,8 +260,9 @@ Every service follows the same rules:
 - A non-root user (UID and GID 10001 for application services).
 - A read-only root file system, with `tmpfs` mounts where a service must write.
 - `cap_drop: [ALL]` and `no-new-privileges`.
-- Memory, CPU and process limits.
-- A health check.
+- Memory, CPU and process limits. Sensors also have no swap, so overload fails fast.
+- A health check, plus a watchdog inside each sensor (Docker does not restart a container that is only unhealthy).
+- Logs rotated by Docker (10 MB, 3 files).
 
 The rules are explained in [Security](SECURITY.md#containers).
 
@@ -229,13 +274,15 @@ suckerpot/
 ├── justfile
 ├── .env.example
 ├── redis/             # Redis image, ACL entrypoint and config
-├── sensors/common/    # shared Event schema (Python package)
-├── ingest/            # consumer, writer, health check
+├── sensors/           # common (Event schema), ssh, web, rdp, telnet (last four: see status)
+├── ingest/            # consumer, writer, enrichment, tagging, rules/*.yaml
 ├── api/               # FastAPI app: REST, live feed, SPA serving
-├── db/                # SQLAlchemy models, Alembic migrations, secrets check
-├── scripts/demo/      # demo data generator
-├── web/               # React app (planned, M3)
+├── db/                # SQLAlchemy models, Alembic migrations, roles, secrets check
+├── web/               # React app (design system in web/DESIGN.md)
+├── scripts/
+│   ├── demo/          # demo data generator
+│   ├── host/          # host firewall (nftables) and its systemd unit
+│   ├── check-ports.sh # port layout guard
+│   └── ssh-test.sh    # end-to-end check of the SSH sensor
 └── docs/              # documentation (this site)
 ```
-
-The sensors other than `common` are planned.

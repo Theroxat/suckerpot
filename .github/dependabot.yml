@@ -1,0 +1,100 @@
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/sensors/common"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_common:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/sensors/ssh"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_ssh:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/scripts/demo"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_scripts_demo:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/db"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_db:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/ingest"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_ingest:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/api"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_api:
+        patterns: ["*"]
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm_web:
+        patterns: ["*"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github_actions_root:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/ssh"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_ssh:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/scripts/demo"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_scripts_demo:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/redis"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_redis:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/db"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_db:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/ingest"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_ingest:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/api"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_api:
+        patterns: ["*"]

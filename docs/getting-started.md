@@ -47,6 +47,8 @@ Every `change-me` value must be replaced. Each secret must be at least 24 charac
 openssl rand -base64 32
 ```
 
+Also set the dashboard login: `SESSION_SECRET` (at least 32 bytes) and `ADMIN_PASSWORD_HASH` (make it with `docker compose run --rm api python -m api.hashpw`, and put it in `.env` in single quotes). See [Deployment](deployment.md#dashboard-login).
+
 The stack refuses to start with a short or repeated secret, and the error names the variable (never its value). Do not commit `.env` to git. The full list of variables is in [Configuration](configuration.md).
 
 ```{note}
@@ -97,8 +99,10 @@ curl -s http://127.0.0.1:8443/healthz
 
 The `/healthz` path returns `{"status": "ok", "db": "ok"}` when the API can reach the database. The live feed is at `/api/v1/live` (WebSocket). See [API](api.md).
 
+The dashboard itself is served on the same port once the web app is built (`just web-build` creates `web/dist`). See [Dashboard](ui.md) for the pages. The dashboard has a login (M8): set `ADMIN_PASSWORD_HASH` and `SESSION_SECRET` first, as described in [Deployment](deployment.md#dashboard-login). `just up` refuses to start without them. For a throwaway local trial, `just up-test` starts the stack with the login off (it uses `docker-compose.ci.yml`). Never use that on a host that other people can reach. To sign in over plain HTTP on your own machine, set `COOKIE_SECURE=false`.
+
 ```{note}
-M1 has no web UI and no login. The web UI is planned for M3 and M5, and the login for M8. The API documentation pages (`/docs`) are off by default. To turn them on while you develop, set `API_ENABLE_DOCS=true` and restart the stack. Keep them off on any host that is reachable from outside.
+The API documentation pages (`/docs`) are off by default. To turn them on while you develop, set `API_ENABLE_DOCS=true` and restart the stack. Keep them off on any host that is reachable from outside.
 ```
 
 ## Stop and clean up
@@ -110,6 +114,8 @@ M1 has no web UI and no login. The web UI is planned for M3 and M5, and the logi
 
 ## Next steps
 
-- [Deployment](deployment.md): how to expose the dashboard safely.
+- [Deployment](deployment.md): the go-live checklist, the host firewall and secret rotation.
+- [Sensors](sensors/index.md): what each fake service does and records.
+- [Dashboard](ui.md): the pages and the screenshot mode.
 - [Configuration](configuration.md): every setting.
 - [Architecture](ARCHITECTURE.md): how the services fit together.

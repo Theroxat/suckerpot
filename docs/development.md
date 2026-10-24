@@ -26,23 +26,64 @@ This page is for people who change the code. It explains the repository layout, 
 
 All commands are `just` recipes. Run `just` with no arguments to list them.
 
+### Stack
+
 | Recipe | What it does |
 | --- | --- |
-| `just up` | Build the images and start the stack. Waits until everything is healthy. |
+| `just up` | Run the port guard, build the images and start the stack. Waits until everything is healthy. |
+| `just up-test` | Start the stack with dashboard login **off**, through `docker-compose.ci.yml`. For tests and local trials only: the end-to-end recipes below need it. Never on a machine that other people can reach. |
 | `just down` | Stop the stack. Data volumes are kept. |
 | `just logs [service ...]` | Follow the logs. For example, `just logs ingest api`. |
 | `just ps` | Show the state of the services |
-| `just config` | Check that `docker-compose.yml` is valid |
+| `just ports` | Run `scripts/check-ports.sh`: refuse a port layout that exposes the wrong thing (see [Deployment](deployment.md#port-guard)) |
+| `just config` | Run the port guard, then check that `docker-compose.yml` is valid |
+| `just psql` | Open a `psql` shell as the database owner, inside the database container. Maintenance only. |
+
+### Backup and restore
+
+| Recipe | What it does |
+| --- | --- |
+| `just backup` | Dump the database into `./backups` (`BACKUP_DIR`, `BACKUP_KEEP`). See [Deployment](deployment.md#backups). |
+| `just restore FILE` | Replace the whole database with a dump. Asks for confirmation. |
+
+### Data and end-to-end checks
+
+| Recipe | What it does |
+| --- | --- |
 | `just demo [args]` | Generate demo data. For example, `just demo --sessions 200 --days 3`. |
 | `just demo-live` | Keep sending demo traffic until you press Ctrl+C |
-| `just psql` | Open a `psql` shell as the database owner, inside the database container. Use it for maintenance only. |
-| `just lint` | Run `ruff check` and `ruff format --check` on every Python package |
-| `just fmt` | Fix and format the Python code with `ruff` |
-| `just typecheck` | Run `mypy` (strict) on every Python package |
-| `just test` | Run the unit tests of every Python package. Integration tests are skipped. |
-| `just test-integration` | Run the integration tests against a database and Redis. It uses its own throwaway compose project (`<project>-it`) and removes its volumes afterwards, so your real data is never touched. |
+| `just ssh-test` | Log in to the SSH sensor for real from a throwaway container, run two commands (one is a fake download), and wait until the session shows up in the API. The same script runs in CI. |
 
-`just lint`, `just typecheck` and `just test` run in the pinned `uv` image. The virtual environments live inside the container, and the `uv` download cache lives in a Docker volume. Nothing is written to the repository.
+### Python
+
+| Recipe | What it does |
+| --- | --- |
+| `just lint` | `ruff check` and `ruff format --check` on every Python package, then the web lint |
+| `just fmt` | Fix and format the Python code with `ruff` |
+| `just typecheck` | `mypy` (strict) on every Python package |
+| `just test` | Unit tests of every Python package, then the web unit tests. Integration tests are skipped. |
+| `just test-integration` | Integration tests against a real database and Redis. It uses its own throwaway Compose project (`<project>-it`) and removes its volumes afterwards, so your real data is never touched. |
+| `just check` | Everything: `lint`, `typecheck`, `test` and `web-build` |
+
+### Web
+
+| Recipe | What it does |
+| --- | --- |
+| `just web-install` | Install the web dependencies from the lock file |
+| `just web-lint` | `eslint`, `prettier` check and the TypeScript type check |
+| `just web-test` | Unit tests (`vitest`) |
+| `just web-build` | Production build into `web/dist` |
+| `just web-dev` | Vite dev server on `http://127.0.0.1:5173` with mock data (Ctrl+C to stop) |
+| `just screenshots` | Playwright screenshots on mock data, at 1440 px and 390 px, dark and light, into `web/screenshots` |
+
+## Tooling runs in containers
+
+The host needs only Docker and `just`. No Python, Node.js or database is installed on it.
+
+- **Python.** `lint`, `typecheck` and `test` run in a pinned `uv` image, once per package, as your user. The virtual environments live inside the container, and the `uv` download cache lives in a Docker volume (`suckerpot-uv-cache`). Nothing is written to the repository.
+- **Web.** The web recipes run in a pinned Node image, with `pnpm` enabled through Corepack. A Docker volume (`suckerpot-web-cache`) holds the Corepack and `pnpm` caches. The lock file is always installed with `--frozen-lockfile`.
+- **Screenshots.** They run in the pinned Playwright image, against a build with mock data. Mock data uses documentation addresses only, so the screenshots are safe to publish.
+- **Images.** Every base image is pinned to a version, so a build today and a build next month use the same tools.
 
 ## Repository layout
 
@@ -53,17 +94,25 @@ suckerpot/
 ├── .env.example            # configuration template (placeholders only)
 ├── redis/                  # Redis image and the ACL entrypoint
 ├── sensors/
-│   └── common/             # suckerpot-common: the shared Event schema
-├── ingest/                 # suckerpot-ingest: consumer and writer
+│   ├── common/             # suckerpot-common: the shared Event schema
+│   ├── ssh/                # SSH sensor
+│   ├── web/                # web sensor (not yet in Compose)
+│   ├── rdp/                # RDP sensor
+│   └── telnet/             # Telnet sensor
+├── ingest/                 # suckerpot-ingest: consumer, writer, enrichment, rules/*.yaml
 ├── api/                    # suckerpot-api: FastAPI app
 ├── db/                     # suckerpot-db: SQLAlchemy models and Alembic migrations
+├── web/                    # React app (design system in web/DESIGN.md)
 ├── scripts/
 │   ├── demo/               # suckerpot-demo: demo data generator
+│   ├── host/               # host firewall (nftables) and its systemd unit
+│   ├── check-ports.sh      # port layout guard
+│   ├── ssh-test.sh         # end-to-end check of the SSH sensor
 │   └── install-hooks.sh    # git hooks (gitleaks)
 └── docs/                   # this documentation site
 ```
 
-Sensors other than `common` (SSH, Telnet, Web and RDP) are planned.
+The web sensor is not in `docker-compose.yml` yet.
 
 ## Python packages
 
@@ -75,7 +124,13 @@ Each package has its own `pyproject.toml` and a committed `uv.lock`. The code ta
 | `scripts/demo` | `suckerpot-demo` | `demo` | Demo data generator |
 | `db` | `suckerpot-db` | `suckerpot_db` | Models and migrations |
 | `ingest` | `suckerpot-ingest` | `ingest` | Redis consumer, validation and database writes |
-| `api` | `suckerpot-api` | `api` | REST API |
+| `api` | `suckerpot-api` | `api` | REST API and live feed |
+| `sensors/ssh` | `suckerpot-sensor-ssh` | `ssh_sensor` | SSH sensor |
+| `sensors/web` | `suckerpot-sensor-web` | `web_sensor` | Web sensor (not yet in Compose) |
+| `sensors/rdp` | `suckerpot-sensor-rdp` | `rdp_sensor` | RDP sensor |
+| `sensors/telnet` | `suckerpot-sensor-telnet` | `telnet_sensor` | Telnet sensor |
+
+The recipes `just lint`, `just typecheck` and `just test` cover `sensors/common`, `scripts/demo`, `db`, `ingest` and `api`, and the CI `python` job does the same. The sensor packages (`ssh`, `web`, `rdp`, `telnet`) are checked from their own directory with `uv sync`, `uv run ruff check`, `uv run ruff format --check`, `uv run mypy .` and `uv run python -m pytest`. The RDP sensor also has a black-box script that runs real `nmap` and FreeRDP clients (`sensors/rdp/tests/blackbox.sh`).
 
 Packages depend on each other by path. For example, `ingest` depends on `suckerpot-common` and `suckerpot-db`.
 
@@ -100,16 +155,20 @@ Build contexts are the repository root for the Python services, so that path dep
 
 The GitHub Actions workflows run on every push and pull request to `main`:
 
-| Workflow | Checks |
+| Workflow and job | Checks |
 | --- | --- |
-| `ci.yml`, job `gitleaks` | Scans the full git history with `gitleaks` |
-| `ci.yml`, job `python` | Lint, type check and unit tests of each Python package |
-| `ci.yml`, job `web` | Lint, type check and tests of the web app, when `web/` exists |
-| `ci.yml`, job `python-integration` | Integration tests against a real database and Redis |
-| `ci.yml`, job `compose` | Builds the stack, checks the API health endpoint, runs the demo, and waits until ingest has stored sessions |
+| `ci.yml`, `gitleaks` | Scans the full git history with `gitleaks` |
+| `ci.yml`, `python` | Lint, type check and unit tests of each Python package |
+| `ci.yml`, `web` | Install, lint, type check, unit tests and production build of the web app |
+| `ci.yml`, `web-screenshots` | Playwright screenshots on mock data, uploaded as an artifact for 7 days |
+| `ci.yml`, `python-integration` | Integration tests against a real database and Redis |
+| `ci.yml`, `compose` | Runs the port guard, builds the stack, checks the API health and the SSH sensor health, runs a real SSH login (`scripts/ssh-test.sh`), generates demo data, and waits until the API shows the stored sessions |
 | `docs.yml` | Builds this documentation site with warnings treated as errors |
+| `pages.yml` | Publishes the project page and the offline mock-data dashboard on pushes to `main` |
 
-The `compose` job is the only place where the placeholder secrets are allowed. It sets `SUCKERPOT_ALLOW_DEFAULT_SECRETS=1` in a throwaway `.env`. Never copy that setting to a real host.
+Dependabot keeps the pinned actions, base images and dependencies up to date.
+
+The `compose` job is the only place where the placeholder secrets are allowed. It sets `SUCKERPOT_ALLOW_DEFAULT_SECRETS=1` in a throwaway `.env`, and moves the SSH sensor to another host port because the runner's own `sshd` uses port 22. Never copy that setting to a real host.
 
 Read the Docs builds the site from `.readthedocs.yaml`, using the same pinned requirements.
 

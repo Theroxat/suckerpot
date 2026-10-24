@@ -74,7 +74,7 @@ An SSH login attempt, with documentation addresses only:
 
 ## Stream encoding
 
-Each event is one entry in the Redis stream `events`. The entry has two fields:
+Each sensor has its own Redis stream: `events:ssh`, `events:telnet`, `events:web` and `events:rdp`. Each event is one entry in the stream of the sensor that produced it. The `sensor` field of the event must match the stream suffix, or ingest drops the event. The entry has two fields:
 
 | Field | Value |
 | --- | --- |
@@ -84,7 +84,7 @@ Each event is one entry in the Redis stream `events`. The entry has two fields:
 The publisher writes the entry with `XADD`, with an approximate length cap set by `EVENTS_MAXLEN` (default 10,000):
 
 ```text
-XADD events MAXLEN ~ 10000 * v 1 event '{"ts":"2026-10-24T18:02:11Z", ...}'
+XADD events:ssh MAXLEN ~ 10000 * v 1 event '{"ts":"2026-10-24T18:02:11Z", ...}'
 ```
 
 A reader checks `v` first. It rejects any version it does not know. Then it validates the JSON with the same model.

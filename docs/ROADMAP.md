@@ -84,6 +84,7 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - [ ] Overview: 4 KPIs, activity per sensor over time, top countries, insights.
 - [ ] Attacks: filterable session list, one-line story per row, filters in the URL.
 - [ ] Session detail: timeline, xterm.js terminal replay at real speed, IP panel.
+- [ ] Replay safety contract (from the M2 review): no Clipboard addon (OSC 52), a `linkHandler` that never opens links (OSC 8), `onData`/`onBinary` never wired to anything (query replies), no image/sixel addons, attacker strings rendered as text only.
 - [ ] Attackers: profiles by IP and ASN.
 
 **Acceptance:** pages load in under 1 s on demo data; lists virtualized and paginated server-side; `ui-designer` approval.
