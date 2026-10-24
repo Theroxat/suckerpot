@@ -1,0 +1,46 @@
+# Rules for the fake web stack. Matching is on method, path, query and user-agent only.
+rules:
+  - id: php2shell
+    tag: php2shell
+    description: PHP upload-progress exploitation (CVE-2026-109618 / CVE-2026-109619).
+    when:
+      all:
+        - {field: type, equals: http_request}
+        - any:
+            - {field: data.flags, has: [php2shell, upload_progress]}
+            - {field: data.query, contains: php_session_upload_progress}
+            - {field: data.path, contains: upload_progress}
+
+  - id: wordpress-bruteforce
+    tag: wordpress-bruteforce
+    description: POSTs to the WordPress login or XML-RPC endpoints.
+    when:
+      all:
+        - {field: type, equals: http_request}
+        - {field: data.method, equals: POST}
+        - {field: data.path, glob: ["*/wp-login.php", "*/xmlrpc.php"]}
+
+  - id: phpmyadmin-bruteforce
+    tag: phpmyadmin-bruteforce
+    description: POSTs to phpMyAdmin style database consoles.
+    when:
+      all:
+        - {field: type, equals: http_request}
+        - {field: data.method, equals: POST}
+        - {field: data.path, contains_any: [/phpmyadmin, /pma/, /mysqladmin, /dbadmin]}
+
+  - id: env-file-probe
+    tag: env-file-probe
+    description: Requests for secrets that are often left in web roots.
+    when:
+      all:
+        - {field: type, equals: http_request}
+        - field: data.path
+          glob: ["*/.env", "*/.env.*", "*/.git/config", "*/.git/head", "*/.aws/credentials", "*/.ds_store", "*/.htpasswd"]
+
+  - id: scanner-user-agent
+    tag: scanner
+    description: User agents of well-known internet scanners.
+    when:
+      field: data.user_agent
+      contains_any: [zgrab, masscan, nmap, nuclei, censys, shodan, zmap, expanse, netcraft, internet-measurement, leakix, projectdiscovery]

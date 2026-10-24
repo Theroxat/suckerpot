@@ -32,7 +32,7 @@ class FakeRedis:
     async def xreadgroup(self, *args: Any, **kwargs: Any) -> Any:
         self.reads += 1
         if self.batches:
-            return [[b"events", self.batches.pop(0)]]
+            return [[b"events:ssh", self.batches.pop(0)]]
         return []
 
 
@@ -51,7 +51,7 @@ async def test_trim_uses_last_acked_id(monkeypatch: pytest.MonkeyPatch, tmp_path
     monkeypatch.setattr("ingest.consumer.write_batch", ok)
     r = FakeRedis()
     c = consumer(r, tmp_path)
-    await c.process([(b"9-0", fields()), (b"10-1", fields()), (b"10-0", {})])
+    await c.process("events:ssh", [(b"9-0", fields()), (b"10-1", fields()), (b"10-0", {})])
     assert r.trimmed == [{"minid": "10-1", "approximate": True}]
 
 
@@ -60,26 +60,42 @@ async def test_trim_failure_is_not_fatal(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
     monkeypatch.setattr("ingest.consumer.write_batch", ok)
     r = FakeRedis(trim_error=True)
-    await consumer(r, tmp_path).process([(b"1-0", fields())])
+    await consumer(r, tmp_path).process("events:ssh", [(b"1-0", fields())])
     assert r.acked == [b"1-0"]
 
 
 async def test_dead_letter_after_max_attempts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    async def boom(_f: Any, _e: Any) -> None:
-        raise DBAPIError("stmt", {}, _Orig("XX000"))
+    # A data error that escapes the per-event handling still counts toward dead-lettering.
+    async def boom(_self: Any, _stream: Any, _messages: Any) -> list[Any]:
+        raise DBAPIError("stmt", {}, _Orig("22P02"))
 
-    monkeypatch.setattr("ingest.consumer.write_batch", boom)
+    monkeypatch.setattr(Consumer, "_process_live", boom)
     r = FakeRedis()
     c = consumer(r, tmp_path)
     for _ in range(MAX_ATTEMPTS):
         with pytest.raises(DBAPIError):
-            await c.process([(b"1-0", fields())])
+            await c.process("events:ssh", [(b"1-0", fields())])
     assert r.acked == []
-    await c.process([(b"1-0", fields())])  # 6th delivery: dead-lettered, not written
+    await c.process("events:ssh", [(b"1-0", fields())])  # 6th delivery: dead-lettered, not written
     assert r.acked == [b"1-0"]
-    assert b"1-0" not in c.attempts
+    assert ("events:ssh", b"1-0") not in c.attempts
+
+
+@pytest.mark.parametrize("sqlstate", [None, "XX000", "40P01", "42501", "57014", "53300", "08006"])
+async def test_only_data_errors_count_as_attempts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sqlstate: str | None
+) -> None:
+    async def boom(_self: Any, _stream: Any, _messages: Any) -> list[Any]:
+        raise DBAPIError("stmt", {}, _Orig(sqlstate))
+
+    monkeypatch.setattr(Consumer, "_process_live", boom)
+    c = consumer(FakeRedis(), tmp_path)
+    for _ in range(MAX_ATTEMPTS + 3):
+        with pytest.raises(DBAPIError):
+            await c.process("events:ssh", [(b"1-0", fields())])
+    assert c.attempts == {}
 
 
 async def test_outage_errors_do_not_count(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -90,7 +106,7 @@ async def test_outage_errors_do_not_count(monkeypatch: pytest.MonkeyPatch, tmp_p
     c = consumer(FakeRedis(), tmp_path)
     for _ in range(MAX_ATTEMPTS + 2):
         with pytest.raises(DBAPIError):
-            await c.process([(b"1-0", fields())])
+            await c.process("events:ssh", [(b"1-0", fields())])
     assert c.attempts == {}
 
 
@@ -102,7 +118,7 @@ async def test_statement_error_single_event_is_data_error(
 
     monkeypatch.setattr("ingest.consumer.write_batch", bad)
     r = FakeRedis()
-    await consumer(r, tmp_path).process([(b"1-0", fields())])
+    await consumer(r, tmp_path).process("events:ssh", [(b"1-0", fields())])
     assert r.acked == [b"1-0"]
 
 
@@ -116,7 +132,7 @@ async def test_heartbeat_only_after_successful_work(
         if calls["n"] == 1:
             raise OSError("db down")
 
-    async def noop() -> None: ...
+    async def noop(*_a: Any, **_k: Any) -> None: ...
 
     monkeypatch.setattr("ingest.consumer.write_batch", flaky)
     r = FakeRedis(batches=[[(b"1-0", fields())], [(b"1-0", fields())]])
@@ -140,8 +156,8 @@ async def test_heartbeat_only_after_successful_work(
 
     c.heartbeat = spy  # type: ignore[method-assign]
     c._sleep = fake_sleep  # type: ignore[method-assign,assignment]
-    c.ensure_group = noop  # type: ignore[method-assign]
-    c.reclaim_stale = noop  # type: ignore[method-assign]
+    c.ensure_groups = noop  # type: ignore[method-assign]
+    c.reclaim_stale = noop  # type: ignore[method-assign,assignment]
     r.xreadgroup = read_then_stop  # type: ignore[method-assign]
     await c.run()
     assert at_sleep == [1]  # only the startup beat existed when the first batch failed

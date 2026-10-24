@@ -15,10 +15,14 @@ WORKDIR /src/ingest
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.13.17-slim-bookworm
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH=/opt/venv/bin:$PATH
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH=/opt/venv/bin:$PATH \
+    RULES_DIR=/app/rules GEOIP_DIR=/data/geoip
 RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid 10001 --no-create-home app
 COPY --from=builder /opt/venv /opt/venv
+# /data/geoip is the mount point of the geoip-data volume (initial ownership comes from here).
+RUN mkdir -p /data/geoip && chown -R 10001:10001 /data
 WORKDIR /app
+COPY ingest/rules /app/rules
 USER 10001:10001
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python", "-m", "ingest.healthcheck"]
