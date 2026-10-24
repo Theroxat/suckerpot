@@ -359,3 +359,38 @@ async def test_redis_sink_gives_up_when_bounded() -> None:
     sink = RedisSink(EventPublisher(host="x", client=Dead()), max_retries=2, max_backoff=0.001)
     await sink.emit(gen_events(1, 3, 1)[:4])
     assert sink.gave_up == 4
+
+
+async def test_redis_sink_uses_per_sensor_streams() -> None:
+    from suckerpot_common import EventPublisher
+
+    from demo.sinks import RedisSink
+
+    class Pipe:
+        def __init__(self, log: list[tuple[str, str]]) -> None:
+            self.log, self.n = log, 0
+
+        def xadd(self, stream: str, fields: dict[str, str], **k: object) -> Pipe:
+            self.log.append((stream, Event.from_stream_fields(fields).sensor.value))
+            self.n += 1
+            return self
+
+        async def execute(self, raise_on_error: bool = True) -> list[str]:
+            return ["1-0"] * self.n
+
+    class R:
+        def __init__(self) -> None:
+            self.log: list[tuple[str, str]] = []
+
+        def pipeline(self, transaction: bool = True) -> Pipe:
+            return Pipe(self.log)
+
+        async def aclose(self) -> None:
+            pass
+
+    r = R()
+    sink = RedisSink(EventPublisher(host="x", client=r, stream="events"))
+    await sink.emit(gen_events(2, 200, 3))
+    assert r.log
+    assert {s for _, s in r.log} == {"ssh", "web", "telnet", "rdp"}
+    assert all(stream == f"events:{sensor}" for stream, sensor in r.log)

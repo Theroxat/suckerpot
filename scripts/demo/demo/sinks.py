@@ -17,11 +17,16 @@ class Sink(Protocol):
 
 
 class RedisSink:
-    """Publishes through EventPublisher, which drops events instead of raising.
+    """Publishes each event to ``events:<sensor>`` through EventPublisher.
 
-    With a small stream MAXLEN the backfill only survives if ingest drains it, so events the
-    publisher reports as dropped are retried with a growing back-off (demo only). Retries are
-    bounded: after ``max_retries`` rounds the remaining events are given up on.
+    EventPublisher drops events instead of raising, and the sink retries the ones it reports
+    as dropped (Redis errors such as OOM, connection loss) with a growing back-off. Retries
+    are bounded: after ``max_retries`` rounds the remaining events are given up on.
+
+    Retries do NOT protect against MAXLEN trimming: when a stream is longer than MAXLEN, Redis
+    silently evicts the oldest entries (even ones ingest has not read yet) and XADD still
+    succeeds. A large backfill only survives intact if the stream MAXLEN is high enough or
+    ingest keeps up.
     """
 
     def __init__(
@@ -40,7 +45,7 @@ class RedisSink:
         pending = list(events)
         delay = 0.25
         for attempt in range(self._max_retries + 1):
-            flags = await self._pub.publish_batch(pending)
+            flags = await self._publish_by_sensor(pending)
             pending = [e for e, ok in zip(pending, flags, strict=True) if not ok]
             if not pending:
                 return
@@ -49,6 +54,17 @@ class RedisSink:
                 delay = min(delay * 2, self._max_backoff)
         self.gave_up += len(pending)
         print(f"gave up on {len(pending)} events after retries", file=sys.stderr)
+
+    async def _publish_by_sensor(self, events: Sequence[Event]) -> list[bool]:
+        groups: dict[str, list[int]] = {}
+        for i, e in enumerate(events):
+            groups.setdefault(f"events:{e.sensor.value}", []).append(i)
+        flags = [False] * len(events)
+        for stream, idxs in groups.items():
+            res = await self._pub.publish_batch([events[i] for i in idxs], stream=stream)
+            for i, ok in zip(idxs, res, strict=True):
+                flags[i] = ok
+        return flags
 
     async def close(self) -> None:
         await self._pub.close()
