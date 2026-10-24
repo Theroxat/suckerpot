@@ -1,0 +1,397 @@
+/**
+ * Typed client for the SuckerPot REST API (api/api/schemas.py is the source
+ * of truth for these shapes). Times are ISO 8601 strings in UTC.
+ */
+
+import type {
+  HeatmapResponse,
+  InsightsResponse,
+  MalwareDetail,
+  MalwareItem,
+  NewField,
+  NewResponse,
+  TagsResponse,
+} from "./trends"
+import type { EnrichmentSettings, SystemSettings } from "./settings"
+
+export const SENSORS = ["ssh", "telnet", "web", "rdp"] as const
+export type Sensor = (typeof SENSORS)[number]
+
+export const EVENT_TYPES = [
+  "connect",
+  "login_attempt",
+  "command",
+  "http_request",
+  "download_attempt",
+  "disconnect",
+  "scan",
+] as const
+export type EventType = (typeof EVENT_TYPES)[number]
+
+export interface Enrichment {
+  country: string | null
+  city: string | null
+  asn: number | null
+  org: string | null
+  abuse_score: number | null
+  known_scanner: boolean | null
+  tags: string[]
+}
+
+export interface Session extends Enrichment {
+  session_id: string
+  /** One of SENSORS; typed as string because the API does not narrow it. */
+  sensor: string
+  src_ip: string
+  src_port: number
+  dst_port: number
+  started_at: string
+  ended_at: string | null
+  last_event_at: string
+  event_count: number
+  login_attempts: number
+  login_success: boolean
+  commands: number
+  downloads: number
+  http_requests: number
+}
+
+export interface SensorEvent extends Enrichment {
+  id: number
+  ts: string
+  sensor: string
+  session_id: string
+  type: string
+  src_ip: string
+  src_port: number
+  dst_port: number
+  data: Record<string, unknown>
+}
+
+/** An event as pushed over the live WebSocket (no raw `data`, server-made `summary`). */
+export interface LiveEvent extends Enrichment {
+  id: number
+  ts: string
+  sensor: string
+  session_id: string
+  type: string
+  src_ip: string
+  src_port: number
+  dst_port: number
+  /** Server-sanitised plain text. Always render it as text. */
+  summary: string
+}
+
+export interface LiveStats {
+  window_seconds: number
+  events_last_minute: number
+  sessions_last_minute: number
+  by_sensor: Record<string, SensorCounts>
+}
+
+export interface Page<T> {
+  items: T[]
+  next_cursor: string | null
+}
+
+export interface SensorCounts {
+  events: number
+  sessions: number
+}
+
+export interface StatsSummary {
+  window_hours: number
+  events: number
+  sessions: number
+  unique_ips: number
+  sessions_with_commands: number
+  download_attempts: number
+  by_sensor: Record<string, SensorCounts>
+}
+
+export type Bucket = "5m" | "1h" | "1d"
+
+export interface TimePoint {
+  ts: string
+  events: Record<string, number>
+  sessions: Record<string, number>
+}
+
+export interface Timeseries {
+  bucket: Bucket
+  since: string
+  until: string
+  points: TimePoint[]
+}
+
+export const TOP_FIELDS = [
+  "country",
+  "asn",
+  "org",
+  "username",
+  "password",
+  "command",
+  "url",
+  "user_agent",
+  "tag",
+  "src_ip",
+] as const
+export type TopField = (typeof TOP_FIELDS)[number]
+
+export interface TopItem {
+  value: string
+  count: number
+  /** 0..1 of `total`. */
+  share: number
+  first_seen?: string
+  last_seen?: string
+}
+
+export interface TopResponse {
+  field: TopField
+  total: number
+  items: TopItem[]
+}
+
+export interface Attacker {
+  ip: string
+  first_seen: string
+  last_seen: string
+  sessions: number
+  events: number
+  sensors: string[]
+  login_attempts: number
+  /** Number of successful logins (the attacker "got in" this many times). */
+  login_success: number
+  commands: number
+  downloads: number
+  country: string | null
+  city: string | null
+  asn: number | null
+  org: string | null
+  abuse_score: number | null
+  known_scanner: boolean | null
+  tags: string[]
+}
+
+export interface CountItem {
+  value: string
+  count: number
+}
+
+export interface AttackerDetail {
+  attacker: Attacker
+  recent_sessions: Session[]
+  top_usernames: CountItem[]
+  top_commands: CountItem[]
+  /** One point per day, UTC, oldest first (at most 30). */
+  timeline: { day: string; events: number }[]
+}
+
+export interface AsnItem {
+  asn: number
+  org: string | null
+  country: string | null
+  ips: number
+  sessions: number
+  events: number
+  last_seen: string
+}
+
+export const ATTACKER_SORTS = ["last_seen", "sessions", "events", "first_seen"] as const
+export type AttackerSort = (typeof ATTACKER_SORTS)[number]
+
+export interface AttackerFilters {
+  sort?: AttackerSort
+  country?: string | undefined
+  asn?: string | undefined
+  sensor?: Sensor | undefined
+  tag?: string | undefined
+  q?: string | undefined
+}
+
+export interface StatsRange {
+  since?: string | undefined
+  until?: string | undefined
+  sensor?: Sensor | undefined
+}
+
+export interface SessionFilters {
+  sensor?: Sensor | undefined
+  src_ip?: string | undefined
+  tag?: string | undefined
+  country?: string | undefined
+  asn?: string | undefined
+  since?: string | undefined
+  until?: string | undefined
+}
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = "ApiError"
+  }
+}
+
+export const API_BASE = "/api/v1"
+
+/** Called once when any request is answered 401 (session missing or expired). */
+let unauthorizedHandler: (() => void) | null = null
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler
+}
+
+/** With COOKIE_SECURE on the server uses the __Host- prefixed name. */
+export const CSRF_COOKIES = ["__Host-sp_csrf", "sp_csrf"] as const
+
+export function readCsrfCookie(): string | null {
+  for (const part of document.cookie.split(";")) {
+    const [name, ...rest] = part.trim().split("=")
+    if ((CSRF_COOKIES as readonly (string | undefined)[]).includes(name))
+      return decodeURIComponent(rest.join("="))
+  }
+  return null
+}
+
+/** The CSRF token for unsafe requests: the cookie if present, else a fresh one from the API. */
+async function csrfToken(refresh = false): Promise<string> {
+  const cached = refresh ? null : readCsrfCookie()
+  if (cached) return cached
+  const res = await fetch(`${API_BASE}/auth/csrf`, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+  })
+  if (!res.ok) throw new ApiError(res.status, res.statusText)
+  return ((await res.json()) as { token: string }).token
+}
+
+async function failure(res: Response, notify: boolean): Promise<ApiError> {
+  let detail = res.statusText
+  try {
+    const body = (await res.json()) as { detail?: unknown }
+    if (typeof body.detail === "string") detail = body.detail
+  } catch {
+    // Not JSON: keep the status text.
+  }
+  if (res.status === 401 && notify) unauthorizedHandler?.()
+  return new ApiError(res.status, detail)
+}
+
+async function getJson<T>(path: string, params?: Record<string, string | number | undefined>) {
+  const qs = new URLSearchParams()
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (v !== undefined && v !== "") qs.set(k, String(v))
+  }
+  const url = `${API_BASE}${path}${qs.size ? `?${qs.toString()}` : ""}`
+  const res = await fetch(url, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+  })
+  if (!res.ok) throw await failure(res, true)
+  return (await res.json()) as T
+}
+
+export interface SendOptions {
+  /** Add the X-CSRF-Token header (default true; the login call is exempt). */
+  csrf?: boolean
+  /** Treat a 401 as "session lost" and notify the auth layer (default true). */
+  notifyUnauthorized?: boolean
+}
+
+/** POST / PUT / PATCH / DELETE with credentials and the CSRF header. Resolves to undefined on 204. */
+export async function sendJson<T = undefined>(
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
+  path: string,
+  body?: unknown,
+  { csrf = true, notifyUnauthorized = true }: SendOptions = {},
+): Promise<T> {
+  const attempt = async (refresh: boolean) => {
+    const headers: Record<string, string> = { Accept: "application/json" }
+    if (body !== undefined) headers["Content-Type"] = "application/json"
+    if (csrf) headers["X-CSRF-Token"] = await csrfToken(refresh)
+    return fetch(`${API_BASE}${path}`, {
+      method,
+      credentials: "same-origin",
+      headers,
+      body: body === undefined ? null : JSON.stringify(body),
+    })
+  }
+  let res = await attempt(false)
+  // A stale CSRF cookie (rotated secret, expired cookie) is fixed by fetching a fresh token once.
+  if (res.status === 403 && csrf) res = await attempt(true)
+  if (!res.ok) throw await failure(res, notifyUnauthorized)
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
+export const api = {
+  sessions: (filters: SessionFilters, cursor?: string | null, limit = 50) =>
+    getJson<Page<Session>>("/sessions", { ...filters, cursor: cursor ?? undefined, limit }),
+  session: (id: string) => getJson<Session>(`/sessions/${encodeURIComponent(id)}`),
+  sessionEvents: (id: string, cursor?: string | null, limit = 200) =>
+    getJson<Page<SensorEvent>>(`/sessions/${encodeURIComponent(id)}/events`, {
+      cursor: cursor ?? undefined,
+      limit,
+    }),
+  summary: () => getJson<StatsSummary>("/stats/summary"),
+  timeseries: (bucket: Bucket, range: StatsRange = {}) =>
+    getJson<Timeseries>("/stats/timeseries", { bucket, ...range }),
+  top: (field: TopField, range: StatsRange = {}, limit = 10) =>
+    getJson<TopResponse>("/stats/top", { field, ...range, limit }),
+  attackers: (filters: AttackerFilters, cursor?: string | null, limit = 50) =>
+    getJson<Page<Attacker>>("/attackers", {
+      ...filters,
+      order: "desc",
+      cursor: cursor ?? undefined,
+      limit,
+    }),
+  attacker: (ip: string) => getJson<AttackerDetail>(`/attackers/${encodeURIComponent(ip)}`),
+  asns: (sort: "sessions" | "ips" | "events" = "sessions", limit = 100) =>
+    getJson<{ items: AsnItem[] }>("/asns", { sort, limit }),
+  recentEvents: (limit = 50) => getJson<{ items: LiveEvent[] }>("/events/recent", { limit }),
+  // M7: insights, trends and malware.
+  insights: (range: StatsRange = {}) => getJson<InsightsResponse>("/insights", { ...range }),
+  trendsNew: (field: NewField, days = 7, limit = 50) =>
+    getJson<NewResponse>("/trends/new", { field, days, limit }),
+  trendsTags: (range: StatsRange = {}) =>
+    getJson<TagsResponse>("/trends/tags", { bucket: "1d", ...range }),
+  heatmap: (range: StatsRange = {}) => getJson<HeatmapResponse>("/stats/heatmap", { ...range }),
+  malware: (
+    filters: { tool?: string | undefined; q?: string | undefined },
+    cursor?: string | null,
+    limit = 50,
+  ) => getJson<Page<MalwareItem>>("/malware", { ...filters, cursor: cursor ?? undefined, limit }),
+  malwareDetail: (url: string) => getJson<MalwareDetail>("/malware/detail", { url }),
+  // M8: read-only settings.
+  systemSettings: () => getJson<SystemSettings>("/settings/system"),
+  enrichmentSettings: () => getJson<EnrichmentSettings>("/settings/enrichment"),
+}
+
+export const queryKeys = {
+  sessions: (filters: SessionFilters) => ["sessions", filters] as const,
+  session: (id: string) => ["session", id] as const,
+  sessionEvents: (id: string) => ["session", id, "events"] as const,
+  summary: ["stats", "summary"] as const,
+  timeseries: (bucket: Bucket, range: StatsRange) =>
+    ["stats", "timeseries", bucket, range] as const,
+  top: (field: TopField, range: StatsRange) => ["stats", "top", field, range] as const,
+  attackers: (filters: AttackerFilters) => ["attackers", filters] as const,
+  attacker: (ip: string) => ["attacker", ip] as const,
+  asns: (sort: string) => ["asns", sort] as const,
+  insights: (range: StatsRange) => ["insights", range] as const,
+  trendsNew: (field: string, days: number) => ["trends", "new", field, days] as const,
+  trendsTags: (range: StatsRange) => ["trends", "tags", range] as const,
+  heatmap: (range: StatsRange) => ["stats", "heatmap", range] as const,
+  malware: (filters: object) => ["malware", filters] as const,
+  malwareDetail: (url: string) => ["malware", "detail", url] as const,
+  systemSettings: ["settings", "system"] as const,
+  enrichmentSettings: ["settings", "enrichment"] as const,
+}
+
+export function isSensor(value: unknown): value is Sensor {
+  return typeof value === "string" && (SENSORS as readonly string[]).includes(value)
+}

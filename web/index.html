@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0b0c0e" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>SuckerPot</title>
+    <script>
+      // Apply the theme before first paint: stored choice, else the OS, else dark.
+      ;(function () {
+        var t = "system"
+        try {
+          t = localStorage.getItem("suckerpot.theme") || "system"
+        } catch (e) {}
+        if (t === "system") {
+          t = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
+        }
+        document.documentElement.dataset.theme = t === "light" ? "light" : "dark"
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+node_modules
+.pnpm-store
+.corepack
+dist
+dist-mock
+dist-demo
+coverage
+playwright-report
+test-results
+screenshots
+pnpm-lock.yaml
+public/mockServiceWorker.js
+src/components/ui

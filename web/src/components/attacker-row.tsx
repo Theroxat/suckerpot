@@ -1,0 +1,104 @@
+import { Link } from "react-router"
+import { useIpMask } from "@/app/ip-mask"
+import { CountryFlag } from "@/components/country-flag"
+import { IPChip } from "@/components/ip-chip"
+import { RelativeTime } from "@/components/relative-time"
+import { SensorBadge } from "@/components/sensor-badge"
+import { SeverityBadge } from "@/components/severity-badge"
+import { TagBadge } from "@/components/tag-badge"
+import type { Attacker } from "@/lib/api"
+import {
+  attackerOrigin,
+  attackerSeverity,
+  describeAttacker,
+  describeAttackerText,
+} from "@/lib/describe-attacker"
+import { maskIpsInText } from "@/lib/format"
+import { cn } from "@/lib/utils"
+
+export const ATTACKER_GRID = "md:grid-cols-[9.5rem_minmax(0,1fr)_auto_6rem] md:gap-x-4"
+
+/** One attacker as one line. The row opens the profile; chips and flags open filtered lists. */
+export function AttackerRow({
+  attacker: a,
+  className,
+}: {
+  attacker: Attacker
+  className?: string
+}) {
+  const { masked } = useIpMask()
+  const severity = attackerSeverity(a)
+  const flagged = severity === "warning" || severity === "severe"
+  const origin = attackerOrigin(a)
+  const label = describeAttackerText(a)
+
+  const flag = a.country ? (
+    <Link
+      to={`/attackers?country=${encodeURIComponent(a.country)}`}
+      className="relative z-10 inline-flex"
+    >
+      <CountryFlag code={a.country} />
+    </Link>
+  ) : null
+
+  const story = (
+    <p className="min-w-0 text-sm text-fg">
+      {origin ? <span className="text-fg-muted">{origin} — </span> : null}
+      {describeAttacker(a)}
+    </p>
+  )
+
+  return (
+    <div
+      className={cn(
+        "group/row relative grid grid-cols-1 items-center gap-y-1.5 px-4 py-3 transition-colors duration-150 hover:bg-surface-hover/50 sm:px-5",
+        ATTACKER_GRID,
+        className,
+      )}
+    >
+      <Link
+        to={`/attackers/${encodeURIComponent(a.ip)}`}
+        className="absolute inset-0 rounded-[inherit] focus-visible:outline-offset-[-2px]"
+        aria-label={masked ? maskIpsInText(label) : label}
+      />
+      <div className="flex min-w-0 items-center gap-2 md:contents">
+        <div className="flex min-w-0 items-center gap-2">
+          <IPChip ip={a.ip} variant="ghost" className="relative z-10 ml-0 md:-ml-1.5" />
+          <span className="md:hidden">{flag}</span>
+        </div>
+        <span className="ml-auto flex shrink-0 items-center gap-2 md:hidden">
+          {flagged ? <SeverityBadge severity={severity} iconOnly /> : null}
+          <RelativeTime iso={a.last_seen} className="relative z-10 text-xs" />
+        </span>
+      </div>
+
+      <div className="flex min-w-0 items-start gap-2.5 md:items-center">
+        <span className="mt-0.5 hidden min-w-[18px] shrink-0 md:mt-0 md:inline-flex">
+          {flag ?? <CountryFlag code={null} />}
+        </span>
+        {story}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 md:justify-end">
+        {a.sensors.map((s) => (
+          <SensorBadge key={s} sensor={s} variant="dot" />
+        ))}
+        {a.tags.slice(0, 2).map((t) => (
+          <TagBadge
+            key={t}
+            tag={t}
+            href={`/attackers?tag=${encodeURIComponent(t)}`}
+            className="z-10"
+          />
+        ))}
+        {flagged ? (
+          <SeverityBadge severity={severity} iconOnly className="z-10 hidden md:inline-flex" />
+        ) : null}
+      </div>
+
+      <div className="hidden justify-self-end md:block">
+        <RelativeTime iso={a.last_seen} className="relative z-10 text-xs" />
+      </div>
+    </div>
+  )
+}

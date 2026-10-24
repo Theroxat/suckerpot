@@ -1,0 +1,109 @@
+/*
+ * SuckerPot design tokens.
+ *
+ * Dark is the default theme and lives on :root. The light theme is applied by
+ * [data-theme="light"], set by the theme toggle or, before first paint, by the
+ * inline script in index.html (stored choice, else prefers-color-scheme).
+ *
+ * Every colour is a plain hex value on purpose: src/styles/contrast.test.ts
+ * parses this file and checks the WCAG ratio of every text/surface pair.
+ * Keep the two theme blocks in the same order with the same names.
+ */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces: neutral, very slightly cool. */
+  --bg: #0b0c0e;
+  --surface: #111215;
+  --surface-raised: #17181c;
+  --surface-hover: #1c1d22;
+  --border: #23252a;
+  --border-strong: #34373e;
+
+  /* Text */
+  --fg: #ecedef;
+  --fg-muted: #a1a4ac;
+  --fg-subtle: #858892;
+  --fg-on-primary: #0b0c0e;
+
+  /* Primary action is neutral (no brand hue). */
+  --primary: #ecedef;
+  --primary-hover: #d4d6da;
+  --ring: #8a8e98;
+
+  /* One hue per sensor. Text-safe on --surface (AA). */
+  --sensor-ssh: #5ea6f7;
+  --sensor-telnet: #3cc6a4;
+  --sensor-web: #d98bcb;
+  --sensor-rdp: #e0b341;
+
+  /* Severity. Red is reserved for "severe". */
+  --sev-info: #a1a4ac;
+  --sev-notice: #ecedef;
+  --sev-warning: #f0883e;
+  --sev-severe: #f2555a;
+
+  /* Status (live indicator only). */
+  --status-ok: #4cc38a;
+  --status-off: #858892;
+
+  /* Elevation: dark relies on borders and a top highlight, not shadows. */
+  --shadow-sm: 0 1px 0 0 rgb(255 255 255 / 0.03) inset;
+  --shadow-md: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 8px 24px -8px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 1px 0 0 rgb(255 255 255 / 0.05) inset, 0 24px 48px -12px rgb(0 0 0 / 0.7);
+  --overlay: rgb(0 0 0 / 0.6);
+
+  /* Opacity of the tinted background behind sensor/severity badges. */
+  --tint: 14%;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-hover: #f2f2f4;
+  --border: #e4e4e8;
+  --border-strong: #d1d2d8;
+
+  --fg: #0f1013;
+  --fg-muted: #4f525a;
+  --fg-subtle: #6a6d76;
+  --fg-on-primary: #ffffff;
+
+  --primary: #16171b;
+  --primary-hover: #2b2d33;
+  --ring: #6a6d76;
+
+  --sensor-ssh: #1c6bc9;
+  --sensor-telnet: #0a7a62;
+  --sensor-web: #a6458f;
+  --sensor-rdp: #8a6100;
+
+  --sev-info: #4f525a;
+  --sev-notice: #0f1013;
+  --sev-warning: #b54708;
+  --sev-severe: #c8242b;
+
+  --status-ok: #15803d;
+  --status-off: #6a6d76;
+
+  --shadow-sm: 0 1px 2px 0 rgb(16 17 20 / 0.05);
+  --shadow-md: 0 1px 2px 0 rgb(16 17 20 / 0.05), 0 8px 24px -8px rgb(16 17 20 / 0.12);
+  --shadow-lg: 0 1px 2px 0 rgb(16 17 20 / 0.06), 0 24px 48px -12px rgb(16 17 20 / 0.18);
+  --overlay: rgb(16 17 20 / 0.35);
+
+  --tint: 10%;
+}
+
+:root {
+  /* Motion: calm and short. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 150ms;
+  --dur-base: 200ms;
+  --dur-slow: 250ms;
+  --dur-tween: 600ms;
+}

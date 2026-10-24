@@ -1,0 +1,402 @@
+import { useQuery } from "@tanstack/react-query"
+import {
+  CircleCheck,
+  CircleDashed,
+  Info,
+  OctagonAlert,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react"
+import { Link } from "react-router"
+import { FindingCard } from "@/components/finding-card"
+import { Meter } from "@/components/meter"
+import { PageHeader } from "@/components/page-header"
+import { RelativeTime } from "@/components/relative-time"
+import { SensorBadge } from "@/components/sensor-badge"
+import { SkeletonText } from "@/components/skeletons"
+import { api, queryKeys } from "@/lib/api"
+import { formatBytes, formatNumber, formatPercent, plural } from "@/lib/format"
+import {
+  enrichmentFinding,
+  geoAgeDays,
+  retentionFinding,
+  sensorsFinding,
+  storageFinding,
+  usageTone,
+  type DiskGuard,
+  type ReputationProvider,
+  type SensorState,
+  type SystemSettings,
+} from "@/lib/settings"
+import { cn } from "@/lib/utils"
+
+/* --- Small pieces ------------------------------------------------------- */
+
+const SENSOR_STATE: Record<SensorState, { label: string; icon: LucideIcon; className: string }> = {
+  active: { label: "Active", icon: CircleCheck, className: "text-status-ok" },
+  quiet: { label: "Quiet", icon: CircleDashed, className: "text-fg-muted" },
+  silent: { label: "Silent", icon: TriangleAlert, className: "text-sev-warning" },
+}
+
+function StateLabel({
+  icon: Icon,
+  label,
+  className,
+}: {
+  icon: LucideIcon
+  label: string
+  className: string
+}) {
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium", className)}>
+      <Icon aria-hidden className="size-3.5" strokeWidth={2.25} />
+      {label}
+    </span>
+  )
+}
+
+function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div className={cn("min-w-0 space-y-1", className)}>
+      <dt className="text-xs text-fg-muted">{label}</dt>
+      <dd className="text-sm text-fg">{children}</dd>
+    </div>
+  )
+}
+
+function Loading() {
+  return <SkeletonText lines={4} className="py-1" />
+}
+
+function Failed() {
+  return <p className="text-sm text-fg-muted">This status is not available right now.</p>
+}
+
+/* --- Sensors ------------------------------------------------------------ */
+
+function SensorsCard({ data, loading }: { data?: SystemSettings; loading: boolean }) {
+  return (
+    <FindingCard
+      eyebrow="Sensors"
+      finding={data ? sensorsFinding(data.sensors) : "Checking the sensors…"}
+      detail="Active: an event in the last 15 minutes. Quiet: in the last 24 hours. Silent: nothing for longer."
+      bodyClassName="px-0 sm:px-0 pt-3 pb-1 sm:pb-1"
+    >
+      {loading ? (
+        <div className="px-4 sm:px-5">
+          <Loading />
+        </div>
+      ) : !data ? (
+        <div className="px-4 sm:px-5">
+          <Failed />
+        </div>
+      ) : (
+        <ul aria-label="Sensors" className="divide-y border-t">
+          {data.sensors.map((s) => {
+            const state = SENSOR_STATE[s.status]
+            return (
+              <li
+                key={s.sensor}
+                className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 sm:grid-cols-[6rem_7rem_1fr_auto] sm:px-5"
+              >
+                <SensorBadge sensor={s.sensor} className="justify-self-start" />
+                <StateLabel {...state} />
+                <span className="col-span-3 row-start-2 text-xs text-fg-muted sm:col-span-1 sm:col-start-3 sm:row-start-1">
+                  {s.last_event_at ? (
+                    <>
+                      Last event <RelativeTime iso={s.last_event_at} className="text-xs" />
+                    </>
+                  ) : (
+                    "No event recorded yet"
+                  )}
+                </span>
+                <Link
+                  to={`/attacks?sensor=${s.sensor}`}
+                  className="col-start-3 row-start-1 justify-self-end text-right text-xs text-fg-muted transition-colors hover:text-fg sm:col-start-4"
+                >
+                  <span className="text-sm font-medium text-fg">
+                    {formatNumber(s.events_last_hour)}
+                  </span>{" "}
+                  in the last hour
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </FindingCard>
+  )
+}
+
+/* --- Enrichment --------------------------------------------------------- */
+
+function providerState(p: ReputationProvider): {
+  label: string
+  icon: LucideIcon
+  className: string
+} {
+  if (!p.configured)
+    return { label: "Not configured", icon: CircleDashed, className: "text-fg-muted" }
+  if (p.disabled) return { label: "Disabled", icon: TriangleAlert, className: "text-sev-warning" }
+  if (p.paused)
+    return { label: "Paused for today", icon: TriangleAlert, className: "text-sev-warning" }
+  return { label: "On", icon: CircleCheck, className: "text-status-ok" }
+}
+
+function Provider({ name, envKey, p }: { name: string; envKey: string; p: ReputationProvider }) {
+  const quota = p.daily_quota ?? 0
+  const state = providerState(p)
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-fg">{name}</span>
+        <StateLabel {...state} />
+      </div>
+      {p.configured && quota > 0 ? (
+        <>
+          <Meter
+            value={p.used_today}
+            max={quota}
+            label={`${name} checks used today`}
+            valueText={`${formatNumber(p.used_today)} of ${formatNumber(quota)}`}
+            tone={usageTone(p.used_today / quota)}
+          />
+          <p className="text-xs text-fg-muted">
+            {formatNumber(p.used_today)} of {formatNumber(quota)} checks today ·{" "}
+            {formatPercent(p.used_today / quota)}
+          </p>
+        </>
+      ) : !p.configured ? (
+        <p className="text-xs text-fg-muted">
+          Set <code className="font-mono text-fg">{envKey}</code> in{" "}
+          <code className="font-mono">.env</code> to turn it on.
+        </p>
+      ) : null}
+      {p.disabled || p.last_error ? (
+        <p className="text-xs text-sev-warning">{p.disabled ?? p.last_error}</p>
+      ) : null}
+    </div>
+  )
+}
+
+function EnrichmentCard() {
+  const q = useQuery({ queryKey: queryKeys.enrichmentSettings, queryFn: api.enrichmentSettings })
+  const e = q.data
+  const age = e ? geoAgeDays(e) : null
+  const provider =
+    e?.geoip.provider === "maxmind"
+      ? "MaxMind GeoLite2"
+      : e?.geoip.provider === "dbip"
+        ? "DB-IP Lite"
+        : "Off"
+  return (
+    <FindingCard eyebrow="Enrichment" finding={e ? enrichmentFinding(e) : "Checking enrichment…"}>
+      {q.isPending ? (
+        <Loading />
+      ) : !e ? (
+        <Failed />
+      ) : (
+        <div className="space-y-5">
+          <dl className="grid grid-cols-2 gap-4">
+            <Field label="GeoIP database">{provider}</Field>
+            <Field label="Age">
+              {age !== null ? plural(Math.round(age), "day") : "–"}
+              {e.geoip.refresh_days ? (
+                <span className="text-fg-muted">
+                  {" "}
+                  · refreshed every {e.geoip.refresh_days} days
+                </span>
+              ) : null}
+            </Field>
+            {Object.entries(e.geoip.files).map(([kind, f]) => (
+              <Field
+                key={kind}
+                label={`${kind.toUpperCase()} file`}
+                className="col-span-2 sm:col-span-1"
+              >
+                <span className="block truncate font-mono text-xs">{f.file}</span>
+                <span className="text-xs text-fg-muted">{formatBytes(f.bytes)}</span>
+              </Field>
+            ))}
+          </dl>
+          {e.geoip.last_error ? (
+            <p className="text-xs text-sev-warning">{e.geoip.last_error}</p>
+          ) : null}
+          {e.geoip.attribution ? (
+            <p className="rounded-md border bg-bg px-3 py-2 text-xs text-fg-muted">
+              {e.geoip.attribution}
+            </p>
+          ) : null}
+          <div className="space-y-5 border-t pt-5">
+            <Provider name="AbuseIPDB" envKey="ABUSEIPDB_API_KEY" p={e.abuseipdb} />
+            <Provider name="GreyNoise Community" envKey="GREYNOISE_API_KEY" p={e.greynoise} />
+          </div>
+        </div>
+      )}
+    </FindingCard>
+  )
+}
+
+/* --- Storage and retention --------------------------------------------- */
+
+function guardState(g: DiskGuard): { label: string; icon: LucideIcon; className: string } {
+  if (g.state === "critical")
+    return { label: "Critical", icon: OctagonAlert, className: "text-sev-severe" }
+  if (g.state === "trimmed")
+    return { label: "Trimmed old data", icon: TriangleAlert, className: "text-sev-warning" }
+  return { label: "OK", icon: CircleCheck, className: "text-status-ok" }
+}
+
+function StorageCard({ data, loading }: { data?: SystemSettings; loading: boolean }) {
+  const size = data?.database.size_bytes ?? null
+  const max = data?.database.max_bytes ?? data?.disk_guard?.max_bytes ?? null
+  const g = data?.disk_guard ?? null
+  const ing = data?.ingest_disk ?? null
+  return (
+    <FindingCard eyebrow="Storage" finding={data ? storageFinding(data) : "Checking storage…"}>
+      {loading ? (
+        <Loading />
+      ) : !data ? (
+        <Failed />
+      ) : (
+        <div className="space-y-5">
+          {size !== null && max ? (
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between gap-3 text-sm">
+                <span className="text-fg">Database</span>
+                <span className="text-xs text-fg-muted">
+                  <span className="text-sm font-medium text-fg">{formatBytes(size)}</span> of{" "}
+                  {formatBytes(max)}
+                </span>
+              </div>
+              <Meter
+                value={size}
+                max={max}
+                label="Database size against its ceiling"
+                valueText={`${formatBytes(size)} of ${formatBytes(max)}`}
+                tone={g?.state === "critical" ? "severe" : usageTone(size / max)}
+              />
+            </div>
+          ) : null}
+          <dl className="grid grid-cols-2 gap-4">
+            <Field label="Disk guard">
+              {g ? (
+                <StateLabel {...guardState(g)} />
+              ) : (
+                <span className="text-fg-muted">Not reported</span>
+              )}
+            </Field>
+            <Field label="Last trim">
+              {g?.last_trim_at ? (
+                <>
+                  <RelativeTime iso={g.last_trim_at} className="text-sm" />
+                  {g.last_trim_chunks ? (
+                    <span className="text-fg-muted"> · {plural(g.last_trim_chunks, "chunk")}</span>
+                  ) : null}
+                </>
+              ) : (
+                <span className="text-fg-muted">Never needed</span>
+              )}
+            </Field>
+            {ing ? (
+              <Field label="Ingest spool" className="col-span-2">
+                <span>
+                  {formatBytes(ing.size_bytes)} of {formatBytes(ing.max_bytes)}
+                </span>
+                {ing.degraded ? (
+                  <span className="text-sev-warning">
+                    {" "}
+                    · degraded, {plural(ing.degraded_writes, "write")} held back
+                  </span>
+                ) : (
+                  <span className="text-fg-muted"> · healthy</span>
+                )}
+              </Field>
+            ) : null}
+          </dl>
+        </div>
+      )}
+    </FindingCard>
+  )
+}
+
+function RetentionCard({ data, loading }: { data?: SystemSettings; loading: boolean }) {
+  const r = data?.retention
+  return (
+    <FindingCard eyebrow="Data retention" finding={r ? retentionFinding(r) : "Checking retention…"}>
+      {loading ? (
+        <Loading />
+      ) : !r ? (
+        <Failed />
+      ) : (
+        <dl className="grid grid-cols-2 gap-4">
+          <Field label="Raw events">
+            {r.raw_days ? plural(r.raw_days, "day") : "Until trimmed"}
+          </Field>
+          <Field label="Compressed after">
+            {r.compression_after_days ? plural(r.compression_after_days, "day") : "–"}
+          </Field>
+          <Field label="Aggregates, kept forever" className="col-span-2">
+            <span className="mt-1 flex flex-wrap gap-1.5">
+              {r.aggregates.map((a) => (
+                <code
+                  key={a}
+                  className="rounded-sm border px-1.5 py-0.5 font-mono text-2xs text-fg-muted"
+                >
+                  {a}
+                </code>
+              ))}
+            </span>
+          </Field>
+        </dl>
+      )}
+    </FindingCard>
+  )
+}
+
+/* --- Page --------------------------------------------------------------- */
+
+export function SettingsPage() {
+  const q = useQuery({
+    queryKey: queryKeys.systemSettings,
+    queryFn: api.systemSettings,
+    refetchInterval: 60_000,
+  })
+  return (
+    <>
+      <PageHeader
+        title="Settings"
+        description="Sensor health, enrichment, retention and storage."
+      />
+
+      <div className="mb-6 flex items-start gap-2.5 rounded-lg border border-dashed px-4 py-3 text-sm text-fg-muted">
+        <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+        <p>
+          This page is read-only. Settings live in <code className="font-mono text-fg">.env</code>;
+          change them there and restart with{" "}
+          <code className="font-mono text-fg">docker compose up -d</code>. Every option is
+          documented in <code className="font-mono">.env.example</code>.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        <SensorsCard data={q.data} loading={q.isPending} />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <EnrichmentCard />
+          <div className="grid grid-cols-1 content-start gap-4">
+            <StorageCard data={q.data} loading={q.isPending} />
+            <RetentionCard data={q.data} loading={q.isPending} />
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
