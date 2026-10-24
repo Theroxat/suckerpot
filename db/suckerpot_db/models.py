@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Identity,
     Index,
@@ -53,6 +54,13 @@ class EventRow(Base):
         Index("ix_events_src_ip_ts", "src_ip", text("ts DESC")),
         Index("ix_events_sensor_ts", "sensor", text("ts DESC")),
         Index("ix_events_tags", "tags", postgresql_using="gin"),
+        Index("ix_events_type_ts", "type", text("ts DESC")),
+        Index(
+            "ix_events_country_ts",
+            "country",
+            text("ts DESC"),
+            postgresql_where=text("country IS NOT NULL"),
+        ),
     )
 
 
@@ -93,4 +101,49 @@ class SessionRow(Base):
         Index("ix_sessions_src_ip", "src_ip"),
         Index("ix_sessions_tags", "tags", postgresql_using="gin"),
         Index("ix_sessions_country", "country"),
+        Index("ix_sessions_last_event_at", text("last_event_at DESC")),
+        Index("ix_sessions_asn", "asn", postgresql_where=text("asn IS NOT NULL")),
+    )
+
+
+class IpReputationRow(Base):
+    """24 h cache of reputation lookups, one row per source IP."""
+
+    __tablename__ = "ip_reputation"
+
+    ip: Mapped[str] = mapped_column(INET, primary_key=True)
+    abuse_score: Mapped[int | None] = mapped_column(SmallInteger)
+    abuse_reports: Mapped[int | None] = mapped_column(Integer)
+    abuse_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    gn_noise: Mapped[bool | None] = mapped_column(Boolean)
+    gn_riot: Mapped[bool | None] = mapped_column(Boolean)
+    gn_classification: Mapped[str | None] = mapped_column(Text)
+    gn_name: Mapped[str | None] = mapped_column(Text)
+    gn_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
+class EnrichmentQuotaRow(Base):
+    """Calls made to a provider per UTC day (survives restarts)."""
+
+    __tablename__ = "enrichment_quota"
+
+    provider: Mapped[str] = mapped_column(Text, primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    used: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+
+
+class EnrichmentStatusRow(Base):
+    """Provider and database status published by ingest for the settings page."""
+
+    __tablename__ = "enrichment_status"
+
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    detail: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
