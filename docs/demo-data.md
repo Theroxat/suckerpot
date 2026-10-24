@@ -10,7 +10,7 @@ The demo data is fake. The generator never contacts real attackers and never sen
 just demo
 ```
 
-This runs the `demo` service from `docker-compose.yml`, which is in the `tools` profile. It is not started by `docker compose up`. It connects to Redis as the `sensor` user, so it uses the same permissions as a real sensor.
+This runs the `demo` service from `docker-compose.yml`, which is in the `tools` profile. It is not started by `docker compose up`. It connects to Redis as its own `demo` user. That user can only `XADD` to the `events:*` streams, the same kind of permission a real sensor has, and it sits on its own internal network (`tools`) that reaches Redis and nothing else.
 
 You can also run it without `just`:
 
@@ -40,7 +40,7 @@ Some SSH sessions come from one campaign: a single source tries many passwords. 
 The generator uses only the documentation address ranges (`192.0.2.0/24`, `198.51.100.0/24` and `203.0.113.0/24`). Nothing is captured from the internet.
 
 ```{note}
-In M1, the real sensors do not exist yet. The generator sends the events directly, as the `sensor` Redis user. The event shape is the same as the one the sensors will send. See [Event schema](event-schema.md).
+The generator sends the events directly to the per-sensor streams, as the `demo` Redis user, and does not need a sensor to be running. The event shape is the same as the one the sensors send. See [Event schema](event-schema.md).
 ```
 
 ## Options
