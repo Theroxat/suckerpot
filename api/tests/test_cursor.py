@@ -62,3 +62,11 @@ def test_event_id_bounds(eid: int) -> None:
 def test_event_id_max_ok() -> None:
     ts = datetime(2026, 10, 24, tzinfo=UTC)
     assert parse_event_cursor(event_cursor(ts, 2**63 - 1)) == (ts, 2**63 - 1)
+
+
+@pytest.mark.parametrize("ts", ["0001-01-01T00:00:00+05:00", "9999-12-31T23:59:59-23:59"])
+def test_extreme_timestamps_are_invalid_cursors(ts: str) -> None:
+    with pytest.raises(InvalidCursorError):
+        parse_session_cursor(encode_cursor([ts, "a"]))
+    with pytest.raises(InvalidCursorError):
+        parse_event_cursor(encode_cursor([ts, 1]))

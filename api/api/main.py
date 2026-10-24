@@ -11,11 +11,19 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from suckerpot_db import create_engine, create_session_factory
 
+from api.analytics import router as analytics_router
+from api.auth import AuthMiddleware, AuthService, AuthSettings, allowed_hosts_from_env
+from api.auth import router as auth_router
+from api.insights import router as insights_router
 from api.live import LiveHub, LivePoller, live_router
+from api.malware import router as malware_router
 from api.routes import health_router, router
+from api.settings import router as settings_router
 from api.spa import install_security_headers, install_spa
+from api.trends import router as trends_router
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 DEFAULT_WEB_DIST = "/app/web"
@@ -27,6 +35,7 @@ def create_app(
     enable_docs: bool | None = None,
     web_dist_dir: Path | None = None,
     enable_live: bool = True,
+    auth_settings: AuthSettings | None = None,
 ) -> FastAPI:
     """Build the app. Tests pass their own session factory; production builds one from env."""
 
@@ -63,10 +72,21 @@ def create_app(
         redoc_url="/redoc" if enable_docs else None,
         openapi_url="/openapi.json" if enable_docs else None,
     )
+    # Auth is added before the header middleware so that 401/403 responses carry the headers too.
+    auth = AuthService(auth_settings if auth_settings is not None else AuthSettings.from_env())
+    app.state.auth = auth
+    app.add_middleware(AuthMiddleware, auth=auth)
     install_security_headers(app, enable_docs=enable_docs)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts_from_env())
+    app.include_router(auth_router, prefix="/api/v1")
     app.include_router(health_router)
     app.include_router(router, prefix="/api/v1")
     app.include_router(live_router, prefix="/api/v1")
+    app.include_router(analytics_router, prefix="/api/v1")
+    app.include_router(insights_router, prefix="/api/v1")
+    app.include_router(trends_router, prefix="/api/v1")
+    app.include_router(malware_router, prefix="/api/v1")
+    app.include_router(settings_router, prefix="/api/v1")
     app.state.hub = LiveHub()
 
     dist = (

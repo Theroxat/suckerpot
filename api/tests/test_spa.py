@@ -78,7 +78,7 @@ async def test_security_headers_everywhere(client: httpx.AsyncClient) -> None:
         h = r.headers
         csp = h["content-security-policy"]
         assert "default-src 'self'" in csp and "frame-ancestors 'none'" in csp
-        assert "connect-src 'self' ws: wss:" in csp and "img-src 'self' data:" in csp
+        assert "connect-src 'self';" in csp and "img-src 'self' data:" in csp
         assert h["x-content-type-options"] == "nosniff"
         assert h["referrer-policy"] == "no-referrer"
         assert "geolocation=()" in h["permissions-policy"]
@@ -90,3 +90,14 @@ async def test_no_spa_without_dist(tmp_path: Path) -> None:
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.get("/")
     assert r.status_code == 404 and r.json() == {"detail": "Not Found"}
+
+
+async def test_api_responses_are_no_store(client: httpx.AsyncClient) -> None:
+    assert (await client.get("/api/v1/nope")).headers["cache-control"] == "no-store"
+    assert "no-store" not in (await client.get("/")).headers["cache-control"]
+
+
+@pytest.mark.parametrize("path", ["/%00", "/a%00b", "/" + "x" * 5000, "/%ff%fe"])
+async def test_invalid_paths_serve_index(client: httpx.AsyncClient, path: str) -> None:
+    r = await client.get(path)
+    assert r.status_code == 200 and "<title>app</title>" in r.text

@@ -12,7 +12,7 @@ from starlette.types import Scope
 
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-    "img-src 'self' data:; font-src 'self'; connect-src 'self' ws: wss:; "
+    "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
 SECURITY_HEADERS = {
@@ -43,6 +43,8 @@ def install_security_headers(app: FastAPI, *, enable_docs: bool) -> None:
         response = await call_next(request)
         for key, value in SECURITY_HEADERS.items():
             response.headers[key] = value
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
         # Swagger UI/ReDoc load scripts from a CDN; only relax the policy for those pages.
         if not (enable_docs and request.url.path in DOC_PATHS):
             response.headers["Content-Security-Policy"] = CSP
@@ -65,8 +67,11 @@ def install_spa(app: FastAPI, dist: Path) -> None:
     async def spa(full_path: str) -> FileResponse:
         if _is_api_path(full_path):
             raise HTTPException(status_code=404, detail="Not Found")
-        candidate = (root / full_path).resolve()
-        if full_path and candidate.is_file() and candidate.is_relative_to(root):
-            if candidate != index:
-                return FileResponse(candidate, headers={"Cache-Control": "public, max-age=3600"})
+        try:
+            candidate = (root / full_path).resolve()
+            servable = bool(full_path) and candidate.is_file() and candidate.is_relative_to(root)
+        except (ValueError, OSError):  # NUL byte, over-long name, ...
+            servable = False
+        if servable and candidate != index:
+            return FileResponse(candidate, headers={"Cache-Control": "public, max-age=3600"})
         return FileResponse(index, headers={"Cache-Control": "no-cache"})
