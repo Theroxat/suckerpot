@@ -1,0 +1,1 @@
+"""SuckerPot Telnet sensor."""
