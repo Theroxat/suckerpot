@@ -1,0 +1,44 @@
+[project]
+name = "suckerpot-demo"
+version = "0.1.0"
+description = "Synthetic attack generator that feeds SuckerPot with realistic demo data."
+requires-python = ">=3.13"
+dependencies = ["suckerpot-common"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["demo"]
+
+[tool.uv.sources]
+suckerpot-common = { path = "../../sensors/common" }
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S311"]
+# The generator is deterministic on purpose: `random` is not used for security here.
+"demo/**" = ["S311"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
