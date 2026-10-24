@@ -118,3 +118,35 @@ class LiveStats(BaseModel):
 
 class RecentEvents(BaseModel):
     items: list[LiveEvent]
+
+
+class GeoFile(BaseModel):
+    file: str
+    bytes: int
+    updated_at: datetime
+    age_days: float | None = None
+
+
+class GeoipStatus(BaseModel):
+    provider: str  # maxmind | dbip | off | unknown (ingest has not reported yet)
+    available: bool
+    files: dict[str, GeoFile]
+    last_error: str | None
+    refresh_days: int | None
+    attribution: str | None
+
+
+class ReputationProvider(BaseModel):
+    configured: bool
+    daily_quota: int | None
+    used_today: int
+    disabled: str | None
+    paused: bool
+    last_error: str | None
+
+
+class EnrichmentSettings(BaseModel):
+    geoip: GeoipStatus
+    abuseipdb: ReputationProvider
+    greynoise: ReputationProvider
+    reported_at: datetime | None

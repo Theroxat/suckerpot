@@ -88,3 +88,13 @@ async def test_session_id_path_validation(client: httpx.AsyncClient, sid: str) -
 async def test_event_cursor_id_bounds(client: httpx.AsyncClient, eid: int) -> None:
     cur = encode_cursor(["2026-10-24T10:00:00+00:00", eid])
     assert (await client.get(f"/api/v1/sessions/abc/events?cursor={cur}")).status_code == 400
+
+
+@pytest.mark.parametrize("ts", ["0001-01-01T00:00:00%2B05:00", "9999-12-31T23:59:59-23:59"])
+async def test_extreme_cursor_and_since_are_client_errors(
+    client: httpx.AsyncClient, ts: str
+) -> None:
+    cur = encode_cursor([ts.replace("%2B", "+"), "a"])
+    assert (await client.get(f"/api/v1/sessions?cursor={cur}")).status_code == 400
+    # since/until: out-of-range instants are rejected before any DB access
+    assert (await client.get(f"/api/v1/sessions?since={ts}")).status_code == 422

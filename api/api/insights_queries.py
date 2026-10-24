@@ -1,0 +1,119 @@
+"""SQL that gathers the facts for the insight rules (sessions-based, read-only)."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import Text, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from suckerpot_db.models import SessionRow
+
+from api.insights_rules import EXPLOIT_TAGS, Counts, Facts, NewValue
+from api.trends import LOOKBACK, new_values
+
+NEW_VALUE_FIELDS = ("username", "command", "url", "asn")
+NEW_VALUE_FETCH = 5
+
+
+async def _counts(
+    db: AsyncSession,
+    expr: Any,
+    prev_since: datetime,
+    since: datetime,
+    until: datetime,
+) -> Counts:
+    """Sessions per key in the current and the previous window (one pass)."""
+    inner = (
+        select(expr.label("k"), SessionRow.started_at.label("ts"))
+        .where(SessionRow.started_at >= prev_since, SessionRow.started_at < until)
+        .subquery("c")
+    )
+    cur = func.count().filter(inner.c.ts >= since)
+    prev = func.count().filter(inner.c.ts < since)
+    stmt = (
+        select(inner.c.k, cur.label("cur"), prev.label("prev"))
+        .where(inner.c.k.is_not(None))
+        .group_by(inner.c.k)
+    )
+    return {str(r.k): (r.cur, r.prev) for r in (await db.execute(stmt)).all()}
+
+
+async def gather_facts(db: AsyncSession, since: datetime, until: datetime) -> Facts:
+    span = until - since
+    prev_since = since - span
+    facts = Facts(since=since, until=until)
+
+    facts.tags = await _counts(db, func.unnest(SessionRow.tags), prev_since, since, until)
+    facts.sensors = await _counts(db, SessionRow.sensor, prev_since, since, until)
+    facts.countries = await _counts(db, SessionRow.country, prev_since, since, until)
+    facts.asns = await _counts(db, SessionRow.asn.cast(Text), prev_since, since, until)
+    facts.total = (
+        sum(c for c, _ in facts.sensors.values()),
+        sum(p for _, p in facts.sensors.values()),
+    )
+
+    success = (
+        func.count().filter(SessionRow.started_at >= since),
+        func.count().filter(SessionRow.started_at < since),
+    )
+    row = (
+        await db.execute(
+            select(*success).where(
+                SessionRow.login_success.is_(True),
+                SessionRow.started_at >= prev_since,
+                SessionRow.started_at < until,
+            )
+        )
+    ).one()
+    facts.success = (row[0], row[1])
+
+    top_ip = (
+        await db.execute(
+            select(func.host(SessionRow.src_ip).label("ip"), func.count().label("n"))
+            .where(SessionRow.started_at >= since, SessionRow.started_at < until)
+            .group_by(SessionRow.src_ip)
+            .order_by(func.count().desc(), func.host(SessionRow.src_ip))
+            .limit(1)
+        )
+    ).first()
+    if top_ip is not None:
+        facts.top_ip = (top_ip.ip, top_ip.n)
+
+    exploit_tags = list(EXPLOIT_TAGS)
+    facts.exploit_current = {
+        t: c for t, (c, _) in facts.tags.items() if t in EXPLOIT_TAGS and c > 0
+    }
+    if facts.exploit_current:
+        tag_rows = (
+            select(func.unnest(SessionRow.tags).label("t"))
+            .where(
+                SessionRow.started_at >= since - LOOKBACK,
+                SessionRow.started_at < since,
+                SessionRow.tags.overlap(exploit_tags),
+            )
+            .subquery("s")
+        )
+        seen = await db.execute(select(tag_rows.c.t).distinct())
+        facts.exploit_seen_before = {str(t) for (t,) in seen}
+
+    for name in NEW_VALUE_FIELDS:
+        items = await new_values(db, name, since, until, NEW_VALUE_FETCH)
+        facts.new_values[name] = [NewValue(i.value, i.count) for i in items]
+    asn_new = facts.new_values.get("asn", [])
+    if asn_new:
+        numbers = [int(v.value) for v in asn_new]
+        rows = await db.execute(
+            select(SessionRow.asn, func.max(SessionRow.org))
+            .where(SessionRow.asn.in_(numbers))
+            .group_by(SessionRow.asn)
+        )
+        facts.asn_orgs.update({str(a): o for a, o in rows if o})
+    top_asn = max(facts.asns.items(), key=lambda kv: kv[1][0], default=None)
+    if top_asn is not None and top_asn[0] not in facts.asn_orgs:
+        org = await db.scalar(
+            select(func.max(SessionRow.org)).where(SessionRow.asn == int(top_asn[0]))
+        )
+        if org:
+            facts.asn_orgs[top_asn[0]] = org
+    return facts

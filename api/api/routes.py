@@ -9,8 +9,9 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Path, Query, Response
 from pydantic import AfterValidator, AwareDatetime
 from sqlalchemy import func, select, tuple_
-from suckerpot_db.models import EventRow, SessionRow
+from suckerpot_db.models import EnrichmentQuotaRow, EnrichmentStatusRow, EventRow, SessionRow
 
+from api.analytics_queries import session_has_value
 from api.cursor import (
     InvalidCursorError,
     event_cursor,
@@ -21,10 +22,14 @@ from api.cursor import (
 from api.deps import DbSession
 from api.live import fetch_recent
 from api.schemas import (
+    EnrichmentSettings,
     EventOut,
     EventPage,
+    GeoFile,
+    GeoipStatus,
     Health,
     RecentEvents,
+    ReputationProvider,
     SensorCounts,
     SessionOut,
     SessionPage,
@@ -39,6 +44,10 @@ SessionId = Annotated[str, Path(min_length=1, max_length=64, pattern=r"^[A-Za-z0
 Limit = Annotated[int, Query(ge=1, le=MAX_LIMIT)]
 Cursor = Annotated[str | None, Query(max_length=512)]
 Sensor = Literal["ssh", "telnet", "web", "rdp"]
+TagFilter = Annotated[str, Query(pattern=r"^[a-z0-9-]{1,32}$")]
+CountryFilter = Annotated[str, Query(pattern=r"^[A-Za-z]{2}$")]
+AsnFilter = Annotated[int, Query(ge=0, le=4294967295)]
+ValueFilter = Annotated[str, Query(min_length=1, max_length=256)]
 
 
 def _normalize_ip(value: str) -> str:
@@ -50,6 +59,13 @@ def _normalize_ip(value: str) -> str:
 
 
 SrcIp = Annotated[str, AfterValidator(_normalize_ip)]
+
+
+def _utc_or_422(value: datetime) -> datetime:
+    try:
+        return value.astimezone(UTC)
+    except (OverflowError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="timestamp out of range") from exc
 
 
 @health_router.get("/healthz", response_model=Health)
@@ -77,16 +93,37 @@ async def list_sessions(
     src_ip: Annotated[SrcIp | None, Query()] = None,
     since: AwareDatetime | None = None,
     until: AwareDatetime | None = None,
+    tag: TagFilter | None = None,
+    country: CountryFilter | None = None,
+    asn: AsnFilter | None = None,
+    username: ValueFilter | None = None,
+    password: ValueFilter | None = None,
+    command: ValueFilter | None = None,
+    url: ValueFilter | None = None,
 ) -> SessionPage:
     stmt = select(SessionRow)
     if sensor is not None:
         stmt = stmt.where(SessionRow.sensor == sensor)
     if src_ip is not None:
         stmt = stmt.where(SessionRow.src_ip == src_ip)
+    if tag is not None:
+        stmt = stmt.where(SessionRow.tags.contains([tag]))
+    if country is not None:
+        stmt = stmt.where(SessionRow.country == country.upper())
+    if asn is not None:
+        stmt = stmt.where(SessionRow.asn == asn)
+    for name, val in (
+        ("username", username),
+        ("password", password),
+        ("command", command),
+        ("url", url),
+    ):
+        if val is not None:
+            stmt = stmt.where(session_has_value(name, val))
     if since is not None:
-        stmt = stmt.where(SessionRow.started_at >= since)
+        stmt = stmt.where(SessionRow.started_at >= _utc_or_422(since))
     if until is not None:
-        stmt = stmt.where(SessionRow.started_at < until)
+        stmt = stmt.where(SessionRow.started_at < _utc_or_422(until))
     if cursor is not None:
         try:
             c_ts, c_id = parse_session_cursor(cursor)
@@ -182,4 +219,66 @@ async def stats_summary(session: DbSession) -> StatsSummary:
         sessions_with_commands=with_cmds or 0,
         download_attempts=downloads or 0,
         by_sensor=dict(sorted(by_sensor.items())),
+    )
+
+
+DBIP_ATTRIBUTION = "IP geolocation by DB-IP.com (https://db-ip.com), CC BY 4.0"
+MAXMIND_ATTRIBUTION = (
+    "This product includes GeoLite2 data created by MaxMind (https://www.maxmind.com)"
+)
+
+
+@router.get("/settings/enrichment", response_model=EnrichmentSettings)
+async def enrichment_settings(session: DbSession) -> EnrichmentSettings:
+    """Provider status, GeoIP database age and today's quota usage (no secrets)."""
+    status = {r.name: r for r in (await session.scalars(select(EnrichmentStatusRow))).all()}
+    today = datetime.now(UTC).date()
+    used = {
+        r.provider: r.used
+        for r in (
+            await session.scalars(select(EnrichmentQuotaRow).where(EnrichmentQuotaRow.day == today))
+        ).all()
+    }
+    now = datetime.now(UTC)
+
+    geo_row = status.get("geoip")
+    d = geo_row.detail if geo_row else {}
+    provider = str(d.get("provider", "unknown"))
+    files: dict[str, GeoFile] = {}
+    for kind, info in (d.get("files") or {}).items():
+        try:
+            updated = datetime.fromisoformat(info["updated_at"])
+            files[str(kind)] = GeoFile(
+                file=str(info["file"]),
+                bytes=int(info["bytes"]),
+                updated_at=updated,
+                age_days=round((now - updated).total_seconds() / 86400, 1),
+            )
+        except (KeyError, ValueError, TypeError):
+            continue
+    attribution = {"dbip": DBIP_ATTRIBUTION, "maxmind": MAXMIND_ATTRIBUTION}.get(provider)
+    geoip = GeoipStatus(
+        provider=provider,
+        available=bool(d.get("available", False)),
+        files=files,
+        last_error=d.get("last_error"),
+        refresh_days=d.get("refresh_days"),
+        attribution=attribution,
+    )
+
+    def rep(name: str) -> ReputationProvider:
+        row = status.get(name)
+        det = row.detail if row else {}
+        return ReputationProvider(
+            configured=bool(det.get("configured", False)),
+            daily_quota=det.get("daily_quota"),
+            used_today=used.get(name, 0),
+            disabled=det.get("disabled"),
+            paused=bool(det.get("paused", False)),
+            last_error=det.get("last_error"),
+        )
+
+    reported = max((r.updated_at for r in status.values()), default=None)
+    return EnrichmentSettings(
+        geoip=geoip, abuseipdb=rep("abuseipdb"), greynoise=rep("greynoise"), reported_at=reported
     )

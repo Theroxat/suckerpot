@@ -20,10 +20,10 @@ import contextlib
 import json
 import logging
 import os
-import re
 import time
+import unicodedata
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
@@ -38,6 +38,8 @@ from api.schemas import LiveEvent, LiveStats, SensorCounts
 log = logging.getLogger(__name__)
 
 MAX_CLIENTS = 50
+MAX_CLIENTS_PER_IP = 5
+BACKFILL_CONCURRENCY = 8
 CLIENT_QUEUE_SIZE = 200
 BACKFILL_SIZE = 50
 POLL_INTERVAL_S = 1.0
@@ -46,14 +48,27 @@ POLL_LIMIT = 500
 SEND_TIMEOUT_S = 10.0
 SUMMARY_MAX = 160
 FIELD_MAX = 48
+SESSION_RECHECK_S = 5.0
 
 live_router = APIRouter()
 
-_CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+# Format (bidi overrides, zero-width, BOM), line/paragraph separators, surrogates, private use.
+_STRIPPED = frozenset({"Cf", "Zl", "Zp", "Cs", "Co"})
+
+
+def _sanitize(value: str) -> str:
+    out: list[str] = []
+    for ch in value:
+        cat = unicodedata.category(ch)
+        if cat == "Cc":
+            out.append("?")
+        elif cat not in _STRIPPED:
+            out.append(ch)
+    return "".join(out)
 
 
 def _clean(value: Any, limit: int = FIELD_MAX) -> str:
-    text = _CTRL.sub("?", str(value))
+    text = _sanitize(str(value))
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
@@ -66,6 +81,11 @@ def build_summary(etype: str, data: Mapping[str, Any] | None) -> str:
         outcome = "succeeded" if d.get("success") is True else "failed"
         return f"login {_clean(d.get('username', ''))}/{_clean(d.get('password', ''))} {outcome}"
     if etype == "command":
+        uploads = d.get("scp_upload")
+        if isinstance(uploads, list) and uploads:
+            first = uploads[0] if isinstance(uploads[0], Mapping) else {}
+            more = f" (+{len(uploads) - 1} more)" if len(uploads) > 1 else ""
+            return f"scp upload {_clean(first.get('name', '?'), 60)}{more}"
         return f"ran `{_clean(d.get('input', ''), 100)}`"
     if etype == "http_request":
         status = d.get("status")
@@ -82,7 +102,11 @@ def build_summary(etype: str, data: Mapping[str, Any] | None) -> str:
             return f"disconnected after {duration:.0f}s"
         return "disconnected"
     if etype == "scan":
-        return "probe"
+        if d.get("kind") == "tcp_forward_attempt":
+            host, port = _clean(d.get("host", "?"), 60), _clean(d.get("port", "?"), 6)
+            return f"port-forward attempt to {host}:{port}"
+        kind = d.get("kind")
+        return f"probe ({_clean(kind, 24)})" if kind else "probe"
     return _clean(etype, 24)
 
 
@@ -127,10 +151,21 @@ def row_to_live(row: Any) -> LiveEvent:
     )
 
 
+def rows_to_live(rows: Sequence[Any]) -> list[LiveEvent]:
+    """Convert rows, skipping (and logging) any row that cannot be rendered."""
+    out: list[LiveEvent] = []
+    for row in rows:
+        try:
+            out.append(row_to_live(row))
+        except Exception:
+            log.warning("skipping unrenderable event id=%s", getattr(row, "id", "?"), exc_info=True)
+    return out
+
+
 async def fetch_recent(session: AsyncSession, limit: int = BACKFILL_SIZE) -> list[LiveEvent]:
     """Newest events first."""
     stmt = select(*_LIVE_COLUMNS).order_by(EventRow.id.desc()).limit(limit)
-    return [row_to_live(r) for r in (await session.execute(stmt)).all()]
+    return rows_to_live((await session.execute(stmt)).all())
 
 
 async def fetch_after(session: AsyncSession, last_id: int, limit: int = POLL_LIMIT) -> list[Any]:
@@ -179,6 +214,7 @@ class ClientQueue:
         self.items: deque[Item] = deque()
         self.dropped = 0
         self.closed = False
+        self.ip = ""
         self._wake = asyncio.Event()
 
     def put(self, item: Item) -> None:
@@ -208,21 +244,37 @@ class ClientQueue:
 
 
 class LiveHub:
-    def __init__(self, max_clients: int = MAX_CLIENTS, queue_size: int = CLIENT_QUEUE_SIZE) -> None:
+    def __init__(
+        self,
+        max_clients: int = MAX_CLIENTS,
+        queue_size: int = CLIENT_QUEUE_SIZE,
+        max_per_ip: int = MAX_CLIENTS_PER_IP,
+    ) -> None:
         self.max_clients = max_clients
+        self.max_per_ip = max_per_ip
         self.queue_size = queue_size
         self.clients: set[ClientQueue] = set()
+        self.per_ip: dict[str, int] = {}
         self.latest_stats: str | None = None
+        self.backfill_sem = asyncio.Semaphore(BACKFILL_CONCURRENCY)
 
-    def add(self) -> ClientQueue | None:
-        if len(self.clients) >= self.max_clients:
+    def add(self, ip: str = "") -> ClientQueue | None:
+        if len(self.clients) >= self.max_clients or self.per_ip.get(ip, 0) >= self.max_per_ip:
             return None
         q = ClientQueue(self.queue_size)
+        q.ip = ip
         self.clients.add(q)
+        self.per_ip[ip] = self.per_ip.get(ip, 0) + 1
         return q
 
     def remove(self, q: ClientQueue) -> None:
-        self.clients.discard(q)
+        if q in self.clients:
+            self.clients.discard(q)
+            left = self.per_ip.get(q.ip, 1) - 1
+            if left > 0:
+                self.per_ip[q.ip] = left
+            else:
+                self.per_ip.pop(q.ip, None)
 
     def broadcast_event(self, event: LiveEvent) -> None:
         payload = json.dumps({"kind": "event", "event": event.model_dump(mode="json")})
@@ -265,10 +317,10 @@ class LivePoller:
                 self.last_id = (await session.scalar(select(func.max(EventRow.id)))) or 0
                 return 0
             rows = await fetch_after(session, self.last_id)
-        for row in rows:
-            self.hub.broadcast_event(row_to_live(row))
         if rows:
-            self.last_id = rows[-1].id
+            self.last_id = rows[-1].id  # advance even if some rows cannot be rendered
+        for event in rows_to_live(rows):
+            self.hub.broadcast_event(event)
         return len(rows)
 
     async def stats_once(self) -> None:
@@ -299,15 +351,56 @@ class LivePoller:
                 await asyncio.sleep(self.interval)
 
 
+def normalize_origin(value: str) -> str | None:
+    """``scheme://host[:port]`` in canonical form, or None if not a valid http(s) origin."""
+    try:
+        parts = urlsplit(value.strip())
+        host = parts.hostname
+        port = parts.port
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    if scheme not in ("http", "https") or not host or parts.path not in ("", "/"):
+        return None
+    if parts.query or parts.fragment or parts.username or parts.password:
+        return None
+    host = f"[{host}]" if ":" in host else host.lower()
+    default = 80 if scheme == "http" else 443
+    return f"{scheme}://{host}" + (f":{port}" if port and port != default else "")
+
+
+def allowed_origins(env_value: str) -> set[str]:
+    out: set[str] = set()
+    for raw in env_value.split(","):
+        if not raw.strip():
+            continue
+        norm = normalize_origin(raw)
+        if norm is None:
+            log.warning("ignoring malformed API_ALLOWED_ORIGINS entry")
+        else:
+            out.add(norm)
+    return out
+
+
 def _origin_ok(ws: WebSocket) -> bool:
+    """Browsers always send Origin on WebSocket handshakes: it must match exactly.
+
+    Same-origin means the scheme the request arrived with (http for ws, https for wss) plus
+    the Host header. Behind a TLS-terminating proxy the public origin must be listed in
+    API_ALLOWED_ORIGINS. Requests without an Origin header (non-browser clients) pass.
+    """
     origin = ws.headers.get("origin")
-    if not origin:
-        return True  # non-browser client
-    host = urlsplit(origin).netloc
-    allowed = {ws.headers.get("host", "")}
-    extra = os.environ.get("API_ALLOWED_ORIGINS", "")
-    allowed.update(urlsplit(o.strip()).netloc for o in extra.split(",") if o.strip())
-    return host in allowed
+    if origin is None:
+        return True
+    norm = normalize_origin(origin)  # "null" and garbage give None
+    if norm is None:
+        return False
+    scheme = "https" if ws.url.scheme == "wss" else "http"
+    own = normalize_origin(f"{scheme}://{ws.headers.get('host', '')}")
+    allowed = allowed_origins(os.environ.get("API_ALLOWED_ORIGINS", ""))
+    if own:
+        allowed.add(own)
+    return norm in allowed
 
 
 async def _sender(ws: WebSocket, q: ClientQueue, skip_up_to: int) -> None:
@@ -326,6 +419,14 @@ async def _sender(ws: WebSocket, q: ClientQueue, skip_up_to: int) -> None:
         await asyncio.wait_for(ws.send_text(text), SEND_TIMEOUT_S)
 
 
+async def _session_watch(auth: Any, token: str | None) -> None:
+    """Return once the session expires or is revoked (checked every few seconds)."""
+    while True:
+        await asyncio.sleep(SESSION_RECHECK_S)
+        if auth.validate(token) is None:
+            return
+
+
 async def _receiver(ws: WebSocket, q: ClientQueue) -> None:
     while True:
         msg = await ws.receive()
@@ -341,14 +442,21 @@ async def live(ws: WebSocket) -> None:
     if not _origin_ok(ws):
         await ws.close(code=1008)
         return
+    auth: Any = ws.app.state.auth
+    session = auth.validate(auth.session_token(ws.scope))
+    if session is None:
+        await ws.close(code=1008)
+        return
     await ws.accept()
     # Register first so nothing is missed between the backfill query and the first tick.
-    q = hub.add()
+    q = hub.add(ws.client.host if ws.client else "")
     if q is None:
         await ws.close(code=1013)
         return
+    code = 1011
+    tasks: set[asyncio.Task[None]] = set()
     try:
-        async with ws.app.state.session_factory() as session:
+        async with hub.backfill_sem, ws.app.state.session_factory() as session:
             backfill = await fetch_recent(session)
         max_id = max((e.id for e in backfill), default=0)
         await ws.send_text(
@@ -362,17 +470,20 @@ async def live(ws: WebSocket) -> None:
             asyncio.create_task(_sender(ws, q, max_id)),
             asyncio.create_task(_receiver(ws, q)),
         }
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        for t in pending:
-            t.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
-        for t in done:
-            t.exception()  # mark retrieved; disconnects and timeouts are expected here
-        code = 1001 if q.closed else 1000
+        watcher = asyncio.create_task(_session_watch(auth, auth.session_token(ws.scope)))
+        tasks.add(watcher)
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        code = 1008 if watcher in done else 1001 if q.closed else 1000
     except Exception:
         log.warning("live client error", exc_info=True)
-        code = 1011
     finally:
+        for t in tasks:
+            t.cancel()
+        # Disconnects and send timeouts are expected here; the gather also retrieves them. The
+        # handler itself may be cancelled (server shutdown, test clients) while cleaning up:
+        # that is fine, there is nothing left to do but release the slot.
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.gather(*tasks, return_exceptions=True)
         hub.remove(q)
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(Exception, asyncio.CancelledError):
         await ws.close(code=code)

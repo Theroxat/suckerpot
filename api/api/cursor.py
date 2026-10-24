@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 
 class InvalidCursorError(ValueError):
@@ -42,11 +42,9 @@ def parse_session_cursor(cursor: str) -> tuple[datetime, str]:
         ts, sid = values
         if not isinstance(ts, str) or not isinstance(sid, str):
             raise TypeError
-        parsed = datetime.fromisoformat(ts)
+        parsed = _aware_utc(ts)
     except (ValueError, TypeError) as exc:
         raise InvalidCursorError("malformed cursor") from exc
-    if parsed.tzinfo is None:
-        raise InvalidCursorError("malformed cursor")
     return parsed, sid
 
 
@@ -63,9 +61,18 @@ def parse_event_cursor(cursor: str) -> tuple[datetime, int]:
         ts, eid = values
         if not isinstance(ts, str) or not isinstance(eid, int) or not 0 <= eid <= MAX_EVENT_ID:
             raise TypeError
-        parsed = datetime.fromisoformat(ts)
+        parsed = _aware_utc(ts)
     except (ValueError, TypeError) as exc:
         raise InvalidCursorError("malformed cursor") from exc
+    return parsed, eid
+
+
+def _aware_utc(value: str) -> datetime:
+    """Parse an ISO timestamp, require a timezone and normalise to UTC (400 on overflow)."""
+    parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
         raise InvalidCursorError("malformed cursor")
-    return parsed, eid
+    try:
+        return parsed.astimezone(UTC)
+    except (OverflowError, ValueError) as exc:
+        raise InvalidCursorError("malformed cursor") from exc
