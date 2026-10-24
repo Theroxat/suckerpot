@@ -21,7 +21,7 @@ jobs:
   gitleaks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -40,15 +40,15 @@ jobs:
   python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - name: Lint, type-check and test each package
         run: |
           set -euo pipefail
           found=0
-          for dir in sensors/common sensors/ssh sensors/telnet sensors/web sensors/rdp ingest api; do
+          for dir in sensors/common scripts/demo db ingest api; do
             if [ -f "$dir/pyproject.toml" ]; then
               found=1
               echo "::group::$dir"
@@ -58,7 +58,7 @@ jobs:
                 uv run ruff check
                 uv run ruff format --check
                 uv run mypy .
-                uv run pytest
+                uv run pytest -m 'not integration'
               )
               echo "::endgroup::"
             fi
@@ -70,7 +70,7 @@ jobs:
   web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - name: Detect web app
@@ -82,11 +82,11 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "::notice::web/package.json not found; skipping web checks."
           fi
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         if: steps.detect.outputs.present == 'true'
         with:
           package_json_file: web/package.json
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: steps.detect.outputs.present == 'true'
         with:
           node-version: 22
@@ -101,17 +101,111 @@ jobs:
           pnpm run typecheck
           pnpm run test
 
-  compose:
+  python-integration:
     runs-on: ubuntu-latest
+    services:
+      db:
+        image: timescale/timescaledb:2.22.1-pg17
+        env:
+          POSTGRES_DB: suckerpot_test
+          POSTGRES_USER: suckerpot
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U suckerpot -d suckerpot_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7.4.11-alpine3.21
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: suckerpot_test
+      POSTGRES_USER: suckerpot
+      POSTGRES_PASSWORD: ci-only-password
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "6379"
+      POSTGRES_INGEST_USER: suckerpot_ingest
+      POSTGRES_INGEST_PASSWORD: ci-only-ingest-password
+      POSTGRES_API_USER: suckerpot_api
+      POSTGRES_API_PASSWORD: ci-only-api-password
+      SUCKERPOT_ALLOW_DEFAULT_SECRETS: "1"
+      DB_DIR: ${{ github.workspace }}/db
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - name: Validate docker-compose.yml
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - name: Migrate the test database
+        working-directory: db
         run: |
-          if [ -f docker-compose.yml ]; then
-            cp .env.example .env
-            docker compose config -q
-          else
-            echo "::notice::docker-compose.yml not found; skipping."
-          fi
+          uv sync
+          uv run alembic upgrade head
+      - name: Run integration tests
+        run: |
+          set -euo pipefail
+          for dir in db ingest api; do
+            if [ -f "$dir/pyproject.toml" ]; then
+              echo "::group::$dir"
+              (
+                cd "$dir"
+                uv sync
+                # Exit code 5 means "no integration tests collected", which is fine.
+                rc=0
+                uv run pytest -m integration || rc=$?
+                if [ "$rc" -ne 0 ] && [ "$rc" -ne 5 ]; then exit "$rc"; fi
+              )
+              echo "::endgroup::"
+            fi
+          done
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Prepare .env
+        run: |
+          cp .env.example .env
+          # CI only: allow the "change-me" placeholder secrets.
+          echo "SUCKERPOT_ALLOW_DEFAULT_SECRETS=1" >> .env
+      - name: Validate docker-compose.yml
+        run: docker compose config -q
+      - name: Build and start the stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+      - name: Check the API health endpoint
+        run: curl -fsS http://127.0.0.1:8443/healthz
+      - name: Generate demo data
+        run: docker compose --profile tools run --rm demo --sessions 50 --days 2
+      - name: Wait until ingest has stored sessions
+        run: |
+          for _ in $(seq 1 30); do
+            body=$(curl -fsS "http://127.0.0.1:8443/api/v1/sessions?limit=5" || true)
+            if echo "$body" | grep -q '"session_id"'; then
+              echo "Sessions are visible through the API."
+              curl -fsS http://127.0.0.1:8443/api/v1/stats/summary
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "No session appeared within 60 seconds." >&2
+          exit 1
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=300
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

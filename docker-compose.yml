@@ -1,0 +1,248 @@
+# SuckerPot, milestone M1: event pipeline (Redis -> ingest -> TimescaleDB -> API).
+# Sensors are added in later milestones; they will join the "sensors" network only.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Applied to every service. Individual services add tmpfs mounts and limits.
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  logging: *default-logging
+
+# Connection settings shared by all database clients. Each service adds its own
+# POSTGRES_USER / POSTGRES_PASSWORD: only db and migrate see the owner account.
+x-db-env: &db-env
+  POSTGRES_HOST: db
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:-suckerpot}
+
+services:
+  redis:
+    build:
+      context: ./redis
+    <<: *hardening
+    # The image's own "redis" user (uid 999). The /data volume is initialised
+    # from the image, so it is already owned by that user: no root, no capabilities.
+    user: "999:999"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
+      REDIS_SENSOR_PASSWORD: ${REDIS_SENSOR_PASSWORD:?REDIS_SENSOR_PASSWORD must be set in .env}
+      REDIS_INGEST_PASSWORD: ${REDIS_INGEST_PASSWORD:?REDIS_INGEST_PASSWORD must be set in .env}
+      REDIS_HEALTH_PASSWORD: ${REDIS_HEALTH_PASSWORD:?REDIS_HEALTH_PASSWORD must be set in .env}
+      SUCKERPOT_ALLOW_DEFAULT_SECRETS: ${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}
+    volumes:
+      - redis-data:/data
+    tmpfs:
+      # Generated ACL file (mode 0600, hashed passwords).
+      - /run/redis:rw,noexec,nosuid,nodev,size=1m,mode=0700,uid=999,gid=999
+    networks: [sensors, backend]
+    mem_limit: 384m
+    cpus: 0.5
+    pids_limit: 64
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_HEALTH_PASSWORD" redis-cli --user health ping | grep -q PONG']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  db:
+    image: timescale/timescaledb:2.22.1-pg17
+    <<: *hardening
+    # Run directly as the image's "postgres" user (uid 70) instead of starting as
+    # root and dropping privileges. The data volume is initialised from the image
+    # and owned by that user, so no CHOWN/SETUID/SETGID/DAC_OVERRIDE/FOWNER capability is needed.
+    user: "70:70"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-suckerpot}
+      POSTGRES_USER: ${POSTGRES_USER:-suckerpot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    # Tuned for a 4 GB VM shared with the other services.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=50
+      - -c
+      - timescaledb.max_background_workers=4
+      - -c
+      - timescaledb.telemetry_level=off
+      - -c
+      - log_min_duration_statement=1000
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=70,gid=70
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=1m,uid=70,gid=70
+    networks: [backend]
+    shm_size: 256m
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 200
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -q -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  migrate:
+    build:
+      context: .
+      dockerfile: db/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      <<: *db-env
+      # Owner account (schema changes) plus the passwords of the restricted roles it creates.
+      POSTGRES_USER: ${POSTGRES_USER:-suckerpot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_INGEST_USER: ${POSTGRES_INGEST_USER:-suckerpot_ingest}
+      POSTGRES_INGEST_PASSWORD: ${POSTGRES_INGEST_PASSWORD:?POSTGRES_INGEST_PASSWORD must be set in .env}
+      POSTGRES_API_USER: ${POSTGRES_API_USER:-suckerpot_api}
+      POSTGRES_API_PASSWORD: ${POSTGRES_API_PASSWORD:?POSTGRES_API_PASSWORD must be set in .env}
+      SUCKERPOT_ALLOW_DEFAULT_SECRETS: ${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    networks: [backend]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  ingest:
+    build:
+      context: .
+      dockerfile: ingest/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      <<: *db-env
+      POSTGRES_USER: ${POSTGRES_INGEST_USER:-suckerpot_ingest}
+      POSTGRES_PASSWORD: ${POSTGRES_INGEST_PASSWORD:?POSTGRES_INGEST_PASSWORD must be set in .env}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: ingest
+      REDIS_PASSWORD: ${REDIS_INGEST_PASSWORD:?REDIS_INGEST_PASSWORD must be set in .env}
+      EVENTS_STREAM: events
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    # "backend" is internal; "egress" gives ingest (and only ingest) outbound
+    # internet access for the enrichment APIs added in M4.
+    networks: [backend, egress]
+    mem_limit: 384m
+    cpus: 1.0
+    pids_limit: 100
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-m", "ingest.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      <<: *db-env
+      POSTGRES_USER: ${POSTGRES_API_USER:-suckerpot_api}
+      POSTGRES_PASSWORD: ${POSTGRES_API_PASSWORD:?POSTGRES_API_PASSWORD must be set in .env}
+      API_ENABLE_DOCS: ${API_ENABLE_DOCS:-false}
+    # Docker's embedded DNS still answers for service names (it listens on
+    # 127.0.0.11); external names fail, so the API cannot resolve the internet.
+    dns: ["127.0.0.1"]
+    ports:
+      # The only published port. Never use a sensor port or the admin SSH port.
+      - "${DASHBOARD_BIND:-127.0.0.1}:${DASHBOARD_PORT:-8443}:8000"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    networks: [backend, dashboard]
+    mem_limit: 384m
+    cpus: 1.0
+    pids_limit: 100
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-m", "api.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Synthetic attack generator. Publishes to Redis as the restricted "sensor" user.
+  # Run with: docker compose --profile tools run --rm demo [args]
+  demo:
+    profiles: [tools]
+    build:
+      context: .
+      dockerfile: scripts/demo/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor
+      REDIS_PASSWORD: ${REDIS_SENSOR_PASSWORD:?REDIS_SENSOR_PASSWORD must be set in .env}
+      EVENTS_STREAM: events
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN:-10000}
+      DEMO_DAYS: ${DEMO_DAYS:-30}
+      DEMO_SESSIONS: ${DEMO_SESSIONS:-3000}
+      DEMO_SEED: ${DEMO_SEED:-42}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    networks: [sensors]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    restart: "no"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+networks:
+  # Sensors and the demo generator. No route to the internet.
+  sensors:
+    internal: true
+  # Redis, database, ingest and API. No route to the internet.
+  backend:
+    internal: true
+  # Outbound internet for ingest only.
+  egress:
+  # Inbound-only network for the API: masquerading is off, so the published
+  # dashboard port works but the API container cannot reach the internet.
+  dashboard:
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+
+volumes:
+  redis-data:
+  db-data:

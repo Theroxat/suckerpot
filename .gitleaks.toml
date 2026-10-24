@@ -8,20 +8,19 @@ useDefault = true
 
 [[rules]]
 id = "private-ipv4"
-description = "Private IPv4 address (192.168.0.0/16 or 10.0.0.0/8): the owner's network layout must not be published"
+description = "Private IPv4 address (192.168.0.0/16, 10.0.0.0/8 or 172.16.0.0/12): the owner's network layout must not be published"
 # Octet = 0-255. The leading guard skips values glued to other digits or dots
 # (e.g. version strings like 1.10.0.1); the trailing guard skips a fifth dotted
 # number (e.g. 10.0.0.1.2).
-regex = '''(?:^|[^\d.\w-])((?:192\.168|10\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))(?:$|[^\d]|\.(?:[^\d]|$))'''
+regex = '''(?:^|[^\d.\w-])((?:192\.168|10\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)|172\.(?:1[6-9]|2\d|3[01]))\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))(?:$|[^\d]|\.(?:[^\d]|$))'''
 secretGroup = 1
-keywords = ["192.168.", "10."]
+keywords = ["192.168.", "10.", "172."]
 tags = ["network", "privacy"]
 
   [[rules.allowlists]]
   description = "Placeholders and the config itself"
   condition = "OR"
   paths = [
-    '''(^|/)\.env\.example$''',
     '''(^|/)\.gitleaks\.toml$''',
   ]
   # Documentation ranges (RFC 5737) are not private, so they never match above;
