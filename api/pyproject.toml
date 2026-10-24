@@ -1,0 +1,53 @@
+[project]
+name = "suckerpot-api"
+version = "0.1.0"
+description = "SuckerPot REST API"
+requires-python = ">=3.13"
+dependencies = [
+    "suckerpot-db",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.32,<1",
+    "websockets>=13",
+    "pydantic>=2.9,<3",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+]
+
+[tool.uv.sources]
+suckerpot-db = { path = "../db" }
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["api"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S104", "S105", "S106"]
+"api/main.py" = ["S104"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+exclude = ["^\\.venv/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["integration: needs a real TimescaleDB (skipped unless POSTGRES_HOST is set)"]
