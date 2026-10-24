@@ -1,0 +1,53 @@
+[project]
+name = "suckerpot-ingest"
+version = "0.1.0"
+description = "SuckerPot ingest: Redis Streams consumer writing to PostgreSQL/TimescaleDB"
+requires-python = ">=3.13"
+dependencies = [
+    "suckerpot-common",
+    "suckerpot-db",
+    "redis>=5.2,<7",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "suckerpot-api",
+]
+
+[tool.uv.sources]
+suckerpot-common = { path = "../sensors/common" }
+suckerpot-db = { path = "../db" }
+suckerpot-api = { path = "../api" }
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ingest"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S108"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+exclude = ["^\\.venv/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["integration: needs a real TimescaleDB (skipped unless POSTGRES_HOST is set)"]
