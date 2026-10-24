@@ -1,0 +1,126 @@
+# Security
+
+SuckerPot is a honeypot. Its job is to be attacked. This page covers what it does to stay safe, what it never does, and what you must do when you deploy it.
+
+## Deployment warning
+
+- **The host is meant to be attacked.** Deploy SuckerPot only on an isolated machine or VM that you are ready to lose. Treat it as already compromised.
+- **Never keep credentials that matter on the host.** No cloud keys, no SSH keys for other systems, no password manager exports, no personal files. Assume that anything on the host can be read by an attacker who breaks out of a container.
+- **Restrict the dashboard port to the reverse tunnel only.** The dashboard must not be reachable from the internet directly. Expose it through a reverse tunnel such as cloudflared, and block the port at the host firewall and at the router.
+- **Keep the admin SSH port separate.** The host's own SSH service must run on a port that no sensor or dashboard uses, and it must not be exposed to the internet.
+
+## Threat model
+
+| Threat | Control |
+| --- | --- |
+| An attacker runs code through a fake shell or a fake web app | Sensors never execute attacker input (see below) |
+| An attacker escapes a container | Non-root users, dropped capabilities, read-only file systems, no new privileges |
+| An attacker reaches the database, Redis or the internet from a sensor | Network segmentation: sensors can only reach Redis, and only to write events |
+| An attacker floods the sensors or fills the disk | Connection caps, timeouts, field size limits, retention job |
+| An attacker abuses the dashboard | Auth, CSRF protection, rate-limited login, secure cookies |
+| The project is used to attack others | No offensive behaviour (see below) |
+| Secrets leak into the public repo | Repo hygiene rules, `.gitignore`, secret scanning (see below) |
+
+## Controls
+
+### No execution of attacker input
+
+- The fake shell is pure emulation. It does not call `subprocess`, `os.system`, `eval` or `exec`, and it does not write files outside its own data path.
+- Fake commands return canned or generated output from a fake file system.
+- `wget`, `curl` and `tftp` are recorded as `download_attempt` events. They are never run and never fetched by the sensor.
+
+### Downloads
+
+- By default, only the download URL is recorded.
+- Payload fetching is disabled by default (`FETCH_PAYLOADS=false`). When it is enabled, ingest fetches the file, not the sensors. The fetch has a size cap and a timeout.
+- A fetched payload is stored in a quarantine volume under its sha256 name, with mode `0400`. It is never executed and never committed to the repo.
+
+### Containers
+
+- Every service runs as a non-root user.
+- `read_only: true`, with tmpfs mounts where a service needs to write.
+- `cap_drop: [ALL]`.
+- `security_opt: [no-new-privileges:true]`.
+- Memory, CPU and process limits on every service.
+- A healthcheck on every service.
+- Sensors listen on high ports inside their containers. Compose maps the standard host ports to them, so no service needs extra capabilities to bind low ports.
+
+### Network segmentation
+
+| Network | Internet access | Used by |
+| --- | --- | --- |
+| `sensors` | Inbound only (attacks arrive here) | Sensors, Redis |
+| `backend` | None (`internal: true`) | Redis, ingest, database, API |
+| `egress` | Outbound | Ingest only |
+| `dashboard` | Reached through the reverse tunnel | API only |
+
+### Abuse resistance
+
+- Concurrent connections are capped per sensor and per source IP.
+- Every network operation has a timeout.
+- Every captured field has a size limit.
+- A retention job deletes raw events after 90 days. Aggregates are kept.
+- Disk usage is bounded, so an attack cannot fill the disk.
+
+### Dashboard authentication
+
+- One admin account. The password is stored as an argon2 hash in `.env`.
+- The session cookie is `httpOnly`, `Secure` and `SameSite`.
+- CSRF protection on every state-changing request.
+- Rate-limited login.
+- The dashboard is designed to sit behind an access layer such as Cloudflare Access, but it must be safe without one.
+
+### No offensive behaviour
+
+SuckerPot does not:
+
+- scan other hosts, or respond to scans with scans;
+- hack back or run any active countermeasure;
+- report IP addresses to AbuseIPDB or any other service without the owner's explicit approval.
+
+### Realistic fingerprints
+
+Fake services must look real to an attacker. Banners and versions are plausible and current. Hostnames are ordinary. The words "honeypot" and "suckerpot" never appear anywhere a client could see.
+
+## Repo hygiene
+
+This repository is public. Every commit is published, and it stays in the git history forever.
+
+### Never committed
+
+- `.env`, API keys, tokens, passwords and password hashes;
+- private environment notes;
+- private IP addresses, hostnames, admin ports, public IP addresses and network layouts;
+- captured data: attacker IPs, credentials, sessions, payloads and database dumps;
+- GeoLite2 `.mmdb` files (their licence does not allow redistribution);
+- SSH host keys generated by the sensors;
+- screenshots that show real attack data.
+
+### Safeguards
+
+| Safeguard | What it does |
+| --- | --- |
+| `.gitignore` | Keeps local secrets, captured data and generated files out of git |
+| `.env.example` | Contains placeholders only. Copy it to `.env` and fill in your own values. |
+| gitleaks pre-commit hook | Blocks commits that contain secrets. Install it with `scripts/install-hooks.sh`. |
+| gitleaks in CI | Scans every push and pull request |
+| Manual review | The staged diff is checked by hand before each commit |
+| Documentation IP ranges | Examples use `192.0.2.0/24`, `198.51.100.0/24` and `203.0.113.0/24` only |
+
+### If something sensitive is pushed
+
+1. Stop pushing.
+2. Rotate the secret immediately.
+3. Remove the data from the git history. Deleting it in a new commit is not enough, because the old commit stays public.
+
+## Reporting a vulnerability
+
+Please do not open a public issue for a security problem.
+
+Report it privately through GitHub's private vulnerability reporting. Go to the **Security** tab of the repository and choose **Report a vulnerability**. Include:
+
+- what you found and where;
+- steps to reproduce it;
+- the impact you expect.
+
+Do not include real credentials, real attacker data or real IP addresses of your own systems in the report.
