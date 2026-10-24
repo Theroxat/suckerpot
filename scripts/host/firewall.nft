@@ -1,0 +1,59 @@
+#!/usr/sbin/nft -f
+# SuckerPot host firewall (nftables). Generic template: review it, fill in the
+# two ports below, then apply it with `sudo nft -f scripts/host/firewall.nft`.
+# See scripts/host/README.md for how to persist, verify and roll back.
+#
+# What it does
+#   1. Containers on the internet-facing sensor network (sp-ingress) and on the
+#      dashboard network (sp-dashboard) can never open NEW connections to the
+#      host itself.
+#   2. Containers on ANY Docker network (docker0, br-*, sp-*) cannot
+#      reach the host's admin SSH port or the dashboard port.
+#   3. Containers on sp-ingress and sp-dashboard cannot open NEW connections
+#      through the host (no egress, no sensor-to-sensor traffic, no scanning of
+#      the LAN). Replies to inbound connections still work.
+#
+# Docker's own rules are left alone. This table only adds drops, at a higher
+# priority than Docker's chains, so it cannot be bypassed by published ports.
+
+# Replace with the port of the host's admin SSH daemon (a number, e.g. 2200).
+define ADMIN_SSH_PORT = CHANGE_ME
+# Replace with DASHBOARD_PORT from your .env (default 8443).
+define DASHBOARD_PORT = 8443
+
+# Idempotent: create (no-op if it exists), delete, then define again.
+add table inet suckerpot_host
+delete table inet suckerpot_host
+
+table inet suckerpot_host {
+  set protected_ports {
+    type inet_service
+    elements = { $ADMIN_SSH_PORT, $DASHBOARD_PORT }
+  }
+
+  chain input {
+    type filter hook input priority -10; policy accept;
+
+    # Never trust loopback or already-established traffic.
+    iifname "lo" accept
+    ct state established,related accept
+
+    # (1) Sensor and dashboard containers may not talk to the host at all.
+    iifname { "sp-ingress", "sp-dashboard" } ct state new counter drop
+
+    # (2) No container may reach the protected ports of the host. Matching by
+    #     interface (not by address) is independent of the address pool Docker
+    #     picks, and it never touches your LAN.
+    iifname { "docker0", "br-*", "sp-*" } ct state new tcp dport @protected_ports counter drop
+  }
+
+  chain forward {
+    type filter hook forward priority -10; policy accept;
+
+    # Replies to connections that came in from the internet are fine.
+    ct state established,related accept
+
+    # (3) Nothing new may start from the sensor or dashboard networks.
+    iifname { "sp-ingress", "sp-dashboard" } ct state new counter drop
+  }
+}

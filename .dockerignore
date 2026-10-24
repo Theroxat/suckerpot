@@ -1,0 +1,24 @@
+# Keeps build contexts small and keeps local state, secrets and caches out of images.
+# Every Dockerfile uses the repository root as context (except redis/).
+.git
+.github
+.env
+.env.*
+!.env.example
+ENVIRONMENT.local.md
+docs
+**/__pycache__
+**/.venv
+**/.mypy_cache
+**/.ruff_cache
+**/.pytest_cache
+**/node_modules
+**/.pnpm-store
+**/.corepack
+web/dist
+web/dist-mock
+web/screenshots
+web/test-results
+web/playwright-report
+data
+quarantine

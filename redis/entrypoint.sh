@@ -24,7 +24,7 @@ check() {
 
 distinct() {
   # Compares two secrets without printing them.
-  if [ "$ALLOW_DEFAULT" != "1" ] && [ "$(eval "echo \"\$$1\"")" = "$(eval "echo \"\$$2\"")" ]; then
+  if [ "$ALLOW_DEFAULT" != "1" ] && [ "$(eval "printf %s \"\$$1\"")" = "$(eval "printf %s \"\$$2\"")" ]; then
     echo "FATAL: $1 and $2 must be different" >&2
     exit 1
   fi
@@ -34,31 +34,34 @@ hash() {
   printf '%s' "$1" | sha256sum | cut -d' ' -f1
 }
 
-for v in REDIS_PASSWORD REDIS_SENSOR_PASSWORD REDIS_INGEST_PASSWORD REDIS_HEALTH_PASSWORD; do
+VARS="REDIS_PASSWORD REDIS_HEALTH_PASSWORD REDIS_INGEST_PASSWORD REDIS_SENSOR_SSH_PASSWORD REDIS_SENSOR_RDP_PASSWORD REDIS_SENSOR_TELNET_PASSWORD REDIS_DEMO_PASSWORD"
+for v in $VARS; do
   check "$v"
 done
-distinct REDIS_PASSWORD REDIS_SENSOR_PASSWORD
-distinct REDIS_PASSWORD REDIS_INGEST_PASSWORD
-distinct REDIS_PASSWORD REDIS_HEALTH_PASSWORD
-distinct REDIS_SENSOR_PASSWORD REDIS_INGEST_PASSWORD
-distinct REDIS_SENSOR_PASSWORD REDIS_HEALTH_PASSWORD
-distinct REDIS_INGEST_PASSWORD REDIS_HEALTH_PASSWORD
+# Pairwise distinct (each pair is compared once).
+for a in $VARS; do
+  for b in $VARS; do
+    if [ "$a" \< "$b" ]; then distinct "$a" "$b"; fi
+  done
+done
 
-admin_h=$(hash "$REDIS_PASSWORD")
-sensor_h=$(hash "$REDIS_SENSOR_PASSWORD")
-ingest_h=$(hash "$REDIS_INGEST_PASSWORD")
-health_h=$(hash "$REDIS_HEALTH_PASSWORD")
+h() { hash "$(eval "printf %s \"\$$1\"")"; }
 
+# One user per sensor: it may only append to its own stream. Telnet, web and RDP
+# users are added together with their sensors.
 cat > "$ACL_FILE" <<ACL
 user default off
-user admin on #${admin_h} ~* &* +@all
-user sensor on #${sensor_h} resetkeys ~events -@all +xadd +hello +auth
-user ingest on #${ingest_h} resetkeys ~events -@all +xreadgroup +xack +xgroup|create +xautoclaim +xtrim +hello +auth
-user health on #${health_h} resetkeys -@all +ping +hello +auth
+user admin on #$(h REDIS_PASSWORD) ~* &* +@all
+user health on #$(h REDIS_HEALTH_PASSWORD) resetkeys -@all +ping +hello +auth
+user sensor-ssh on #$(h REDIS_SENSOR_SSH_PASSWORD) resetkeys ~events:ssh -@all +xadd +hello +auth
+user sensor-rdp on #$(h REDIS_SENSOR_RDP_PASSWORD) resetkeys ~events:rdp -@all +xadd +hello +auth
+user sensor-telnet on #$(h REDIS_SENSOR_TELNET_PASSWORD) resetkeys ~events:telnet -@all +xadd +hello +auth
+user demo on #$(h REDIS_DEMO_PASSWORD) resetkeys ~events:* -@all +xadd +hello +auth
+user ingest on #$(h REDIS_INGEST_PASSWORD) resetkeys ~events:* -@all +xreadgroup +xack +xgroup|create +xautoclaim +xtrim +hello +auth
 ACL
 chmod 0600 "$ACL_FILE"
 
 # Do not leak secrets to the server process environment beyond what it needs.
-unset REDIS_PASSWORD REDIS_SENSOR_PASSWORD REDIS_INGEST_PASSWORD REDIS_HEALTH_PASSWORD admin_h sensor_h ingest_h health_h
+unset $VARS
 
 exec "$@"

@@ -1,0 +1,18 @@
+# Loads the SuckerPot host firewall table after Docker has set up its own rules.
+# Install: see scripts/host/README.md ("Persist across reboots").
+[Unit]
+Description=SuckerPot host firewall (nftables table inet suckerpot_host)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Refuse to start (visibly) if the template still has its placeholder.
+ExecStartPre=/bin/sh -c '! grep -q CHANGE_ME /etc/suckerpot-firewall.nft'
+ExecStartPre=/usr/sbin/nft -c -f /etc/suckerpot-firewall.nft
+ExecStart=/usr/sbin/nft -f /etc/suckerpot-firewall.nft
+ExecStop=/usr/sbin/nft delete table inet suckerpot_host
+
+[Install]
+WantedBy=multi-user.target
