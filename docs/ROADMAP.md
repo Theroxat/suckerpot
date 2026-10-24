@@ -8,6 +8,14 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - [x] Push access to GitHub (fine-grained token scoped to this repo only, Contents: read/write).
 - [ ] Enable secret scanning and push protection in the GitHub repo settings.
 
+## Host / owner actions before go-live (from the M1 security review)
+
+- [ ] Host firewall (nftables, applied by the owner): drop NEW connections from Docker bridge ranges to the host's admin SSH port and the dashboard port.
+- [ ] Block NEW outbound connections from the `dashboard` and `ingress` bridges (DOCKER-USER chain), and/or enable the hypervisor IP filter on the VM NIC.
+- [ ] Admin SSH: key-only, password login disabled.
+- [ ] Optional: `"userland-proxy": false` in the Docker daemon config.
+- [ ] Dashboard port filtered upstream so only the reverse tunnel can reach it.
+
 ## M0 — Bootstrap
 
 - [x] `.gitignore` created first; private context file verified ignored with `git check-ignore`.
@@ -20,17 +28,17 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M1 — Foundations
 
-- [ ] `docker-compose.yml` with `redis`, `db` (PostgreSQL + TimescaleDB), `ingest` and `api` skeletons.
-- [ ] Networks from §3: `sensors`, `backend` (`internal: true`), `egress`, `dashboard`.
-- [ ] Hardening from §5 on every service: non-root, `read_only` + tmpfs, `cap_drop: [ALL]`, `no-new-privileges`, memory/CPU/pids limits, healthchecks.
-- [ ] Redis with password and a sensor ACL user limited to `XADD` on the events stream.
-- [ ] Shared Event schema (Pydantic) in `sensors/common`, with tests.
-- [ ] DB migrations (Alembic): events hypertable, sessions table.
-- [ ] Ingest skeleton: consumes the stream, validates events, writes to the DB.
-- [ ] API skeleton: `/healthz`, a paginated sessions/events endpoint.
-- [ ] Demo data generator (`just demo`): realistic sessions across all 4 sensors over the last 30 days, documentation IP ranges only in examples.
-- [ ] `justfile` with `up`, `down`, `test`, `lint`, `demo`.
-- [ ] CI runs Python lint, typecheck and tests.
+- [x] `docker-compose.yml` with `redis`, `db` (PostgreSQL + TimescaleDB), `ingest` and `api` skeletons.
+- [x] Networks from §3: `sensors`, `backend` (`internal: true`), `egress`, `dashboard`.
+- [x] Hardening from §5 on every service: non-root, `read_only` + tmpfs, `cap_drop: [ALL]`, `no-new-privileges`, memory/CPU/pids limits, healthchecks.
+- [x] Redis with password and a sensor ACL user limited to `XADD` on the events stream.
+- [x] Shared Event schema (Pydantic) in `sensors/common`, with tests.
+- [x] DB migrations (Alembic): events hypertable, sessions table.
+- [x] Ingest skeleton: consumes the stream, validates events, writes to the DB.
+- [x] API skeleton: `/healthz`, a paginated sessions/events endpoint.
+- [x] Demo data generator (`just demo`): realistic sessions across all 4 sensors over the last 30 days, documentation IP ranges only in examples.
+- [x] `justfile` with `up`, `down`, `test`, `lint`, `demo`.
+- [x] CI runs Python lint, typecheck and tests.
 
 **Acceptance:** `docker compose up -d --build` → all services healthy; `just demo` fills the DB and the API returns sessions; dashboard port only on a non-sensor port; security review PASS; CI green.
 
@@ -43,6 +51,10 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - [ ] Full session recording (timed I/O) for replay.
 - [ ] Realistic banner and hostname; connection caps, timeouts, field size limits.
 - [ ] Events land end to end in the DB.
+- [ ] Sensor networking (from the M1 security review): an `ingress` bridge with a fixed name, `enable_ip_masquerade: "false"`, `enable_icc: "false"`; `dns: ["127.0.0.1"]` on every sensor; ports published on explicit IPv4 (no docker-proxy on `[::]`); one internal network, one Redis stream and one ACL user per sensor, with ingest checking the `sensor` field against the stream.
+- [ ] Sensors drop and count events when Redis is unavailable, with bounded queues; per-IP event rate limit.
+- [ ] M1 review follow-ups (before go-live): stable ingest consumer name + trim never past the oldest pending entry; role passwords re-applied on every `migrate` run (rotation); dead-letter only on data errors; strict WebSocket Origin comparison; strip Unicode format characters in summaries; `connect-src 'self'`; NUL-safe SPA paths; per-row error isolation in the live poller; per-IP WebSocket cap; explicit per-table grants.
+- [ ] Ingest idempotency: no double counting when a batch is replayed after a crash between commit and ACK.
 
 **Acceptance:** tests use a real SSH client against the container; no `subprocess`/`eval`/`exec` in sensor code; security review PASS.
 
