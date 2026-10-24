@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           found=0
-          for dir in sensors/common scripts/demo db ingest api; do
+          for dir in sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet scripts/demo db ingest api; do
             if [ -f "$dir/pyproject.toml" ]; then
               found=1
               echo "::group::$dir"
@@ -69,37 +69,65 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - name: Detect web app
-        id: detect
-        run: |
-          if [ -f web/package.json ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::web/package.json not found; skipping web checks."
-          fi
+      # The pnpm version comes from "packageManager" in web/package.json.
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
-        if: steps.detect.outputs.present == 'true'
         with:
           package_json_file: web/package.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        if: steps.detect.outputs.present == 'true'
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
-      - name: Install, lint, typecheck, test
-        if: steps.detect.outputs.present == 'true'
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm run lint
+      - name: Type-check
+        run: pnpm run typecheck
+      - name: Unit tests
+        run: pnpm run test
+      - name: Build
+        run: pnpm run build
+
+  web-screenshots:
+    runs-on: ubuntu-latest
+    # Same image as `just screenshots`. Mock data only (documentation IPs).
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
+    defaults:
+      run:
         working-directory: web
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm run lint
-          pnpm run typecheck
-          pnpm run test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          package_json_file: web/package.json
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build with mock data
+        run: pnpm run build:mock
+      - name: Take screenshots
+        run: pnpm exec playwright test
+        env:
+          CI: "1"
+          HOME: /root
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: web-screenshots
+          path: web/screenshots
+          if-no-files-found: ignore
+          retention-days: 7
 
   python-integration:
     runs-on: ubuntu-latest
@@ -149,7 +177,8 @@ jobs:
         working-directory: db
         run: |
           uv sync
-          uv run alembic upgrade head
+          # Same path as the production migrate container.
+          uv run python -m suckerpot_db.entrypoint alembic upgrade head
       - name: Run integration tests
         run: |
           set -euo pipefail
@@ -178,14 +207,49 @@ jobs:
       - name: Prepare .env
         run: |
           cp .env.example .env
-          # CI only: allow the "change-me" placeholder secrets.
-          echo "SUCKERPOT_ALLOW_DEFAULT_SECRETS=1" >> .env
+          {
+            # CI only: allow the "change-me" placeholder secrets.
+            echo "SUCKERPOT_ALLOW_DEFAULT_SECRETS=1"
+            # The runner's own sshd already uses port 22.
+            echo "SSH_HOST_PORT=2222"
+            # Demo and test traffic uses synthetic addresses.
+            echo "GEOIP_FAKE_FOR_PRIVATE=true"
+            # Required settings; authentication is switched off by docker-compose.ci.yml.
+            echo "COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml"
+            echo "ADMIN_PASSWORD_HASH=ci-placeholder"
+            echo "SESSION_SECRET=ci-placeholder-session-secret-not-used"
+          } >> .env
+      - name: Check the port layout
+        run: scripts/check-ports.sh
       - name: Validate docker-compose.yml
-        run: docker compose config -q
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml config -q
       - name: Build and start the stack
-        run: docker compose up -d --build --wait --wait-timeout 300
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build --wait --wait-timeout 300
       - name: Check the API health endpoint
         run: curl -fsS http://127.0.0.1:8443/healthz
+      - name: Check that the SSH sensor is healthy
+        run: |
+          status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q sensor-ssh)")
+          echo "sensor-ssh: $status"
+          test "$status" = healthy
+      - name: Check that the RDP sensor is healthy
+        run: |
+          status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q sensor-rdp)")
+          echo "sensor-rdp: $status"
+          test "$status" = healthy
+      - name: Check that the Telnet sensor is healthy
+        run: |
+          status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q sensor-telnet)")
+          echo "sensor-telnet: $status"
+          test "$status" = healthy
+      - name: Telnet login and fake download against the sensor
+        run: scripts/telnet-test.sh
+      - name: RDP connection request against the sensor
+        run: scripts/rdp-test.sh
+      - name: Real SSH login against the sensor
+        env:
+          SSH_HOST_PORT: "2222"
+        run: scripts/ssh-test.sh
       - name: Generate demo data
         run: docker compose --profile tools run --rm demo --sessions 50 --days 2
       - name: Wait until ingest has stored sessions

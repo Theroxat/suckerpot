@@ -1,0 +1,13 @@
+# Override for CI and local test runs ONLY. It switches dashboard authentication off so
+# the test scripts can poll the API without logging in:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build --wait
+#
+# Never use it on a machine that is reachable from the internet. The API refuses
+# API_AUTH_DISABLED=true unless SUCKERPOT_DEMO=1 is set as well, and the main
+# docker-compose.yml deliberately cannot turn authentication off.
+services:
+  api:
+    environment:
+      API_AUTH_DISABLED: "true"
+      SUCKERPOT_DEMO: "1"

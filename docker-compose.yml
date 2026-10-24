@@ -1,5 +1,6 @@
 # SuckerPot, milestone M1: event pipeline (Redis -> ingest -> TimescaleDB -> API).
-# Sensors are added in later milestones; they will join the "sensors" network only.
+# Internet-facing sensors live on their own "ingress" network plus one internal
+# network each to reach Redis, and nothing else.
 
 x-logging: &default-logging
   driver: json-file
@@ -31,7 +32,10 @@ services:
     user: "999:999"
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
-      REDIS_SENSOR_PASSWORD: ${REDIS_SENSOR_PASSWORD:?REDIS_SENSOR_PASSWORD must be set in .env}
+      REDIS_SENSOR_SSH_PASSWORD: ${REDIS_SENSOR_SSH_PASSWORD:?REDIS_SENSOR_SSH_PASSWORD must be set in .env}
+      REDIS_SENSOR_RDP_PASSWORD: ${REDIS_SENSOR_RDP_PASSWORD:?REDIS_SENSOR_RDP_PASSWORD must be set in .env}
+      REDIS_SENSOR_TELNET_PASSWORD: ${REDIS_SENSOR_TELNET_PASSWORD:?REDIS_SENSOR_TELNET_PASSWORD must be set in .env}
+      REDIS_DEMO_PASSWORD: ${REDIS_DEMO_PASSWORD:?REDIS_DEMO_PASSWORD must be set in .env}
       REDIS_INGEST_PASSWORD: ${REDIS_INGEST_PASSWORD:?REDIS_INGEST_PASSWORD must be set in .env}
       REDIS_HEALTH_PASSWORD: ${REDIS_HEALTH_PASSWORD:?REDIS_HEALTH_PASSWORD must be set in .env}
       SUCKERPOT_ALLOW_DEFAULT_SECRETS: ${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}
@@ -40,7 +44,7 @@ services:
     tmpfs:
       # Generated ACL file (mode 0600, hashed passwords).
       - /run/redis:rw,noexec,nosuid,nodev,size=1m,mode=0700,uid=999,gid=999
-    networks: [sensors, backend]
+    networks: [sensors-ssh, sensors-rdp, sensors-telnet, tools, backend]
     mem_limit: 384m
     cpus: 0.5
     pids_limit: 64
@@ -116,6 +120,8 @@ services:
       POSTGRES_INGEST_PASSWORD: ${POSTGRES_INGEST_PASSWORD:?POSTGRES_INGEST_PASSWORD must be set in .env}
       POSTGRES_API_USER: ${POSTGRES_API_USER:-suckerpot_api}
       POSTGRES_API_PASSWORD: ${POSTGRES_API_PASSWORD:?POSTGRES_API_PASSWORD must be set in .env}
+      RETENTION_DAYS: ${RETENTION_DAYS:-90}
+      DB_MAX_SIZE_GB: ${DB_MAX_SIZE_GB:-10}
       SUCKERPOT_ALLOW_DEFAULT_SECRETS: ${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
@@ -142,7 +148,22 @@ services:
       REDIS_PORT: "6379"
       REDIS_USER: ingest
       REDIS_PASSWORD: ${REDIS_INGEST_PASSWORD:?REDIS_INGEST_PASSWORD must be set in .env}
-      EVENTS_STREAM: events
+      INGEST_STREAMS: ${INGEST_STREAMS:-events:ssh,events:telnet,events:web,events:rdp}
+      DB_MAX_SIZE_GB: ${DB_MAX_SIZE_GB:-10}
+      GEOIP_PROVIDER: ${GEOIP_PROVIDER:-auto}
+      GEOIP_REFRESH_DAYS: ${GEOIP_REFRESH_DAYS:-30}
+      GEOIP_FAKE_FOR_PRIVATE: ${GEOIP_FAKE_FOR_PRIVATE:-false}
+      MAXMIND_ACCOUNT_ID: ${MAXMIND_ACCOUNT_ID:-}
+      MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
+      ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+      GREYNOISE_API_KEY: ${GREYNOISE_API_KEY:-}
+      ABUSEIPDB_DAILY_QUOTA: ${ABUSEIPDB_DAILY_QUOTA:-1000}
+      GREYNOISE_DAILY_QUOTA: ${GREYNOISE_DAILY_QUOTA:-50}
+      REPUTATION_MIN_EVENTS: ${REPUTATION_MIN_EVENTS:-10}
+      REPUTATION_INTERVAL_S: ${REPUTATION_INTERVAL_S:-30}
+    volumes:
+      # GeoIP databases downloaded by ingest (the only writable path besides /tmp).
+      - geoip-data:/data/geoip
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
     # "backend" is internal; "egress" gives ingest (and only ingest) outbound
@@ -175,6 +196,23 @@ services:
       POSTGRES_USER: ${POSTGRES_API_USER:-suckerpot_api}
       POSTGRES_PASSWORD: ${POSTGRES_API_PASSWORD:?POSTGRES_API_PASSWORD must be set in .env}
       API_ENABLE_DOCS: ${API_ENABLE_DOCS:-false}
+      API_ALLOWED_ORIGINS: ${API_ALLOWED_ORIGINS:-}
+      # Dashboard authentication. The API refuses to start without a valid
+      # password hash and a strong session secret (unless the demo switches are used).
+      # Where the live globe's arcs land. Country level only; empty = API defaults.
+      SITE_HOME_LAT: ${SITE_HOME_LAT:-}
+      SITE_HOME_LON: ${SITE_HOME_LON:-}
+      SITE_HOME_LABEL: ${SITE_HOME_LABEL:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?ADMIN_PASSWORD_HASH must be set in .env (docker compose run --rm api python -m api.hashpw)}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env (openssl rand -base64 48)}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      LOGIN_RATE: ${LOGIN_RATE:-5}
+      LOGIN_RATE_GLOBAL: ${LOGIN_RATE_GLOBAL:-30}
+      AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
+      API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
+      SUCKERPOT_ALLOW_DEFAULT_SECRETS: ${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}
     # Docker's embedded DNS still answers for service names (it listens on
     # 127.0.0.11); external names fail, so the API cannot resolve the internet.
     dns: ["127.0.0.1"]
@@ -184,7 +222,7 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
     networks: [backend, dashboard]
-    mem_limit: 384m
+    mem_limit: 512m
     cpus: 1.0
     pids_limit: 100
     restart: unless-stopped
@@ -198,6 +236,147 @@ services:
       retries: 3
       start_period: 15s
 
+  # SSH sensor: pure emulation, never executes attacker input.
+  sensor-ssh:
+    build:
+      context: .
+      dockerfile: sensors/ssh/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor-ssh
+      REDIS_PASSWORD: ${REDIS_SENSOR_SSH_PASSWORD:?REDIS_SENSOR_SSH_PASSWORD must be set in .env}
+      EVENTS_STREAM: events:ssh
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN:-10000}
+      SSH_PORT: "2222"
+      SSH_PUBLIC_PORT: ${SSH_HOST_PORT:-22}
+      SSH_BANNER: ${SSH_BANNER:-SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.14}
+      SSH_HOSTNAME: ${SSH_HOSTNAME:-srv-web01}
+      SSH_HOSTKEY_DIR: /data/host_keys
+      SSH_ACCEPT_CREDENTIALS: ${SSH_ACCEPT_CREDENTIALS:-root:root,root:123456,root:password,admin:admin,ubuntu:ubuntu,pi:raspberry,user:user}
+      SSH_ACCEPT_RANDOM_PROB: ${SSH_ACCEPT_RANDOM_PROB:-0.0}
+      SSH_MAX_AUTH_ATTEMPTS: ${SSH_MAX_AUTH_ATTEMPTS:-6}
+      SSH_MAX_CONNECTIONS: ${SSH_MAX_CONNECTIONS:-200}
+      SSH_MAX_PER_IP: ${SSH_MAX_PER_IP:-5}
+    # Compose maps the low host port to the high container port: no capability needed.
+    # Explicit IPv4 so Docker does not also publish on [::].
+    ports:
+      - "0.0.0.0:${SSH_HOST_PORT:-22}:2222"
+    # Docker's embedded DNS still resolves service names; external names fail.
+    dns: ["127.0.0.1"]
+    # ingress: inbound only. sensors-ssh: internal link to Redis.
+    networks: [ingress, sensors-ssh]
+    volumes:
+      # Host keys, generated on first start. Never committed.
+      - ssh-hostkeys:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 256m
+    memswap_limit: 256m  # no swap: overload fails fast instead of stalling the host
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "ssh_sensor.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # RDP sensor: answers the connection handshake only, never authenticates anyone.
+  sensor-rdp:
+    build:
+      context: .
+      dockerfile: sensors/rdp/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor-rdp
+      REDIS_PASSWORD: ${REDIS_SENSOR_RDP_PASSWORD:?REDIS_SENSOR_RDP_PASSWORD must be set in .env}
+      EVENTS_STREAM: events:rdp
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN:-10000}
+      RDP_PORT: "3389"
+      RDP_PUBLIC_PORT: ${RDP_HOST_PORT:-3389}
+      RDP_HOSTNAME: ${RDP_HOSTNAME:-}
+      RDP_DATA_DIR: /data
+      RDP_MAX_CONNECTIONS: ${RDP_MAX_CONNECTIONS:-200}
+      RDP_MAX_PER_IP: ${RDP_MAX_PER_IP:-8}
+    # Explicit IPv4 so Docker does not also publish on [::]. No capability needed.
+    ports:
+      - "0.0.0.0:${RDP_HOST_PORT:-3389}:3389"
+    # Docker's embedded DNS still resolves service names; external names fail.
+    dns: ["127.0.0.1"]
+    # ingress: inbound only. sensors-rdp: internal link to Redis.
+    networks: [ingress, sensors-rdp]
+    volumes:
+      # Profile secret and RDP certificate, generated on first start. Never committed.
+      - rdp-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 128m
+    memswap_limit: 128m  # no swap: overload fails fast instead of stalling the host
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "rdp_sensor.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Telnet sensor: emulates a cheap BusyBox device, never executes attacker input.
+  sensor-telnet:
+    build:
+      context: .
+      dockerfile: sensors/telnet/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor-telnet
+      REDIS_PASSWORD: ${REDIS_SENSOR_TELNET_PASSWORD:?REDIS_SENSOR_TELNET_PASSWORD must be set in .env}
+      EVENTS_STREAM: events:telnet
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN:-10000}
+      TELNET_PUBLIC_PORT: ${TELNET_HOST_PORT:-23}
+    # Explicit IPv4 so Docker does not also publish on [::]. No capability needed.
+    ports:
+      - "0.0.0.0:${TELNET_HOST_PORT:-23}:2323"
+    # Docker's embedded DNS still resolves service names; external names fail.
+    dns: ["127.0.0.1"]
+    # ingress: inbound only. sensors-telnet: internal link to Redis.
+    networks: [ingress, sensors-telnet]
+    volumes:
+      # Device identity (profile secret), generated on first start. Never committed.
+      - telnet-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 256m
+    memswap_limit: 256m  # no swap: overload fails fast instead of stalling the host
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "telnet_sensor.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   # Synthetic attack generator. Publishes to Redis as the restricted "sensor" user.
   # Run with: docker compose --profile tools run --rm demo [args]
   demo:
@@ -210,16 +389,18 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      REDIS_USER: sensor
-      REDIS_PASSWORD: ${REDIS_SENSOR_PASSWORD:?REDIS_SENSOR_PASSWORD must be set in .env}
-      EVENTS_STREAM: events
-      EVENTS_MAXLEN: ${EVENTS_MAXLEN:-10000}
+      REDIS_USER: demo
+      REDIS_PASSWORD: ${REDIS_DEMO_PASSWORD:?REDIS_DEMO_PASSWORD must be set in .env}
+      # Larger than the sensors' cap: a backfill writes faster than ingest reads, and a
+      # tight MAXLEN would trim entries that were not consumed yet.
+      EVENTS_MAXLEN: ${DEMO_EVENTS_MAXLEN:-100000}
+      EVENTS_MAX_BYTES_PER_SEC: "0"  # demo backfill only; real sensors keep the byte budget
       DEMO_DAYS: ${DEMO_DAYS:-30}
       DEMO_SESSIONS: ${DEMO_SESSIONS:-3000}
       DEMO_SEED: ${DEMO_SEED:-42}
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
-    networks: [sensors]
+    networks: [tools]
     mem_limit: 256m
     cpus: 0.5
     pids_limit: 64
@@ -229,8 +410,26 @@ services:
         condition: service_healthy
 
 networks:
-  # Sensors and the demo generator. No route to the internet.
-  sensors:
+  # Inbound-only network for every internet-facing sensor. Published ports work,
+  # but containers get no outbound route (masquerading off) and cannot talk to
+  # each other (inter-container communication off).
+  ingress:
+    name: sp-ingress
+    driver_opts:
+      com.docker.network.bridge.name: sp-ingress
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+      com.docker.network.bridge.enable_icc: "false"
+  # SSH sensor <-> Redis only. No route to anything else.
+  sensors-ssh:
+    internal: true
+  # RDP sensor <-> Redis only.
+  sensors-rdp:
+    internal: true
+  # Telnet sensor <-> Redis only.
+  sensors-telnet:
+    internal: true
+  # Demo generator <-> Redis only.
+  tools:
     internal: true
   # Redis, database, ingest and API. No route to the internet.
   backend:
@@ -240,9 +439,15 @@ networks:
   # Inbound-only network for the API: masquerading is off, so the published
   # dashboard port works but the API container cannot reach the internet.
   dashboard:
+    name: sp-dashboard
     driver_opts:
+      com.docker.network.bridge.name: sp-dashboard
       com.docker.network.bridge.enable_ip_masquerade: "false"
 
 volumes:
   redis-data:
   db-data:
+  ssh-hostkeys:
+  rdp-data:
+  telnet-data:
+  geoip-data:
