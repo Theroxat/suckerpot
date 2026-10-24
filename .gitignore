@@ -1,0 +1,47 @@
+# --- Private context and secrets (never commit) ---
+ENVIRONMENT.local.md
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+**/host_keys/
+
+# --- Captured data, payloads, databases ---
+data/
+quarantine/
+*.mmdb
+*.sqlite
+*.sqlite3
+*.dump
+*.sql.gz
+backups/
+
+# --- Screenshots with real attack data ---
+screenshots/real/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Node / web ---
+node_modules/
+dist/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# --- Claude Code local settings ---
+.claude/settings.local.json
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+*.swp

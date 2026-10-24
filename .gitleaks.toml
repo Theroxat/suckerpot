@@ -1,0 +1,31 @@
+# Gitleaks configuration for SuckerPot (public repo, see CLAUDE.md section 6).
+# Extends the default ruleset and adds a rule for private IPv4 addresses.
+
+title = "SuckerPot gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "private-ipv4"
+description = "Private IPv4 address (192.168.0.0/16 or 10.0.0.0/8): the owner's network layout must not be published"
+# Octet = 0-255. The leading guard skips values glued to other digits or dots
+# (e.g. version strings like 1.10.0.1); the trailing guard skips a fifth dotted
+# number (e.g. 10.0.0.1.2).
+regex = '''(?:^|[^\d.\w-])((?:192\.168|10\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))(?:$|[^\d]|\.(?:[^\d]|$))'''
+secretGroup = 1
+keywords = ["192.168.", "10."]
+tags = ["network", "privacy"]
+
+  [[rules.allowlists]]
+  description = "Placeholders and the config itself"
+  condition = "OR"
+  paths = [
+    '''(^|/)\.env\.example$''',
+    '''(^|/)\.gitleaks\.toml$''',
+  ]
+  # Documentation ranges (RFC 5737) are not private, so they never match above;
+  # this entry only documents the intent and covers obvious placeholders.
+  regexes = [
+    '''^(192\.0\.2|198\.51\.100|203\.0\.113)\.''',
+  ]
