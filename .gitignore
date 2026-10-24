@@ -45,3 +45,4 @@ test-results/
 .idea/
 .DS_Store
 *.swp
+docs/_build/

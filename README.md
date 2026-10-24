@@ -29,12 +29,12 @@ _Coming with the first release. Screenshots only ever use demo data (`just demo`
 
 ## Quick start
 
-_Placeholder. The steps below will change as the project matures._
+Read [Getting started](docs/getting-started.md) first. It explains the requirements and the warnings. In short:
 
 ```bash
 cp .env.example .env
-# edit .env and set your own passwords, secrets and ports
-docker compose up -d --build
+# edit .env and replace every change-me value (openssl rand -base64 32)
+docker compose up -d --build --wait
 just demo
 ```
 
@@ -54,8 +54,19 @@ The gitleaks pre-commit hook blocks commits that contain secrets. Never commit `
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md): how the services, networks and data flow fit together
-- [Security](docs/SECURITY.md): threat model, controls, deployment warning and how to report a vulnerability
+Full documentation: <https://suckerpot.readthedocs.io/>
+
+_The site goes live once the project is imported on Read the Docs. Until then, read the same pages in the `docs/` folder:_
+
+- [Getting started](docs/getting-started.md): requirements, first run and warnings
+- [Deployment](docs/deployment.md): go-live checklist for exposing the sensors
+- [Demo data](docs/demo-data.md): what `just demo` generates
+- [Configuration](docs/configuration.md): every environment variable
+- [Architecture](docs/ARCHITECTURE.md): services, networks and data flow
+- [Event schema](docs/event-schema.md): the shared event format
+- [API](docs/api.md): REST endpoints
+- [Security](docs/SECURITY.md): threat model, controls and how to report a vulnerability
+- [Development](docs/development.md): repository layout, tools and commands
 
 ## License
 
