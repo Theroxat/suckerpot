@@ -7,6 +7,9 @@ dependencies = [
     "suckerpot-common",
     "suckerpot-db",
     "redis>=5.2,<7",
+    "maxminddb>=2.6,<3",
+    "httpx>=0.27,<1",
+    "pyyaml>=6,<7",
 ]
 
 [dependency-groups]
@@ -15,8 +18,10 @@ dev = [
     "mypy>=1.13",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
-    "httpx>=0.27",
     "suckerpot-api",
+    "types-pyyaml",
+    "mmdb-writer>=0.1.3",
+    "types-netaddr",
 ]
 
 [tool.uv.sources]
@@ -40,7 +45,7 @@ extend-exclude = [".venv"]
 select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106", "S108"]
+"tests/**" = ["S101", "S105", "S106", "S108", "E501"]
 
 [tool.mypy]
 strict = true

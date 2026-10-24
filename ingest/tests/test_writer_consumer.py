@@ -18,9 +18,9 @@ def test_strip_nul_recursive() -> None:
 def test_parse_messages_skips_bad() -> None:
     good_fields: dict[Any, Any] = Event.to_stream_fields(make_event("connect"))
     msgs = [(b"1-0", good_fields), (b"2-0", {b"v": b"1", b"event": b"{not json"}), (b"3-0", {})]
-    good, bad = parse_messages(msgs)
+    good, bad, mismatched = parse_messages(msgs)
     assert [m for m, _ in good] == [b"1-0"]
-    assert bad == [b"2-0", b"3-0"]
+    assert bad == [b"2-0", b"3-0"] and mismatched == 0
 
 
 def test_preview_truncates() -> None:
@@ -58,7 +58,7 @@ async def test_process_acks_bad_and_does_not_ack_on_db_failure(monkeypatch: Any)
     redis = FakeRedis()
     c = Consumer(Settings.from_env({}), redis, None)  # type: ignore[arg-type]
     good_fields: dict[Any, Any] = Event.to_stream_fields(make_event("connect"))
-    await c.process([(b"1-0", good_fields), (b"2-0", {b"v": b"9"})])
+    await c.process("events:ssh", [(b"1-0", good_fields), (b"2-0", {b"v": b"9"})])
     assert calls == [1]
     assert sorted(redis.acked) == [b"1-0", b"2-0"]
 
@@ -68,5 +68,5 @@ async def test_process_acks_bad_and_does_not_ack_on_db_failure(monkeypatch: Any)
     monkeypatch.setattr("ingest.consumer.write_batch", failing_write)
     redis.acked.clear()
     with pytest.raises(OSError):
-        await c.process([(b"3-0", good_fields)])
+        await c.process("events:ssh", [(b"3-0", good_fields)])
     assert redis.acked == []

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from suckerpot_common import Event
@@ -27,6 +27,13 @@ class SessionDelta:
     commands: int = 0
     downloads: int = 0
     http_requests: int = 0
+    tags: set[str] = field(default_factory=set)
+    country: str | None = None
+    city: str | None = None
+    asn: int | None = None
+    org: str | None = None
+    abuse_score: int | None = None
+    known_scanner: bool | None = None
 
 
 def compute_session_deltas(events: Iterable[Event]) -> list[SessionDelta]:

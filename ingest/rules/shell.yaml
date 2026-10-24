@@ -1,0 +1,64 @@
+# Rules for interactive sessions (SSH and Telnet commands).
+rules:
+  - id: recon-commands
+    tag: recon
+    description: System fingerprinting commands run right after login.
+    when:
+      all:
+        - {field: type, equals: command}
+        - any:
+            - field: data.input
+              command_any: [uname, nproc, free, lscpu, whoami, id, w, uptime, hostname, ifconfig, lsb_release, arch, getconf, dmidecode]
+            - field: data.input
+              contains_any: [/proc/cpuinfo, /proc/meminfo, /proc/version, /etc/os-release, /etc/issue, /etc/passwd]
+
+  - id: mirai-busybox
+    tag: mirai
+    description: BusyBox applet probes typical of Mirai-family loaders.
+    when:
+      all:
+        - {field: type, equals: command}
+        - field: data.input
+          contains_any: [busybox, ecchi, mirai, /dev/watchdog, /dev/misc/watchdog]
+
+  - id: mirai-telnet-loader
+    tag: mirai
+    description: Telnet loader shell-escape words sent after a successful login.
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: sensor, equals: telnet}
+        - field: data.input
+          in: [enable, system, shell, linuxshell, sh]
+
+  - id: crypto-miner
+    tag: crypto-miner
+    description: Miner binaries, stratum URLs and pool names in commands or download URLs.
+    when:
+      any:
+        - field: data.input
+          contains_any: &miner_words [xmrig, minerd, cpuminer, stratum+tcp, stratum+ssl, stratum2+tcp, --donate-level, nicehash, minexmr, supportxmr, nanopool, hashvault, moneroocean, 2miners, ethminer, kdevtmpfsi, kinsing, c3pool]
+        - {field: data.command, contains_any: *miner_words}
+        - {field: data.url, contains_any: *miner_words}
+
+  - id: exec-attempt
+    tag: exec-attempt
+    description: Making a file executable or piping a download into a shell.
+    when:
+      all:
+        - {field: type, equals: command}
+        - any:
+            - all:
+                - {field: data.input, command_any: [chmod]}
+                - {field: data.input, contains_any: ["+x", "777", "755", "775", "700"]}
+            - {field: data.input, startswith: ["./", "sh ./", "bash ./", "nohup ./"]}
+            - {field: data.input, contains_any: ["| sh", "|sh", "| bash", "|bash", "|/bin/sh"]}
+
+  - id: persistence
+    tag: persistence
+    description: Attempts to survive a reboot or keep access.
+    when:
+      all:
+        - {field: type, equals: command}
+        - field: data.input
+          contains_any: [authorized_keys, crontab, /etc/cron, rc.local, "systemctl enable", .bashrc, /etc/init.d, chattr, /etc/profile.d]

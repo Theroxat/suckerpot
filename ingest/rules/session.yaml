@@ -1,0 +1,26 @@
+# Session-scope rules: evaluated on the session counters after every upsert.
+rules:
+  - id: malware-drop
+    tag: malware-drop
+    description: A file was fetched and then made executable or piped into a shell.
+    scope: session
+    when:
+      all:
+        - {field: session.downloads, gte: 1}
+        - {field: session.tags, has: exec-attempt}
+
+  - id: credential-stuffing
+    tag: credential-stuffing
+    description: Many login attempts in a single connection.
+    scope: session
+    when:
+      field: session.login_attempts
+      gte: 20
+
+  - id: scanner-reputation
+    tag: scanner
+    description: GreyNoise lists the address as an internet-wide scanner.
+    scope: session
+    when:
+      field: session.known_scanner
+      equals: true

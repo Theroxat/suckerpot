@@ -3,79 +3,39 @@
 Runs the Alembic migration, writes through the ingest writer and reads through the API.
 """
 
+import asyncio
+import contextlib
+import json
 import os
-import subprocess
-import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
 from api.main import create_app
+from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+)
+from suckerpot_common import Event, EventPublisher
 from suckerpot_db import create_engine, create_session_factory, database_url_from_env
 
+from ingest.config import Settings
+from ingest.consumer import Consumer
 from ingest.writer import write_batch
 
+from .db_fixtures import ROLE_ENV, _migrate, _role_url
 from .helpers import make_event
 
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(not os.environ.get("POSTGRES_HOST"), reason="POSTGRES_HOST not set"),
 ]
-
-DB_DIR = Path(os.environ.get("DB_DIR", Path(__file__).resolve().parents[2] / "db"))
-
-
-ROLE_ENV = {
-    "POSTGRES_INGEST_USER": "suckerpot_ingest",
-    "POSTGRES_INGEST_PASSWORD": "ingest pw/with:odd@chars",
-    "POSTGRES_API_USER": "suckerpot_api",
-    "POSTGRES_API_PASSWORD": "api-test-password",
-}
-
-
-def _role_url(kind: str) -> str:
-    return database_url_from_env(
-        {
-            **os.environ,
-            "POSTGRES_USER": ROLE_ENV[f"POSTGRES_{kind}_USER"],
-            "POSTGRES_PASSWORD": ROLE_ENV[f"POSTGRES_{kind}_PASSWORD"],
-        }
-    )
-
-
-@pytest.fixture(scope="session")
-def migrated() -> None:
-    env = {**os.environ, **ROLE_ENV}
-    for _ in range(2):  # second run proves idempotence
-        subprocess.run(
-            [sys.executable, "-m", "alembic", "upgrade", "head"],
-            cwd=DB_DIR,
-            env=env,
-            check=True,
-            timeout=120,
-        )
-
-
-@pytest.fixture
-async def engine(migrated: None) -> AsyncIterator[AsyncEngine]:
-    """Owner connection (test setup only)."""
-    eng = create_engine(pool_size=2)
-    async with eng.begin() as conn:
-        await conn.execute(text("TRUNCATE events, sessions"))
-    yield eng
-    await eng.dispose()
-
-
-@pytest.fixture
-async def factory(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """Writer connections AS the ingest role."""
-    eng = create_engine(_role_url("INGEST"), pool_size=2)
-    yield create_session_factory(eng)
-    await eng.dispose()
 
 
 @pytest.fixture
@@ -98,8 +58,9 @@ async def test_roles_are_least_privilege(
             await conn.execute(
                 text(
                     "SELECT rolname, rolsuper, rolcreatedb, rolcreaterole FROM pg_roles "
-                    "WHERE rolname IN ('suckerpot_ingest', 'suckerpot_api')"
-                )
+                    "WHERE rolname IN (:i, :a)"
+                ),
+                {"i": ROLE_ENV["POSTGRES_INGEST_USER"], "a": ROLE_ENV["POSTGRES_API_USER"]},
             )
         ).all()
     assert len(rows) == 2
@@ -291,3 +252,188 @@ async def test_stats_summary(
     assert body["sessions_with_commands"] == 1 and body["download_attempts"] == 1
     assert body["by_sensor"]["ssh"] == {"events": 2, "sessions": 1}
     assert (await client.get("/healthz")).json() == {"status": "ok", "db": "ok"}
+
+
+async def test_password_rotation_on_every_migrate(engine: AsyncEngine) -> None:
+    new_pw = "rotated-ingest-password"
+    _migrate({"POSTGRES_INGEST_PASSWORD": new_pw})
+    try:
+        good = create_engine(
+            database_url_from_env(
+                {
+                    **os.environ,
+                    "POSTGRES_USER": ROLE_ENV["POSTGRES_INGEST_USER"],
+                    "POSTGRES_PASSWORD": new_pw,
+                }
+            ),
+            pool_size=1,
+        )
+        async with good.connect() as conn:
+            assert await conn.scalar(text("SELECT 1")) == 1
+        await good.dispose()
+        old = create_engine(_role_url("INGEST"), pool_size=1)
+        with pytest.raises(Exception, match="password authentication failed"):
+            async with old.connect() as conn:
+                await conn.scalar(text("SELECT 1"))
+        await old.dispose()
+    finally:
+        _migrate()  # restore the original password for the other tests
+
+
+async def test_no_default_privileges_left(engine: AsyncEngine) -> None:
+    async with engine.connect() as conn:
+        n = await conn.scalar(
+            text(
+                "SELECT count(*) FROM pg_default_acl d JOIN pg_namespace n ON n.oid = "
+                "d.defaclnamespace WHERE n.nspname = 'public' AND d.defaclacl::text ~ 'suckerpot'"
+            )
+        )
+    assert n == 0
+
+
+# ---- Redis + TimescaleDB end to end (needs REDIS_HOST; works with an unauthenticated Redis,
+# the test creates the contract ACL users itself) ----------------------------------------------
+
+needs_redis = pytest.mark.skipif(not os.environ.get("REDIS_HOST"), reason="REDIS_HOST not set")
+
+SENSOR_ACL = "resetkeys ~itest:ssh -@all +xadd +hello +auth"
+INGEST_ACL = (
+    "resetkeys ~itest:* -@all +xreadgroup +xack +xgroup|create +xautoclaim +xtrim +hello +auth"
+)
+
+
+def _redis(user: str | None = None, password: str | None = None) -> Redis:
+    return Redis(
+        host=os.environ["REDIS_HOST"],
+        port=int(os.environ.get("REDIS_PORT", "6379")),
+        username=user or os.environ.get("REDIS_ADMIN_USER"),
+        password=password or os.environ.get("REDIS_ADMIN_PASSWORD"),
+        lib_name=None,
+        lib_version=None,
+    )
+
+
+COMMAND_DATA = {
+    "input": "uname -a",
+    "output": "Linux",
+    "prompt": "root@srv:~#",
+    "cwd": "/root",
+    "user": "root",
+    "status": 0,
+}
+
+
+def _ssh_event(etype: str, offset_s: float, sid: str, data: dict[str, Any]) -> Event:
+    return make_event(etype, sid=sid, offset_s=offset_s, data=data, sensor="ssh")
+
+
+@needs_redis
+async def test_redis_to_timescale_end_to_end(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession], tmp_path: Path
+) -> None:
+    admin = _redis()
+    streams = ("itest:ssh", "itest:web")
+    await admin.delete(*streams)
+    for s in streams:
+        with contextlib.suppress(Exception):
+            await admin.xgroup_destroy(s, "ingest")
+    raw: Any = admin  # redis-py's execute_command is untyped
+    for user, pw, acl in (
+        ("itest-sensor-ssh", "sens", SENSOR_ACL),
+        ("itest-ingest", "ing", INGEST_ACL),
+    ):
+        await raw.execute_command("ACL", "SETUSER", user, "on", f">{pw}", *acl.split())
+
+    replay = [[0.1 * i, "o" if i % 2 else "i", "x" * 190] for i in range(55)]
+    assert 11_000 < len(json.dumps(replay)) <= 12 * 1024
+    sensor = EventPublisher(
+        host=os.environ["REDIS_HOST"],
+        port=int(os.environ.get("REDIS_PORT", "6379")),
+        username="itest-sensor-ssh",
+        password="sens",
+        stream="itest:ssh",
+    )
+    events = [
+        _ssh_event("connect", 0, "ssh-1", {}),
+        _ssh_event(
+            "login_attempt", 1, "ssh-1", {"username": "root", "password": "x", "success": True}
+        ),
+        _ssh_event(
+            "command",
+            2,
+            "ssh-1",
+            {
+                "input": "uname -a",
+                "output": "Linux",
+                "prompt": "root@srv:~#",
+                "cwd": "/root",
+                "user": "root",
+                "status": 0,
+            },
+        ),
+        _ssh_event("download_attempt", 3, "ssh-1", {"url": "http://198.51.100.9/x.sh"}),
+        _ssh_event("scan", 4, "ssh-1", {"kind": "tcp_forward_attempt", "host": "h", "port": 25}),
+        _ssh_event(
+            "disconnect", 9, "ssh-1", {"duration_s": 9.0, "reason": "closed", "replay": replay}
+        ),
+    ]
+    # Orphans: delivered to a dead consumer before ingest starts.
+    await sensor.publish_many(events[:3])
+    await admin.xgroup_create("itest:ssh", "ingest", id="0", mkstream=True)
+    await admin.xgroup_create("itest:web", "ingest", id="0", mkstream=True)
+    got = await admin.xreadgroup("ingest", "dead-host", {"itest:ssh": ">"}, count=10)
+    assert len(got[0][1]) == 3
+    await sensor.publish_many(events[3:])
+    # A forged event: web sensor name on the ssh stream (accepted by Redis, dropped by ingest).
+    await sensor.publish(make_event("connect", sid="forged", sensor="web"))
+    # The sensor user may not write elsewhere.
+    with pytest.raises(Exception, match="No permissions"):
+        await _redis("itest-sensor-ssh", "sens").xadd("itest:web", {"v": "1"})
+
+    settings = Settings.from_env(
+        {
+            "INGEST_STREAMS": ",".join(streams),
+            "INGEST_HEARTBEAT_PATH": str(tmp_path / "hb"),
+            "INGEST_CLAIM_IDLE_MS": "0",
+        }
+    )
+    consumer = Consumer(settings, _redis("itest-ingest", "ing"), factory)
+    task = asyncio.create_task(consumer.run())
+    try:
+        for _ in range(100):
+            await asyncio.sleep(0.1)
+            async with engine.connect() as conn:
+                n = await conn.scalar(text("SELECT count(*) FROM events"))
+            if n == 6 and consumer.sensor_mismatches == 1:
+                break
+        else:
+            pytest.fail(
+                f"ingest did not finish (events={n}, mismatches={consumer.sensor_mismatches})"
+            )
+    finally:
+        consumer.stop.set()
+        await asyncio.wait_for(task, 10)
+        await consumer.redis.aclose()
+
+    async with engine.connect() as conn:
+        row = await conn.execute(text("SELECT * FROM sessions WHERE session_id = 'ssh-1'"))
+        sess = row.mappings().one()
+        counters = (sess["event_count"], sess["login_attempts"], sess["commands"])
+        assert counters == (6, 1, 1)
+        assert sess["downloads"] == 1
+        assert sess["login_success"] is True and sess["ended_at"] is not None
+        stored = await conn.scalar(
+            text("SELECT data->'replay' FROM events WHERE type = 'disconnect'")
+        )
+        cmd = await conn.scalar(text("SELECT data FROM events WHERE type = 'command'"))
+        assert (
+            await conn.scalar(text("SELECT count(*) FROM sessions WHERE session_id = 'forged'"))
+            == 0
+        )
+    assert stored == replay
+    assert cmd["prompt"] == "root@srv:~#" and cmd["cwd"] == "/root" and cmd["status"] == 0
+    for stream in streams:
+        pending = await admin.xpending(stream, "ingest")
+        assert pending["pending"] == 0
+    await admin.delete(*streams)
+    await admin.aclose()
