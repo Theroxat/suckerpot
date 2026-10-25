@@ -493,3 +493,11 @@ class TestWithDatabase:
         assert await sync.sync_once() == {"abusech"}
         assert worker.enabled("abusech") and not worker.enabled("virustotal")
         assert sync.info["abusech"].source == "settings"
+
+
+async def test_deeply_nested_json_is_a_provider_error() -> None:
+    deep = b"[" * 100_000 + b"]" * 100_000
+    remote = Remote(lambda r: httpx.Response(200, content=deep))
+    with pytest.raises(ProviderError) as exc:
+        await remote.worker().urlhaus("domain", "files.badhost.ru")
+    assert exc.value.kind == "error"
