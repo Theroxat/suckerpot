@@ -160,7 +160,7 @@ class IntelWorker:
         self.factory = factory
         self.s = settings
         self.ind = indicator_settings or IndicatorSettings.from_env()
-        self._last_mark = 0.0
+        self._last_mark: float | None = None  # None: mark on the first cycle
         # follow_redirects is off: a redirect from an intel API is an error, never a hop.
         self.client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=False)
         self.state = _State()
@@ -547,7 +547,7 @@ class IntelWorker:
         st = self.state
         now = time.monotonic()
         st.retry_after = {k: v for k, v in st.retry_after.items() if v > now}
-        if now - self._last_mark >= MARK_INTERVAL_S:
+        if self._last_mark is None or now - self._last_mark >= MARK_INTERVAL_S:
             self._last_mark = now
             await self.mark_unlookable()
         for provider in ("abusech", "virustotal"):
