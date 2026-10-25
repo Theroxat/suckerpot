@@ -30,7 +30,7 @@ ANY_ROLE_UNSAFE = {
     ("POST", "/api/v1/auth/password"),
 }
 # Reads that are for administrators only.
-ADMIN_ONLY_GETS = {"/api/v1/users", "/api/v1/audit"}
+ADMIN_ONLY_GETS = {"/api/v1/users", "/api/v1/audit", "/api/v1/defend/feed-tokens"}
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
 
@@ -178,3 +178,39 @@ def test_every_api_route_is_behind_the_role_check_structurally() -> None:
     assert websockets == ["/api/v1/live"]
     # Nothing is mounted under /api: a mounted app would bypass the route-level checks.
     assert [p for kind, p, _ in leaves if kind == "mount" and p.startswith("/api")] == []
+
+
+def public_paths(app: FastAPI) -> set[str]:
+    """Every HTTP route path outside /api/v1 (the ones the dashboard login does not guard)."""
+    from fastapi.routing import APIRoute
+
+    return {
+        p
+        for kind, p, x in walk(app.routes)
+        if kind == "route" and isinstance(x[0], APIRoute) and not p.startswith("/api/v1")
+    }
+
+
+def test_the_feeds_are_the_only_route_group_outside_the_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Off by default; when on, only the two token-authenticated feed routes (and /healthz)."""
+    monkeypatch.delenv("FEEDS_ENABLED", raising=False)
+    assert public_paths(build()) == {"/healthz"}
+    monkeypatch.setenv("FEEDS_ENABLED", "true")
+    assert public_paths(build()) == {"/healthz", "/feeds/{token}/{name}", "/feeds/{name}"}
+
+
+def test_no_feed_route_is_in_the_api_prefix_and_none_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FEEDS_ENABLED", "true")
+    from fastapi.routing import APIRoute
+
+    feeds = [
+        x[0]
+        for kind, p, x in walk(build().routes)
+        if kind == "route" and p.startswith("/feeds") and isinstance(x[0], APIRoute)
+    ]
+    assert len(feeds) == 2
+    assert all(r.methods == {"GET"} for r in feeds)
