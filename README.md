@@ -25,7 +25,7 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 
 ## Status
 
-`v0.1.0` is released with four sensors, enrichment, tagging, the dashboard, login, retention and backups. Milestone M9 adds seven sensors (Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP), which is in progress. Every sensor goes through adversarial security review before it is accepted. See the [roadmap](docs/ROADMAP.md).
+`v0.1.0` is released with four sensors, enrichment, tagging, the dashboard, login, retention and backups. Since then, milestones M9 to M19 have added seven more sensors, users and roles, CVE watch, indicators, campaigns, ATT&CK, Defend, scripts, alerts, the weekly report, Today and search. The new analysis features are off until you turn them on, with an `*_ENABLED` variable each (see [configuration](docs/configuration.md)). Every sensor and feature goes through adversarial security review before it is accepted. See the [roadmap](docs/ROADMAP.md).
 
 ## Features
 
@@ -45,6 +45,12 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 Each sensor records what the attacker does and never runs it. SIP answers are capped so that the sensor cannot be used to amplify a flood.
 - **Enrichment and tags.** GeoIP and ASN from DB-IP Lite (no key needed) or MaxMind GeoLite2, optional AbuseIPDB and GreyNoise Community reputation with a 24 h cache and enforced daily quotas, and a declarative YAML rules engine (no regular expressions) for tags such as `recon`, `mirai`, `crypto-miner`, `malware-drop` and `php2shell`.
 - **Dashboard.** Live (a flat world map of the last 15 minutes, with a stats strip, a ticker and rankings), Overview (KPIs and auto-written insights), Attacks, Session detail with a terminal replay at real speed, Attackers (by IP and by ASN), Trends, Malware (defanged URLs) and Settings (sensor health, quotas, retention, storage). Dark and light, desktop and mobile. An owner login plus optional administrator and read-only viewer accounts (argon2, CSRF protection, lockout, audit log) guard it, and a screenshot mode (`?mask=1`) masks addresses.
+- **Campaigns.** Sessions that share a script, a payload host, a file hash, a malware family, an exploit or a credential list are grouped into one campaign, with a plain-English story. A campaign needs at least two sources, and research scanners are never grouped.
+- **Techniques.** Each session is labelled with the MITRE ATT&CK techniques it used. The Techniques page shows them as a heatmap per day.
+- **Scripts.** The command sequences that attackers type are fingerprinted into a library. Each script has a plain-English explanation from a rules base. An optional LLM explainer is off by default, and when on it sees only the normalised script text.
+- **Defend.** Scored blocklists with a reason for every point, exports for OPNsense and pfSense aliases, an opt-in token feed for firewalls, Sigma and Suricata rules marked "review before deploying", and "Your exposure", which compares your own service inventory with what was recorded.
+- **Alerts and reports.** Discord, Microsoft Teams and e-mail alerts for new campaigns, new download hosts, malware drops and watched CVEs. Every rule is off until you switch it on. A weekly report has a one-page printable view.
+- **Today and search.** A Today home page says what changed in the last 24 hours. One search box finds an IP, hash, domain, CVE or campaign. Known research scanners are labelled, and hidden from lists unless you ask for them. A glossary explains the terms.
 - **Retention and backups.** Raw events kept 90 days, aggregates forever, compression after 7 days, a disk guard, and `just backup` / `just restore`.
 - **Hardened by default.** Non-root, read-only containers with all capabilities dropped and `no-new-privileges`; isolated networks with an internal backend; one Redis ACL user per sensor, limited to `XADD` on its own stream; least-privilege database roles; no outbound route for the API; and an nftables [host firewall template](scripts/host/firewall.nft).
 
@@ -134,7 +140,17 @@ SuckerPot runs hostile traffic through containers, so isolation is a feature, no
 | M6 | Telnet, web and RDP sensors | Done |
 | M7 | Live page, Trends, Malware | Done |
 | M8 | Dashboard login, retention, backups, `v0.1.0` | Done (`v0.1.0`) |
-| M9 | Seven more sensors (Redis, Docker, MySQL, MSSQL, ADB, SMB, SIP) | In progress |
+| M9 | Seven more sensors (Redis, Docker, MySQL, MSSQL, ADB, SMB, SIP) | Done |
+| M10 | RDP sensor, deeper (NTLM, decoy passwords, client tools) | Done |
+| M11 | Settings you can edit (provider keys, encrypted at rest) | Done |
+| M12 | CVE watch | Done |
+| M13 | Indicators and threat intelligence | Done |
+| M14 | Users and roles (admin and viewer) | Done |
+| M15 | Campaigns and MITRE ATT&CK | Done |
+| M16 | Defend: blocklists, exports, feed, detections, exposure | Done |
+| M17 | Script library and optional LLM explainer | Done |
+| M18 | Alerts (Discord, Teams, e-mail) and weekly report | Done |
+| M19 | Today, global search, glossary, research scanners | Done |
 
 Details in [docs/ROADMAP.md](docs/ROADMAP.md).
 

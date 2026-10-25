@@ -14,6 +14,8 @@ This page describes how SuckerPot is built: the services, the networks, the queu
 **Built since:** insights, trends and malware endpoints and pages (M7), and dashboard login (M8).
 
 **Built since:** retention, compressed storage, kept-forever aggregates and the database disk guard (see [Data retention](retention.md)), and backups (`just backup`).
+
+**Built since (M10 to M19):** RDP depth, Settings that edit keys, CVE watch, indicators, users and roles, campaigns and ATT&CK, Defend (blocklists, exports, the opt-in feed, detections and exposure), the script library with its optional LLM explainer, alerts and the weekly report, and Today, search and research-scanner labels. The analysis features are in [Analysis workers](#analysis-workers-m15-to-m19).
 ```
 
 ## Overview
@@ -92,7 +94,7 @@ Each network has a single job. The point of the layout is that a compromised sen
 | `sensors-<name>`, one per sensor (`sensors-ssh`, `sensors-web`, `sensors-sip`, ...) | (project prefix) | None (`internal: true`) | `redis` and one sensor | The one link between a sensor and Redis. One network per sensor. |
 | `tools` | (project prefix) | None (`internal: true`) | `redis`, `demo` | The demo generator reaches Redis and nothing else. |
 | `backend` | (project prefix) | None (`internal: true`) | `redis`, `db`, `migrate`, `ingest`, `api` | Storage and processing stay off the internet. |
-| `egress` | (project prefix) | Outbound | `ingest` only | The one place for outbound calls (GeoIP downloads, reputation lookups, CVE feeds). |
+| `egress` | (project prefix) | Outbound | `ingest` only | The one place for outbound calls: GeoIP downloads, reputation lookups, CVE feeds, indicator intel, alert webhooks, the alert e-mail server and, when enabled, the Anthropic API. See [outbound hosts](#outbound-hosts). |
 | `dashboard` | `sp-dashboard` | None. Masquerading off. | `api` only | The published dashboard port. |
 
 `sp-ingress` and `sp-dashboard` have fixed bridge names, so the [host firewall](deployment.md#host-firewall) can match them by name.
@@ -120,7 +122,20 @@ This is **not** a complete block on outbound traffic. Without masquerading, pack
 
 ### Why only `ingest` has `egress`
 
-Only `ingest` needs outbound calls: GeoIP database downloads, AbuseIPDB and GreyNoise checks, the daily CVE feeds (`www.cisa.gov`, `services.nvd.nist.gov`, `api.github.com`), indicator lookups at three fixed hosts (`urlhaus-api.abuse.ch`, `threatfox-api.abuse.ch`, `www.virustotal.com`), and (in the future) optional payload fetches. The database and Redis are not reachable from the internet, and a sensor cannot reach the database.
+Only `ingest` needs outbound calls: GeoIP database downloads, AbuseIPDB and GreyNoise checks, the daily CVE feeds (`www.cisa.gov`, `services.nvd.nist.gov`, `api.github.com`), indicator lookups at three fixed hosts (`urlhaus-api.abuse.ch`, `threatfox-api.abuse.ch`, `www.virustotal.com`), alert delivery (webhooks and e-mail), the optional script explainer, and (in the future) optional payload fetches. The API never sends anything out. The database and Redis are not reachable from the internet, and a sensor cannot reach the database.
+
+### Outbound hosts
+
+| Caller | Destination | When | Rules |
+| --- | --- | --- | --- |
+| Alerts (Discord) | `discord.com`, `ptb.discord.com`, `canary.discord.com`, `discordapp.com` | A Discord channel is set up and a rule is on | Only `https`, port 443, a webhook path with the expected id and token shape. The URL is stored encrypted. |
+| Alerts (Teams) | `outlook.office.com`, `outlook.office365.com`, and hosts under `.webhook.office.com`, `.logic.azure.com` or `.api.powerplatform.com` | A Teams channel is set up and a rule is on | Same checks as Discord, with the Workflows and connector path prefixes. |
+| Alerts (e-mail) | The SMTP server you set (`SMTP_HOST`), over STARTTLS (port 587 by default) or SMTPS (465) | An e-mail channel is set up and a rule is on | The certificate is always checked. Plain text is never offered. The sender is the one address you set. |
+| Script explainer | `api.anthropic.com` | `LLM_ENABLED=true` and a key is set | Only normalised script text is sent. No address, host or session data. |
+
+Webhook and SMTP targets are checked when they are saved and again just before each send. Private and loopback addresses are refused. No other service in the stack has an outbound route.
+
+The public feed (`/feeds`, see [API](api.md)) is inbound only. It is served by the API on the dashboard port, and it is off until `FEEDS_ENABLED=true`.
 
 ## Redis
 
@@ -210,6 +225,31 @@ PostgreSQL 17 with TimescaleDB, managed by Alembic migrations in `db/`.
 | `indicators` | Regular table | One row per URL, domain, IP or file hash seen in events: first and last seen, sightings, sensors, role guess (payload source, contacted, hash) |
 | `indicator_sessions` | Regular table | Bounded links from an indicator to the sessions that showed it |
 | `indicator_intel` | Regular table | 24 h cache of URLhaus, ThreatFox and VirusTotal answers per indicator |
+| `attack_techniques` | Regular table | The MITRE ATT&CK catalogue from `ingest/rules/attack/techniques.yaml` (migration 0011) |
+| `technique_daily` | Regular table | Sessions per technique and day, for the heatmap |
+| `campaigns` | Regular table | One row per campaign: first and last seen, sources, sessions, the story facts (0011) |
+| `campaign_keys` | Regular table | The clustering keys of a campaign (script, exploit, credential list, payload host, hash, family) |
+| `campaign_sessions` | Regular table | Bounded links from a campaign to its sessions (`CAMPAIGN_LINK_CAP`) |
+| `blocklist_entries` | Regular table | Scored blocklist rows, rewritten every cycle (`BLOCKLIST_MAX_ROWS`), with reasons (0012) |
+| `blocklist_overrides` | Regular table | Administrator allow and block decisions, with a note and an optional expiry |
+| `feed_tokens` | Regular table | Feed tokens as SHA-256 hashes, with limits and revocation time. Never the token itself. |
+| `inventory_services` | Regular table | The owner's service inventory for "Your exposure" (free text, compared with our data only) |
+| `scripts` | Regular table | One row per distinct command script, with counters that only grow (0013) |
+| `script_sessions` | Regular table | Bounded links from a script to its sessions |
+| `script_explanations` | Regular table | The annotation or the LLM explanation of a script, with its source and prompt version |
+| `llm_requests` | Regular table | Queued and finished explanation requests (only an administrator queues one) |
+| `alert_channels` | Regular table | Discord, Teams and e-mail targets, encrypted at rest (0014) |
+| `alert_rules` | Regular table | The alert rules (new campaign, new download host, malware drop, watched CVE seen, weekly report) with their on/off state and the time each was switched on |
+| `alert_cursors` | Regular table | Where each rule has read up to, so enabling a rule never replays history |
+| `alert_outbox` | Regular table | Queued messages per channel, with the attempt count and a constant error code |
+| `alert_test_requests` | Regular table | "Send a test message" requests, answered by ingest |
+| `watched_cves` | Regular table | CVE ids an administrator asked to be told about |
+| `weekly_reports` | Regular table | One stored report per finished week (escaped HTML and the summary, capped at about 512 KiB) |
+| `users`, `audit_log` | Regular tables | Dashboard accounts (0010) and the one-year audit log. Ingest has no access. |
+
+Migration 0015 adds columns rather than a table: `events.benign`, `sessions.benign` and `sessions.scanner_name` (research-scanner labels). Migration 0011 adds `events.techniques`, `sessions.techniques`, `sessions.campaign_id` and `sessions.clustered_at`.
+
+The row limits `CAMPAIGNS_MAX_ROWS` and `SCRIPTS_MAX_ROWS` apply to the campaign and script tables. The retention job prunes them, the oldest and least seen first. See [Configuration](configuration.md).
 
 Raw events are dropped after `RETENTION_DAYS` (90), compressed after 7 days, and four continuous aggregates plus `sessions_daily` are kept forever. A disk guard drops the oldest raw chunks when the database grows past `DB_MAX_SIZE_GB`. See [Data retention](retention.md).
 
@@ -221,7 +261,7 @@ Each service connects with its own role. Only the migration step can change the 
 | --- | --- | --- | --- |
 | Owner (`POSTGRES_USER`) | `db`, `migrate` | Owns the schema. Used for migrations only. | Not set |
 | `suckerpot_ingest` | `ingest` | Insert and update on the tables ingest writes. No schema changes, no role changes. | 30 s |
-| `suckerpot_api` | `api` | `SELECT` only | 5 s |
+| `suckerpot_api` | `api` | `SELECT` on the data tables. It also writes the tables the dashboard manages: users and the audit log (append only), provider keys, overrides, inventory, feed tokens, alert channels, alert rules, watched CVEs and script requests. It cannot write events, sessions, campaigns, blocklist rows or alert outbox rows. | 5 s |
 
 Neither application role is a superuser. Neither can create databases or roles. The `migrate` service sets both role passwords on **every** run, from the environment. The password is sent as a SCRAM-SHA-256 verifier, so it never appears in the database logs. This is how you rotate them: see [Rotating secrets](deployment.md#rotating-secrets).
 
@@ -242,6 +282,31 @@ Built (M4) and wired into Compose: ingest gets the provider variables and the `g
 
 A **session** is one connection. It is the unit the dashboard tells as a story, such as "tried 37 SSH passwords, then ran a crypto-miner".
 
+## Analysis workers (M15 to M19)
+
+Ingest runs one background worker per feature. Each one is off until its `*_ENABLED` variable is `true` (see [Configuration](configuration.md)). A worker that is off does nothing and holds no secret. The first cycle starts at start-up, and the next one follows the interval below. An error in one cycle is logged with its exception type, and the next cycle runs.
+
+| Worker | Switch | Interval | What it does |
+| --- | --- | --- | --- |
+| ATT&CK catalogue | `ATTACK_ENABLED` | every hour | Upserts `techniques.yaml` into `attack_techniques`. Removes nothing, so old sessions keep readable ids. |
+| Campaigns | `CAMPAIGNS_ENABLED` | every 5 minutes | Clusters finished sessions into campaigns. One bounded cycle: at most a fixed number of sessions, commands and keys per session. No network. |
+| Blocklist | `BLOCKLIST_ENABLED` | every 15 minutes | Scores the last `BLOCKLIST_WINDOW_DAYS` and rewrites `blocklist_entries`. Nothing is resolved or contacted. |
+| Scripts | `SCRIPTS_ENABLED` | every 5 minutes | Fingerprints sessions with two or more commands into `scripts`. |
+| Script explainer | `LLM_ENABLED` | every 15 seconds (cheap when the queue is empty) | Takes at most one queued request per cycle. Without the switch, nothing is sent to Anthropic. |
+| Alerts | `ALERTS_ENABLED` | every 10 seconds for test messages, every minute for rules, then delivery | Reads new rows for each enabled rule, queues one message per channel, and delivers within the rate limits. |
+| Weekly report | `REPORTS_ENABLED` | every hour | Builds the report for the last finished week once, on the first check after Monday 06:00 in `SITE_TIMEZONE`. |
+
+Two parts run inside the normal write path rather than on a timer. While writing a batch, ingest labels research scanners (`ingest/rules/scanners.yaml`, matched on the network owner) and sets the `benign` flag only when a session did nothing but probe. The tagging engine also adds the ATT&CK technique ids from `ingest/rules/attack/`. Indicator extraction (M13) runs there too.
+
+### How the features fit together
+
+- **Campaigns** group sessions by shared keys: a command script, an exploit request shape, a credential list, a payload host, a file hash and a malware family. Script, exploit and credential-list keys are SHA-256 fingerprints, and the other keys are indicator values. Research scanners are never clustered. A campaign needs at least `CAMPAIGN_MIN_SOURCES` distinct sources.
+- **Techniques** come from the tagging rules. They fill `events.techniques` and `sessions.techniques`, and `technique_daily` feeds the heatmap.
+- **Blocklists** score indicators by distinct source networks, never by repeat count, and never list private, reserved, public resolver or big hosting names. Overrides are applied on every rewrite.
+- **Scripts** normalise the command text first (`ingest/ingest/normalize.py`: addresses, URLs, numbers and long blobs become placeholders). Annotations come from `ingest/rules/annotations/*.yaml`. The LLM only ever sees the normalised text, under a daily call quota and a monthly token cap.
+- **Alerts** read each rule's own cursor, so enabling a rule never replays old events. Channel targets are decrypted in memory only, right before a send. Failed sends are retried up to three times, only when the error can pass.
+- **Weekly report** is stored as escaped HTML plus a summary. It is built once per week.
+
 ## API
 
 The API is FastAPI. It serves:
@@ -253,11 +318,29 @@ The API is FastAPI. It serves:
 - The built web UI, when `WEB_DIST_DIR` contains an `index.html`. Unknown paths return the app shell so client-side routes work, and `/api/*` paths never fall back to it.
 - The OpenAPI documents at `/docs`, `/redoc` and `/openapi.json`. These are **off** unless `API_ENABLE_DOCS=true`.
 
-The API has no Redis access. It reads the database only.
+The API has no Redis access and no outbound route. It reads the database and writes only the tables listed in [Database roles](#database-roles). Ingest does the rest: campaigns, blocklists, scripts and alerts are all computed there.
+
+The feature endpoints are grouped as follows (each group is documented in [API](api.md)):
+
+| Prefix | Feature | Milestone |
+| --- | --- | --- |
+| `/api/v1/cves` | CVE watch | M12 |
+| `/api/v1/indicators`, `/api/v1/infrastructure` | Indicators | M13 |
+| `/api/v1/users`, `/api/v1/audit` | Users and audit log (administrators) | M14 |
+| `/api/v1/campaigns`, `/api/v1/attack` | Campaigns and ATT&CK | M15 |
+| `/api/v1/defend/...` | Blocklists, exports, overrides, detections, exposure | M16 |
+| `/api/v1/scripts` | Script library | M17 |
+| `/api/v1/alerts`, `/api/v1/reports` | Alert channels, rules, outbox, weekly report | M18 |
+| `/api/v1/today`, `/api/v1/search` | Today and global search | M19 |
+| `/feeds/...` | Opt-in public feed, outside `/api/v1` | M16 |
 
 ### Live feed
 
 One background task in the API polls the `events` table for rows newer than the last one it sent (once per second, up to 500 rows per tick). It sends the new rows to each connected WebSocket client through a bounded queue of 200 messages. A slow client loses its oldest messages, and is told how many were lost. The hub accepts at most 50 clients in total and 5 per source address. Details are in [API](api.md#live-feed).
+
+### Public feed (opt-in)
+
+When `FEEDS_ENABLED=true`, the API also serves the blocklist feed under `/feeds`, on the dashboard port. It is the only route outside `/api/v1` and outside the dashboard login. Each request must carry a feed token, made in Settings and stored only as a hash, or the request is refused with a plain `404`. Limits are applied per client address and per token. Behind a proxy, set `AUTH_TRUSTED_PROXIES`, or every client looks the same. See [Defend](defend.md#the-subscription-feed-optional).
 
 ### Security headers
 
@@ -273,7 +356,8 @@ The WebSocket checks the `Origin` header. Requests with no `Origin` (non-browser
 | Ingest and API | FastAPI, SQLAlchemy 2 with asyncpg, Alembic |
 | Queue | Redis 7.4 Streams |
 | Database | PostgreSQL 17 with TimescaleDB 2.22.1 |
-| Enrichment | MaxMind GeoLite2 or DB-IP Lite (local files), AbuseIPDB, GreyNoise Community |
+| Enrichment | MaxMind GeoLite2 or DB-IP Lite (local files), AbuseIPDB, GreyNoise Community, abuse.ch URLhaus and ThreatFox, VirusTotal (hashes only) |
+| Alerts and reports | Discord and Microsoft Teams webhooks, SMTP over TLS, the Anthropic API for the optional explainer |
 | Web UI | React, Vite, TypeScript (strict), Tailwind, shadcn/ui, TanStack Query. The Live page is a flat SVG map, with no WebGL. Terminal replay planned. |
 | Python tooling | uv, ruff, mypy (strict), pytest |
 | Web tooling | pnpm, eslint, prettier, vitest, Playwright |

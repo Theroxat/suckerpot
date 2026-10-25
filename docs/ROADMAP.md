@@ -179,9 +179,68 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 **Acceptance:** a colleague can be given read-only access and cannot change anything, by any request; disabling or resetting them ends their sessions at once; security review PASS.
 
+## M15 — Campaigns and ATT&CK
+
+- [x] One command normaliser (addresses, URLs, numbers and long blobs replaced by placeholders) shared by campaign clustering and the script library.
+- [x] MITRE ATT&CK catalogue in `ingest/rules/attack/techniques.yaml`, synced hourly, and rules that tag each session with the techniques it used.
+- [x] Campaign clustering of finished sessions by shared keys: script, exploit, credential list, payload host, file hash and malware family.
+- [x] A campaign needs at least `CAMPAIGN_MIN_SOURCES` distinct sources, and one campaign links at most `CAMPAIGN_LINK_CAP` sessions.
+- [x] Research scanners are never clustered.
+- [x] Campaign pages with a plain-English story, and a Techniques page with a heatmap of ATT&CK techniques per day.
+- [x] Campaign and ATT&CK endpoints in the API, open to both roles.
+
+**Acceptance:** campaigns form from the demo data, a single source never makes one, and security review PASS after the fixes.
+
+## M16 — Defend
+
+- [x] Scored blocklists for addresses, host names, download URLs and file hashes, rebuilt every 15 minutes, with a plain-English reason for every point.
+- [x] Scores count distinct source networks, so one attacker cannot fill a list by repeating an indicator.
+- [x] A never-list: public resolvers, large SaaS and CDN domains, shared hosting names, reserved addresses, the owner's own addresses and `BLOCKLIST_NEVER`.
+- [x] Overrides (always allow, always block) with a note, an optional expiry and an audit entry.
+- [x] Exports for OPNsense and pfSense aliases, plain text and CSV; CSV cells are safe to open in a spreadsheet.
+- [x] Opt-in token feed under `/feeds` (`FEEDS_ENABLED`): hashed tokens with limits, expiry and revocation.
+- [x] Sigma and Suricata rules written from recorded behaviour, each marked "review before deploying".
+- [x] "Your exposure" page: your own service inventory next to what the honeypot saw for the same kind of service.
+
+**Acceptance:** the feed is off by default, blocklists stay off until enabled, and security review PASS after the fixes.
+
+## M17 — Script library
+
+- [x] Sessions that ran two or more commands are fingerprinted from their normalised command list. One row stands for one distinct script.
+- [x] Script counters only grow, so they survive the deletion of old sessions.
+- [x] Plain-English explanations from a declarative annotation base in `ingest/rules/annotations/*.yaml`, matched without regular expressions.
+- [x] Optional LLM explainer (`LLM_ENABLED`, off by default) with a daily call quota and a monthly token cap. It sends only the normalised script text, and its answer is stored as text labelled "AI-generated, may be wrong".
+- [x] Scripts list and script detail pages. Only an administrator can ask for an explanation ("Explain now").
+
+**Acceptance:** with `LLM_ENABLED=false` nothing leaves the host, the explainer never executes or fetches what it reads, and security review PASS after the fixes.
+
+## M18 — Alerts and weekly report
+
+- [x] Alert channels: Discord and Microsoft Teams webhooks, and e-mail over TLS (STARTTLS or SMTPS). Targets are validated and encrypted at rest.
+- [x] Alert rules for new campaigns, new download hosts, malware drops and watched CVEs. Every rule is off until it is switched on, and a rule never replays history.
+- [x] A delivery outbox with rate limits and up to three attempts, a constant error code per failure, and a "send a test message" button.
+- [x] Weekly report, built once a week after Monday 06:00 in `SITE_TIMEZONE`, with a one-page printable view and an optional alert.
+- [x] Alerts never use research-scanner sessions or documentation addresses.
+
+**Acceptance:** nothing is sent until a channel and a rule are both enabled, each channel type accepts a test message, and security review PASS after the fixes.
+
+## M19 — Today, search and research scanners
+
+- [x] Today home page: what changed in the last 24 hours, in plain English.
+- [x] Global search for IP addresses, hashes, domains, CVEs and campaigns, from one box in the header.
+- [x] Glossary of the terms used in the dashboard.
+- [x] Known research scanners (`ingest/rules/scanners.yaml`) are labelled benign by the network that owns them, and left out of lists by default. The HTTP user agent never decides it.
+- [x] Benign is an allowlist of harmless behaviour (connect, probe, plain GET, HEAD or OPTIONS). Any login, command, download, exploit or POST makes a session non-benign for good.
+- [x] `include_benign` switch on the lists, so the scanners can be shown on request.
+
+**Acceptance:** a research scanner never raises an alert, a session that does more than probe is never labelled benign, and security review PASS after the fixes.
+
 ## Later (not part of the loop)
 
-- Discord alerts on malware drops.
+- Per-/24 or per-ASN daily cap on new campaigns, so one network cannot create many campaigns in a day.
+- ATT&CK per-event mapping: compute the lower-case form of each event field once and share it between rules.
+- Campaign clustering: commit per chunk instead of one transaction per cycle, so a long cycle does not hold locks.
+- Payload analysis in quarantine: static checks on fetched files, without execution. To be framed with the owner before any design work.
 - Provider keys: sealed-box (public-key) encryption so the API can store a key but never read it back, only ingest can.
 - Public read-only page through Cloudflare Tunnel, IPs masked.
 - LLM-backed SSH shell.
