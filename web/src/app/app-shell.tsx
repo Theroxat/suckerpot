@@ -140,8 +140,10 @@ export function AppShell() {
         </Sheet>
         <Logo />
         <span className="sr-only">{currentLabel(pathname)}</span>
-        <ReadOnlyBadge className="ml-auto" />
-        <LiveIndicator status={status} className="mr-2 ml-2" />
+        <div className="flex-1" />
+        <ReadOnlyBadge short />
+        <LiveIndicator status={status} className="mx-1" />
+        <AccountMenu variant="compact" />
       </header>
 
       <main id="main" className="lg:pl-60">

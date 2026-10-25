@@ -4,7 +4,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 
 /** Shown to viewers only: everything can be read, nothing can be changed. */
-export function ReadOnlyBadge({ className }: { className?: string }) {
+export function ReadOnlyBadge({
+  className,
+  short = false,
+}: {
+  className?: string
+  /** "Read-only" alone, for the narrow mobile top bar; the full label stays for screen readers. */
+  short?: boolean
+}) {
   const { user } = useAuth()
   if (user?.role !== "viewer") return null
   return (
@@ -18,7 +25,7 @@ export function ReadOnlyBadge({ className }: { className?: string }) {
           )}
         >
           <Eye aria-hidden className="size-3" />
-          Read-only access
+          Read-only{short ? <span className="sr-only"> access</span> : " access"}
         </span>
       </TooltipTrigger>
       <TooltipContent side="top">

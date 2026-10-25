@@ -24,8 +24,11 @@ function initials(name: string): string {
     .slice(0, 2)
 }
 
-/** Who is signed in, with the last sign-in, "Change password" and "Sign out". */
-export function AccountMenu() {
+/**
+ * Who is signed in, with the last sign-in, "Change password" and "Sign out". `full` is the
+ * sidebar footer row; `compact` is the avatar alone, for the mobile top bar.
+ */
+export function AccountMenu({ variant = "full" }: { variant?: "full" | "compact" }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [changing, setChanging] = useState(false)
@@ -36,33 +39,53 @@ export function AccountMenu() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={`Account menu for ${user.display_name}`}
-            className="flex w-full items-center gap-2.5 rounded-md px-1 py-1 text-left transition-colors duration-150 hover:bg-surface-hover/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-          >
-            <span
-              aria-hidden
-              className="grid size-7 shrink-0 place-items-center rounded-full border bg-surface text-2xs font-semibold text-fg-muted"
+          {variant === "compact" ? (
+            <button
+              type="button"
+              aria-label={`Account menu for ${user.display_name}`}
+              className="grid size-10 shrink-0 place-items-center rounded-md transition-colors duration-150 hover:bg-surface-hover/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
             >
-              {initials(user.display_name)}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs font-medium text-fg">
-                {user.display_name}
+              <span
+                aria-hidden
+                className="grid size-7 place-items-center rounded-full border bg-surface text-2xs font-semibold text-fg-muted"
+              >
+                {initials(user.display_name)}
               </span>
-              <span className="block truncate text-2xs text-fg-subtle">{role}</span>
-            </span>
-            <ChevronsUpDown aria-hidden className="size-3.5 shrink-0 text-fg-subtle" />
-          </button>
+            </button>
+          ) : (
+            <button
+              type="button"
+              aria-label={`Account menu for ${user.display_name}`}
+              className="flex w-full items-center gap-2.5 rounded-md px-1 py-1 text-left transition-colors duration-150 hover:bg-surface-hover/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            >
+              <span
+                aria-hidden
+                className="grid size-7 shrink-0 place-items-center rounded-full border bg-surface text-2xs font-semibold text-fg-muted"
+              >
+                {initials(user.display_name)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium text-fg">
+                  {user.display_name}
+                </span>
+                <span className="block truncate text-2xs text-fg-subtle">{role}</span>
+              </span>
+              <ChevronsUpDown aria-hidden className="size-3.5 shrink-0 text-fg-subtle" />
+            </button>
+          )}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="top" className="w-60">
+        <DropdownMenuContent
+          align={variant === "compact" ? "end" : "start"}
+          side={variant === "compact" ? "bottom" : "top"}
+          className="w-60"
+        >
           <DropdownMenuLabel className="space-y-0.5 font-normal">
             <span className="block truncate text-sm font-medium text-fg">{user.display_name}</span>
             <span className="block truncate font-mono text-xs text-fg-muted">{user.username}</span>
             {user.last_login_at ? (
               <span className="block pt-1 text-xs text-fg-muted">
-                Last sign-in <RelativeTime iso={user.last_login_at} className="text-xs" />
+                {variant === "compact" ? `${role} · ` : null}Last sign-in{" "}
+                <RelativeTime iso={user.last_login_at} className="text-xs" />
               </span>
             ) : null}
           </DropdownMenuLabel>

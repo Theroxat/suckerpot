@@ -27,13 +27,19 @@ export interface AuthState {
 
 function demoUser(): AuthUser {
   const mode = demoMode()
+  // The same people as the mock Users card: the owner, a viewer, and Jordan, who has not signed
+  // in yet (the first-login screen).
+  const who =
+    mode === "viewer"
+      ? { username: "colleague", display_name: "A Colleague", role: "viewer" as const }
+      : mode === "first-login"
+        ? { username: "jordan", display_name: "Jordan Lee", role: "viewer" as const }
+        : { username: "admin", display_name: "Admin", role: "admin" as const }
   return {
-    username: mode === "viewer" ? "colleague" : "demo",
-    display_name: mode === "viewer" ? "A Colleague" : "Demo admin",
-    role: mode === "viewer" ? "viewer" : "admin",
+    ...who,
     is_owner: mode === "admin",
     must_change_password: mode === "first-login",
-    read_only: mode === "viewer",
+    read_only: who.role === "viewer",
     last_login_at: new Date(Date.now() - 26 * 3_600_000).toISOString(),
   }
 }

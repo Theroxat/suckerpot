@@ -4,7 +4,15 @@ import {
   CircleCheck,
   CircleDashed,
   Ellipsis,
+  Eye,
+  KeyRound,
   Lock,
+  LockOpen,
+  LogOut,
+  ShieldCheck,
+  Trash2,
+  UserCheck,
+  UserCog,
   UserPlus,
   type LucideIcon,
 } from "lucide-react"
@@ -20,6 +28,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -51,6 +60,18 @@ const STATE_STYLE: Record<UserState, { icon: LucideIcon; className: string }> = 
   pending: { icon: CircleDashed, className: "text-fg-muted" },
   locked: { icon: Lock, className: "text-sev-warning" },
   disabled: { icon: Ban, className: "text-fg-muted" },
+}
+
+/** Role as a neutral badge: a shield for those who can change things, an eye for viewers. */
+function RoleBadge({ user }: { user: UserItem }) {
+  const admin = user.is_owner || user.role === "admin"
+  const Icon = admin ? ShieldCheck : Eye
+  return (
+    <Badge variant="outline" className={cn("rounded-sm", admin ? "text-fg" : "text-fg-muted")}>
+      <Icon aria-hidden className="size-3" />
+      {user.is_owner ? "Owner" : ROLE_LABEL[user.role]}
+    </Badge>
+  )
 }
 
 function StateLabel({ user }: { user: UserItem }) {
@@ -222,26 +243,47 @@ function RowActions({
           <Ellipsis aria-hidden />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-56">
+        {isYou ? (
+          <>
+            <DropdownMenuLabel className="text-xs font-normal text-fg-muted">
+              This is you. Change your own password from the account menu.
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuItem disabled={isYou} onSelect={() => onPick("role")}>
+          <UserCog aria-hidden />
           Change role
         </DropdownMenuItem>
         {state === "disabled" ? (
-          <DropdownMenuItem onSelect={() => onPick("enable")}>Enable</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onPick("enable")}>
+            <UserCheck aria-hidden />
+            Enable
+          </DropdownMenuItem>
         ) : (
           <DropdownMenuItem disabled={isYou} onSelect={() => onPick("disable")}>
+            <Ban aria-hidden />
             Disable
           </DropdownMenuItem>
         )}
         {state === "locked" ? (
-          <DropdownMenuItem onSelect={() => onPick("unlock")}>Unlock</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onPick("unlock")}>
+            <LockOpen aria-hidden />
+            Unlock
+          </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem disabled={isYou} onSelect={() => onPick("reset")}>
+          <KeyRound aria-hidden />
           Reset password
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onPick("revoke")}>Sign out everywhere</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onPick("revoke")}>
+          <LogOut aria-hidden />
+          Sign out everywhere
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled={isYou} onSelect={() => onPick("delete")}>
+          <Trash2 aria-hidden />
           Delete user
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -261,7 +303,12 @@ function UserRow({
   return (
     <li className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 px-4 py-3 sm:px-5 lg:grid-cols-[minmax(0,1.4fr)_9rem_12rem_minmax(0,1fr)_2rem]">
       <div className="min-w-0">
-        <p className="flex items-center gap-2 text-sm font-medium text-fg">
+        <p
+          className={cn(
+            "flex items-center gap-2 text-sm font-medium",
+            user.disabled ? "text-fg-muted" : "text-fg",
+          )}
+        >
           <span className="truncate">{user.display_name}</span>
           {isYou ? <span className="text-xs font-normal text-fg-muted">(you)</span> : null}
         </p>
@@ -269,15 +316,7 @@ function UserRow({
       </div>
       <div className="col-start-1 row-start-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 lg:contents">
         <span className="lg:col-start-2 lg:row-start-1">
-          {user.is_owner ? (
-            <Badge variant="outline" className="text-fg-muted">
-              Owner
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="text-fg-muted">
-              {ROLE_LABEL[user.role]}
-            </Badge>
-          )}
+          <RoleBadge user={user} />
         </span>
         <span className="lg:col-start-3 lg:row-start-1">
           {user.is_owner ? (
