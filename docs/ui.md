@@ -63,7 +63,7 @@ The Live page is the screen to leave running on a wall or a second monitor. The 
 
 From top to bottom:
 
-- **Map.** A flat world map (Equal Earth projection) with land and borders. It shows the last 15 minutes of traffic: one arc per source country, landing at the home point (Switzerland by default). An arc takes the colour of the sensor family that sends most traffic from that country, and gets thicker with more events. Presets are "Europe" (the default) and "World". Drag, scroll, pinch or use the arrow keys, `+`, `-`, `E` and `0` to pan and zoom.
+- **Map.** A flat world map (Equal Earth projection) with land and borders. It shows the last 15 minutes of traffic: one arc per source country, landing at the home point (Switzerland by default). An arc takes the colour of the sensor family that sends most traffic from that country, and gets thicker with more events. Presets are "World" (the default) and "Europe"; the last choice is remembered. Drag, scroll, pinch or use the arrow keys, `+`, `-`, `E` and `0` to pan and zoom.
 - **Stats strip.** Events per minute, in total and per sensor family, in the top-left corner of the map (or under it on phones). The family colour is also the arc colour, so the strip is the legend. Click a family to filter the page. Click it again to clear the filter.
 - **Ticker.** The newest events, as one row of chips under the map. Hover or focus the ticker to hold it still. New events then wait behind an "N new events" pill. Click the pill to catch up.
 - **Rankings.** Three cards show the top addresses, the top countries and the top networks over the same 15 minutes. Each card opens with a sentence, such as "France leads with 21% of events, from 10 addresses." Each row opens the filtered Attacks view.
