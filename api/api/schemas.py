@@ -174,6 +174,8 @@ class EnrichmentSettings(BaseModel):
     geoip: GeoipStatus
     abuseipdb: ReputationProvider
     greynoise: ReputationProvider
+    abusech: ReputationProvider
+    virustotal: ReputationProvider
     maxmind: KeyInfo
     nvd: KeyInfo
     github: KeyInfo
