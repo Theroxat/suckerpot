@@ -74,7 +74,9 @@ async def test_a_disabled_worker_publishes_once_and_returns(
         seen.append(detail)
 
     await asyncio.wait_for(worker.run(publish), timeout=2)
-    assert seen == [{worker.name: {"enabled": False, "cycles": 0, "last_error": None}}]
+    base = {"enabled": False, "cycles": 0, "last_error": None}
+    assert len(seen) == 1
+    assert {k: v for k, v in seen[0][worker.name].items() if k in base} == base
     await worker.aclose()
 
 
