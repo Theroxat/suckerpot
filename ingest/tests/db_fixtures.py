@@ -92,7 +92,8 @@ async def engine(migrated: None) -> AsyncIterator[AsyncEngine]:
         await conn.execute(
             text(
                 "TRUNCATE events, sessions, ip_reputation, enrichment_quota, "
-                "enrichment_status, sessions_daily, system_status, maintenance_log"
+                "enrichment_status, sessions_daily, system_status, maintenance_log, "
+                "provider_secrets, provider_test_requests"
             )
         )
     yield eng
