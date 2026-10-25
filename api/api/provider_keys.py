@@ -52,7 +52,9 @@ REAUTH_SCOPE = "reauth"
 TEST_COOLDOWN = timedelta(seconds=20)
 MAX_TESTS_PER_DAY = 10  # per provider: every test spends one unit of the provider's daily quota
 
-ProviderName = Annotated[str, Path(pattern="^(abuseipdb|greynoise|maxmind|nvd|github)$")]
+ProviderName = Annotated[
+    str, Path(pattern="^(abuseipdb|greynoise|maxmind|nvd|github|abusech|virustotal)$")
+]
 
 
 class SetKeyBody(BaseModel):

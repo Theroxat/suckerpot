@@ -336,6 +336,8 @@ async def enrichment_settings(session: DbSession, request: Request) -> Enrichmen
         geoip=geoip,
         abuseipdb=rep("abuseipdb"),
         greynoise=rep("greynoise"),
+        abusech=rep("abusech"),
+        virustotal=rep("virustotal"),
         maxmind=KeyInfo(**key_info("maxmind")),
         nvd=KeyInfo(**key_info("nvd")),
         github=KeyInfo(**key_info("github")),

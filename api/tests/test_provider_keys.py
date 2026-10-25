@@ -260,6 +260,17 @@ def test_unknown_provider(client: TestClient) -> None:
     assert put(client, login(client), "shodan").status_code == 422
 
 
+@pytest.mark.parametrize("provider", ["abusech", "virustotal"])
+def test_intel_providers_accept_encrypted_keys(
+    client: TestClient, db: FakeSession, provider: str
+) -> None:
+    r = put(client, login(client), provider)
+    assert r.status_code == 200 and SAMPLE not in r.text
+    assert r.json()["provider"] == provider and r.json()["last4"] == SAMPLE[-4:]
+    stored = db.params()
+    assert stored["provider"] == provider and SAMPLE.encode() not in stored["ciphertext"]
+
+
 def test_remove_key(client: TestClient, db: FakeSession, caplog: pytest.LogCaptureFixture) -> None:
     hdr = login(client)
     url = "/api/v1/settings/providers/greynoise"
