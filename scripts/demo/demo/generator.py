@@ -108,7 +108,9 @@ class Generator:
                 src_port=plan.src_port,
                 dst_port=plan.dst_port,
                 type=s.type,
-                data=s.data,
+                # Marks the event as demo data: indicators taken from it are never sent to an
+                # intel service.
+                data={**s.data, "demo": True},
             )
             for s in plan.steps
         ]

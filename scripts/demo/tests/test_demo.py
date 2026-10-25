@@ -161,11 +161,9 @@ def test_downloads_are_synthetic_and_recorded(events: list[Event]) -> None:
         if host in CAMPAIGN_HOSTS:
             continue
         if host[0].isdigit():
-            assert is_acceptable(host)
+            assert any(ipaddress.ip_address(host) in n for n in DOC_NETS), host
         else:
-            assert host.rsplit(".", 1)[1] in {
-                "xyz", "top", "site", "click", "online", "icu", "cyou", "buzz", "sbs", "shop",
-            }  # fmt: skip
+            assert host.rsplit(".", 1)[1] in {"example", "test"}, host  # reserved: never real
 
 
 def test_campaign_hosts_are_shared_documentation_values(events: list[Event]) -> None:
@@ -183,6 +181,10 @@ def test_campaign_hosts_are_shared_documentation_values(events: list[Event]) -> 
     assert per_host and max(len(ips) for ips in per_host.values()) >= 20  # shared infrastructure
     hashed = [e.data["sha256"] for e in dls if "sha256" in e.data]
     assert hashed and all(len(h) == 64 and set(h) <= set("0123456789abcdef") for h in hashed)
+
+
+def test_every_event_is_marked_as_demo(events: list[Event]) -> None:
+    assert all(e.data.get("demo") is True for e in events)
 
 
 def test_telnet_mirai_flow(events: list[Event]) -> None:
@@ -442,7 +444,7 @@ async def test_redis_sink_uses_per_sensor_streams() -> None:
 
     r = R()
     sink = RedisSink(EventPublisher(host="x", client=r, stream="events"))
-    await sink.emit(gen_events(2, 200, 3))
+    await sink.emit(gen_events(2, 600, 3))
     assert r.log
     assert {s for _, s in r.log} == {n.value for n in SensorName}
     assert all(stream == f"events:{sensor}" for stream, sensor in r.log)

@@ -55,6 +55,12 @@ config: ports
 
 # Generate demo data once: just demo --sessions 200 --days 3
 demo *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${ABUSECH_AUTH_KEY:-}${VIRUSTOTAL_API_KEY:-}" ]; then
+      echo "note: threat-intel keys are set. Demo indicators are marked and never sent to abuse.ch or VirusTotal," >&2
+      echo "      but real traffic on this stack is. Use a separate stack for demos if that is not what you want." >&2
+    fi
     docker compose --profile tools run --rm demo {{args}}
 
 # Keep generating live demo traffic (stop with Ctrl+C).
