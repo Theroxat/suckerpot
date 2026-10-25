@@ -169,7 +169,10 @@ budget), `memory_pressure`, `evicted`, `write_timeout`, `shutdown_command`, `err
   20 KB/s (burst 300 KB) of event bytes; one IP may also have at most 250 ordinary and 100
   urgent events waiting. Urgent events (`connect`, `disconnect`, `login_attempt`,
   `download_attempt` and flagged commands such as `slaveof` or `module_load`) go to their own
-  small queue, which is published first. A flooding source is therefore throttled alone and
+  small queue, which is published first. The shared buckets (session admission and the global
+  event buckets) keep 30 % in reserve that only light sources can spend (a source is heavy once
+  it has used more than half of its own per-IP burst), so flooding IPs cannot leave a quiet
+  one unrecorded. A flooding source is therefore throttled alone and
   cannot crowd out the events of other sources (test: six flooding connections plus a victim
   IP with a slow publisher, every victim event arrives). `disconnect` events have a reserve of
   their own: a per-IP bucket of 4/s (burst 60) that bypasses the other per-IP buckets and
