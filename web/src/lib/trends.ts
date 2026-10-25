@@ -9,9 +9,23 @@ import { formatNumber, formatPercent, plural } from "./format"
 
 // --- API shapes (M7 contract) -------------------------------------------------
 
+export type InsightKind =
+  "surge" | "new_value" | "campaign" | "exploit" | "success" | "geo_shift" | "brute_force"
+
+/** Short name of each insight kind (screen readers, tooltips). */
+export const INSIGHT_KIND_LABEL: Record<InsightKind, string> = {
+  surge: "Surge",
+  new_value: "New value",
+  campaign: "Campaign",
+  exploit: "Exploit",
+  success: "Successful login",
+  geo_shift: "New origin",
+  brute_force: "Brute force",
+}
+
 export interface Insight {
   id: string
-  kind: "surge" | "new_value" | "campaign" | "exploit" | "success" | "geo_shift"
+  kind: InsightKind
   severity: Severity
   sentence: string
   evidence: { metric: string; current: number; previous: number; ratio: number }

@@ -1,20 +1,20 @@
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { ArrowUp, Pause, Play, Radio, SearchX, WifiOff } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Link, useSearchParams } from "react-router"
+import { Link } from "react-router"
 import { useLiveFeed } from "@/app/use-live-feed"
 import { EmptyState } from "@/components/empty-state"
 import { SensorFilter } from "@/components/filter-bar"
-import { LiveGlobe } from "@/components/globe/live-globe"
+import { LiveMap } from "@/components/globe/live-globe"
 import { LiveEventRow } from "@/components/live-event-row"
-import { StatTile } from "@/components/stat-tile"
+import { FamilyTile } from "@/components/family-tile"
 import { PageHeader } from "@/components/page-header"
 import { SkeletonList } from "@/components/skeletons"
 import { Button } from "@/components/ui/button"
-import { SENSORS, isSensor } from "@/lib/api"
+import { useSensorFilter } from "@/hooks/use-sensor-filter"
 import { formatNumber, plural } from "@/lib/format"
-import { deriveStats, formatSessions, liveFinding } from "@/lib/live-stats"
-import { SENSOR_META } from "@/lib/sensors"
+import { deriveStats, liveFinding } from "@/lib/live-stats"
+import { SENSOR_FAMILIES, sensorSetPhrase } from "@/lib/sensors"
 import { cn } from "@/lib/utils"
 
 /** How long a freshly arrived row keeps its slide-in marker. */
@@ -24,9 +24,7 @@ const TOP_SLACK = 8
 
 export function LivePage() {
   const feed = useLiveFeed()
-  const [params] = useSearchParams()
-  const rawSensor = params.get("sensor")
-  const sensor = isSensor(rawSensor) ? rawSensor : null
+  const [sensors] = useSensorFilter()
 
   const stats = useMemo(
     () => feed.stats ?? (feed.events.length ? deriveStats(feed.events) : null),
@@ -59,10 +57,11 @@ export function LivePage() {
     return () => clearTimeout(t)
   }, [freshAbove])
 
-  const matching = useMemo(
-    () => (sensor ? feed.events.filter((e) => e.sensor === sensor) : feed.events),
-    [feed.events, sensor],
-  )
+  const matching = useMemo(() => {
+    if (!sensors.length) return feed.events
+    const wanted = new Set<string>(sensors)
+    return feed.events.filter((e) => wanted.has(e.sensor))
+  }, [feed.events, sensors])
   const visible = useMemo(
     () => (limit === null ? matching : matching.filter((e) => e.id <= limit)),
     [matching, limit],
@@ -113,16 +112,13 @@ export function LivePage() {
         aria-label="Events in the last minute"
         className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
       >
-        {SENSORS.map((s) => (
-          <StatTile
-            key={s}
-            sensor={s}
-            label={SENSOR_META[s].label}
-            value={stats?.by_sensor[s]?.events ?? 0}
+        {SENSOR_FAMILIES.map((f) => (
+          <FamilyTile
+            key={f}
+            family={f}
+            bySensor={stats?.by_sensor ?? {}}
             unit="events / min"
             unitShort="/ min"
-            hint={formatSessions(stats?.by_sensor[s]?.sessions ?? 0)}
-            href={`/attacks?sensor=${s}`}
           />
         ))}
       </section>
@@ -139,7 +135,11 @@ export function LivePage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_25rem] xl:grid-cols-[minmax(0,1fr)_27rem]">
-        <LiveGlobe events={matching} paused={paused} className="h-80 sm:h-96 lg:h-auto" />
+        <LiveMap
+          events={matching}
+          paused={paused}
+          className="h-[26rem] sm:h-[30rem] lg:h-auto lg:min-h-[32rem]"
+        />
         <div
           className="relative overflow-hidden rounded-lg border bg-surface shadow-sm"
           onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(true)}
@@ -183,8 +183,12 @@ export function LivePage() {
             <EmptyState
               variant="bare"
               icon={SearchX}
-              title="No events from this sensor yet"
-              description="Nothing from the selected sensor is in the live buffer. Show all sensors to see the rest."
+              title={
+                sensors.length === 1
+                  ? "No events from this sensor yet"
+                  : "No events from these sensors yet"
+              }
+              description={`Nothing from ${sensorSetPhrase(sensors)} is in the live buffer. Show all sensors to see the rest.`}
               className="h-[calc(100dvh-27rem)] min-h-96"
               action={
                 <Button asChild variant="outline" size="sm">

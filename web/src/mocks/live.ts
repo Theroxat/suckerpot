@@ -78,8 +78,15 @@ function stats(rand: () => number): LiveStats {
   const base: Record<string, [number, number]> = {
     ssh: [42, 9],
     telnet: [18, 6],
+    adb: [4, 2],
     web: [27, 11],
+    docker: [7, 2],
+    redis: [15, 5],
+    mysql: [9, 3],
+    mssql: [5, 2],
     rdp: [6, 3],
+    smb: [21, 12],
+    sip: [3, 2],
   }
   const by_sensor: LiveStats["by_sensor"] = {}
   let events = 0

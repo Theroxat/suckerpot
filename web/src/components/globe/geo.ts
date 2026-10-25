@@ -55,11 +55,12 @@ export function greatCircleDegrees(a: GeoPoint, b: GeoPoint): number {
 }
 
 /**
- * Below this distance an arc degenerates (start and end nearly equal, e.g. an attack from the
- * home country): the interpolated curve shoots straight up. Such arrivals get a ring pulse only.
- * Near-antipodal pairs have no unique great circle and are skipped the same way.
+ * Below this distance an arc degenerates (start and end on the same spot): only a ring pulse.
+ * Short arcs from neighbouring countries (France, Germany, Italy to Switzerland: 2 to 8 degrees)
+ * are the most common real attacks, so anything longer than this is drawn, flat and low.
+ * Near-antipodal pairs have no unique great circle and are skipped.
  */
-export const MIN_ARC_DEGREES = 4
+export const MIN_ARC_DEGREES = 0.3
 export const MAX_ARC_DEGREES = 175
 
 export function drawableArc(from: GeoPoint, to: GeoPoint): boolean {
@@ -67,9 +68,12 @@ export function drawableArc(from: GeoPoint, to: GeoPoint): boolean {
   return d >= MIN_ARC_DEGREES && d <= MAX_ARC_DEGREES
 }
 
-/** Arc height (in globe radii), proportional to distance and clamped so nothing spikes. */
+/**
+ * Arc height (in globe radii), proportional to distance and clamped so nothing spikes. Short
+ * European arcs stay low (about 0.015 to 0.05) so they read as a bow, not a needle.
+ */
 export function arcAltitude(from: GeoPoint, to: GeoPoint): number {
   const d = greatCircleDegrees(from, to)
   // Kept low: arcs to the far side climb over the limb, and a tall arc reads as a spike there.
-  return Math.min(0.18, Math.max(0.04, (d / 180) * 0.3))
+  return Math.min(0.18, Math.max(0.015, (d / 180) * 0.3))
 }

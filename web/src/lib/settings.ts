@@ -93,7 +93,9 @@ export function sensorsFinding(sensors: readonly SensorStatus[], now = Date.now(
   }
   if (silent.length === sensors.length) return "No sensor has reported in the last 24 hours."
   const parts: string[] = []
-  if (active.length)
+  if (active.length > 3)
+    parts.push(`${active.length} of ${sensors.length} sensors reported in the last 15 minutes`)
+  else if (active.length)
     parts.push(`${joinAnd(active.map((x) => label(x.sensor)))} reported in the last 15 minutes`)
   for (const q of quiet) {
     parts.push(

@@ -18,6 +18,8 @@ describe("format", () => {
   it("formats relative time", () => {
     const now = Date.parse("2026-10-24T18:00:00Z")
     expect(formatRelative("2026-10-24T17:59:58Z", now)).toBe("just now")
+    // Clock skew: slightly in the future still reads "just now".
+    expect(formatRelative("2026-10-24T18:00:11Z", now)).toBe("just now")
     expect(formatRelative("2026-10-24T17:55:00Z", now)).toBe("5 min. ago")
     expect(formatRelative("2026-10-24T15:00:00Z", now)).toBe("3 hr. ago")
   })

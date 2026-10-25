@@ -112,4 +112,34 @@ describe("describeSession", () => {
       "tried 2 FTP logins",
     )
   })
+
+  it("tells the new sensors' stories", () => {
+    expect(
+      describeSession(session({ sensor: "mysql", login_attempts: 40, login_success: false }))
+        .predicate,
+    ).toBe("tried 40 MySQL passwords")
+    expect(
+      describeSession(session({ sensor: "docker", http_requests: 4, tags: ["container-escape"] }))
+        .predicate,
+    ).toBe("sent 4 Docker API requests, including a container escape")
+    expect(describeSession(session({ sensor: "smb", tags: ["eternalblue"] })).predicate).toBe(
+      "sent an EternalBlue exploit to SMB",
+    )
+    expect(describeSession(session({ sensor: "sip" })).predicate).toBe(
+      "probed the SIP service and left",
+    )
+    expect(
+      describeSession(
+        session({
+          sensor: "mssql",
+          login_attempts: 1,
+          login_success: true,
+          commands: 3,
+          tags: ["sql-rce"],
+        }),
+      ).predicate,
+    ).toBe(
+      "logged in to SQL Server on the first try, then ran 3 commands, trying code execution through SQL",
+    )
+  })
 })

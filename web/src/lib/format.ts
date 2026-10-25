@@ -61,7 +61,9 @@ export function formatRelative(iso: string | Date, now: number = Date.now()): st
   const t = (typeof iso === "string" ? new Date(iso) : iso).getTime()
   const diff = Math.round((t - now) / 1000)
   const abs = Math.abs(diff)
-  if (abs < 10) return "just now"
+  // Events never come from the future: a few seconds or minutes "ahead" is clock skew
+  // (server vs browser, or the shared 30 s clock between ticks), not "in 11 sec.".
+  if (abs < 10 || (diff > 0 && diff < 120)) return "just now"
   if (abs < 60) return rtf.format(diff, "second")
   if (abs < 3600) return rtf.format(Math.round(diff / 60), "minute")
   if (abs < 86_400) return rtf.format(Math.round(diff / 3600), "hour")

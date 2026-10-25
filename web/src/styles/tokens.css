@@ -33,17 +33,41 @@
   --primary-hover: #d4d6da;
   --ring: #8a8e98;
 
-  /* One hue per sensor. Text-safe on --surface (AA). */
+  /*
+   * One hue per sensor FAMILY (Okabe-Ito sky blue, reddish purple, bluish
+   * green, ochre). Text-safe (AA) on --bg, --surface and their own tint.
+   * Badges, labels, globe arcs and the default charts use these.
+   */
+  --family-shell: #5ea6f7;
+  --family-web: #d98bcb;
+  --family-data: #3cc6a4;
+  --family-windows: #e0b341;
+
+  /*
+   * Per-sensor shades of the family hue, for the per-sensor chart split only.
+   * Fills, never text: >= 3:1 on --surface. Order in a family: base, lighter, deeper.
+   */
   --sensor-ssh: #5ea6f7;
-  --sensor-telnet: #3cc6a4;
+  --sensor-telnet: #abd1fb;
+  --sensor-adb: #3c6a9e;
   --sensor-web: #d98bcb;
+  --sensor-docker: #ebc3e4;
+  --sensor-redis: #3cc6a4;
+  --sensor-mysql: #9ae1d0;
+  --sensor-mssql: #267f69;
   --sensor-rdp: #e0b341;
+  --sensor-smb: #efd79c;
+  --sensor-sip: #8f732a;
 
   /* Severity. Red is reserved for "severe". */
   --sev-info: #a1a4ac;
   --sev-notice: #ecedef;
   --sev-warning: #f0883e;
   --sev-severe: #f2555a;
+
+  /* Flat attack map: land and borders, quieter than any data mark. */
+  --map-land: #24272d;
+  --map-border: #353841;
 
   /* Status (live indicator only). */
   --status-ok: #4cc38a;
@@ -78,15 +102,30 @@
   --primary-hover: #2b2d33;
   --ring: #6a6d76;
 
+  --family-shell: #1c6bc9;
+  --family-web: #a6458f;
+  --family-data: #0a7a62;
+  --family-windows: #8a6100;
+
   --sensor-ssh: #1c6bc9;
-  --sensor-telnet: #0a7a62;
+  --sensor-telnet: #5791d7;
+  --sensor-adb: #103e75;
   --sensor-web: #a6458f;
+  --sensor-docker: #bd75ac;
+  --sensor-redis: #0a7a62;
+  --sensor-mysql: #4a9d8b;
+  --sensor-mssql: #064739;
   --sensor-rdp: #8a6100;
+  --sensor-smb: #a88a42;
+  --sensor-sip: #503800;
 
   --sev-info: #4f525a;
   --sev-notice: #0f1013;
   --sev-warning: #b54708;
   --sev-severe: #c8242b;
+
+  --map-land: #e8e9ed;
+  --map-border: #d3d5db;
 
   --status-ok: #15803d;
   --status-off: #6a6d76;

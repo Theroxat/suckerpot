@@ -1,4 +1,4 @@
-import { SENSORS, type Sensor } from "@/lib/api"
+import { SENSOR_FAMILIES, type SensorFamily } from "@/lib/sensors"
 
 export interface GlobePalette {
   /** Globe body. */
@@ -9,7 +9,8 @@ export interface GlobePalette {
   rim: string
   /** Home marker. */
   home: string
-  sensors: Record<Sensor, string>
+  /** Arc colours: one hue per sensor family, never per sensor (eleven hues would be noise). */
+  families: Record<SensorFamily, string>
 }
 
 /** "#5ea6f7" and 0.5 give "rgba(94,166,247,0.5)". Falls back to the input on anything else. */
@@ -34,16 +35,15 @@ const FALLBACK = "#888888"
 export function readPalette(root: HTMLElement = document.documentElement): GlobePalette {
   const css = getComputedStyle(root)
   const v = (name: string) => css.getPropertyValue(name).trim() || FALLBACK
-  const sensors = Object.fromEntries(SENSORS.map((s) => [s, v(`--sensor-${s}`)])) as Record<
-    Sensor,
-    string
-  >
+  const families = Object.fromEntries(
+    SENSOR_FAMILIES.map((f) => [f, v(`--family-${f}`)]),
+  ) as Record<SensorFamily, string>
   return {
     sphere: luminance(v("--bg")) < 0.5 ? v("--bg") : v("--surface-hover"),
     land: v("--fg-subtle"),
     rim: v("--border-strong"),
     home: v("--fg"),
-    sensors,
+    families,
   }
 }
 

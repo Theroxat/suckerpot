@@ -1,7 +1,7 @@
 import type { Attacker } from "./api"
 import { countryName, formatNumber, plural } from "./format"
 import { sensorMeta } from "./sensors"
-import { SEVERE_TAGS, type Severity } from "./severity"
+import { SEVERE_TAGS, WARNING_TAGS, type Severity } from "./severity"
 
 function joinAnd(parts: string[]): string {
   if (parts.length <= 1) return parts.join("")
@@ -50,7 +50,8 @@ export function describeAttackerText(a: Attacker): string {
 /** Same scale as sessions: a download or payload tag is severe, a shell is a warning. */
 export function attackerSeverity(a: Attacker): Severity {
   if (a.downloads > 0 || a.tags.some((t) => SEVERE_TAGS.has(t))) return "severe"
-  if (a.login_success > 0 || a.commands > 0) return "warning"
+  if (a.login_success > 0 || a.commands > 0 || a.tags.some((t) => WARNING_TAGS.has(t)))
+    return "warning"
   if (a.login_attempts > 0 || a.events > 0) return "notice"
   return "info"
 }

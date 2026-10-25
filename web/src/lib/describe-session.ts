@@ -18,7 +18,14 @@ const INSTALL_TAGS: readonly (readonly [string, string])[] = [
   ["mirai", "a Mirai botnet loader"],
   ["malware-drop", "malware"],
 ]
-const EXPLOIT_TAGS: readonly (readonly [string, string])[] = [["php2shell", "a PHP2Shell exploit"]]
+const EXPLOIT_TAGS: readonly (readonly [string, string])[] = [
+  ["php2shell", "a PHP2Shell exploit"],
+  ["container-escape", "a container escape"],
+]
+/** Exploits that ride on commands (SQL). EternalBlue rides on a bare SMB probe: see idleClause. */
+const COMMAND_EXPLOITS: readonly (readonly [string, string])[] = [
+  ["sql-rce", "code execution through SQL"],
+]
 
 function firstTag(tags: string[], table: readonly (readonly [string, string])[]) {
   return table.find(([tag]) => tags.includes(tag))?.[1] ?? null
@@ -38,7 +45,7 @@ export function sessionOrigin(s: Pick<Session, "country" | "org">): string | nul
 function accessClause(s: Session, noun: string): string | null {
   if (s.login_attempts <= 0) return null
   if (s.login_success && s.login_attempts === 1) return `logged in to ${noun} on the first try`
-  const what = s.sensor === "ssh" || s.sensor === "telnet" ? "password" : "login"
+  const what = sensorMeta(s.sensor)?.credential ?? "login"
   const tried = `tried ${plural(s.login_attempts, `${noun} ${what}`)}`
   return s.login_success ? `${tried} and got in` : tried
 }
@@ -47,13 +54,15 @@ function actionClauses(s: Session): string[] {
   const out: string[] = []
   if (s.http_requests > 0) {
     const exploit = firstTag(s.tags, EXPLOIT_TAGS)
-    const requests = `sent ${plural(s.http_requests, "HTTP request")}`
+    const kind = s.sensor === "docker" ? "Docker API request" : "HTTP request"
+    const requests = `sent ${plural(s.http_requests, kind)}`
     out.push(exploit ? `${requests}, including ${exploit}` : requests)
   }
   if (s.commands > 0) {
     const install = firstTag(s.tags, INSTALL_TAGS)
+    const rce = firstTag(s.tags, COMMAND_EXPLOITS)
     const ran = `ran ${plural(s.commands, "command")}`
-    out.push(install ? `${ran} to install ${install}` : ran)
+    out.push(install ? `${ran} to install ${install}` : rce ? `${ran}, trying ${rce}` : ran)
   }
   if (s.downloads > 0) out.push(`tried to download ${plural(s.downloads, "file")}`)
   return out
@@ -61,7 +70,10 @@ function actionClauses(s: Session): string[] {
 
 function idleClause(s: Session, noun: string): string {
   if (s.ended_at === null) return `is connected to ${noun}`
-  if (s.sensor === "web") return "opened a connection without sending a request"
+  if (s.sensor === "web" || s.sensor === "docker")
+    return "opened a connection without sending a request"
+  if (s.tags.includes("eternalblue")) return `sent an EternalBlue exploit to ${noun}`
+  if (s.sensor === "smb" || s.sensor === "sip") return `probed the ${noun} service and left`
   return `connected to ${noun} and left without logging in`
 }
 

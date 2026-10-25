@@ -42,6 +42,8 @@
   --animate-slide-in: slide-in 250ms cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-fade-in: fade-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-live-pulse: live-pulse 2.4s ease-out infinite;
+  --animate-map-dash: map-dash 1.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-map-pulse: map-pulse 2.4s ease-out infinite;
 
   @keyframes slide-in {
     from {
@@ -59,6 +61,32 @@
     }
     to {
       opacity: 1;
+    }
+  }
+  /* A short dash travelling once along an arc (path with pathLength="1"). */
+  @keyframes map-dash {
+    from {
+      stroke-dashoffset: 0.14;
+      opacity: 1;
+    }
+    85% {
+      opacity: 1;
+    }
+    to {
+      stroke-dashoffset: -1;
+      opacity: 0;
+    }
+  }
+  /* A soft ring around an active source on the map (SVG: transform-box fill-box). */
+  @keyframes map-pulse {
+    0% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+    70%,
+    100% {
+      transform: scale(2.8);
+      opacity: 0;
     }
   }
   @keyframes live-pulse {
@@ -86,10 +114,22 @@
   --color-fg-subtle: var(--fg-subtle);
   --color-primary-hover: var(--primary-hover);
 
+  --color-family-shell: var(--family-shell);
+  --color-family-web: var(--family-web);
+  --color-family-data: var(--family-data);
+  --color-family-windows: var(--family-windows);
+
   --color-sensor-ssh: var(--sensor-ssh);
   --color-sensor-telnet: var(--sensor-telnet);
+  --color-sensor-adb: var(--sensor-adb);
   --color-sensor-web: var(--sensor-web);
+  --color-sensor-docker: var(--sensor-docker);
+  --color-sensor-redis: var(--sensor-redis);
+  --color-sensor-mysql: var(--sensor-mysql);
+  --color-sensor-mssql: var(--sensor-mssql);
   --color-sensor-rdp: var(--sensor-rdp);
+  --color-sensor-smb: var(--sensor-smb);
+  --color-sensor-sip: var(--sensor-sip);
 
   --color-sev-info: var(--sev-info);
   --color-sev-notice: var(--sev-notice);
@@ -172,17 +212,17 @@
 
 @layer utilities {
   /* Tinted backgrounds: one token, consistent strength per theme. */
-  .tint-ssh {
-    background-color: color-mix(in srgb, var(--sensor-ssh) var(--tint), transparent);
+  .tint-family-shell {
+    background-color: color-mix(in srgb, var(--family-shell) var(--tint), transparent);
   }
-  .tint-telnet {
-    background-color: color-mix(in srgb, var(--sensor-telnet) var(--tint), transparent);
+  .tint-family-web {
+    background-color: color-mix(in srgb, var(--family-web) var(--tint), transparent);
   }
-  .tint-web {
-    background-color: color-mix(in srgb, var(--sensor-web) var(--tint), transparent);
+  .tint-family-data {
+    background-color: color-mix(in srgb, var(--family-data) var(--tint), transparent);
   }
-  .tint-rdp {
-    background-color: color-mix(in srgb, var(--sensor-rdp) var(--tint), transparent);
+  .tint-family-windows {
+    background-color: color-mix(in srgb, var(--family-windows) var(--tint), transparent);
   }
   .tint-info {
     background-color: color-mix(in srgb, var(--sev-info) var(--tint), transparent);

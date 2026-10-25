@@ -9,7 +9,7 @@ import { SeverityBadge } from "@/components/severity-badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, queryKeys } from "@/lib/api"
 import { maskIpsInText } from "@/lib/format"
-import type { Insight } from "@/lib/trends"
+import { INSIGHT_KIND_LABEL, type Insight } from "@/lib/trends"
 import { cn } from "@/lib/utils"
 
 const HOUR = 3_600_000
@@ -89,7 +89,12 @@ export function InsightRow({ insight, className }: { insight: Insight; className
       )}
     >
       <SeverityBadge severity={insight.severity} iconOnly className="mt-px" />
-      <span className="min-w-0 flex-1 text-sm text-pretty text-fg">{text}</span>
+      <span className="min-w-0 flex-1 text-sm text-pretty text-fg">
+        <span className="sr-only">
+          {(INSIGHT_KIND_LABEL as Partial<Record<string, string>>)[insight.kind] ?? "Insight"}:{" "}
+        </span>
+        {text}
+      </span>
       <ArrowUpRight
         aria-hidden
         className="mt-1 size-3.5 shrink-0 text-fg-subtle transition-colors group-hover/insight:text-fg"

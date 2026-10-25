@@ -4,7 +4,7 @@
  */
 import { SENSORS, type Sensor, type TimePoint, type TopItem, type TopResponse } from "./api"
 import { countryName, formatNumber, formatPercent, plural } from "./format"
-import { SENSOR_META } from "./sensors"
+import { FAMILY_META, SENSOR_FAMILIES, SENSOR_META, sumByFamily } from "./sensors"
 
 export interface Finding {
   finding: string
@@ -15,7 +15,7 @@ export function sumBySensor(
   points: readonly TimePoint[],
   kind: "events" | "sessions",
 ): Record<Sensor, number> {
-  const out: Record<Sensor, number> = { ssh: 0, telnet: 0, web: 0, rdp: 0 }
+  const out = Object.fromEntries(SENSORS.map((s) => [s, 0])) as Record<Sensor, number>
   for (const p of points) for (const s of SENSORS) out[s] += p[kind][s] ?? 0
   return out
 }
@@ -36,7 +36,11 @@ export function deltaRatio(current: number, previous: number): number | null {
   return (current - previous) / previous
 }
 
-/** "SSH drew 64% of all events in the last 24 hours, busiest at 14:00." */
+/**
+ * "Remote shells drew 80% of all events in the last 24 hours, led by SSH (65%)."
+ * Names the leading family, and its leading sensor; a family with a single
+ * active sensor is named by that sensor ("SSH drew 64% of all events…").
+ */
 export function describeActivity(
   points: readonly TimePoint[],
   formatPeak: (iso: string) => string,
@@ -45,17 +49,31 @@ export function describeActivity(
   const total = SENSORS.reduce((n, s) => n + totals[s], 0)
   if (total === 0) return { finding: "No events in the last 24 hours." }
 
-  const leader = [...SENSORS].sort((a, b) => totals[b] - totals[a])[0] ?? "ssh"
-  const share = totals[leader] / total
+  const families = sumByFamily(totals)
+  const family = [...SENSOR_FAMILIES].sort((a, b) => families[b] - families[a])[0] ?? "shell"
+  const fam = FAMILY_META[family]
+  const leader = [...fam.sensors].sort((a, b) => totals[b] - totals[a])[0] ?? "ssh"
   const label = SENSOR_META[leader].label
+  const famShare = families[family] / total
+  const share = totals[leader] / total
+  const solo = totals[leader] >= families[family] * 0.995
+
+  let finding: string
+  if (solo) {
+    finding =
+      share >= 0.995
+        ? `Every event in the last 24 hours hit the ${label} sensor.`
+        : `${label} drew ${formatPercent(share)} of all events in the last 24 hours.`
+  } else {
+    finding =
+      famShare >= 0.995
+        ? `Every event in the last 24 hours hit the ${fam.noun}, led by ${label} (${formatPercent(share)}).`
+        : `${fam.label} drew ${formatPercent(famShare)} of all events in the last 24 hours, led by ${label} (${formatPercent(share)}).`
+  }
   const peak = points.reduce<TimePoint | null>(
     (best, p) => (best === null || pointTotal(p) > pointTotal(best) ? p : best),
     null,
   )
-  const finding =
-    share >= 0.995
-      ? `Every event in the last 24 hours hit the ${label} sensor.`
-      : `${label} drew ${formatPercent(share)} of all events in the last 24 hours.`
   const detail = peak
     ? `${formatNumber(total)} events in all. Busiest hour: ${formatPeak(peak.ts)}, with ${plural(pointTotal(peak), "event")}.`
     : `${formatNumber(total)} events in all.`

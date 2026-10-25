@@ -30,13 +30,13 @@ import { SessionStory } from "@/components/session-story"
 import { SeverityBadge } from "@/components/severity-badge"
 import { SkeletonCard, SkeletonList, SkeletonText, SkeletonTile } from "@/components/skeletons"
 import { Sparkline } from "@/components/sparkline"
+import { FamilyTile } from "@/components/family-tile"
 import { StatTile } from "@/components/stat-tile"
 import { TagBadge } from "@/components/tag-badge"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { useTheme } from "@/app/theme"
 import {
-  SENSORS,
   type Attacker,
   type LiveEvent,
   type SensorEvent,
@@ -46,7 +46,7 @@ import {
 import type { DayPoint } from "@/lib/chart-time"
 import type { HeatmapCell, Insight, MalwareItem, NewItem, TagPoint } from "@/lib/trends"
 import { contrastRatio, parseHex, readTokenBlock } from "@/lib/contrast"
-import { SENSOR_META } from "@/lib/sensors"
+import { FAMILY_META, SENSOR_FAMILIES, SENSOR_META } from "@/lib/sensors"
 import { SEVERITIES } from "@/lib/severity"
 import { cn } from "@/lib/utils"
 import tokensCss from "@/styles/tokens.css?raw"
@@ -209,13 +209,40 @@ const LIVE_EVENTS: LiveEvent[] = [
   }),
 ]
 
+/** Last-minute counts for the FamilyTile specimens (Live page). */
+const SAMPLE_LIVE: Record<string, { events: number; sessions: number }> = {
+  ssh: { events: 40, sessions: 8 },
+  telnet: { events: 17, sessions: 5 },
+  adb: { events: 0, sessions: 0 },
+  web: { events: 29, sessions: 11 },
+  docker: { events: 6, sessions: 2 },
+  redis: { events: 14, sessions: 4 },
+  mysql: { events: 9, sessions: 3 },
+  mssql: { events: 3, sessions: 1 },
+  rdp: { events: 4, sessions: 2 },
+  smb: { events: 22, sessions: 13 },
+  sip: { events: 2, sessions: 1 },
+}
+
 const HOUR = 3_600_000
 const SAMPLE_POINTS: TimePoint[] = Array.from({ length: 12 }, (_, i) => {
   const w = [3, 5, 4, 8, 12, 9, 7, 11, 14, 10, 6, 8][i] ?? 5
   return {
     ts: new Date(Date.now() - (11 - i) * HOUR).toISOString(),
-    events: { ssh: w * 30, telnet: w * 12, web: w * 4, rdp: w * 3 },
-    sessions: { ssh: w * 3, telnet: w, web: w, rdp: 1 },
+    events: {
+      ssh: w * 30,
+      telnet: w * 12,
+      adb: w * 2,
+      web: w * 9,
+      docker: w * 3,
+      redis: w * 11,
+      mysql: w * 6,
+      mssql: w * 4,
+      rdp: w * 3,
+      smb: w * 14,
+      sip: w,
+    },
+    sessions: { ssh: w * 3, telnet: w, web: w, redis: w, smb: w * 2, rdp: 1 },
   }
 })
 const SAMPLE_DAYS: DayPoint[] = Array.from({ length: 14 }, (_, i) => ({
@@ -489,44 +516,91 @@ export function StyleguidePage() {
       <Section
         id="sensors"
         title="Sensors"
-        description="One hue each, picked from a colour-blind-safe set. A sensor is always shown with its icon or label too, never by colour alone."
+        description="Eleven sensors, four families, one hue per family (Okabe-Ito, colour-blind safe). Inside a family, sensors are told apart by their icon and their name, which are always shown: meaning never rests on colour alone."
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {SENSORS.map((s) => {
-            const meta = SENSOR_META[s]
+          {SENSOR_FAMILIES.map((f) => {
+            const fam = FAMILY_META[f]
             return (
-              <div key={s} className="overflow-hidden rounded-lg border bg-surface shadow-sm">
-                <div className={cn("h-1.5", meta.fill)} />
-                <div className="space-y-3 p-4">
-                  <div className="flex items-center justify-between">
-                    <SensorBadge sensor={s} />
-                    <SensorBadge sensor={s} variant="dot" />
-                  </div>
-                  <p className="text-xs text-fg-muted">{meta.description}</p>
+              <div key={f} className="overflow-hidden rounded-lg border bg-surface shadow-sm">
+                <div className={cn("h-1.5", fam.fill)} />
+                <div className="space-y-1 p-4 pb-3">
+                  <p className={cn("flex items-center gap-2 text-sm font-medium", fam.text)}>
+                    <span aria-hidden className={cn("size-2 rounded-full", fam.fill)} />
+                    {fam.label}
+                  </p>
+                  <p className="text-xs text-fg-muted">{fam.description}</p>
                   <p className="flex justify-between font-mono text-2xs text-fg-subtle">
-                    <span>{tokens[`sensor-${s}`]}</span>
-                    <span>{ratio(tokens[`sensor-${s}`], tokens.surface)}:1</span>
+                    <span>
+                      --family-{f} {tokens[`family-${f}`]}
+                    </span>
+                    <span>{ratio(tokens[`family-${f}`], tokens.surface)}:1</span>
                   </p>
                 </div>
+                <ul className="divide-y border-t">
+                  {fam.sensors.map((s) => {
+                    const meta = SENSOR_META[s]
+                    return (
+                      <li key={s} className="space-y-1.5 px-4 py-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <SensorBadge sensor={s} />
+                          <span className="font-mono text-2xs text-fg-subtle">
+                            {meta.transport}/{meta.port}
+                          </span>
+                        </div>
+                        <p className="text-xs text-fg-muted">{meta.description}</p>
+                        <p className="flex items-center justify-between gap-2 font-mono text-2xs text-fg-subtle">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span
+                              aria-hidden
+                              className="size-2.5 rounded-[2px]"
+                              style={{ backgroundColor: meta.shadeVar }}
+                            />
+                            chart shade {tokens[`sensor-${s}`]}
+                          </span>
+                          <span>{ratio(tokens[`sensor-${s}`], tokens.surface)}:1</span>
+                        </p>
+                      </li>
+                    )
+                  })}
+                </ul>
               </div>
             )
           })}
         </div>
-        <FindingCard
-          className="mt-4"
-          eyebrow="Sensor share (sample)"
-          finding="SSH took 72% of all sessions."
-          detail="Stacked bar + labelled legend: the numbers carry the meaning, colour helps."
-        >
-          <SensorShare
-            shares={[
-              { id: "ssh", value: 910 },
-              { id: "telnet", value: 188 },
-              { id: "web", value: 121 },
-              { id: "rdp", value: 41 },
-            ]}
-          />
-        </FindingCard>
+        <p className="mt-4 max-w-3xl text-xs text-fg-muted">
+          Badges, dots, globe arcs and the default charts use the family hue (AA as text, on its
+          tint too). The per-sensor shades are fills for the &ldquo;Sensors&rdquo; chart split only,
+          never text (3:1 or more on the surface). Stacks always run in registry order, so a family
+          stays one block of its hue.
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <FindingCard
+            className="lg:col-span-2"
+            eyebrow="Sensor share by family (sample)"
+            finding="Remote shells took 58% of all sessions, most of them on SSH."
+            detail="Stacked bar + labelled legend: the numbers carry the meaning, colour helps."
+          >
+            <SensorShare
+              shares={[
+                { id: "ssh", value: 910 },
+                { id: "telnet", value: 188 },
+                { id: "adb", value: 36 },
+                { id: "web", value: 121 },
+                { id: "docker", value: 44 },
+                { id: "redis", value: 162 },
+                { id: "mysql", value: 97 },
+                { id: "mssql", value: 58 },
+                { id: "rdp", value: 41 },
+                { id: "smb", value: 302 },
+                { id: "sip", value: 0 },
+              ]}
+            />
+          </FindingCard>
+          <Specimen label="SensorFilter: multi-select, grouped by family, URL-synced (?sensor=a,b)">
+            <SensorFilter />
+          </Specimen>
+        </div>
       </Section>
 
       <Section
@@ -699,8 +773,11 @@ export function StyleguidePage() {
             </Button>
             <Button disabled>Disabled</Button>
           </Specimen>
-          <Specimen label="TagBadge">
+          <Specimen label="TagBadge (neutral · warning triangle · severe diamond)">
             <TagBadge tag="recon" />
+            <TagBadge tag="db-ransom" />
+            <TagBadge tag="sip-fraud" />
+            <TagBadge tag="eternalblue" />
             <TagBadge tag="scanner" />
             <TagBadge tag="php2shell" />
             <TagBadge tag="crypto-miner" />
@@ -781,7 +858,7 @@ export function StyleguidePage() {
             sparkline={
               <Sparkline
                 label="SSH sessions per hour, last 24 hours"
-                color="var(--sensor-ssh)"
+                color="var(--family-shell)"
                 values={[
                   12, 18, 15, 22, 30, 28, 25, 40, 38, 52, 47, 44, 39, 35, 41, 49, 60, 55, 48, 42,
                   37, 33, 29, 31,
@@ -801,7 +878,7 @@ export function StyleguidePage() {
           >
             <Sparkline
               label="PHP exploit attempts per day"
-              color="var(--sensor-web)"
+              color="var(--family-web)"
               values={[3, 4, 2, 5, 9, 12, 14]}
               className="h-24"
             />
@@ -819,16 +896,13 @@ export function StyleguidePage() {
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-          {SENSORS.map((s, i) => (
-            <StatTile
-              key={s}
-              sensor={s}
-              label={SENSOR_META[s].label}
-              value={[40, 17, 29, 4][i] ?? 0}
+          {SENSOR_FAMILIES.map((f) => (
+            <FamilyTile
+              key={f}
+              family={f}
+              bySensor={SAMPLE_LIVE}
               unit="events / min"
               unitShort="/ min"
-              hint="Sensor tile (Live): links to the filtered list"
-              href={`/attacks?sensor=${s}`}
             />
           ))}
         </div>
