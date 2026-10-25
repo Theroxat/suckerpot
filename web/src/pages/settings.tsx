@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import {
   Bell,
-  Rss,
   CircleCheck,
   CircleDashed,
   Info,
@@ -13,6 +12,7 @@ import { Link } from "react-router"
 import { EmptyState } from "@/components/empty-state"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUrlParam } from "@/hooks/use-url-param"
+import { FeedsTab } from "@/components/feeds/feeds-tab"
 import { FindingCard } from "@/components/finding-card"
 import { Meter } from "@/components/meter"
 import { PageHeader } from "@/components/page-header"
@@ -342,7 +342,7 @@ const TABS = [
   { id: "users", label: "Users", adminOnly: true },
   { id: "audit", label: "Audit", adminOnly: true },
   { id: "alerts", label: "Alert channels", adminOnly: false },
-  { id: "feeds", label: "Feeds", adminOnly: false },
+  { id: "feeds", label: "Feeds", adminOnly: true },
 ] as const
 
 export function SettingsPage() {
@@ -426,14 +426,11 @@ export function SettingsPage() {
             description="Connect Discord, Teams or email, and choose which events send you a message."
           />
         </TabsContent>
-        <TabsContent value="feeds">
-          <EmptyState
-            icon={Rss}
-            badge="Coming soon"
-            title="Feeds are on their way"
-            description="Create access tokens so your firewall or proxy can pull the blocklists."
-          />
-        </TabsContent>
+        {canWrite ? (
+          <TabsContent value="feeds">
+            <FeedsTab />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </>
   )

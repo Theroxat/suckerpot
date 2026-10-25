@@ -8,9 +8,6 @@ const PLACEHOLDERS: [path: string, title: string][] = [
   ["/techniques", "Techniques"],
   ["/scripts", "Scripts"],
   ["/scripts/42", "Script"],
-  ["/defend/blocklists", "Blocklists"],
-  ["/defend/detections", "Detections"],
-  ["/defend/exposure", "Your exposure"],
   ["/defend/alerts", "Alerts and reports"],
   ["/reports/2026-10-19", "Weekly report"],
 ]
