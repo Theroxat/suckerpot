@@ -30,6 +30,7 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, WebSocket
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_db.models import EventRow, SessionRow
 
@@ -628,11 +629,19 @@ async def _sender(ws: WebSocket, q: ClientQueue, skip_up_to: int) -> None:
         await asyncio.wait_for(ws.send_text(text), SEND_TIMEOUT_S)
 
 
-async def _session_watch(auth: Any, token: str | None) -> None:
-    """Return once the session expires or is revoked (checked every few seconds)."""
+async def _session_watch(auth: Any, token: str | None, factory: Any) -> None:
+    """Return once the session expires or is revoked (checked every few seconds).
+
+    A user's session also ends when they are disabled, deleted, demoted or signed out
+    everywhere (their session version changed). A database hiccup does not end it.
+    """
     while True:
         await asyncio.sleep(SESSION_RECHECK_S)
-        if auth.validate(token) is None:
+        try:
+            principal = await auth.resolve(token, factory)
+        except (SQLAlchemyError, OSError):
+            continue
+        if principal is None:
             return
 
 
@@ -652,8 +661,14 @@ async def live(ws: WebSocket) -> None:
         await ws.close(code=1008)
         return
     auth: Any = ws.app.state.auth
-    session = auth.validate(auth.session_token(ws.scope))
-    if session is None:
+    factory = ws.app.state.session_factory
+    try:
+        principal = await auth.resolve(auth.session_token(ws.scope), factory)
+    except (SQLAlchemyError, OSError):
+        await ws.close(code=1013)
+        return
+    # Both roles may watch; a user who still has to choose a password may not.
+    if principal is None or principal.must_change_password:
         await ws.close(code=1008)
         return
     await ws.accept()
@@ -679,7 +694,7 @@ async def live(ws: WebSocket) -> None:
             asyncio.create_task(_sender(ws, q, max_id)),
             asyncio.create_task(_receiver(ws, q)),
         }
-        watcher = asyncio.create_task(_session_watch(auth, auth.session_token(ws.scope)))
+        watcher = asyncio.create_task(_session_watch(auth, auth.session_token(ws.scope), factory))
         tasks.add(watcher)
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         code = 1008 if watcher in done else 1001 if q.closed else 1000

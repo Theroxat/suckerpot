@@ -344,3 +344,61 @@ async def test_password_checks_are_serialised_and_bounded(monkeypatch: pytest.Mo
     await asyncio.gather(*tasks)
     assert peak == 1
     assert svc._pending == 0
+
+
+def test_tokens_carry_the_subject_and_the_session_version() -> None:
+    svc = AuthService(settings())
+    owner_token, owner = svc.issue()
+    assert owner.subject == "o" and owner.user_id is None and owner.version == 0
+    token, info = svc.issue("u42", 3)
+    assert info.user_id == 42 and info.version == 3
+    assert svc.validate(token) == info
+    assert token.split(".")[:3] == ["v2", "u42", "3"]
+    assert svc.validate(owner_token) == owner
+    # The subject and the version are signed: swapping them breaks the signature.
+    assert svc.validate(token.replace(".u42.", ".u43.")) is None
+    assert svc.validate(token.replace(".u42.3.", ".u42.4.")) is None
+    # Subjects must be "o" or "u<digits>".
+    parts = token.split(".")
+    parts[1] = "x1"
+    assert svc.validate(".".join(parts)) is None
+
+
+def test_old_v1_tokens_are_rejected() -> None:
+    svc = AuthService(settings())
+    assert svc.validate("v1.1.99999999999.nonce.sig") is None
+
+
+def test_rate_limit_per_username_across_addresses() -> None:
+    clock = Clock()
+    svc = AuthService(settings(rate_per_ip=50, rate_global=500, rate_per_user=3), clock)
+    for i in range(3):
+        assert svc.rate_limited(f"192.0.2.{i + 1}", username="Alice") is None
+    assert svc.rate_limited("192.0.2.9", username="alice") is not None  # case-insensitive
+    assert svc.rate_limited("192.0.2.9", username="bob") is None  # another account is unaffected
+    clock.now += 61
+    assert svc.rate_limited("192.0.2.9", username="alice") is None
+
+
+def test_a_refused_attempt_is_not_charged_to_the_other_windows() -> None:
+    svc = AuthService(settings(rate_per_ip=1, rate_global=500, rate_per_user=5), Clock())
+    assert svc.rate_limited("192.0.2.1", username="alice") is None
+    assert svc.rate_limited("192.0.2.1", username="alice") is not None  # per-address limit
+    assert len(svc._per_ip["user|alice"].hits) == 1
+
+
+async def test_check_hash_with_no_hash_costs_a_verification_and_fails() -> None:
+    svc = AuthService(settings())
+    calls: list[str] = []
+    real = svc.verify_hash
+
+    def spy(hashed: str, password: str) -> bool:
+        calls.append(hashed)
+        return real(hashed, password)
+
+    svc.verify_hash = spy  # type: ignore[method-assign]
+    assert not await svc.check_hash(None, PASSWORD)
+    assert len(calls) == 1  # the dummy hash was verified: same work as for a real user
+    assert await svc.check_hash(PW_HASH, PASSWORD)
+    assert not await svc.check_hash(PW_HASH, "wrong password")
+    assert svc.is_owner_name("admin") and not svc.is_owner_name("Admin")
