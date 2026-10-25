@@ -1,8 +1,13 @@
-"""M15: ATT&CK catalogue sync (techniques.yaml into attack_techniques).
+"""M15: MITRE ATT&CK mapping (catalogue, event rules) and the catalogue sync worker."""
 
-Phase 0 ships a no-op worker, disabled by default.
-"""
+from ingest.attack.mapping import AttackError, AttackMap, Technique, load_attack
+from ingest.attack.worker import AttackCatalogWorker, sync_catalogue
 
-from ingest.attack.worker import AttackCatalogWorker
-
-__all__ = ["AttackCatalogWorker"]
+__all__ = [
+    "AttackCatalogWorker",
+    "AttackError",
+    "AttackMap",
+    "Technique",
+    "load_attack",
+    "sync_catalogue",
+]

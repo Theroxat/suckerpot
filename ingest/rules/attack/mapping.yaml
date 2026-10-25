@@ -1,0 +1,172 @@
+# Which ATT&CK techniques an event shows. Two inputs, both optional per rule file:
+#
+#   rules:       same condition grammar as ingest/rules/*.yaml, but the output is `technique:`
+#                (a technique id from techniques.yaml) instead of `tag:`.
+#   from_tags:   tag -> techniques, for tags the tagging engine already produced for the event.
+#
+# At most 8 techniques are kept per event. A broken file stops ingest at start-up.
+rules:
+  - id: attack-brute-force
+    technique: T1110
+    description: A login attempt is a guess at someone's password.
+    when:
+      all:
+        - {field: type, equals: login_attempt}
+
+  - id: attack-valid-account
+    technique: T1078
+    description: A login that worked.
+    when:
+      all:
+        - {field: type, equals: login_attempt}
+        - {field: data.success, equals: true}
+
+  - id: attack-shell
+    technique: T1059.004
+    description: Any command typed into a shell.
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: sensor, in: [ssh, telnet, adb]}
+
+  - id: attack-account-discovery
+    technique: T1033
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: data.input, command_any: [whoami, id, w, who, last]}
+
+  - id: attack-system-discovery
+    technique: T1082
+    when:
+      all:
+        - {field: type, equals: command}
+        - any:
+            - {field: data.input, command_any: [uname, lscpu, nproc, free, hostname, arch, lsb_release, dmidecode, uptime]}
+            - {field: data.input, contains_any: [/proc/cpuinfo, /proc/meminfo, /proc/version, /etc/os-release]}
+
+  - id: attack-network-config-discovery
+    technique: T1016
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: data.input, command_any: [ifconfig, ip, route, netstat, ss, arp]}
+
+  - id: attack-process-discovery
+    technique: T1057
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: data.input, command_any: [ps, top, pgrep]}
+
+  - id: attack-file-discovery
+    technique: T1083
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: data.input, command_any: [ls, find, locate]}
+
+  - id: attack-local-accounts
+    technique: T1087.001
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: data.input, contains_any: [/etc/passwd, /etc/shadow]}
+
+  - id: attack-tool-transfer
+    technique: T1105
+    description: A download of a tool from a remote server.
+    when:
+      any:
+        - {field: type, equals: download_attempt}
+        - all:
+            - {field: type, equals: command}
+            - {field: data.input, command_any: [wget, curl, tftp, ftpget]}
+
+  - id: attack-python
+    technique: T1059.006
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: data.input, command_any: [python, python2, python3]}
+
+  - id: attack-cron
+    technique: T1053.003
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: data.input, contains_any: [crontab, /etc/cron, /var/spool/cron]}
+
+  - id: attack-ssh-keys
+    technique: T1098.004
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: data.input, contains: authorized_keys}
+
+  - id: attack-create-account
+    technique: T1136.001
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: data.input, command_any: [useradd, adduser, usermod]}
+
+  - id: attack-web-vulnerability-scan
+    technique: T1595.002
+    description: Requests for well-known vulnerable paths.
+    when:
+      all:
+        - {field: type, equals: http_request}
+        - {field: data.path, contains_any: [/.env, /.git/, /wp-admin, /phpmyadmin, /cgi-bin/, /actuator, /vendor/phpunit]}
+
+  - id: attack-web-protocol
+    technique: T1071.001
+    when:
+      all:
+        - {field: type, equals: http_request}
+        - {field: data.method, in: [POST, PUT]}
+
+  - id: attack-service-scan
+    technique: T1595
+    description: A probe that sends nothing but a scan marker.
+    when:
+      all:
+        - {field: type, equals: scan}
+
+  - id: attack-port-scan
+    technique: T1046
+    when:
+      all:
+        - {field: type, equals: connect}
+        - {field: sensor, in: [smb, sip, rdp]}
+
+  - id: attack-db-commands
+    technique: T1059
+    description: Commands run against a database or key-value service.
+    when:
+      all:
+        - {field: type, equals: command}
+        - {field: sensor, in: [redis, mysql, mssql, docker]}
+
+from_tags:
+  recon: [T1082]
+  scanner: [T1595]
+  env-file-probe: [T1595.002, T1190]
+  php2shell: [T1190, T1059, T1505.003]
+  wordpress-bruteforce: [T1110.001, T1190]
+  phpmyadmin-bruteforce: [T1110.001, T1190]
+  weak-credentials: [T1110.001, T1078]
+  credential-stuffing: [T1110.004]
+  mirai: [T1105, T1059.004]
+  malware-drop: [T1105]
+  crypto-miner: [T1496]
+  exec-attempt: [T1059.004]
+  persistence: [T1053.003]
+  sql-rce: [T1190, T1059]
+  db-ransom: [T1486]
+  redis-rogue-master: [T1190, T1105]
+  container-escape: [T1611, T1610]
+  eternalblue: [T1210]
+  bluekeep: [T1210]
+  rdp-cleartext: [T1078]
+  sip-fraud: [T1657]
