@@ -16,6 +16,7 @@ from suckerpot_db.secretbox import SecretBox, SecretError, box_from_env
 from ingest.config import Settings
 from ingest.consumer import Consumer
 from ingest.cve import CveWatch
+from ingest.cve.relevance import load_relevance
 from ingest.diskguard import DiskGuard, publish_system_status
 from ingest.enrichment import EnrichmentSettings, GeoResolver
 from ingest.enrichment.credentials import CredentialSync
@@ -88,7 +89,7 @@ async def run() -> None:
         )
     )
     appliers.append(reputation.apply_settings)
-    cve_watch = CveWatch(factory, enrich)
+    cve_watch = CveWatch(factory, enrich, relevance=load_relevance(enrich.rules_dir))
     appliers.append(cve_watch.apply_settings)
 
     async def rep_status(detail: dict[str, Any]) -> None:

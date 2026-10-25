@@ -103,8 +103,9 @@ BEGIN
         EXECUTE format('GRANT SELECT, UPDATE ON provider_test_requests TO %I', r);
     END IF;
     IF to_regclass('public.cve') IS NOT NULL THEN
-        -- The CVE watch job is the only writer; it never deletes (rows are small and bounded).
+        -- The CVE watch job is the only writer; it prunes old, irrelevant CVEs (retention).
         EXECUTE format('GRANT SELECT, INSERT, UPDATE ON cve, cve_sync_state TO %I', r);
+        EXECUTE format('GRANT DELETE ON cve TO %I', r);
     END IF;
     EXECUTE format(
         'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.events', 'id'), r);
