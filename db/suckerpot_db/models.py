@@ -306,3 +306,47 @@ class IndicatorIntelRow(Base):
     checked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
+
+
+class UserRow(Base):
+    """An additional dashboard account. The owner account lives in ``.env`` and has no row."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    username: Mapped[str] = mapped_column(Text, nullable=False)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("true"), nullable=False
+    )
+    disabled: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    prev_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_logins: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    session_version: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+
+
+class AuditLogRow(Base):
+    """One administrative action. ``details`` is bounded and never holds a secret."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    actor: Mapped[str] = mapped_column(Text, nullable=False)
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    target: Mapped[str | None] = mapped_column(Text)
+    ip: Mapped[str | None] = mapped_column(Text)
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )

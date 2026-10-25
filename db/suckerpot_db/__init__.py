@@ -6,6 +6,7 @@ from suckerpot_db.engine import (
     database_url_from_env,
 )
 from suckerpot_db.models import (
+    AuditLogRow,
     Base,
     CveRow,
     CveSyncStateRow,
@@ -19,9 +20,11 @@ from suckerpot_db.models import (
     ProviderSecretRow,
     ProviderTestRequestRow,
     SessionRow,
+    UserRow,
 )
 
 __all__ = [
+    "AuditLogRow",
     "Base",
     "CveRow",
     "CveSyncStateRow",
@@ -35,6 +38,7 @@ __all__ = [
     "ProviderSecretRow",
     "ProviderTestRequestRow",
     "SessionRow",
+    "UserRow",
     "create_engine",
     "create_session_factory",
     "database_url_from_env",
