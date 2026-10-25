@@ -5,7 +5,9 @@ SuckerPot is a honeypot. Its job is to be attacked. This page covers what it doe
 ```{admonition} Build status
 :class: note
 
-**Built:** the isolation layer (networks, container hardening, Redis and database roles, the secrets policy), the API exposure controls, the host firewall template, and the SSH, RDP and Telnet sensors with their limits. The web sensor has the same kind of controls in its code but is not wired into Compose yet (it is under security review).
+**Built:** the isolation layer (networks, container hardening, Redis and database roles, the secrets policy), the API exposure controls, the host firewall template, and the SSH, RDP and Telnet sensors with their limits. The web sensor is wired into Compose and is under security review.
+
+**Built in M9:** seven more sensors (ADB, Docker API, Redis, MySQL, MSSQL, SMB and SIP), each with its own Redis user, network and stream. Their review status is on the [roadmap](ROADMAP.md).
 
 **Built:** dashboard login (M8). The security review passed.
 
@@ -125,7 +127,8 @@ Generate each secret separately with `openssl rand -base64 32`.
 
 - Every event's `data` is capped at 16 KiB. A raw stream entry larger than 64 KiB is rejected before it is parsed. Sensors cut every attacker-controlled field before they build an event.
 - Redis has a memory limit of 192 MB with `noeviction`. When the stream is full, writes fail. Events are never silently evicted.
-- Each sensor stream is capped at about 10,000 entries (`EVENTS_MAXLEN`). Ingest trims each stream on its own after each acknowledged batch, and never past an entry that is still pending.
+- Each sensor stream is capped at about 10,000 entries (`EVENTS_MAXLEN`), or about 3,000 for the seven M9 sensors (`EVENTS_MAXLEN_LOW`). Ingest trims each stream on its own after each acknowledged batch, and never past an entry that is still pending.
+- The host's connection-tracking table is sized and timed by the optional `scripts/host/sysctl-suckerpot.conf`. Without it, a flood of short connections can make the kernel drop new connections for every service, including the admin SSH port. See [Host safeguards](deployment.md#host-safeguards).
 - Redis limits the size of a single command and the input buffer of each client.
 - Ingest writes in bounded batches. A message that keeps failing is dead-lettered after 5 attempts.
 - The live feed has a bounded queue per client, at most 50 clients in total and 5 per source address.
@@ -161,6 +164,19 @@ Docker restarts a container that exits. It does **not** restart a container that
 - The state (revocations, login counters, the per-boot key) is in memory, so the API must run as **one** worker.
 - The dashboard is designed to sit behind an access layer such as Cloudflare Access as a second layer, but it must be safe without one.
 
+### SIP anti-reflection
+
+UDP source addresses can be forged. A UDP service that answers every request can be used to flood a victim with replies. The SIP sensor follows these rules, and each one holds before a reply byte leaves the sensor:
+
+1. **A reply is never larger than the request that caused it.** The reply is built from the mandatory headers (Via, From, To, Call-ID, CSeq). Optional headers are added one at a time, and only while the total stays within the request size. If the mandatory part does not fit, the sensor stays silent. A last check rejects any reply that is bigger than its request.
+2. **Responses, ACKs and unparseable input get no reply.** Two reflectors cannot answer each other.
+3. **No reply to implausible sources.** Private, shared (CGNAT), loopback, link-local, multicast, broadcast, unspecified, reserved and documentation addresses get no reply, and neither does port 0 or an address listed in `SENSOR_SIP_OWN_IPS`.
+4. **Reply caps.** Per source: 2 replies per second, burst 5. For all sources together: 100 replies per second (burst 200) and 32 KiB of reply bytes per second (burst 64 KiB).
+5. **Work bounds before parsing.** Datagrams over 4096 bytes are dropped unread. Packets are capped per source (50 per second) and in total (3000 per second).
+6. **Events are aggregated per source address,** so a flood produces a few events, not a stream.
+
+The sensor's test suite (`sensors/sip/tests/test_reflection.py`) measures the result. Over 4000 requests of every shape, with the rate limits off so that the size rule alone is tested, the amplification factor is 0.708, and the largest single reply is 0.993 of its request. With the limits on, 20,000 packets from 20,000 spoofed sources give at most `200 + 100 × seconds` replies.
+
 ### No offensive behaviour
 
 SuckerPot does not:
@@ -171,7 +187,7 @@ SuckerPot does not:
 
 ### Realistic fingerprints
 
-Fake services must look real to an attacker. Banners and versions are plausible and current. Hostnames are ordinary. The words "honeypot" and "suckerpot" never appear anywhere a client could see. This applies to the sensors (planned).
+Fake services must look real to an attacker. Banners and versions are plausible and current. Hostnames are ordinary. The words "honeypot" and "suckerpot" never appear anywhere a client could see. This applies to every sensor.
 
 ## Terminal replay safety contract
 
@@ -217,6 +233,14 @@ Lessons that every new sensor and service must follow:
 - **Fail visibly.** A service that cannot do its job stops its heartbeat or exits, so the problem shows in `docker compose ps` instead of in missing data.
 - **Least privilege everywhere.** One Redis user per sensor, one database role per service, one network per job.
 - **No execution, no fetching, no outbound traffic from a sensor.** Everything a sensor knows about an attack comes from bytes it received.
+
+### Lessons 16 to 18 (added in M9)
+
+These three lessons apply to every sensor. They came from the review of the M9 sensors, where hostile load found the limits of the earlier design.
+
+16. **Wall-clock CPU budget per loop turn, per source address.** Work that can be expensive (a parse, a glob, an NTLM answer, a TLS handshake) is timed and charged to a budget for the source address and another for the whole sensor. A loop turn stops when its time slice is used up. A source that uses its own budget waits or is cut, and other sources keep their service. Each sensor measures its own cost: the MSSQL sensor charges the measured CPU time of each message, the SMB sensor spends a CPU token per expensive answer, and the Redis and Docker sensors have buckets for work per connection, per source and for the sensor.
+17. **Pending output is memory.** Bytes that wait to be sent count against the memory budget until they leave the sensor. Output per connection is capped. A peer that does not read is aborted (write timeout, `TCP_USER_TIMEOUT`, small socket buffers) instead of pinning buffers. The memory guard is also checked when a new connection is admitted, not only once a second.
+18. **Per-source event fairness with a priority path.** Each source address has its own event buckets, counted in events and in bytes, in front of the shared queue. Shared buckets keep a reserve that only light sources can use. Connection, login and disconnect events take a priority path, so a flood from some addresses cannot hide the events of others. Dropped events are counted and reported in the session's `disconnect` event.
 
 ## Repo hygiene
 

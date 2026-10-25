@@ -2,14 +2,14 @@
 
 # SuckerPot
 
-**A self-hosted honeypot with one readable dashboard: a few realistic sensors for SSH, Telnet, web and RDP, and a UI that tells each attack as a short story you can click through.**
+**A self-hosted honeypot with one readable dashboard: eleven realistic sensors for remote shells, web and APIs, databases, and Windows and VoIP services, and a UI that tells each attack as a short story you can click through.**
 
 [Documentation](https://suckerpot.readthedocs.io) · [Releases](https://github.com/Theroxat/suckerpot/releases) · [Changelog](CHANGELOG.md)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Theroxat/suckerpot/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/Theroxat/suckerpot/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/readthedocs/suckerpot?logo=readthedocs&logoColor=white&label=docs)](https://suckerpot.readthedocs.io)
 ![Python 3.13](https://img.shields.io/badge/python-3.13-3776ab?logo=python&logoColor=white)
-![Sensors](https://img.shields.io/badge/sensors-SSH%20%C2%B7%20Telnet%20%C2%B7%20Web%20%C2%B7%20RDP-8b5cf6)
+![Sensors](https://img.shields.io/badge/sensors-11-8b5cf6)
 [![Docker Compose](https://img.shields.io/badge/stack-docker%20compose-2496ed?logo=docker&logoColor=white)](docker-compose.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -25,7 +25,7 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 
 ## Status
 
-`v0.1.0` is released. All four sensors, enrichment, tagging, the dashboard, login, retention and backups are built. Every sensor went through several rounds of adversarial security review; all passed. See the [roadmap](docs/ROADMAP.md).
+`v0.1.0` is released with four sensors, enrichment, tagging, the dashboard, login, retention and backups. Milestone M9 adds seven sensors (Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP), which is in progress. Every sensor goes through adversarial security review before it is accepted. See the [roadmap](docs/ROADMAP.md).
 
 ## Features
 
@@ -33,6 +33,16 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 - **Telnet sensor.** A BusyBox telnetd look-alike with Mirai-style login and command flows.
 - **Web sensor** (in final security review). A byte-identical fake Apache 2.4.58 with PHP 8.3 (unpatched mod_php), WordPress and phpMyAdmin pages, and detection of PHP2Shell (upload-progress) exploit attempts, tagged `php2shell`.
 - **RDP sensor.** A Windows Server look-alike with NLA that captures usernames.
+- **Eleven sensors in four families.** Each family has its own colour in the dashboard, and each sensor has its own icon and name.
+
+| Family | Sensors | What they fake |
+| --- | --- | --- |
+| Remote shells | SSH, Telnet, ADB | An OpenSSH 9.6 server, a BusyBox login, an Android TV box with `adbd` and no authentication |
+| Web and APIs | Web, Docker | Apache 2.4 with unpatched PHP 8.3, WordPress and phpMyAdmin; an exposed Docker Engine API |
+| Databases | Redis, MySQL, MSSQL | Redis 7.2 with no password; MySQL 8.0 and SQL Server with weak logins |
+| Windows and VoIP | RDP, SMB, SIP | A Windows Server with NLA; a Windows file service (observation only); an Asterisk-style PBX on UDP and TCP |
+
+Each sensor records what the attacker does and never runs it. SIP answers are capped so that the sensor cannot be used to amplify a flood.
 - **Enrichment and tags.** GeoIP and ASN from DB-IP Lite (no key needed) or MaxMind GeoLite2, optional AbuseIPDB and GreyNoise Community reputation with a 24 h cache and enforced daily quotas, and a declarative YAML rules engine (no regular expressions) for tags such as `recon`, `mirai`, `crypto-miner`, `malware-drop` and `php2shell`.
 - **Dashboard.** Live (3D globe and event feed), Overview (KPIs and auto-written insights), Attacks, Session detail with a terminal replay at real speed, Attackers (by IP and by ASN), Trends, Malware (defanged URLs) and Settings (sensor health, quotas, retention, storage). Dark and light, desktop and mobile. A single admin login (argon2, CSRF protection) guards it, and a screenshot mode (`?mask=1`) masks addresses.
 - **Retention and backups.** Raw events kept 90 days, aggregates forever, compression after 7 days, a disk guard, and `just backup` / `just restore`.
@@ -55,7 +65,7 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 ## Architecture
 
 ```
-Internet --> sensors (ssh, telnet, web, rdp) --> Redis Streams --> ingest --> PostgreSQL + TimescaleDB --> API (FastAPI) --> Web UI (React)
+Internet --> sensors (eleven, one stream each) --> Redis Streams --> ingest --> PostgreSQL + TimescaleDB --> API (FastAPI) --> Web UI (React)
              network "sensors"                   (ACL per sensor)  (only service with outbound access)   network "backend" (internal)   also serves the built UI
 ```
 
@@ -124,6 +134,7 @@ SuckerPot runs hostile traffic through containers, so isolation is a feature, no
 | M6 | Telnet, web and RDP sensors | Done |
 | M7 | Live globe, Trends, Malware | Done |
 | M8 | Dashboard login, retention, backups, `v0.1.0` | Done (`v0.1.0`) |
+| M9 | Seven more sensors (Redis, Docker, MySQL, MSSQL, ADB, SMB, SIP) | In progress |
 
 Details in [docs/ROADMAP.md](docs/ROADMAP.md).
 

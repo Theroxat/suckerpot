@@ -2,12 +2,23 @@
 
 Sensors are the fake services that face the internet. Each one speaks just enough of a protocol to look real, records what the attacker does, and publishes it as [events](../event-schema.md). A sensor never runs attacker input and never makes an outbound connection.
 
-| Sensor | Fake service | Host port (default) | Stream | Status |
+SuckerPot runs eleven sensors in four families. The family sets the colour in the dashboard. The sensor name and icon tell them apart.
+
+| Family | Sensor | Fake service | Host port (default) | Stream |
 | --- | --- | --- | --- | --- |
-| [SSH](ssh.md) | OpenSSH 9.6 on Ubuntu, with an emulated shell | 22 | `events:ssh` | Built (M2). Wired into Compose. |
-| [Web](web.md) | Apache 2.4 with PHP 8.3 (unpatched), WordPress and phpMyAdmin | 80 and 443 | `events:web` | In progress (M6). Code exists, **not yet in Compose** (under security review). |
-| [RDP](rdp.md) | Windows Server 2022 with NLA, handshake only | 3389 | `events:rdp` | Built (M6). Wired into Compose. |
-| [Telnet](telnet.md) | BusyBox-style DVR or router login | 23 | `events:telnet` | Built (M6). Wired into Compose. |
+| Remote shells | [SSH](ssh.md) | OpenSSH 9.6 on Ubuntu, with an emulated shell | 22 | `events:ssh` |
+| Remote shells | [Telnet](telnet.md) | BusyBox-style DVR or router login | 23 | `events:telnet` |
+| Remote shells | [ADB](adb.md) | Android TV box with `adbd` and no authentication | 5555 | `events:adb` |
+| Web and APIs | [Web](web.md) | Apache 2.4 with PHP 8.3 (unpatched), WordPress and phpMyAdmin | 80 and 443 | `events:web` |
+| Web and APIs | [Docker](docker.md) | Exposed Docker Engine API (dockerd 27.3.1) | 2375 | `events:docker` |
+| Databases | [Redis](redis.md) | Redis 7.2 with no password | 6379 | `events:redis` |
+| Databases | [MySQL](mysql.md) | MySQL 8.0 with weak logins | 3306 | `events:mysql` |
+| Databases | [MSSQL](mssql.md) | SQL Server 2019 or 2022 with weak logins | 1433 | `events:mssql` |
+| Windows and VoIP | [RDP](rdp.md) | Windows Server 2022 with NLA, handshake only | 3389 | `events:rdp` |
+| Windows and VoIP | [SMB](smb.md) | Windows Server file service, observation only | 445 | `events:smb` |
+| Windows and VoIP | [SIP](sip.md) | Asterisk-style PBX on UDP and TCP | 5060 (UDP and TCP) | `events:sip` |
+
+All eleven are wired into `docker-compose.yml`. The web sensor is still under security review (see the [roadmap](../ROADMAP.md)).
 
 ## Rules every sensor follows
 
@@ -26,7 +37,14 @@ Sensors are the fake services that face the internet. Each one speaks just enoug
 :hidden:
 
 ssh
-web
-rdp
 telnet
+adb
+web
+docker
+redis
+mysql
+mssql
+rdp
+smb
+sip
 ```

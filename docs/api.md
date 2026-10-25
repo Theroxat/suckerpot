@@ -219,7 +219,7 @@ Lists sessions, newest first. Order: `started_at` descending, then `session_id`.
 | --- | --- | --- |
 | `limit` | `50` | Items per page, 1 to 200 |
 | `cursor` | none | Cursor from the previous page |
-| `sensor` | none | Only sessions from one sensor: `ssh`, `telnet`, `web` or `rdp` |
+| `sensor` | none | Only sessions from one sensor: `ssh`, `telnet`, `adb`, `web`, `docker`, `redis`, `mysql`, `mssql`, `rdp`, `smb` or `sip`. Repeat the parameter or separate names with commas for several sensors. |
 | `src_ip` | none | Only sessions from one source address |
 | `tag` | none | Only sessions that carry this tag. Lower-case letters, digits and `-`, up to 32 characters (for example `crypto-miner`). |
 | `country` | none | Only sessions from this country. Two letters (ISO 3166-1), case-insensitive. |
@@ -385,6 +385,7 @@ Example response (fake values):
   "download_attempts": 14,
   "by_sensor": {
     "rdp": {"events": 1204, "sessions": 150},
+    "redis": {"events": 412, "sessions": 38},
     "ssh": {"events": 12010, "sessions": 910},
     "telnet": {"events": 3580, "sessions": 280},
     "web": {"events": 1548, "sessions": 120}
@@ -438,7 +439,7 @@ Implemented (M5). Check `/openapi.json` (with `API_ENABLE_DOCS=true`) for the ex
 
 All analytics endpoints are read-only, run as the `suckerpot_api` role with the 5 second statement timeout, and use TimescaleDB `time_bucket` queries. Lists are paginated or capped (`limit` at most 200). Times are ISO 8601 UTC.
 
-Common optional filters: `since` and `until` (with a time zone; the default window is the last 24 hours for stats, with 30 days as the maximum) and `sensor` (`ssh`, `telnet`, `web` or `rdp`).
+Common optional filters: `since` and `until` (with a time zone; the default window is the last 24 hours for stats, with 30 days as the maximum) and `sensor` (any of the eleven sensor names: `ssh`, `telnet`, `adb`, `web`, `docker`, `redis`, `mysql`, `mssql`, `rdp`, `smb`, `sip`).
 
 | Method | Path | Purpose |
 | --- | --- | --- |

@@ -7,7 +7,7 @@ Read [Getting started](getting-started.md) first, and the [Security](SECURITY.md
 ```{admonition} Build status
 :class: note
 
-The SSH sensor is built, so a go-live is possible today with the SSH, RDP and Telnet sensors. The RDP and Telnet sensors are wired in too. The web sensor is not yet in `docker-compose.yml`: it is still under security review. The dashboard has a login (M8). Keep it behind the tunnel and the upstream filter described below anyway: login is one layer, not the only one.
+All eleven sensors are in `docker-compose.yml`: the SSH, Telnet, ADB, web, Docker API, Redis, MySQL, MSSQL, RDP, SMB and SIP sensors. The web sensor is still under security review. The seven M9 sensors are new: check them before you forward their ports. The dashboard has a login (M8). Keep it behind the tunnel and the upstream filter described below anyway: login is one layer, not the only one.
 ```
 
 ## Principles
@@ -58,6 +58,14 @@ openssl rand -base64 32
 | `REDIS_SENSOR_SSH_PASSWORD` | Redis `sensor-ssh` user |
 | `REDIS_SENSOR_RDP_PASSWORD` | Redis `sensor-rdp` user |
 | `REDIS_SENSOR_TELNET_PASSWORD` | Redis `sensor-telnet` user |
+| `REDIS_SENSOR_WEB_PASSWORD` | Redis `sensor-web` user |
+| `REDIS_SENSOR_REDIS_PASSWORD` | Redis `sensor-redis` user |
+| `REDIS_SENSOR_DOCKER_PASSWORD` | Redis `sensor-docker` user |
+| `REDIS_SENSOR_MYSQL_PASSWORD` | Redis `sensor-mysql` user |
+| `REDIS_SENSOR_MSSQL_PASSWORD` | Redis `sensor-mssql` user |
+| `REDIS_SENSOR_ADB_PASSWORD` | Redis `sensor-adb` user |
+| `REDIS_SENSOR_SMB_PASSWORD` | Redis `sensor-smb` user |
+| `REDIS_SENSOR_SIP_PASSWORD` | Redis `sensor-sip` user |
 | `REDIS_DEMO_PASSWORD` | Redis `demo` user |
 
 Keep `.env` readable by the owner only (`chmod 600 .env`). Never commit it. `SUCKERPOT_ALLOW_DEFAULT_SECRETS=1` turns the checks off. It exists for CI only. Never set it on a real host.
@@ -72,10 +80,10 @@ Rotate every secret before the first exposure, after any suspected leak, and fro
 2. Recreate everything that talks to Redis. Redis rewrites its ACL file on every start.
 
    ```bash
-   docker compose up -d --force-recreate redis ingest sensor-ssh sensor-rdp sensor-telnet
+   docker compose up -d --force-recreate redis ingest sensor-ssh sensor-telnet sensor-adb sensor-web sensor-docker sensor-redis sensor-mysql sensor-mssql sensor-rdp sensor-smb sensor-sip
    ```
 
-   Add any other sensor service you run. Events published while Redis restarts are dropped and counted, never buffered without limit.
+   Leave out any sensor you do not run. Events published while Redis restarts are dropped and counted, never buffered without limit.
 
 **Ingest and API database passwords** (`POSTGRES_INGEST_PASSWORD`, `POSTGRES_API_PASSWORD`):
 
@@ -140,6 +148,8 @@ See [API](api.md#authentication) for the cookie and CSRF details.
 - two of `DASHBOARD_PORT` and the `*_HOST_PORT` variables are equal;
 - one of them equals `ADMIN_SSH_PORT`, the optional variable in `.env` that holds the port of the host's own admin SSH daemon;
 - a value is not a number between 1 and 65535.
+
+The dashboard port must never be a sensor port. The script refuses the five classic service ports listed above. It also compares the dashboard port with every `*_HOST_PORT`, defaults included, and fails on a clash. Keep the dashboard on a port that no sensor uses. The default, 8443, is safe.
 
 Set `ADMIN_SSH_PORT` in `.env`. It is used only by this script. If you start the stack with plain `docker compose up`, run `just ports` yourself first.
 
@@ -217,6 +227,40 @@ sudo systemctl daemon-reload
 
 Without the table, a compromised sensor can reach the host's admin SSH port. Do not forward ports while it is off.
 
+## Host safeguards
+
+Two optional or recommended host settings protect the host from floods. The repository never applies them for you. Run them yourself, as the host owner.
+
+### Connection tracking (recommended)
+
+The kernel keeps a table of open connections. Scans and floods (many short TCP connections, spoofed UDP to SIP) can fill it. When it is full, the kernel drops **new** connections for every service on the host, including your admin SSH port. The file `scripts/host/sysctl-suckerpot.conf` raises the table size and shortens the timeouts of half-open and UDP entries. Install it with:
+
+```bash
+sudo install -m 0644 <repo>/scripts/host/sysctl-suckerpot.conf /etc/sysctl.d/90-suckerpot.conf
+sudo sysctl --system
+sysctl net.netfilter.nf_conntrack_max      # verify
+```
+
+Replace `<repo>` with the path of your clone, for example the folder where you ran `git clone`. The `sysctl --system` command reloads all sysctl files, so it applies the other files in `/etc/sysctl.d/` too.
+
+### Aggregate cap for the sensors (optional)
+
+Each container already has its own limits in `docker-compose.yml`. The optional file `scripts/host/suckerpot-sensors.slice` caps their **sum**, so that a flood on every sensor at once cannot starve Redis, the database, ingest or the API. It sets a memory ceiling of 1536 MB, no swap and a CPU quota of 120 %. Nothing uses it by default.
+
+1. Check the Docker cgroup driver. The slice only works with the `systemd` driver: `docker info | grep -i 'cgroup driver'`. If the driver is `cgroupfs`, skip this section.
+2. Install the slice unit and reload systemd:
+
+   ```bash
+   sudo install -m 0644 <repo>/scripts/host/suckerpot-sensors.slice /etc/systemd/system/
+   sudo systemctl daemon-reload
+   ```
+
+3. In `docker-compose.yml`, add `cgroup_parent: suckerpot-sensors.slice` to each `sensor-*` service, then recreate the sensors. Only the host owner should make this change.
+
+### Optional SIP rate limit in the firewall
+
+The firewall template has a commented-out rule that rate-limits new SIP flows on UDP 5060 before they reach the sensor. Read the comment in `scripts/host/firewall.nft` before you enable it. Keep it off until you have measured your normal SIP traffic.
+
 ## Dashboard bind and upstream filtering
 
 `DASHBOARD_BIND` is the host address the dashboard port binds to.
@@ -292,24 +336,48 @@ Take a snapshot of the VM, or a full image of the machine, in a clean state **af
 
 ## Forward the ports
 
-Forward the sensor ports to the host, then verify each one. Forward only the ports of sensors that are actually running.
+Forward the sensor ports to the host, then verify each one. Forward only the ports of sensors that are actually running. Each row is one host port. The variable is the one in `.env` that sets it.
 
-| Sensor | Port |
-| --- | --- |
-| SSH | `SSH_HOST_PORT` (22) |
-| Web (when wired in) | `HTTP_HOST_PORT` (80) and 443 |
-| RDP | `RDP_HOST_PORT` (3389) |
-| Telnet | `TELNET_HOST_PORT` (23) |
+| Sensor | Port | Protocol | Variable |
+| --- | --- | --- | --- |
+| SSH | 22 | TCP | `SSH_HOST_PORT` |
+| Telnet | 23 | TCP | `TELNET_HOST_PORT` |
+| ADB | 5555 | TCP | `ADB_HOST_PORT` |
+| Web | 80 and 443 | TCP | `HTTP_HOST_PORT` and `HTTPS_HOST_PORT` |
+| Docker API | 2375 | TCP | `DOCKER_HOST_PORT` |
+| Redis | 6379 | TCP | `REDIS_HOST_PORT` |
+| MySQL | 3306 | TCP | `MYSQL_HOST_PORT` |
+| MSSQL | 1433 | TCP | `MSSQL_HOST_PORT` |
+| RDP | 3389 | TCP | `RDP_HOST_PORT` |
+| SMB | 445 | TCP | `SMB_HOST_PORT` |
+| SIP | 5060 | UDP **and** TCP | `SIP_HOST_PORT` |
+
+The dashboard port (`DASHBOARD_PORT`, 8443 by default) and the admin SSH port are **never** forwarded. Keep them off the list.
+
+The host must not run its own service on any of these ports. For example, a Samba server on 445 or a MySQL server on 3306 would collide with the sensor.
 
 ```{warning}
 A DMZ forwards **every** port to the host, including the dashboard port and the admin SSH port. Use one only after the host firewall and the upstream dashboard filter are in place. If your router can forward only the ports you need, prefer that.
 ```
 
+### SIP needs the real source address
+
+The SIP sensor answers each UDP datagram to the address that sent it. Its per-source limits and its verification of the source depend on that address being the attacker's. Docker can break this. For a published port, Docker uses NAT (iptables), which keeps the source address. But when the userland proxy (`docker-proxy`) handles the port, the sensor sees the proxy's address for every datagram. Then every attacker looks like one source.
+
+The userland proxy is on by default and applies to all published ports. To keep the source addresses for SIP, the host owner must turn it off:
+
+1. Add `"userland-proxy": false` to `/etc/docker/daemon.json`. Keep any other keys in the file.
+2. Restart the Docker daemon. This stops the containers unless `live-restore` is set, so plan a short window.
+3. Test from a machine outside your network. Send one SIP `OPTIONS` request to UDP 5060 and check the `connect` event in the dashboard. Its source address must be the address of the test machine. It must never be a private address of the Docker bridge.
+
+With the proxy off, a connection from the host to its own published ports may stop working. The internet path is the one that matters, and it uses NAT.
+
 ## Verify from outside
 
 From a machine outside your network:
 
-- [ ] The sensor ports answer (a connection to port 22 gets an OpenSSH banner).
+- [ ] The sensor ports answer (a connection to port 22 gets an OpenSSH banner, and a connection to 6379 gets a Redis reply).
+- [ ] UDP 5060 answers an OPTIONS request, and the SIP `connect` event shows the real source address.
 - [ ] The dashboard port does not answer.
 - [ ] The admin SSH port does not answer.
 - [ ] The tunnel URL reaches the dashboard, and the Live indicator reads "Live" without the "Polling" note.

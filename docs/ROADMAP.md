@@ -121,9 +121,37 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - [x] GitHub release `v0.1.0`.
 - [ ] Remind the owner of the go-live checklist (dashboard firewall rule, `/logout`, token revocation, snapshot, then DMZ).
 
+## M9 — Seven more sensors
+
+- [ ] Redis (6379), Docker Engine API (2375), MySQL (3306), MSSQL (1433), Android ADB (5555), SMB (445), SIP (5060/udp + tcp).
+- [ ] Contract lessons 16–18 on every sensor: wall-clock CPU budget per loop turn, pending output charged to the memory budget, per-IP event fairness.
+- [ ] SIP: no UDP amplification (every reply ≤ its request, per-source and global reply caps).
+- [ ] Ingest rules and tag severities for the new flags; per-IP brute-force tagging (`credential-stuffing`) and the `brute_force` insight.
+- [ ] UI for 11 sensors (sensor families and colours); flat world map as the default Live view, with the 3D globe as an option.
+- [ ] Compose integration, demo data for the new sensors, docs.
+
+**Acceptance:** each sensor tested with real clients and nmap; security review PASS for each; all services healthy.
+
+## M10 — RDP sensor, deeper
+
+- [ ] CredSSP up to the NTLM challenge: record domain, user and workstation for every brute-force attempt, and check the NTLMv2 response against the configured weak passwords (nothing cracked).
+- [ ] Optional "NLA disabled" mode: standard TLS security up to the Client Info PDU, recording the user name and the cleartext password the client sends.
+- [ ] Client tool identification from JA3, CredSSP version and client OS version (nmap, hydra, ncrack, FreeRDP, mstsc, common brute-force bots), shown on the session page.
+- [ ] Lessons 1–18 kept; security review PASS.
+
+**Acceptance:** hydra/ncrack/FreeRDP against the sensor record user names, and weak passwords are recognised; security review PASS.
+
+## M11 — Settings you can edit
+
+- [ ] Enter, replace and remove enrichment API keys (AbuseIPDB, GreyNoise, MaxMind) from Settings, with no restart.
+- [ ] Keys stored encrypted at rest (key from `.env`), write-only in the UI (only the last 4 characters shown), every change logged, CSRF and re-authentication required; `.env` values stay a supported fallback.
+- [ ] Ingest picks up new keys within a minute; Settings shows where each key comes from (`.env` or Settings) and a "Test key" button that spends one quota call.
+
+**Acceptance:** a key added in Settings turns the provider on without a restart; keys never leave the server in clear text; security review PASS.
+
 ## Later (not part of the loop)
 
 - Discord alerts on malware drops.
 - Public read-only page through Cloudflare Tunnel, IPs masked.
 - LLM-backed SSH shell.
-- More sensors: Redis, MySQL, SMB, SIP.
+- RDP: a fake Windows logon screen that records keystrokes.

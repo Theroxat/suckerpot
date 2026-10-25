@@ -3,7 +3,7 @@
 ```{admonition} Status
 :class: note
 
-In progress (M6). The sensor code and its tests exist. It is **not yet wired into `docker-compose.yml`**: it is still under security review. See `sensors/web/README.md` for the sensor's own notes. This page may change before the milestone is done.
+Built (M6) and wired into `docker-compose.yml` as `sensor-web`. It is still under security review. See `sensors/web/README.md` for the sensor's own notes. This page may change before the milestone is done.
 ```
 
 ## What it emulates

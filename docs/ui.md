@@ -15,7 +15,7 @@ The pages read the endpoints described in [API](api.md).
 ## Principles
 
 - **A sentence before a chart.** Every card opens with a plain-English finding, then shows the evidence.
-- **Colour means something.** One hue per sensor (SSH blue, Telnet green, Web pink, RDP ochre), always paired with an icon and a label. Red is reserved for severe events: a download attempt, or an exploit or malware tag.
+- **Colour means something.** One hue per sensor family (remote shells blue, web and APIs purple, databases green, Windows and VoIP ochre), always paired with an icon and a label. Each sensor has its own icon and name. Red is reserved for severe events: a download attempt, or an exploit or malware tag.
 - **Everything is clickable.** An address, a tag or a sensor count opens the matching filtered view. Filters live in the URL, so every view can be shared.
 - **Calm real-time.** New events slide in softly, numbers tween, nothing flashes. With "reduce motion" set in the system, all animation is off.
 - **Times** are stored in UTC and shown in the browser's time zone, relative ("5 min. ago") with the exact time on hover.

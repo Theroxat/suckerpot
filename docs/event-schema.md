@@ -7,7 +7,7 @@ Every sensor sends the same shape of event. The model is `Event` in the `suckerp
 | Field | Type | Constraints | Content |
 | --- | --- | --- | --- |
 | `ts` | datetime | Must include a time zone. Stored in UTC. | When the attacker did it |
-| `sensor` | enum | `ssh`, `telnet`, `web`, `rdp` | Which sensor saw it |
+| `sensor` | enum | `ssh`, `telnet`, `adb`, `web`, `docker`, `redis`, `mysql`, `mssql`, `rdp`, `smb`, `sip` | Which sensor saw it |
 | `session_id` | string | 1 to 64 characters, `A-Z a-z 0-9 _ -` only | Groups all events of one connection |
 | `src_ip` | IP address | IPv4 or IPv6 | Attacker address |
 | `src_port` | integer | 0 to 65535 | Attacker port |
@@ -74,7 +74,7 @@ An SSH login attempt, with documentation addresses only:
 
 ## Stream encoding
 
-Each sensor has its own Redis stream: `events:ssh`, `events:telnet`, `events:web` and `events:rdp`. Each event is one entry in the stream of the sensor that produced it. The `sensor` field of the event must match the stream suffix, or ingest drops the event. The entry has two fields:
+Each sensor has its own Redis stream: `events:ssh`, `events:telnet`, `events:adb`, `events:web`, `events:docker`, `events:redis`, `events:mysql`, `events:mssql`, `events:rdp`, `events:smb` and `events:sip`. Each event is one entry in the stream of the sensor that produced it. The `sensor` field of the event must match the stream suffix, or ingest drops the event. The entry has two fields:
 
 | Field | Value |
 | --- | --- |
