@@ -1,0 +1,46 @@
+[project]
+name = "suckerpot-sensor-docker"
+version = "0.1.0"
+description = "SuckerPot Docker sensor: an exposed, unauthenticated Docker Engine API look-alike."
+requires-python = ">=3.13"
+dependencies = [
+    "suckerpot-common",
+]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["docker_sensor"]
+
+[tool.uv.sources]
+suckerpot-common = { path = "../common" }
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"docker_sensor/*.py" = ["E501"]
+"tests/**" = ["RUF059", "B007", "F841", "S101", "S105", "S106", "S108", "S104", "S110", "S310", "S311", "S603", "S607", "S501", "E501", "RUF001"]
+
+[tool.mypy]
+exclude = ["tests/flood.py"]  # manual load tool, runs in a throwaway container
+strict = true
+python_version = "3.13"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
