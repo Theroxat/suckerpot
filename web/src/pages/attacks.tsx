@@ -24,6 +24,8 @@ function useFilters(): SessionFilters {
   const tag = params.get("tag")
   const country = params.get("country")
   const asn = params.get("asn")
+  const technique = params.get("technique")
+  const campaign = params.get("campaign_id")
   return {
     sensor: sensor.length ? sensor : undefined,
     src_ip: params.get("src_ip") ?? undefined,
@@ -31,6 +33,8 @@ function useFilters(): SessionFilters {
     tag: /^[a-z0-9-]{1,32}$/.test(tag ?? "") ? (tag ?? undefined) : undefined,
     country: /^[A-Za-z]{2}$/.test(country ?? "") ? country?.toUpperCase() : undefined,
     asn: /^\d{1,10}$/.test(asn ?? "") ? (asn ?? undefined) : undefined,
+    technique: /^T\d{4}(\.\d{3})?$/.test(technique ?? "") ? (technique ?? undefined) : undefined,
+    campaign_id: /^\d{1,15}$/.test(campaign ?? "") ? (campaign ?? undefined) : undefined,
   }
 }
 
@@ -44,7 +48,7 @@ function useHeadline(filters: SessionFilters, loaded: number, complete: boolean)
       ? `${formatNumber(loaded)} ${loaded === 1 ? "session" : "sessions"} from ${ip}.`
       : `Every session from ${ip}, newest first.`
   }
-  if (filters.tag ?? filters.country ?? filters.asn) {
+  if (filters.tag ?? filters.country ?? filters.asn ?? filters.technique ?? filters.campaign_id) {
     return complete
       ? `${formatNumber(loaded)} matching ${loaded === 1 ? "session" : "sessions"}, newest first.`
       : "Matching sessions, newest first."
@@ -129,6 +133,16 @@ export function AttacksPage() {
             param: "asn",
             label: "Network",
             render: (v) => <span className="font-mono">AS{v}</span>,
+          },
+          {
+            param: "technique",
+            label: "Technique",
+            render: (v) => <span className="font-mono">{v}</span>,
+          },
+          {
+            param: "campaign_id",
+            label: "Campaign",
+            render: (v) => <span className="font-mono">#{v}</span>,
           },
         ]}
       >

@@ -15,6 +15,15 @@ import type {
 import type { EnrichmentSettings, SystemSettings } from "./settings"
 import type { CveDetail, CveFilters, CvePage, CveSync } from "./cves"
 import type {
+  Campaign,
+  CampaignFilters,
+  CampaignIndicator,
+  CampaignStory,
+  CampaignTimeline,
+  Matrix,
+  TechniqueItem,
+} from "./campaigns"
+import type {
   IndicatorDetail,
   IndicatorFilters,
   IndicatorItem,
@@ -64,6 +73,10 @@ export interface Session extends Enrichment {
   http_requests: number
   /** Best-effort client guess (RDP only: "FreeRDP", "nmap", ...); null or absent when unknown. */
   client_tool?: string | null
+  /** ATT&CK technique ids the session showed (M15); absent on older responses. */
+  techniques?: string[]
+  /** The campaign the session belongs to, once ingest has grouped it. */
+  campaign_id?: number | null
 }
 
 export interface SensorEvent extends Enrichment {
@@ -235,6 +248,8 @@ export interface SessionFilters {
   asn?: string | undefined
   since?: string | undefined
   until?: string | undefined
+  technique?: string | undefined
+  campaign_id?: string | undefined
 }
 
 export class ApiError extends Error {
@@ -395,6 +410,25 @@ export const api = {
   indicator: (id: number) => getJson<IndicatorDetail>(`/indicators/${id}`),
   infrastructureGraph: (hours: number, role?: string) =>
     getJson<InfrastructureGraph>("/infrastructure/graph", { hours, role }),
+  // M15: campaigns and MITRE ATT&CK.
+  campaigns: (filters: CampaignFilters, cursor?: string | null, limit = 50) =>
+    getJson<Page<Campaign>>("/campaigns", { ...filters, cursor: cursor ?? undefined, limit }),
+  campaign: (id: number) => getJson<Campaign>(`/campaigns/${id}`),
+  campaignStory: (id: number) => getJson<CampaignStory>(`/campaigns/${id}/story`),
+  campaignTimeline: (id: number, days = 7) =>
+    getJson<CampaignTimeline>(`/campaigns/${id}/timeline`, { days }),
+  campaignSessions: (id: number, cursor?: string | null, limit = 10) =>
+    getJson<Page<Session>>(`/campaigns/${id}/sessions`, { cursor: cursor ?? undefined, limit }),
+  campaignIndicators: (id: number) =>
+    getJson<{ items: CampaignIndicator[] }>(`/campaigns/${id}/indicators`),
+  attackTechniques: (days: number, sensor?: readonly Sensor[]) =>
+    getJson<Page<TechniqueItem> & { days: number }>("/attack/techniques", {
+      days,
+      sensor,
+      limit: 400,
+    }),
+  attackMatrix: (days: number, sensor?: readonly Sensor[]) =>
+    getJson<Matrix>("/attack/matrix", { days, sensor }),
   // M8: read-only settings.
   systemSettings: () => getJson<SystemSettings>("/settings/system"),
   enrichmentSettings: () => getJson<EnrichmentSettings>("/settings/enrichment"),
@@ -424,6 +458,15 @@ export const queryKeys = {
   indicator: (id: number) => ["indicators", "detail", id] as const,
   infrastructureGraph: (hours: number, role: string) =>
     ["infrastructure", "graph", hours, role] as const,
+  campaigns: (filters: CampaignFilters) => ["campaigns", filters] as const,
+  campaign: (id: number) => ["campaigns", "detail", id] as const,
+  campaignStory: (id: number) => ["campaigns", "story", id] as const,
+  campaignTimeline: (id: number, days: number) => ["campaigns", "timeline", id, days] as const,
+  campaignSessions: (id: number) => ["campaigns", "sessions", id] as const,
+  campaignIndicators: (id: number) => ["campaigns", "indicators", id] as const,
+  attackTechniques: (days: number, sensor: string) =>
+    ["attack", "techniques", days, sensor] as const,
+  attackMatrix: (days: number, sensor: string) => ["attack", "matrix", days, sensor] as const,
   users: ["users"] as const,
   audit: (filters: object) => ["audit", filters] as const,
   systemSettings: ["settings", "system"] as const,
