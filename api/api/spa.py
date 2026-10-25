@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -22,6 +23,7 @@ SECURITY_HEADERS = {
     "Cross-Origin-Resource-Policy": "same-origin",
 }
 DOC_PATHS = ("/docs", "/redoc")
+REPORT_PAGE = re.compile(r"^/api/v1/reports/[0-9]{4}-[0-9]{2}-[0-9]{2}/html$")
 IMMUTABLE = "public, max-age=31536000, immutable"
 
 
@@ -46,10 +48,10 @@ def install_security_headers(app: FastAPI, *, enable_docs: bool) -> None:
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         # Swagger UI/ReDoc load scripts from a CDN; only relax the policy for those pages.
-        # A route may set a stricter policy of its own (the weekly report page): keep it.
-        if "content-security-policy" not in response.headers and not (
-            enable_docs and request.url.path in DOC_PATHS
-        ):
+        # Only the weekly report page may bring a stricter policy of its own; every other
+        # response gets the global one whatever a handler set.
+        own = REPORT_PAGE.match(request.url.path) and "content-security-policy" in response.headers
+        if not own and not (enable_docs and request.url.path in DOC_PATHS):
             response.headers["Content-Security-Policy"] = CSP
         return response
 
