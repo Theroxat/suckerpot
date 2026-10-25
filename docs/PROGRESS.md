@@ -76,3 +76,13 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - Left open: security and UI reviews; optional TOTP; the owner is never locked out by failures (rate limits still apply).
 
 - Security review follow-up: structural route test, `system` actor and ids in audit details, WebSocket closes with 1013 after repeated session-check failures, THIRD_PARTY_NOTICES.md for the common-password list.
+
+## 2026-10-25 — M15 to M19: campaigns, ATT&CK, Defend, scripts, alerts, Today
+
+- **M15 Campaigns and ATT&CK.** A shared command normaliser, a bounded clustering job that groups finished sessions by shared keys (script, exploit, credential list, payload host, file hash, malware family), campaign pages with a plain-English story, an ATT&CK catalogue synced hourly and event rules that tag sessions with techniques, and a Techniques heatmap. Migration 0011.
+- **M16 Defend.** Scored blocklists (addresses, hosts, URLs, hashes) with a reason for every point, a never-list for resolvers, big SaaS and CDN names and the owner's own addresses, overrides with audit entries, exports for OPNsense and pfSense aliases, plain text and CSV, an opt-in token feed under `/feeds` (off by default), Sigma and Suricata rules marked "review before deploying", and "Your exposure", an inventory compared with recorded attacks. Migration 0012. Documented in [Defend](defend.md).
+- **M17 Script library.** Sessions with two or more commands are fingerprinted into scripts, explained by a declarative annotation base, with an optional LLM explainer (`LLM_ENABLED`, off by default) that sees only the normalised script text, under a daily call quota and a monthly token cap. Migration 0013.
+- **M18 Alerts and weekly report.** Discord, Microsoft Teams and e-mail (TLS only) channels with validated, encrypted targets, four event alert rules and a weekly report rule, all off until switched on, a rate-limited outbox with a test button, and a weekly report with a printable view. Migration 0014.
+- **M19 Today, search and research scanners.** A Today home page, a global search box, a glossary, and research scanners (for example known internet crawlers) labelled benign by the network that owns them. Benign is an allowlist of harmless behaviour, decided on what the session did, never on its user agent. Migration 0015.
+- **Security reviews.** Each milestone went through a security review. The first pass of each one returned FAIL or findings, which were fixed. A second pass returned PASS.
+- **Left open.** The campaign cap per network and ASN, commit per chunk in clustering, and payload analysis in quarantine (to be framed with the owner). See the [roadmap](ROADMAP.md) "Later" list. The M14 security and UI reviews are still unticked.

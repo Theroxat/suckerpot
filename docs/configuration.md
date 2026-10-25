@@ -413,6 +413,55 @@ Details in [Defend](defend.md). Ingest scores indicators into blocklists when `B
 | `BLOCKLIST_NEVER` | empty | Addresses, networks and names never listed (also read: `AUTH_TRUSTED_PROXIES`, `API_ALLOWED_HOSTS`, `INDICATORS_IGNORE`) |
 | `FEEDS_ENABLED` | `false` | Serve `/feeds/*` with bearer tokens made in Settings. The only part of the API outside the dashboard login |
 
+## Campaigns and ATT&CK (M15)
+
+Details in [Architecture](ARCHITECTURE.md#analysis-workers-m15-to-m19). Both switches are off by default. Compose passes these variables to `ingest` and `api`.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ATTACK_ENABLED` | `false` | Sync the MITRE ATT&CK catalogue every hour and label sessions with techniques |
+| `CAMPAIGNS_ENABLED` | `false` | Cluster finished sessions into campaigns, every 5 minutes |
+| `CAMPAIGN_MIN_SOURCES` | `2` | Distinct sources a shared key needs before it makes a campaign (2 to 100) |
+| `CAMPAIGN_LINK_CAP` | `500` | Most sessions linked to one campaign (10 to 10,000) |
+| `CAMPAIGNS_MAX_ROWS` | `50000` | Row ceiling of the campaign tables. The oldest, least seen rows go first (1,000 to 50 million) |
+
+## Script library and LLM explainer (M17)
+
+Details in [Architecture](ARCHITECTURE.md#analysis-workers-m15-to-m19). The explainer is off by default. When it is on, it sends the **normalised** command text of one script (addresses, host names and URLs are replaced by placeholders) to the Anthropic API, and nothing else. Set the key here or in Settings, under provider `anthropic`. A key set in Settings overrides `ANTHROPIC_API_KEY`.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SCRIPTS_ENABLED` | `false` | Fingerprint sessions with two or more commands into the script library, every 5 minutes |
+| `SCRIPTS_MAX_ROWS` | `100000` | Row ceiling of the script tables (1,000 to 50 million) |
+| `LLM_ENABLED` | `false` | Allow the optional LLM explanation. An administrator still has to ask for each one ("Explain now"). |
+| `LLM_DAILY_QUOTA` | `50` | Calls to the model per UTC day, 0 to 10,000. Kept in the database, so a restart does not reset it. |
+| `LLM_MONTHLY_TOKEN_CAP` | `2000000` | Tokens per UTC month, 0 to 1 billion. Kept in the database. |
+| `LLM_MODEL` | `claude-haiku-5-5` | Model name: lower-case letters, digits, `-`, `.` and `_`, at most 64 characters |
+| `ANTHROPIC_API_KEY` | empty | API key for the explainer. Needed only when `LLM_ENABLED=true`. |
+
+## Alerts and weekly report (M18)
+
+Details in [Architecture](ARCHITECTURE.md#analysis-workers-m15-to-m19). Alerts and the report are off by default. Discord and Teams targets are not set here. You add them in the dashboard (Alerts), where they are checked and stored encrypted. Every rule starts off, and you switch on each one yourself.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ALERTS_ENABLED` | `false` | Evaluate the alert rules and deliver messages |
+| `REPORTS_ENABLED` | `false` | Build the weekly report after each Monday 06:00 (site time) |
+| `ALERTS_DASHBOARD_URL` | empty | Public `https` address of the dashboard, with no query string. Alert messages link to the matching page. Without it, messages have no links. |
+| `SITE_TIMEZONE` | `UTC` | IANA time zone (for example `Europe/Zurich`) that decides when the week starts for the report |
+| `SMTP_HOST` | empty | SMTP server for e-mail alerts. E-mail needs `SMTP_HOST` and `SMTP_FROM`. |
+| `SMTP_PORT` | `587`, or `465` with `SMTP_SECURITY=ssl` | SMTP port (1 to 65535) |
+| `SMTP_SECURITY` | `starttls` | `starttls` (usually port 587) or `ssl` (usually port 465). Plain text is not offered. The certificate is always checked. |
+| `SMTP_USER` | empty | Login name. Leave empty for a server that needs no login. |
+| `SMTP_FROM` | empty | Sender address of the alerts (a plain e-mail address) |
+| `SMTP_PASSWORD` | empty | Login password. It can also be set in Settings, under provider `smtp`. |
+
+Discord and Teams webhooks need no variable. They are stored as channels in the database. The outbound hosts are listed in [Architecture](ARCHITECTURE.md#outbound-hosts).
+
+## Today and search (M19)
+
+Today, global search, the glossary and the research-scanner switch need no variable. Research scanners are labelled by the network that owns them, and they are left out of lists unless a page asks for them (`include_benign`). The list of scanners is in `ingest/rules/scanners.yaml`.
+
 ## In `.env.example` but not used yet
 
 These names are in the template. The code does not read them, so setting them has no effect today.
