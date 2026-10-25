@@ -12,7 +12,7 @@ interface TagBadgeProps {
 /**
  * A rules-engine tag. Neutral by default; tags that mean a payload or exploit
  * carry a red diamond, tags that mean harm short of that (ransom note, rogue
- * master, phone fraud, persistence) an orange triangle. Shape + colour + an
+ * master, phone fraud, persistence, a BlueKeep probe, a guessed weak password) an orange triangle. Shape + colour + an
  * sr-only word, so the meaning never rests on colour alone.
  */
 export function TagBadge({ tag, href, className }: TagBadgeProps) {

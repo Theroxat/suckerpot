@@ -18,7 +18,16 @@ export const SEVERE_TAGS = new Set([
  * Tags that mean real harm short of a payload: data held to ransom, a rogue
  * replication master, phone fraud, persistence (orange, triangle marker).
  */
-export const WARNING_TAGS = new Set(["db-ransom", "redis-rogue-master", "sip-fraud", "persistence"])
+export const WARNING_TAGS = new Set([
+  "db-ransom",
+  "redis-rogue-master",
+  "sip-fraud",
+  "persistence",
+  // A BlueKeep probe sends no payload (unlike eternalblue); a weak-credentials tag means a
+  // decoy password was guessed, the RDP counterpart of a successful login.
+  "bluekeep",
+  "weak-credentials",
+])
 
 /** "severe", "warning" or null (neutral) for one tag. */
 export function tagSeverity(tag: string): "severe" | "warning" | null {

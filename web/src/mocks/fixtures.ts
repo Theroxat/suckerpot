@@ -30,6 +30,8 @@ function int(rand: Rand, min: number, max: number) {
   return Math.floor(rand() * (max - min + 1)) + min
 }
 
+const RDP_TOOLS = ["FreeRDP", "FreeRDP", "FreeRDP", "mstsc", "rdesktop", "nmap", "unknown"] as const
+
 const PREFIXES = ["192.0.2", "198.51.100", "203.0.113"] as const
 
 // Weighted like a real Swiss sensor sees it: mostly neighbours and big clouds
@@ -248,6 +250,7 @@ export function buildFixtures(count = 420, now = Date.now(), seed = 7): Fixture[
     let commands = 0
     let downloads = 0
     let http_requests = 0
+    let client_tool: string | null = null
 
     const roll = rand()
     // Commands as they were typed or sent (shell lines, Redis commands, SQL, ADB services).
@@ -261,6 +264,22 @@ export function buildFixtures(count = 420, now = Date.now(), seed = 7): Fixture[
       else if (roll < 0.55) tags.push("recon")
     } else if (sensor === "rdp") {
       login_attempts = roll < 0.3 ? 0 : int(rand, 1, 60)
+      // Derived from the address hash, not from rand, so no other sensor's sequence moves.
+      if (login_attempts > 0) {
+        // A decoy match completed the handshake, so its client is always known (and the demo
+        // always shows one). nmap probes with an NTLM handshake or two, it does not brute-force.
+        const matched = h % 7 === 0
+        const tools = RDP_TOOLS.filter(
+          (t) => !(t === "nmap" && login_attempts > 2) && !(t === "unknown" && matched),
+        )
+        client_tool = tools[(h >>> 4) % tools.length] ?? null
+        if (matched) {
+          tags.push("weak-credentials")
+          login_success = true
+        }
+      }
+      // BlueKeep scanners check the vulnerable channel and leave without logging in.
+      if (login_attempts === 0 && roll < 0.12) tags.push("bluekeep")
     } else if (sensor === "docker") {
       http_requests = int(rand, 2, 7)
       if (roll < 0.35) {
@@ -382,12 +401,34 @@ export function buildFixtures(count = 420, now = Date.now(), seed = 7): Fixture[
     const users = DB_USERS[sensor] ?? USERNAMES
     for (let k = 0; k < login_attempts; k++) {
       const last = k === login_attempts - 1
+      const username = pick(rand, users)
+      const password = pick(rand, PASSWORDS)
+      const success = login_success && last
+      if (sensor === "rdp") {
+        // NTLM carries a password hash, never the password: it shows only on a decoy match.
+        push(
+          "login_attempt",
+          {
+            username,
+            password: success ? password : null,
+            success,
+            method: "rdp-ntlm",
+            client_tool,
+            domain: (h >>> 3) % 3 === 0 ? "OFFICE" : "WORKGROUP",
+            workstation: "WIN-" + (h % 4096).toString(16).toUpperCase().padStart(3, "0"),
+            ntlm_version: "v2",
+            nt_response_preview: ((h * 2654435761) >>> 0).toString(16).padStart(8, "0"),
+          },
+          int(rand, 300, 2500),
+        )
+        continue
+      }
       push(
         "login_attempt",
         {
-          username: pick(rand, users),
-          password: pick(rand, PASSWORDS),
-          success: login_success && last,
+          username,
+          password,
+          success,
           method: sensor === "mssql" ? "sql" : "password",
         },
         int(rand, 300, 2500),
@@ -457,6 +498,7 @@ export function buildFixtures(count = 420, now = Date.now(), seed = 7): Fixture[
       commands,
       downloads,
       http_requests,
+      client_tool,
     }
     out.push({ session, events })
   }

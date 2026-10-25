@@ -143,3 +143,37 @@ describe("describeSession", () => {
     )
   })
 })
+
+describe("describeSession for RDP clients", () => {
+  const rdp = (o: Partial<Session> = {}) => session({ sensor: "rdp", dst_port: 3389, ...o })
+
+  it("names the client tool", () => {
+    expect(describeSession(rdp({ login_attempts: 40, client_tool: "FreeRDP" })).predicate).toBe(
+      "tried 40 RDP logins with FreeRDP",
+    )
+    expect(
+      describeSession(rdp({ login_attempts: 1, login_success: true, client_tool: "mstsc" }))
+        .predicate,
+    ).toBe("logged in to RDP on the first try with mstsc")
+  })
+
+  it("ignores an unknown or missing tool, and tools on other sensors", () => {
+    expect(describeSession(rdp({ login_attempts: 3, client_tool: "unknown" })).predicate).toBe(
+      "tried 3 RDP logins",
+    )
+    expect(describeSession(rdp({ login_attempts: 3, client_tool: null })).predicate).toBe(
+      "tried 3 RDP logins",
+    )
+    expect(describeSession(session({ login_attempts: 3, client_tool: "FreeRDP" })).predicate).toBe(
+      "tried 3 SSH passwords",
+    )
+  })
+
+  it("mentions a BlueKeep probe", () => {
+    expect(
+      describeSession(rdp({ login_attempts: 2, client_tool: "nmap", tags: ["bluekeep"] }))
+        .predicate,
+    ).toBe("tried 2 RDP logins with nmap, then probed for BlueKeep")
+    expect(describeSession(rdp({ tags: ["bluekeep"] })).predicate).toBe("probed for BlueKeep")
+  })
+})

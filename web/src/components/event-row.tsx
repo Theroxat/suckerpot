@@ -61,6 +61,36 @@ function viewEvent(e: SensorEvent): EventView {
       }
     case "login_attempt": {
       const ok = d.success === true
+      const method = str(d.method)
+      if (e.sensor === "rdp" && (method === "rdp-ntlm" || method === "rdp-nla-off")) {
+        const cleartext = method === "rdp-nla-off"
+        const user = str(d.username)
+        const domain = str(d.domain)
+        const who = d.anonymous === true ? "(anonymous)" : (user ?? "?")
+        const password = str(d.password)
+        return {
+          icon: ok ? CircleCheck : KeyRound,
+          label: ok ? "Login succeeded" : cleartext ? "Cleartext login" : "NTLM login",
+          // Wraps instead of truncating: on a phone the hint or the password drops to a
+          // second line, so DOMAIN\user stays readable.
+          summary: (
+            <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2">
+              <span className="shrink-0 text-fg-muted">
+                {ok ? "Logged in as" : cleartext ? "Sent in the clear" : "Tried"}
+              </span>
+              <Mono>{domain ? `${domain}\\${who}` : who}</Mono>
+              {password ? (
+                <span className="inline-flex min-w-0 items-center gap-2">
+                  <span className="shrink-0 text-fg-subtle">/</span>
+                  <Mono>{password}</Mono>
+                </span>
+              ) : (
+                <span className="shrink-0 text-fg-subtle">(password hash only)</span>
+              )}
+            </span>
+          ),
+        }
+      }
       return {
         icon: ok ? CircleCheck : KeyRound,
         label: ok ? "Login succeeded" : "Login attempt",

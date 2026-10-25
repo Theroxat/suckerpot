@@ -43,7 +43,7 @@ export function EventTimeline({ events }: { events: readonly SensorEvent[] }) {
               </span>
               <span>
                 Show {plural(item.events.length, `more ${NOUN[item.type] ?? "event"}`)}
-                {span ? <span className="text-fg-subtle"> · {span}</span> : null}
+                {span ? <span className="whitespace-nowrap text-fg-subtle"> · {span}</span> : null}
               </span>
             </button>
           </li>,
