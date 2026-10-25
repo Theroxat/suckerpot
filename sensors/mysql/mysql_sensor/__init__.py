@@ -1,0 +1,1 @@
+"""MySQL wire protocol sensor."""
