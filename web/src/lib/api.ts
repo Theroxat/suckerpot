@@ -298,7 +298,7 @@ async function failure(res: Response, notify: boolean): Promise<ApiError> {
 
 type Param = string | number | readonly string[] | undefined
 
-async function getJson<T>(path: string, params?: Record<string, Param>) {
+export async function getJson<T>(path: string, params?: Record<string, Param>) {
   const qs = new URLSearchParams()
   for (const [k, v] of Object.entries(params ?? {})) {
     if (Array.isArray(v)) for (const item of v as readonly string[]) qs.append(k, item)

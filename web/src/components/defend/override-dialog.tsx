@@ -1,0 +1,216 @@
+import { useQueryClient } from "@tanstack/react-query"
+import { useId, useState, type SyntheticEvent } from "react"
+import { Field, FormError } from "@/components/form-parts"
+import { SegmentedControl } from "@/components/segmented-control"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import {
+  BLOCK_KINDS,
+  classifyFailure,
+  createOverride,
+  describeDefendError,
+  KIND_META,
+  type BlockKind,
+  type OverrideAction,
+} from "@/lib/defend"
+
+export interface OverrideTarget {
+  kind: BlockKind
+  value: string
+}
+
+const EXPIRY = [
+  { value: "0", label: "Never" },
+  { value: "30", label: "30 days" },
+  { value: "90", label: "90 days" },
+  { value: "365", label: "1 year" },
+] as const
+
+function OverrideForm({
+  target,
+  action: initialAction,
+  onDone,
+  onCancel,
+}: {
+  /** Null: the person types the value themselves. */
+  target: OverrideTarget | null
+  action: OverrideAction
+  onDone: () => void
+  onCancel: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [kind, setKind] = useState<BlockKind>(target?.kind ?? "ip")
+  const [value, setValue] = useState(target?.value ?? "")
+  const [action, setAction] = useState<OverrideAction>(initialAction)
+  const [note, setNote] = useState("")
+  const [expiry, setExpiry] = useState("0")
+  const [error, setError] = useState<string | null>(null)
+  const [valueError, setValueError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+  const ids = { value: useId(), note: useId(), err: useId() }
+  const allow = action === "allow"
+
+  async function submit() {
+    if (pending) return
+    setError(null)
+    setValueError(null)
+    if (!value.trim()) {
+      setValueError("Enter the value to " + (allow ? "allow" : "block") + ".")
+      return
+    }
+    setPending(true)
+    try {
+      await createOverride({
+        kind,
+        value: value.trim(),
+        action,
+        note,
+        expiresInDays: Number(expiry) || null,
+      })
+      await queryClient.invalidateQueries({ queryKey: ["defend"] })
+      onDone()
+    } catch (e) {
+      // A refused value (private address, shared host) belongs to the value field.
+      if (classifyFailure(e) === "invalid") setValueError(describeDefendError(e))
+      else setError(describeDefendError(e))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(event: SyntheticEvent) => {
+        event.preventDefault()
+        void submit()
+      }}
+      className="flex flex-col gap-4"
+      noValidate
+    >
+      <DialogHeader className="text-left">
+        <DialogTitle>{allow ? "Always allow" : "Always block"}</DialogTitle>
+        <DialogDescription>
+          {allow
+            ? "An allowed value is left out of every export and feed, whatever its score."
+            : "A blocked value is added to every export and feed, whatever its score."}{" "}
+          Posting the same value again replaces this rule.
+        </DialogDescription>
+      </DialogHeader>
+
+      {target ? null : (
+        <>
+          <SegmentedControl
+            label="What to list"
+            value={kind}
+            onChange={setKind}
+            options={BLOCK_KINDS.map((k) => ({ value: k, label: KIND_META[k].label }))}
+            className="flex-wrap self-start"
+          />
+          <SegmentedControl
+            label="Rule"
+            value={action}
+            onChange={setAction}
+            options={[
+              { value: "allow", label: "Always allow" },
+              { value: "block", label: "Always block" },
+            ]}
+            className="self-start"
+          />
+        </>
+      )}
+
+      <Field
+        id={ids.value}
+        label={KIND_META[kind].label.replace(/s$/, "")}
+        error={valueError ?? undefined}
+      >
+        {target ? (
+          <p className="rounded-md border bg-bg px-3 py-2 font-mono text-xs break-all text-fg">
+            {value}
+          </p>
+        ) : (
+          <Input
+            id={ids.value}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={2048}
+            aria-invalid={valueError ? true : undefined}
+            aria-describedby={valueError ? `${ids.value}-error` : undefined}
+            className="font-mono"
+          />
+        )}
+      </Field>
+
+      <Field id={ids.note} label="Note (optional)" hint="Why, for the next person who wonders.">
+        <Input
+          id={ids.note}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          maxLength={200}
+          autoComplete="off"
+          autoFocus={Boolean(target)}
+          aria-describedby={`${ids.note}-hint`}
+        />
+      </Field>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-fg">Lasts</span>
+        <SegmentedControl
+          label="Lasts"
+          value={expiry}
+          onChange={setExpiry}
+          options={EXPIRY}
+          className="self-start"
+        />
+      </div>
+
+      <FormError id={ids.err} message={error} />
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={pending}>
+          {pending ? "Saving…" : allow ? "Always allow" : "Always block"}
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+/** Opens for one listed value, or (target null) for a value typed by hand. */
+export function OverrideDialog({
+  open,
+  onOpenChange,
+  target,
+  action,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  target: OverrideTarget | null
+  action: OverrideAction
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-popover">
+        <OverrideForm
+          target={target}
+          action={action}
+          onCancel={() => onOpenChange(false)}
+          onDone={() => onOpenChange(false)}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}

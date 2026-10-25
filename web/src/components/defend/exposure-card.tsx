@@ -1,0 +1,196 @@
+import {
+  CircleDashed,
+  Ellipsis,
+  Globe,
+  Lock,
+  Pencil,
+  ShieldCheck,
+  Trash2,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react"
+import { Link } from "react-router"
+import { RelativeTime } from "@/components/relative-time"
+import { SensorBadge } from "@/components/sensor-badge"
+import { TagBadge } from "@/components/tag-badge"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  EXPOSURE_LABEL,
+  previousComparison,
+  VERDICT_SENTENCE,
+  type ExposureService,
+  type InventoryItem,
+  type Verdict,
+} from "@/lib/defend"
+import { formatNumber, plural } from "@/lib/format"
+import { cn } from "@/lib/utils"
+
+const VERDICT_ICON: Record<Verdict, { icon: LucideIcon; className: string }> = {
+  internet_targeted: { icon: TriangleAlert, className: "text-sev-warning" },
+  internet_quiet: { icon: CircleDashed, className: "text-fg-muted" },
+  private_targeted: { icon: Lock, className: "text-fg" },
+  private_quiet: { icon: ShieldCheck, className: "text-fg-muted" },
+}
+
+export function Checks({ checks, title = "Checks to run" }: { checks: string[]; title?: string }) {
+  if (checks.length === 0) return null
+  return (
+    <div className="space-y-1.5">
+      <h5 className="text-xs font-medium text-fg-muted">{title}</h5>
+      <ul className="list-disc space-y-1 pl-4 text-sm text-fg marker:text-fg-subtle">
+        {checks.map((c) => (
+          <li key={c} className="pl-1 text-pretty">
+            {c}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function Stat({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0 space-y-0.5">
+      <dt className="text-xs text-fg-muted">{label}</dt>
+      <dd className="text-sm text-fg">{children}</dd>
+    </div>
+  )
+}
+
+/** One service from your inventory, set against what the decoys recorded for that kind. */
+export function ExposureCard({
+  service,
+  canWrite,
+  onEdit,
+  onRemove,
+}: {
+  service: ExposureService
+  canWrite: boolean
+  onEdit: (item: InventoryItem) => void
+  onRemove: (item: InventoryItem) => void
+}) {
+  const { item, attacks, verdict } = service
+  const v = VERDICT_ICON[verdict]
+  const VerdictIcon = v.icon
+  const ExposureIcon = item.exposure === "internet" ? Globe : Lock
+  const product = [item.product, item.version].filter(Boolean).join(" ")
+  return (
+    <article className="flex flex-col gap-4 rounded-lg border bg-surface p-4 shadow-sm sm:p-5">
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-medium text-fg">{item.name}</h3>
+            <SensorBadge sensor={item.service} />
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
+            {product ? <span>{product}</span> : null}
+            <span className="inline-flex items-center gap-1">
+              <ExposureIcon aria-hidden className="size-3" />
+              {EXPOSURE_LABEL[item.exposure]}
+            </span>
+          </div>
+        </div>
+        {canWrite ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-xs" aria-label={`Actions for ${item.name}`}>
+                <Ellipsis aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => onEdit(item)}>
+                <Pencil aria-hidden />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onRemove(item)}>
+                <Trash2 aria-hidden />
+                Remove from my list
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </header>
+
+      <p className={cn("flex items-start gap-2 text-sm font-medium", v.className)}>
+        <VerdictIcon aria-hidden className="mt-0.5 size-4 shrink-0" strokeWidth={2.25} />
+        <span className="text-fg">{VERDICT_SENTENCE[verdict]}</span>
+      </p>
+
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+        <Stat label="Attacks on this kind of service">
+          <Link
+            to={`/attacks?sensor=${item.service}`}
+            className="font-medium underline-offset-4 hover:underline"
+          >
+            {plural(attacks.sessions, "session")}
+          </Link>
+          <span className="block text-xs text-fg-muted">
+            {previousComparison(attacks.sessions, attacks.previous_sessions)}
+          </span>
+        </Stat>
+        <Stat label="From">{plural(attacks.sources, "source")}</Stat>
+        <Stat label="Went deeper">
+          {formatNumber(attacks.deep_sessions)}
+          <span className="block text-xs text-fg-muted">ran commands or fetched files</span>
+        </Stat>
+      </dl>
+      {attacks.last_attack_at ? (
+        <p className="-mt-1 text-xs text-fg-muted">
+          Last attack <RelativeTime iso={attacks.last_attack_at} className="text-xs" />
+        </p>
+      ) : null}
+
+      {service.top_tags.length > 0 ? (
+        <div className="space-y-1.5">
+          <h5 className="text-xs font-medium text-fg-muted">What the attackers did</h5>
+          <ul aria-label="Top tags" className="flex flex-wrap gap-1.5">
+            {service.top_tags.map((t) => (
+              <li key={t.tag} className="inline-flex items-center gap-1.5">
+                <TagBadge tag={t.tag} />
+                <span className="text-xs text-fg-subtle">{formatNumber(t.sessions)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {service.cves.length > 0 ? (
+        <div className="space-y-1.5">
+          <h5 className="text-xs font-medium text-fg-muted">Known flaws that match</h5>
+          <ul className="space-y-1.5">
+            {service.cves.map((c) => (
+              <li key={c.cve_id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                <Link
+                  to={`/cves?cve=${encodeURIComponent(c.cve_id)}`}
+                  className="font-mono text-xs text-fg underline underline-offset-4"
+                >
+                  {c.cve_id}
+                </Link>
+                {c.cvss_score !== null ? (
+                  <span className="text-xs text-fg-muted">CVSS {c.cvss_score.toFixed(1)}</span>
+                ) : null}
+                {c.in_kev ? (
+                  <Badge variant="outline" className="rounded-sm text-fg">
+                    Exploited in the wild
+                  </Badge>
+                ) : null}
+                {c.title ? <span className="text-xs text-fg-muted">{c.title}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <Checks checks={service.checks} />
+
+      {item.notes ? <p className="text-xs text-fg-subtle">Your note: {item.notes}</p> : null}
+    </article>
+  )
+}
