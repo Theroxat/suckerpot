@@ -117,7 +117,7 @@ export function analyticsHandlers(fixtures: readonly Fixture[]) {
       e.a.commands += Math.floor(extra / 2)
       e.a.downloads += extra % 3 === 0 ? 1 : 0
       e.a.first_seen = iso(new Date(e.a.first_seen).getTime() - back)
-      const other = SENSORS[Math.floor(hash(e.a.ip + "s") * 4)]
+      const other = SENSORS[Math.floor(hash(e.a.ip + "s") * SENSORS.length)]
       if (other && !e.a.sensors.includes(other)) e.a.sensors.push(other)
     }
   }
@@ -130,7 +130,8 @@ export function analyticsHandlers(fixtures: readonly Fixture[]) {
       const bucket = u.searchParams.get("bucket") as Bucket
       const step = BUCKET_MS[bucket] as number | undefined
       if (!step) return HttpResponse.json({ detail: "invalid bucket" }, { status: 422 })
-      const sensor = u.searchParams.get("sensor")
+      const wanted = u.searchParams.getAll("sensor")
+      const sensor = (name: string) => wanted.length === 0 || wanted.includes(name)
       const now = Date.now()
       const until = parseTime(u.searchParams.get("until"), now)
       const since = parseTime(u.searchParams.get("since"), until - 24 * 3_600_000)
@@ -153,13 +154,12 @@ export function analyticsHandlers(fixtures: readonly Fixture[]) {
       }
       for (const e of events) {
         const p = at(new Date(e.ts).getTime())
-        if (p && (!sensor || e.sensor === sensor))
-          p.events[e.sensor] = (p.events[e.sensor] ?? 0) + 1
+        if (p && sensor(e.sensor)) p.events[e.sensor] = (p.events[e.sensor] ?? 0) + 1
       }
       for (const f of fixtures) {
         const p = at(new Date(f.session.started_at).getTime())
         const s = f.session.sensor
-        if (p && (!sensor || s === sensor)) p.sessions[s] = (p.sessions[s] ?? 0) + 1
+        if (p && sensor(s)) p.sessions[s] = (p.sessions[s] ?? 0) + 1
       }
       // Before the fixtures start there is no data: synthesise a plausible past.
       for (const p of points) {
@@ -167,7 +167,7 @@ export function analyticsHandlers(fixtures: readonly Fixture[]) {
         if (t + step > oldest) continue
         const wave = 0.75 + 0.5 * Math.sin((t / 3_600_000) * 0.45)
         for (const s of SENSORS) {
-          if (sensor && s !== sensor) continue
+          if (!sensor(s)) continue
           const k = (0.6 + hash(`${s}${t}`) * 0.8) * wave * (step / 3_600_000)
           p.events[s] = Math.round((hourlyRate[s] ?? 0) * k)
           p.sessions[s] = Math.round((sessionRate[s] ?? 0) * k)
@@ -184,7 +184,7 @@ export function analyticsHandlers(fixtures: readonly Fixture[]) {
       if (!TOP_FIELDS.includes(field))
         return HttpResponse.json({ detail: "invalid field" }, { status: 422 })
       const limit = Number(u.searchParams.get("limit") ?? 10)
-      const sensor = u.searchParams.get("sensor")
+      const wanted = u.searchParams.getAll("sensor")
       const until = parseTime(u.searchParams.get("until"), Date.now())
       const since = parseTime(u.searchParams.get("since"), until - 24 * 3_600_000)
       const counts = new Map<string, { n: number; first: string; last: string }>()
@@ -192,7 +192,7 @@ export function analyticsHandlers(fixtures: readonly Fixture[]) {
       const sessionFields = ["country", "asn", "org", "tag", "src_ip"]
       const seen = new Set<string>()
       for (const e of events) {
-        if (sensor && e.sensor !== sensor) continue
+        if (wanted.length && !wanted.includes(e.sensor)) continue
         // These fields count sessions (one per session), the others events.
         if (sessionFields.includes(field)) {
           if (seen.has(e.session_id)) continue
@@ -267,12 +267,12 @@ export function analyticsHandlers(fixtures: readonly Fixture[]) {
       let items = list.map((e) => e.a)
       const country = p.get("country")
       const asn = p.get("asn")
-      const sensor = p.get("sensor")
+      const sensors = p.getAll("sensor")
       const tag = p.get("tag")
       const q = p.get("q")
       if (country) items = items.filter((a) => a.country === country)
       if (asn) items = items.filter((a) => String(a.asn) === asn)
-      if (sensor) items = items.filter((a) => a.sensors.includes(sensor))
+      if (sensors.length) items = items.filter((a) => a.sensors.some((x) => sensors.includes(x)))
       if (tag) items = items.filter((a) => a.tags.includes(tag))
       if (q) items = items.filter((a) => a.ip.startsWith(q))
       const key = (a: Attacker): number | string =>

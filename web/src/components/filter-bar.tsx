@@ -1,10 +1,6 @@
 import { X } from "lucide-react"
 import { useSearchParams } from "react-router"
-import { useUrlParam } from "@/hooks/use-url-param"
 import { Button } from "@/components/ui/button"
-import { SegmentedControl } from "@/components/segmented-control"
-import { SENSORS, isSensor, type Sensor } from "@/lib/api"
-import { SENSOR_META } from "@/lib/sensors"
 import { cn } from "@/lib/utils"
 
 export interface FilterChipDef {
@@ -16,32 +12,7 @@ export interface FilterChipDef {
   render?: (value: string) => React.ReactNode
 }
 
-/** Sensor switch (All / SSH / Telnet / Web / RDP), synced to `?sensor=`. */
-export function SensorFilter({ className }: { className?: string }) {
-  const [raw, setSensor] = useUrlParam("sensor")
-  const value: Sensor | "all" = isSensor(raw) ? raw : "all"
-  return (
-    <SegmentedControl
-      label="Sensor"
-      value={value}
-      onChange={(v) => setSensor(v === "all" ? null : v)}
-      className={className}
-      options={[
-        { value: "all", label: "All" },
-        ...SENSORS.map((s) => ({
-          value: s,
-          ariaLabel: SENSOR_META[s].label,
-          label: (
-            <>
-              <span aria-hidden className={cn("size-2 rounded-full", SENSOR_META[s].fill)} />
-              {SENSOR_META[s].label}
-            </>
-          ),
-        })),
-      ]}
-    />
-  )
-}
+export { SensorFilter } from "@/components/sensor-filter"
 
 interface FilterBarProps {
   /** Controls on the left (e.g. <SensorFilter />). */

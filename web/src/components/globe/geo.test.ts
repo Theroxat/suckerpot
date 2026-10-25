@@ -98,12 +98,16 @@ describe("arc geometry", () => {
     expect(greatCircleDegrees({ lat: 0, lon: 0 }, { lat: 0, lon: 90 })).toBeCloseTo(90)
   })
   it("skips degenerate arcs (same spot or antipodal)", () => {
-    expect(drawableArc(zurich, { lat: 47.9, lon: 9.1 })).toBe(false)
+    expect(drawableArc(zurich, { lat: zurich.lat + 0.1, lon: zurich.lon })).toBe(false)
+    // Neighbouring countries are the most common attackers: their short arcs are drawn.
+    expect(drawableArc(zurich, { lat: 48.9, lon: 2.35 })).toBe(true)
+    expect(drawableArc(zurich, { lat: 47.9, lon: 9.1 })).toBe(true)
     expect(drawableArc({ lat: 0, lon: 0 }, { lat: 0, lon: 179.9 })).toBe(false)
     expect(drawableArc(zurich, { lat: 40.7, lon: -74 })).toBe(true)
   })
   it("clamps the altitude", () => {
-    expect(arcAltitude(zurich, { lat: 48.9, lon: 2.35 })).toBeGreaterThanOrEqual(0.04)
+    expect(arcAltitude(zurich, { lat: 48.9, lon: 2.35 })).toBeGreaterThanOrEqual(0.015)
+    expect(arcAltitude(zurich, { lat: 48.9, lon: 2.35 })).toBeLessThanOrEqual(0.05)
     expect(arcAltitude({ lat: 0, lon: 0 }, { lat: 0, lon: 170 })).toBeLessThanOrEqual(0.18)
   })
 })

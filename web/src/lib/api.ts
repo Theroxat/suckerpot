@@ -14,8 +14,9 @@ import type {
 } from "./trends"
 import type { EnrichmentSettings, SystemSettings } from "./settings"
 
-export const SENSORS = ["ssh", "telnet", "web", "rdp"] as const
-export type Sensor = (typeof SENSORS)[number]
+// The sensor list lives in the registry (./sensors); re-exported for existing imports.
+import { isSensor, SENSORS, type Sensor } from "./sensors"
+export { isSensor, SENSORS, type Sensor }
 
 export const EVENT_TYPES = [
   "connect",
@@ -205,7 +206,8 @@ export interface AttackerFilters {
   sort?: AttackerSort
   country?: string | undefined
   asn?: string | undefined
-  sensor?: Sensor | undefined
+  /** Sent as repeated `sensor=` params; one sensor is a plain `sensor=ssh`. */
+  sensor?: readonly Sensor[] | undefined
   tag?: string | undefined
   q?: string | undefined
 }
@@ -213,11 +215,11 @@ export interface AttackerFilters {
 export interface StatsRange {
   since?: string | undefined
   until?: string | undefined
-  sensor?: Sensor | undefined
+  sensor?: readonly Sensor[] | undefined
 }
 
 export interface SessionFilters {
-  sensor?: Sensor | undefined
+  sensor?: readonly Sensor[] | undefined
   src_ip?: string | undefined
   tag?: string | undefined
   country?: string | undefined
@@ -281,10 +283,13 @@ async function failure(res: Response, notify: boolean): Promise<ApiError> {
   return new ApiError(res.status, detail)
 }
 
-async function getJson<T>(path: string, params?: Record<string, string | number | undefined>) {
+type Param = string | number | readonly string[] | undefined
+
+async function getJson<T>(path: string, params?: Record<string, Param>) {
   const qs = new URLSearchParams()
   for (const [k, v] of Object.entries(params ?? {})) {
-    if (v !== undefined && v !== "") qs.set(k, String(v))
+    if (Array.isArray(v)) for (const item of v as readonly string[]) qs.append(k, item)
+    else if (v !== undefined && v !== "") qs.set(k, String(v))
   }
   const url = `${API_BASE}${path}${qs.size ? `?${qs.toString()}` : ""}`
   const res = await fetch(url, {
@@ -390,8 +395,4 @@ export const queryKeys = {
   malwareDetail: (url: string) => ["malware", "detail", url] as const,
   systemSettings: ["settings", "system"] as const,
   enrichmentSettings: ["settings", "enrichment"] as const,
-}
-
-export function isSensor(value: unknown): value is Sensor {
-  return typeof value === "string" && (SENSORS as readonly string[]).includes(value)
 }

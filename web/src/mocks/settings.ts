@@ -4,14 +4,21 @@ import type { EnrichmentSettings, SystemSettings } from "@/lib/settings"
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
 const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString()
 
-/** `GET /api/v1/settings/system`: three busy sensors, RDP quiet for a couple of hours. */
+/** `GET /api/v1/settings/system`: most sensors busy, RDP quiet for a couple of hours, SIP silent. */
 export function systemSettings(): SystemSettings {
   return {
     sensors: [
       { sensor: "ssh", last_event_at: minutesAgo(0.2), events_last_hour: 2_418, status: "active" },
       { sensor: "telnet", last_event_at: minutesAgo(1), events_last_hour: 1_096, status: "active" },
+      { sensor: "adb", last_event_at: minutesAgo(6), events_last_hour: 214, status: "active" },
       { sensor: "web", last_event_at: minutesAgo(3), events_last_hour: 1_731, status: "active" },
+      { sensor: "docker", last_event_at: minutesAgo(4), events_last_hour: 388, status: "active" },
+      { sensor: "redis", last_event_at: minutesAgo(0.5), events_last_hour: 902, status: "active" },
+      { sensor: "mysql", last_event_at: minutesAgo(2), events_last_hour: 655, status: "active" },
+      { sensor: "mssql", last_event_at: minutesAgo(8), events_last_hour: 471, status: "active" },
       { sensor: "rdp", last_event_at: minutesAgo(134), events_last_hour: 0, status: "quiet" },
+      { sensor: "smb", last_event_at: minutesAgo(1), events_last_hour: 1_204, status: "active" },
+      { sensor: "sip", last_event_at: daysAgo(2), events_last_hour: 0, status: "silent" },
     ],
     retention: {
       raw_days: 90,

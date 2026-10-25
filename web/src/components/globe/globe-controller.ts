@@ -1,7 +1,9 @@
 import Globe, { type GlobeInstance } from "globe.gl"
 import { MeshBasicMaterial } from "three"
 import type { LiveEvent } from "@/lib/api"
-import { ArcQueue, latestDistinctArcs, newArcs, type Arc } from "./arc-queue"
+import { familyOf } from "@/lib/sensors"
+import { ageOpacity, countWeight, type Source } from "@/components/map/activity"
+import { ArcQueue, newArcs, type Arc } from "./arc-queue"
 import { landDots } from "./data/land-dots"
 import { arcAltitude, drawableArc, type GeoPoint } from "./geo"
 import {
@@ -14,10 +16,6 @@ import {
 
 /** Cap on the render resolution: a retina screen would otherwise draw 4x the pixels. */
 const MAX_PIXEL_RATIO = 1.5
-/** Arcs shown at once in the static (reduced motion) view. */
-const STATIC_ARCS = 9
-/** Rotation resumes this long after the last touch or drag. */
-const RESUME_ROTATION_MS = 8_000
 /**
  * three-globe animates a dash by sliding a pattern along the arc, and a fresh arc always starts
  * with the dash parked at its far end. The arc stays hidden for this long (the time the parked
@@ -31,9 +29,6 @@ const DASH_GAP = 1
 const DASH_ANIMATE_MS = 1_600
 const RING_MS = 2_200
 const MAX_RINGS = 12
-/** Arcs from the first backfill are staggered so the globe fills in calmly. */
-const INTRO_ARCS = 10
-const INTRO_STEP_MS = 280
 /** A burst of events is spread out over this step, ms, and capped. */
 const BURST_STEP_MS = 220
 const BURST_MAX = 12
@@ -44,6 +39,27 @@ interface RingDatum {
   color: string
 }
 
+/** A persistent arc for one recent source country (the calm "last 15 minutes" picture). */
+interface StaticArc {
+  static: true
+  from: GeoPoint
+  to: GeoPoint
+  color: string
+  opacity: number
+  weight: number
+}
+
+interface SourceLabel {
+  lat: number
+  lng: number
+  text: string
+  color: string
+  weight: number
+}
+
+type ArcDatum = Arc | StaticArc
+const isStatic = (d: object): d is StaticArc => "static" in d
+
 interface PointDatum {
   lat: number
   lng: number
@@ -52,24 +68,35 @@ interface PointDatum {
 }
 
 /**
- * Camera framing: look at the home point from slightly north-east of it. Most attacks come
- * from the east (Russia, China, South-East Asia), so their arcs then run across the visible
- * face of the sphere instead of climbing over its top edge, where they read as spikes.
+ * Camera framing: Europe in the middle, home slightly off-centre, so the short arcs from
+ * neighbouring countries (the most common real attackers) are seen face-on and readable.
  */
-function viewFor(home: GeoPoint) {
-  return { lat: Math.min(60, home.lat + 6), lng: home.lon + 35, altitude: 1.75 }
+function viewFor(home: GeoPoint, altitude: number) {
+  return { lat: Math.min(60, home.lat + 2), lng: home.lon + 6, altitude }
+}
+
+/** Default vertical field of view of the globe.gl camera, degrees. */
+const FOV = 50
+
+/** Camera altitude that keeps the whole sphere inside a w x h card, with a margin. */
+export function fitAltitude(w: number, h: number, margin = 0.86): number {
+  const halfV = ((FOV / 2) * Math.PI) / 180
+  const halfH = Math.atan(Math.tan(halfV) * (w / Math.max(1, h)))
+  const half = Math.min(halfV, halfH) * margin
+  return Math.max(1.2, 1 / Math.sin(half) - 1)
 }
 
 type DestructibleGlobe = GlobeInstance & { _destructor: () => void }
 
 function hueOf(p: GlobePalette, sensor: string): string {
-  return (p.sensors as Record<string, string | undefined>)[sensor] ?? p.land
+  const family = familyOf(sensor)
+  return family ? p.families[family] : p.land
 }
 
 /**
  * Owns the globe.gl instance and everything that moves on it. Free of React so the component
  * stays a thin shell. Calm by design: a flat sphere with land dots, thin arcs in the sensor
- * hue that fly once and vanish, a soft ring where they land.
+ * family hue that fly once and vanish, a soft ring where they land.
  */
 export class GlobeController {
   private globe: DestructibleGlobe
@@ -79,6 +106,8 @@ export class GlobeController {
   private rings: RingDatum[] = []
   private readonly timers = new Set<ReturnType<typeof setTimeout>>()
   private lastId: number | null = null
+  private staticArcs: StaticArc[] = []
+  private altitude = 1.75
   /** Arcs whose comet is flying. Others are still waiting for the parked dash to clear. */
   private readonly shown = new WeakSet<object>()
   private readonly reduced = prefersReducedMotion()
@@ -109,17 +138,29 @@ export class GlobeController {
       )
       .pointRadius((d) => (d as PointDatum).r)
       .pointAltitude((d) => ((d as PointDatum).home ? 0.006 : 0.001))
-      .arcStroke(0.3)
-      .arcAltitude((d) => arcAltitude((d as Arc).from, (d as Arc).to))
+      .arcStroke((d: object) => (isStatic(d) ? 0.12 + 0.45 * d.weight : 0.32))
+      .arcAltitude((d) => arcAltitude((d as ArcDatum).from, (d as ArcDatum).to))
       .arcCurveResolution(48)
-      .arcStartLat((d) => (d as Arc).from.lat)
-      .arcStartLng((d) => (d as Arc).from.lon)
-      .arcEndLat((d) => (d as Arc).to.lat)
-      .arcEndLng((d) => (d as Arc).to.lon)
+      .arcStartLat((d) => (d as ArcDatum).from.lat)
+      .arcStartLng((d) => (d as ArcDatum).from.lon)
+      .arcEndLat((d) => (d as ArcDatum).to.lat)
+      .arcEndLng((d) => (d as ArcDatum).to.lon)
       .arcColor((d: object) => {
+        if (isStatic(d))
+          return [withAlpha(d.color, 0.25 * d.opacity), withAlpha(d.color, 0.8 * d.opacity)]
         const hue = hueOf(this.palette, (d as Arc).sensor)
-        return [withAlpha(hue, 0.1), withAlpha(hue, 0.9)]
+        return [withAlpha(hue, 0.1), withAlpha(hue, 0.95)]
       })
+      .labelLat((d) => (d as SourceLabel).lat)
+      .labelLng((d) => (d as SourceLabel).lng)
+      .labelText((d) => (d as SourceLabel).text)
+      .labelColor((d) => (d as SourceLabel).color)
+      .labelSize(0.9)
+      .labelDotRadius((d) => 0.35 + 0.65 * (d as SourceLabel).weight)
+      .labelIncludeDot(true)
+      .labelDotOrientation(() => "right")
+      .labelAltitude(0.002)
+      .labelResolution(2)
       .arcsTransitionDuration(0)
       .ringLat((d) => (d as RingDatum).lat)
       .ringLng((d) => (d as RingDatum).lng)
@@ -130,16 +171,14 @@ export class GlobeController {
       .ringMaxRadius(5)
       .ringPropagationSpeed(2.2)
       .ringRepeatPeriod(0)
-      .pointOfView(viewFor(home))
+      .pointOfView(viewFor(home, this.altitude))
 
-    if (reduced) globe.arcDashLength(1).arcDashGap(0).arcDashAnimateTime(0)
-    else {
-      globe
-        .arcDashLength(DASH_LENGTH)
-        .arcDashGap(DASH_GAP)
-        .arcDashInitialGap((d: object) => (this.shown.has(d) ? 0 : 2))
-        .arcDashAnimateTime(DASH_ANIMATE_MS)
-    }
+    // Persistent arcs are solid lines; only the comet of a new event animates.
+    globe
+      .arcDashLength((d: object) => (isStatic(d) ? 1 : DASH_LENGTH))
+      .arcDashGap((d: object) => (isStatic(d) ? 0 : DASH_GAP))
+      .arcDashInitialGap((d: object) => (isStatic(d) || this.shown.has(d) ? 0 : 2))
+      .arcDashAnimateTime((d: object) => (isStatic(d) || reduced ? 0 : DASH_ANIMATE_MS))
 
     globe.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO))
     // Vertical swipes scroll the page; horizontal drags turn the globe.
@@ -165,37 +204,26 @@ export class GlobeController {
     const frozen = globeFrozen()
     controls.enableZoom = false
     controls.enablePan = false
-    controls.autoRotateSpeed = 0.3
-    controls.autoRotate = !this.reduced && !frozen
-    // Reduced motion and the test hook keep the view still: no drag either.
-    const interactive = !this.reduced && !frozen
+    // No auto-rotation: Europe stays in view so short arcs are readable at a glance.
+    controls.autoRotate = false
+    // The test hook keeps the view still: no drag either.
+    const interactive = !frozen
     controls.enableRotate = interactive
     this.globe.enablePointerInteraction(interactive)
-    if (!interactive) return
-    let resume: ReturnType<typeof setTimeout> | undefined
-    const onStart = () => {
-      controls.autoRotate = false
-      clearTimeout(resume)
-    }
-    const onEnd = () => {
-      clearTimeout(resume)
-      resume = setTimeout(() => {
-        controls.autoRotate = true
-      }, RESUME_ROTATION_MS)
-    }
-    controls.addEventListener("start", onStart)
-    controls.addEventListener("end", onEnd)
-    this.cleanups.push(() => {
-      clearTimeout(resume)
-      controls.removeEventListener("start", onStart)
-      controls.removeEventListener("end", onEnd)
-    })
   }
 
   private setupSizing(host: HTMLElement) {
     const size = () => {
       const { clientWidth: w, clientHeight: h } = host
-      if (w > 0 && h > 0) this.globe.width(w).height(h)
+      if (w > 0 && h > 0) {
+        this.globe.width(w).height(h)
+        // Fit the whole sphere to the card, whatever its shape (1440 or 1920 wide, phone).
+        const alt = fitAltitude(w, h)
+        if (Math.abs(alt - this.altitude) > 0.01) {
+          this.altitude = alt
+          this.globe.pointOfView(viewFor(this.home, alt), 0)
+        }
+      }
     }
     size()
     const ro = new ResizeObserver(size)
@@ -263,7 +291,7 @@ export class GlobeController {
   }
 
   private pushArcs() {
-    this.globe.arcsData([...this.queue.arcs])
+    this.globe.arcsData([...this.staticArcs, ...this.queue.arcs])
   }
 
   private pushRings() {
@@ -314,35 +342,44 @@ export class GlobeController {
   setHome(home: GeoPoint) {
     if (home.lat === this.home.lat && home.lon === this.home.lon) return
     this.home = home
-    this.globe.pointOfView(viewFor(home))
+    this.globe.pointOfView(viewFor(home, this.altitude))
     this.drawPoints()
   }
 
-  /** `events` is newest first. Call whenever the feed changes. */
+  /** The persistent picture: one arc and one labelled dot per recent source country. */
+  setSources(sources: readonly Source[], now: number) {
+    const p = this.palette
+    this.staticArcs = sources
+      .filter((src) => drawableArc(src.point, this.home))
+      .map((src) => ({
+        static: true as const,
+        from: src.point,
+        to: this.home,
+        color: p.families[src.family],
+        opacity: ageOpacity(src.last, now),
+        weight: countWeight(src.events),
+      }))
+    const labels: SourceLabel[] = sources.map((src) => ({
+      lat: src.point.lat,
+      lng: src.point.lon,
+      text: src.country,
+      color: withAlpha(p.families[src.family], 0.4 + 0.6 * ageOpacity(src.last, now)),
+      weight: countWeight(src.events),
+    }))
+    this.globe.labelsData(labels)
+    this.pushArcs()
+  }
+
+  /** `events` is newest first. New events (after the first call) fly a comet along their arc. */
   feed(events: readonly LiveEvent[], paused: boolean) {
-    const frozen = globeFrozen()
-    if (this.reduced) {
-      // Static view: the latest distinct origins, no motion at all.
-      if (frozen && this.lastId !== null) return
-      const arcs = latestDistinctArcs(events, this.home, STATIC_ARCS * 2)
-        .filter((a) => drawableArc(a.from, a.to))
-        .slice(0, STATIC_ARCS)
-      if (arcs.length === 0) return
-      this.lastId = events[0]?.id ?? 0
-      this.queue.clear()
-      arcs.reverse().forEach((a) => this.queue.add(a))
-      this.pushArcs()
-      return
-    }
     if (this.lastId === null) {
-      if (events.length === 0) return
       this.lastId = events[0]?.id ?? 0
-      latestDistinctArcs(events, this.home, INTRO_ARCS)
-        .reverse()
-        .forEach((a, i) => this.later(() => this.launch(a), i * INTRO_STEP_MS))
       return
     }
-    if (frozen) return
+    if (this.reduced || globeFrozen()) {
+      this.lastId = Math.max(this.lastId, events[0]?.id ?? 0)
+      return
+    }
     const { arcs, lastId } = newArcs(events, this.lastId, this.home, Date.now())
     this.lastId = lastId
     if (paused) return

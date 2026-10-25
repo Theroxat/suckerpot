@@ -118,7 +118,9 @@ function malwareItems(now: number): MalwareItem[] {
       sessions: Math.max(1, Math.round(attempts * 0.8)),
       ips: Math.max(1, Math.round(attempts * 0.3)),
       tools: tools[i % tools.length] ?? [],
-      sensors: i % 3 === 0 ? ["ssh", "telnet"] : i % 3 === 1 ? ["telnet"] : ["web"],
+      sensors: (
+        [["ssh", "telnet"], ["telnet"], ["web"], ["redis"], ["adb"], ["docker"], ["mssql"]] as const
+      )[i % 7]?.slice() ?? ["ssh"],
       sha256: null,
       size: null,
       virustotal_url: null,
@@ -186,13 +188,13 @@ export function m7Handlers(sessions: readonly Session[]) {
 
     http.get("/api/v1/stats/heatmap", async ({ request }) => {
       await delay(LATENCY_MS)
-      const sensor = new URL(request.url).searchParams.get("sensor")
+      const sensors = new URL(request.url).searchParams.getAll("sensor")
       const cells: HeatmapResponse["cells"] = []
       for (let dow = 0; dow < 7; dow++)
         for (let hour = 0; hour < 24; hour++) {
           const wave = 1 + 0.8 * Math.sin(((hour - 6) / 24) * 2 * Math.PI)
           const boost = dow === 1 && hour >= 12 && hour <= 15 ? 2.4 : 1
-          const scale = sensor ? 0.4 : 1
+          const scale = sensors.length ? Math.min(1, 0.15 + 0.12 * sensors.length) : 1
           cells.push({
             dow,
             hour,

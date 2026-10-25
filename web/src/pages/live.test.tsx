@@ -8,7 +8,7 @@ import { liveEvent } from "@/lib/live-messages.test"
 import { LivePage } from "./live"
 
 // The globe needs WebGL and a query client: its own tests cover it.
-vi.mock("@/components/globe/live-globe", () => ({ LiveGlobe: () => null }))
+vi.mock("@/components/globe/live-globe", () => ({ LiveMap: () => null }))
 
 class Socket {
   static current: Socket | null = null
@@ -115,5 +115,26 @@ describe("LivePage", () => {
       Socket.current?.push({ kind: "backfill", events: [liveEvent(1, { sensor: "ssh" })] })
     })
     expect(screen.getByText("No events from this sensor yet")).toBeInTheDocument()
+  })
+
+  it("filters by several sensors and shows one tile per family", async () => {
+    mount("/live?sensor=redis,mysql,mssql")
+    await act(() => Promise.resolve())
+    act(() => {
+      Socket.current?.push({
+        kind: "stats",
+        stats: {
+          window_seconds: 60,
+          events_last_minute: 9,
+          sessions_last_minute: 3,
+          by_sensor: { redis: { events: 7, sessions: 2 }, smb: { events: 2, sessions: 1 } },
+        },
+      })
+      Socket.current?.push({ kind: "backfill", events: [liveEvent(1, { sensor: "ssh" })] })
+    })
+    expect(screen.getByText("No events from these sensors yet")).toBeInTheDocument()
+    expect(screen.getByText(/Nothing from the databases is in the live buffer/)).toBeInTheDocument()
+    for (const name of ["Remote shells", "Web & APIs", "Databases", "Windows & VoIP"])
+      expect(screen.getByRole("list", { name: `${name} sensors` })).toBeInTheDocument()
   })
 })

@@ -18,13 +18,13 @@ import { useUrlParam } from "@/hooks/use-url-param"
 import {
   api,
   ATTACKER_SORTS,
-  isSensor,
   queryKeys,
   type AsnItem,
   type AttackerFilters,
   type AttackerSort,
 } from "@/lib/api"
 import { countryName, formatNumber, plural } from "@/lib/format"
+import { parseSensors } from "@/lib/sensors"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 50
@@ -104,7 +104,7 @@ function IpSearch() {
 
 function useIpFilters(): { filters: AttackerFilters; sort: AttackerSort } {
   const [p] = useSearchParams()
-  const sensor = p.get("sensor")
+  const sensor = parseSensors(p.get("sensor"))
   const rawSort = p.get("sort")
   const sort = ATTACKER_SORTS.includes(rawSort as AttackerSort)
     ? (rawSort as AttackerSort)
@@ -113,7 +113,7 @@ function useIpFilters(): { filters: AttackerFilters; sort: AttackerSort } {
     sort,
     filters: {
       sort,
-      sensor: isSensor(sensor) ? sensor : undefined,
+      sensor: sensor.length ? sensor : undefined,
       country: p.get("country") ?? undefined,
       asn: p.get("asn") ?? undefined,
       tag: p.get("tag") ?? undefined,

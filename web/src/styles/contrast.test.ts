@@ -2,6 +2,7 @@
 /// <reference types="node" />
 import { readFileSync } from "node:fs"
 import { blend, contrastRatio, parseHex, readTokenBlock } from "@/lib/contrast"
+import { FAMILY_META, SENSOR_FAMILIES, SENSORS } from "@/lib/sensors"
 
 const css = readFileSync("src/styles/tokens.css", "utf8")
 
@@ -13,10 +14,10 @@ const themes = {
 const SURFACES = ["bg", "surface", "surface-hover"] as const
 const BODY_TEXT = ["fg", "fg-muted", "fg-subtle"] as const
 const HUES = [
-  "sensor-ssh",
-  "sensor-telnet",
-  "sensor-web",
-  "sensor-rdp",
+  "family-shell",
+  "family-web",
+  "family-data",
+  "family-windows",
   "sev-info",
   "sev-notice",
   "sev-warning",
@@ -64,6 +65,29 @@ describe.each(Object.entries(themes))("%s theme", (_name, t) => {
     (name) => {
       const min = name === "border-strong" ? 1.4 : 3
       expect(contrastRatio(hex(t, name), hex(t, "bg"))).toBeGreaterThanOrEqual(min)
+    },
+  )
+
+  // Per-sensor shades are chart fills only (never text): non-text contrast, WCAG 1.4.11.
+  it.each(SENSORS.map((s) => [s] as const))(
+    "--sensor-%s fill is visible on --surface and --bg (>= 3)",
+    (s) => {
+      for (const bg of ["surface", "bg"]) {
+        expect(contrastRatio(hex(t, `sensor-${s}`), hex(t, bg))).toBeGreaterThanOrEqual(3)
+      }
+    },
+  )
+
+  it.each(SENSOR_FAMILIES.map((f) => [f] as const))(
+    "the %s family's shades are distinct from each other (>= 1.3)",
+    (f) => {
+      const shades = FAMILY_META[f].sensors.map((s) => hex(t, `sensor-${s}`))
+      for (let i = 0; i < shades.length; i++)
+        for (let j = i + 1; j < shades.length; j++) {
+          const a = shades[i]
+          const b = shades[j]
+          if (a && b) expect(contrastRatio(a, b)).toBeGreaterThanOrEqual(1.3)
+        }
     },
   )
 })

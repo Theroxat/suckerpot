@@ -27,11 +27,29 @@ const top = (
 })
 
 describe("describeActivity", () => {
-  it("names the leading sensor, its share and the busiest hour", () => {
+  it("names the leading family, its leading sensor and the busiest hour", () => {
     const points = [pt("2026-10-24T10:00:00Z", 60, 10), pt("2026-10-24T11:00:00Z", 70, 20, 30, 10)]
     const out = describeActivity(points, (iso) => iso.slice(11, 16))
-    expect(out.finding).toBe("SSH drew 65% of all events in the last 24 hours.")
+    expect(out.finding).toBe(
+      "Remote shells drew 80% of all events in the last 24 hours, led by SSH (65%).",
+    )
     expect(out.detail).toBe("200 events in all. Busiest hour: 11:00, with 130 events.")
+  })
+  it("names the sensor when it is alone in its family", () => {
+    const points = [pt("2026-10-24T10:00:00Z", 70, 0, 20, 10)]
+    expect(describeActivity(points, () => "x").finding).toBe(
+      "SSH drew 70% of all events in the last 24 hours.",
+    )
+  })
+  it("counts the new sensors in their family", () => {
+    const p: TimePoint = {
+      ts: "2026-10-24T10:00:00Z",
+      events: { ssh: 10, redis: 50, mysql: 30, mssql: 10 },
+      sessions: {},
+    }
+    expect(describeActivity([p], () => "x").finding).toBe(
+      "Databases drew 90% of all events in the last 24 hours, led by Redis (50%).",
+    )
   })
   it("handles a single-sensor day and an empty one", () => {
     expect(describeActivity([pt("2026-10-24T10:00:00Z", 0, 0, 5)], () => "x").finding).toBe(

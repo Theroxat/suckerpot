@@ -61,6 +61,20 @@ test("attacks", async ({ page }, info) => {
   await expect(page.getByRole("list", { name: "Sessions" })).toBeVisible()
   await settle(page)
   await shoot(page, "attacks-web", info.project.name)
+
+  // M9: a whole family selected, then the multi-select filter open (keyboard-driven).
+  await page.goto("/attacks?sensor=redis,mysql,mssql")
+  await expect(page.getByRole("list", { name: "Sessions" })).toBeVisible()
+  await settle(page)
+  await page.getByRole("button", { name: /^Sensors/ }).click()
+  const options = page.getByRole("listbox", { name: "Sensors" })
+  await expect(options).toBeVisible()
+  await page.keyboard.type("ss")
+  await expect(options.getByRole("option")).not.toHaveCount(0)
+  await page.keyboard.press("Control+a")
+  await page.keyboard.press("Backspace")
+  await expect(options.getByRole("option", { name: /SMB/ })).toBeVisible()
+  await shoot(page, "attacks-filter-open", info.project.name)
 })
 
 test("session detail", async ({ page }, info) => {
@@ -95,30 +109,57 @@ test("shell", async ({ page }, info) => {
 })
 
 test("live", async ({ page }, info) => {
-  // Two software-rendered WebGL page loads: slower than the other pages.
-  test.setTimeout(180_000)
-  // Test hook: freeze the globe (no rotation, no new arcs) so the shot is deterministic.
+  // Software-rendered WebGL for the globe view: slower than the other pages.
+  test.setTimeout(240_000)
+  // Test hook: freeze motion (no dashes, pulses, rotation) so the shots are deterministic.
   await page.addInitScript(() => {
     ;(window as unknown as { __SUCKERPOT_GLOBE__: { freeze: boolean } }).__SUCKERPOT_GLOBE__ = {
       freeze: true,
     }
   })
+  // M9: the flat map is the default view.
   await page.goto("/live")
   await expect(h1(page, "Live")).toBeVisible()
-  await expect(page.getByRole("img", { name: /Globe of recent attack origins/ })).toBeVisible()
-  await expect(page.locator("canvas").first()).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole("group", { name: /Map of attack origins/ })).toBeVisible()
   // Backfill (50 events) arrives over the mocked WebSocket.
   await expect(page.getByRole("list", { name: "Live events" })).toBeVisible()
   await expect(page.getByRole("listitem").first()).toBeVisible()
+  await expect(page.getByRole("list", { name: /Top sources/ })).toBeVisible()
   await settle(page)
-  // Let the WebGL canvas draw the static arcs.
-  await page.waitForTimeout(1_500)
   await shoot(page, "live", info.project.name, true)
 
-  await page.goto("/live?sensor=web")
+  await page.goto("/live?view=globe")
+  await expect(page.getByRole("img", { name: /Globe of recent attack origins/ })).toBeVisible()
+  await expect(page.locator("canvas").first()).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole("listitem").first()).toBeVisible()
+  await settle(page)
+  await page.waitForTimeout(1_500)
+  await shoot(page, "live-globe", info.project.name)
+
+  await page.goto("/live?sensor=web&view=map")
   await expect(page.getByRole("list", { name: "Live events" })).toBeVisible()
   await settle(page)
   await shoot(page, "live-web", info.project.name)
+
+  if (info.project.name.startsWith("desktop")) {
+    await page.setViewportSize({ width: 1920, height: 1080 })
+    for (const view of ["map", "globe"] as const) {
+      await page.goto(`/live?view=${view}`)
+      await expect(page.getByRole("listitem").first()).toBeVisible()
+      if (view === "globe") await expect(page.locator("canvas").first()).toBeVisible()
+      await settle(page)
+      await page.waitForTimeout(view === "globe" ? 1_500 : 300)
+      await shoot(page, `live-1920-${view}`, info.project.name)
+    }
+  }
+
+  // The "World" preset (remembered on this browser afterwards, so it goes last).
+  await page.goto("/live?view=map")
+  await expect(page.getByRole("listitem").first()).toBeVisible()
+  await settle(page)
+  await page.getByRole("button", { name: "World", exact: true }).click()
+  await page.waitForTimeout(300)
+  await shoot(page, "live-world", info.project.name)
 })
 
 test("screenshot mode masks every address", async ({ page }, info) => {
@@ -188,6 +229,16 @@ test("overview charts", async ({ page }, info) => {
   await expect(page.locator(".recharts-bar-rectangle").first()).toBeVisible()
   await settle(page)
   await shoot(page, "overview-charts", info.project.name, true)
+
+  // M9: drill down from families to one shade per sensor.
+  await page.goto("/overview?split=sensor")
+  await expect(page.getByRole("img", { name: /events per hour by sensor\./ })).toBeVisible()
+  await expect(page.locator(".recharts-bar-rectangle").first()).toBeVisible()
+  await settle(page)
+  await page
+    .getByRole("img", { name: /Stacked bar chart/ })
+    .locator("xpath=ancestor::*[@data-slot='card'][1]")
+    .screenshot({ path: `${OUT}/sections/overview-split-sensor-${info.project.name}.png` })
 })
 
 test("attackers", async ({ page }, info) => {

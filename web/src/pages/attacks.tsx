@@ -10,22 +10,22 @@ import { PageHeader } from "@/components/page-header"
 import { SessionRow } from "@/components/session-row"
 import { SkeletonList, SkeletonRow } from "@/components/skeletons"
 import { Button } from "@/components/ui/button"
-import { api, isSensor, queryKeys, type SessionFilters } from "@/lib/api"
+import { api, queryKeys, type SessionFilters } from "@/lib/api"
 import { useIpMask } from "@/app/ip-mask"
 import { formatNumber, maskIp } from "@/lib/format"
-import { SENSOR_META } from "@/lib/sensors"
+import { SENSOR_META, parseSensors, sensorSetPhrase } from "@/lib/sensors"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 50
 
 function useFilters(): SessionFilters {
   const [params] = useSearchParams()
-  const sensor = params.get("sensor")
+  const sensor = parseSensors(params.get("sensor"))
   const tag = params.get("tag")
   const country = params.get("country")
   const asn = params.get("asn")
   return {
-    sensor: isSensor(sensor) ? sensor : undefined,
+    sensor: sensor.length ? sensor : undefined,
     src_ip: params.get("src_ip") ?? undefined,
     // Same shapes the API accepts; anything else is ignored instead of failing with a 422.
     tag: /^[a-z0-9-]{1,32}$/.test(tag ?? "") ? (tag ?? undefined) : undefined,
@@ -50,9 +50,13 @@ function useHeadline(filters: SessionFilters, loaded: number, complete: boolean)
       : "Matching sessions, newest first."
   }
   if (!s) return "Every session the sensors recorded, newest first."
-  if (filters.sensor) {
-    const n = s.by_sensor[filters.sensor]?.sessions ?? 0
-    return `${formatNumber(n)} ${SENSOR_META[filters.sensor].label} sessions in the last ${s.window_hours} hours.`
+  if (filters.sensor?.length) {
+    const n = filters.sensor.reduce((sum, x) => sum + (s.by_sensor[x]?.sessions ?? 0), 0)
+    const sessions = n === 1 ? "session" : "sessions"
+    const [only] = filters.sensor
+    return filters.sensor.length === 1 && only
+      ? `${formatNumber(n)} ${SENSOR_META[only].label} ${sessions} in the last ${s.window_hours} hours.`
+      : `${formatNumber(n)} ${sessions} on ${sensorSetPhrase(filters.sensor)} in the last ${s.window_hours} hours.`
   }
   return `${formatNumber(s.sessions)} sessions from ${formatNumber(s.unique_ips)} addresses in the last ${s.window_hours} hours.`
 }

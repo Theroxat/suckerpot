@@ -9,8 +9,9 @@ import { Heatmap } from "@/components/trends/heatmap"
 import { NewList } from "@/components/trends/new-list"
 import { TagChart } from "@/components/trends/tag-chart"
 import { TopList, type TopListItem } from "@/components/top-list"
+import { sensorParam, useSensorFilter } from "@/hooks/use-sensor-filter"
 import { useUrlParam } from "@/hooks/use-url-param"
-import { api, isSensor, queryKeys, type TopField, type TopResponse } from "@/lib/api"
+import { api, queryKeys, type TopField, type TopResponse } from "@/lib/api"
 import { maskIpsInText } from "@/lib/format"
 import {
   browserOffsetHours,
@@ -38,10 +39,10 @@ const NEW_LABEL: Record<NewField, string> = {
 
 function useTrendFilters() {
   const [rawDays, setDays] = useUrlParam("days")
-  const [rawSensor] = useUrlParam("sensor")
+  const [sensors] = useSensorFilter()
   const [rawField, setField] = useUrlParam("field")
   const days: Period = rawDays === "30" ? 30 : 7
-  const sensor = isSensor(rawSensor) ? rawSensor : undefined
+  const sensor = sensorParam(sensors)
   const field: NewField = NEW_FIELDS.includes(rawField as NewField)
     ? (rawField as NewField)
     : "username"

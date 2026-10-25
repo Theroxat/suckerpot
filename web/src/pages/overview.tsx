@@ -142,31 +142,20 @@ export function OverviewPage() {
         />
       </section>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-5">
+      {/* The activity chart gets the full width (its family legend fits in four columns);
+          the rows below pair cards of similar height, so no card is left half empty. */}
+      <div className="mt-6">
         <FindingCard
-          className="lg:col-span-3"
           eyebrow="Activity per sensor, 24 h"
           finding={series.isPending ? "Reading the last 24 hours…" : activity.finding}
           detail={activity.detail}
         >
           <SensorActivityChart points={cur} loading={series.isPending} />
         </FindingCard>
-        <InsightsCard className="lg:col-span-2" />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <FindingCard
-          eyebrow="Top countries, 24 h"
-          finding={countries.isPending ? "Locating attackers…" : countryFinding.finding}
-          detail={countryFinding.detail}
-        >
-          <TopList
-            items={countryItems}
-            loading={countries.isPending}
-            rows={6}
-            empty="No geolocated events yet."
-          />
-        </FindingCard>
+        <InsightsCard />
         <FindingCard
           eyebrow="Usernames tried, 24 h"
           finding={
@@ -197,7 +186,22 @@ export function OverviewPage() {
         </FindingCard>
       </div>
 
-      <LatestEventsCard className="mt-4" />
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <FindingCard
+          className="lg:col-span-1"
+          eyebrow="Top countries, 24 h"
+          finding={countries.isPending ? "Locating attackers…" : countryFinding.finding}
+          detail={countryFinding.detail}
+        >
+          <TopList
+            items={countryItems}
+            loading={countries.isPending}
+            rows={6}
+            empty="No geolocated events yet."
+          />
+        </FindingCard>
+        <LatestEventsCard className="lg:col-span-2" />
+      </div>
     </>
   )
 }
