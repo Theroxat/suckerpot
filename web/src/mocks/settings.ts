@@ -1,5 +1,12 @@
 import { delay, http, HttpResponse } from "msw"
-import type { EnrichmentSettings, SystemSettings } from "@/lib/settings"
+import type {
+  EnrichmentSettings,
+  KeyInfo,
+  KeySource,
+  KeyTest,
+  ProviderId,
+  SystemSettings,
+} from "@/lib/settings"
 
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
 const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString()
@@ -45,8 +52,71 @@ export function systemSettings(): SystemSettings {
   }
 }
 
-/** `GET /api/v1/settings/enrichment`: DB-IP Lite, AbuseIPDB on, GreyNoise off. */
+interface MockKey {
+  source: KeySource | null
+  last4: string | null
+  updatedAt: string | null
+  test: KeyTest | null
+  testRequestedAt: string | null
+  /** When a pending test resolves (mock "ingest" answers after a couple of seconds). */
+  testDoneAt: number | null
+}
+
+/** In-memory keys so the demo and the screenshots can really set, test and remove a key. */
+const keys: Record<ProviderId, MockKey> = {
+  abuseipdb: {
+    source: "env",
+    last4: null,
+    updatedAt: null,
+    test: null,
+    testRequestedAt: null,
+    testDoneAt: null,
+  },
+  greynoise: {
+    source: "settings",
+    last4: "7c2f",
+    updatedAt: minutesAgo(125),
+    test: { ok: true, error: null, checked_at: minutesAgo(20) },
+    testRequestedAt: minutesAgo(20.5),
+    testDoneAt: null,
+  },
+  maxmind: {
+    source: null,
+    last4: null,
+    updatedAt: null,
+    test: null,
+    testRequestedAt: null,
+    testDoneAt: null,
+  },
+}
+
+const PASSWORD_REFUSED = "wrong"
+
+function keyInfo(id: ProviderId): KeyInfo {
+  const k = keys[id]
+  // The mock ingest answers a test about 2.5 s after the request.
+  if (k.testDoneAt !== null && Date.now() >= k.testDoneAt) {
+    k.test = { ok: true, error: null, checked_at: new Date().toISOString() }
+    k.testDoneAt = null
+  }
+  return {
+    configured: k.source !== null,
+    source: k.source,
+    last4: k.last4,
+    updated_at: k.updatedAt,
+    secret_error: null,
+    pending_apply: false,
+    test: k.test,
+    test_pending: k.testDoneAt !== null,
+    test_requested_at: k.testRequestedAt,
+  }
+}
+
+/** `GET /api/v1/settings/enrichment`: DB-IP Lite, AbuseIPDB from .env, GreyNoise set in Settings. */
 export function enrichmentSettings(): EnrichmentSettings {
+  const editingOff =
+    new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("keys") ===
+    "off"
   return {
     geoip: {
       provider: "dbip",
@@ -70,7 +140,7 @@ export function enrichmentSettings(): EnrichmentSettings {
       attribution: "IP geolocation by DB-IP.com (https://db-ip.com), CC BY 4.0",
     },
     abuseipdb: {
-      configured: true,
+      ...keyInfo("abuseipdb"),
       daily_quota: 1_000,
       used_today: 312,
       disabled: null,
@@ -78,16 +148,32 @@ export function enrichmentSettings(): EnrichmentSettings {
       last_error: null,
     },
     greynoise: {
-      configured: false,
-      daily_quota: null,
-      used_today: 0,
+      ...keyInfo("greynoise"),
+      daily_quota: 50,
+      used_today: 18,
       disabled: null,
       paused: false,
       last_error: null,
     },
+    maxmind: keyInfo("maxmind"),
+    key_editing: editingOff
+      ? {
+          enabled: false,
+          reason: "Set SETTINGS_ENCRYPTION_KEY in .env to enable editing keys here.",
+        }
+      : { enabled: true, reason: null },
     reported_at: minutesAgo(2),
   }
 }
+
+const isProvider = (v: unknown): v is ProviderId =>
+  v === "abuseipdb" || v === "greynoise" || v === "maxmind"
+
+const reauthFailed = () =>
+  HttpResponse.json(
+    { detail: "The password is incorrect.", code: "reauth_failed" },
+    { status: 403 },
+  )
 
 export const settingsHandlers = [
   http.get("/api/v1/settings/system", async () => {
@@ -97,5 +183,58 @@ export const settingsHandlers = [
   http.get("/api/v1/settings/enrichment", async () => {
     await delay(150)
     return HttpResponse.json(enrichmentSettings())
+  }),
+  http.put("/api/v1/settings/providers/:provider", async ({ params, request }) => {
+    await delay(300)
+    const id = params.provider
+    const body = (await request.json()) as { key?: string; password?: string }
+    if (!isProvider(id) || typeof body.key !== "string")
+      return new HttpResponse(null, { status: 422 })
+    if (!body.password || body.password === PASSWORD_REFUSED) return reauthFailed()
+    keys[id] = {
+      source: "settings",
+      last4: body.key.slice(-4),
+      updatedAt: new Date().toISOString(),
+      test: null,
+      testRequestedAt: null,
+      testDoneAt: null,
+    }
+    return HttpResponse.json({
+      provider: id,
+      source: "settings",
+      last4: keys[id].last4,
+      updated_at: keys[id].updatedAt,
+    })
+  }),
+  http.delete("/api/v1/settings/providers/:provider", async ({ params, request }) => {
+    await delay(300)
+    const id = params.provider
+    const body = (await request.json()) as { password?: string }
+    if (!isProvider(id)) return new HttpResponse(null, { status: 422 })
+    if (!body.password || body.password === PASSWORD_REFUSED) return reauthFailed()
+    keys[id] = {
+      source: id === "abuseipdb" ? "env" : null,
+      last4: null,
+      updatedAt: null,
+      test: null,
+      testRequestedAt: null,
+      testDoneAt: null,
+    }
+    return new HttpResponse(null, { status: 204 })
+  }),
+  http.post("/api/v1/settings/providers/:provider/test", async ({ params }) => {
+    await delay(200)
+    const id = params.provider
+    if (!isProvider(id) || keys[id].source === null)
+      return HttpResponse.json(
+        { detail: "There is no key to test.", code: "no_key" },
+        { status: 409 },
+      )
+    keys[id].testRequestedAt = new Date().toISOString()
+    keys[id].testDoneAt = Date.now() + 2_500
+    return HttpResponse.json(
+      { provider: id, requested_at: keys[id].testRequestedAt },
+      { status: 202 },
+    )
   }),
 ]

@@ -232,6 +232,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Machine-readable reason from the API (`reauth_failed`, `invalid_key`…), when it sends one. */
+    readonly code?: string,
   ) {
     super(message)
     this.name = "ApiError"
@@ -273,14 +275,16 @@ async function csrfToken(refresh = false): Promise<string> {
 
 async function failure(res: Response, notify: boolean): Promise<ApiError> {
   let detail = res.statusText
+  let code: string | undefined
   try {
-    const body = (await res.json()) as { detail?: unknown }
+    const body = (await res.json()) as { detail?: unknown; code?: unknown }
     if (typeof body.detail === "string") detail = body.detail
+    if (typeof body.code === "string") code = body.code
   } catch {
     // Not JSON: keep the status text.
   }
   if (res.status === 401 && notify) unauthorizedHandler?.()
-  return new ApiError(res.status, detail)
+  return new ApiError(res.status, detail, code)
 }
 
 type Param = string | number | readonly string[] | undefined

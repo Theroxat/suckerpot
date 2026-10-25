@@ -340,3 +340,51 @@ test("settings", async ({ page }, info) => {
   await settle(page)
   await shoot(page, "settings", info.project.name, true)
 })
+
+// Settings (M11): enrichment API keys. Mock data only: the typed key and password are fake.
+test("settings keys", async ({ page }, info) => {
+  await page.goto("/settings")
+  const keys = page.getByRole("list", { name: "API keys" })
+  await expect(keys).toBeVisible()
+  await settle(page)
+  await keys.scrollIntoViewIfNeeded()
+  await shoot(page, "settings-keys", info.project.name)
+
+  // Set a MaxMind key: a wrong password first, then the right one.
+  await page.getByRole("button", { name: "Set the MaxMind GeoLite2 key" }).click()
+  const dialog = page.getByRole("dialog")
+  await expect(dialog).toBeVisible()
+  await dialog.getByLabel("Account ID").fill("424242")
+  await dialog.getByLabel("Licence key").fill("placeholder-licence-key-0001")
+  await dialog.getByLabel("Your password").fill("wrong")
+  await dialog.getByRole("button", { name: "Save key" }).click()
+  await expect(dialog.getByText("That password is not correct.")).toBeVisible()
+  await shoot(page, "settings-key-dialog", info.project.name)
+  await dialog.getByLabel("Your password").fill("a-demo-password")
+  await dialog.getByRole("button", { name: "Save key" }).click()
+  await expect(dialog).toBeHidden()
+  const maxmind = keys.getByRole("listitem").filter({ hasText: "MaxMind GeoLite2" })
+  await expect(maxmind.getByText("Set in Settings")).toBeVisible()
+  await expect(maxmind.getByText("0001")).toBeVisible()
+
+  // Test the GreyNoise key: pending, then the outcome.
+  const gn = keys.getByRole("listitem").filter({ hasText: "GreyNoise Community" })
+  await gn.getByRole("button", { name: "Test the GreyNoise Community key" }).click()
+  const testButton = gn.getByRole("button", { name: "Test the GreyNoise Community key" })
+  await expect(testButton).toBeDisabled()
+  await expect(testButton).toBeEnabled()
+  await expect(gn.getByText("The provider accepted the key.")).toBeVisible()
+  await settle(page)
+  await keys.scrollIntoViewIfNeeded()
+  await shoot(page, "settings-keys-after", info.project.name)
+})
+
+test("settings keys disabled", async ({ page }, info) => {
+  await page.goto("/settings?keys=off")
+  const keys = page.getByRole("list", { name: "API keys" })
+  await expect(keys).toBeVisible()
+  await expect(page.getByRole("button", { name: "Set the AbuseIPDB key" })).toBeDisabled()
+  await settle(page)
+  await keys.scrollIntoViewIfNeeded()
+  await shoot(page, "settings-keys-disabled", info.project.name)
+})

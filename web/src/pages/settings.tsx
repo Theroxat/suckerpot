@@ -11,20 +11,21 @@ import { Link } from "react-router"
 import { FindingCard } from "@/components/finding-card"
 import { Meter } from "@/components/meter"
 import { PageHeader } from "@/components/page-header"
+import { ProviderKeys } from "@/components/provider-keys"
 import { RelativeTime } from "@/components/relative-time"
 import { SensorBadge } from "@/components/sensor-badge"
 import { SkeletonText } from "@/components/skeletons"
 import { api, queryKeys } from "@/lib/api"
-import { formatBytes, formatNumber, formatPercent, plural } from "@/lib/format"
+import { formatBytes, formatNumber, plural } from "@/lib/format"
 import {
   enrichmentFinding,
   geoAgeDays,
+  keyInFlight,
   retentionFinding,
   sensorsFinding,
   storageFinding,
   usageTone,
   type DiskGuard,
-  type ReputationProvider,
   type SensorState,
   type SystemSettings,
 } from "@/lib/settings"
@@ -138,57 +139,16 @@ function SensorsCard({ data, loading }: { data?: SystemSettings; loading: boolea
 
 /* --- Enrichment --------------------------------------------------------- */
 
-function providerState(p: ReputationProvider): {
-  label: string
-  icon: LucideIcon
-  className: string
-} {
-  if (!p.configured)
-    return { label: "Not configured", icon: CircleDashed, className: "text-fg-muted" }
-  if (p.disabled) return { label: "Disabled", icon: TriangleAlert, className: "text-sev-warning" }
-  if (p.paused)
-    return { label: "Paused for today", icon: TriangleAlert, className: "text-sev-warning" }
-  return { label: "On", icon: CircleCheck, className: "text-status-ok" }
-}
-
-function Provider({ name, envKey, p }: { name: string; envKey: string; p: ReputationProvider }) {
-  const quota = p.daily_quota ?? 0
-  const state = providerState(p)
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-fg">{name}</span>
-        <StateLabel {...state} />
-      </div>
-      {p.configured && quota > 0 ? (
-        <>
-          <Meter
-            value={p.used_today}
-            max={quota}
-            label={`${name} checks used today`}
-            valueText={`${formatNumber(p.used_today)} of ${formatNumber(quota)}`}
-            tone={usageTone(p.used_today / quota)}
-          />
-          <p className="text-xs text-fg-muted">
-            {formatNumber(p.used_today)} of {formatNumber(quota)} checks today ·{" "}
-            {formatPercent(p.used_today / quota)}
-          </p>
-        </>
-      ) : !p.configured ? (
-        <p className="text-xs text-fg-muted">
-          Set <code className="font-mono text-fg">{envKey}</code> in{" "}
-          <code className="font-mono">.env</code> to turn it on.
-        </p>
-      ) : null}
-      {p.disabled || p.last_error ? (
-        <p className="text-xs text-sev-warning">{p.disabled ?? p.last_error}</p>
-      ) : null}
-    </div>
-  )
-}
-
 function EnrichmentCard() {
-  const q = useQuery({ queryKey: queryKeys.enrichmentSettings, queryFn: api.enrichmentSettings })
+  const q = useQuery({
+    queryKey: queryKeys.enrichmentSettings,
+    queryFn: api.enrichmentSettings,
+    // While a saved key or a test is still going through ingest, look again every few seconds.
+    refetchInterval: (query) => {
+      const d = query.state.data
+      return d && [d.abuseipdb, d.greynoise, d.maxmind].some((k) => keyInFlight(k)) ? 3_000 : false
+    },
+  })
   const e = q.data
   const age = e ? geoAgeDays(e) : null
   const provider =
@@ -235,9 +195,8 @@ function EnrichmentCard() {
               {e.geoip.attribution}
             </p>
           ) : null}
-          <div className="space-y-5 border-t pt-5">
-            <Provider name="AbuseIPDB" envKey="ABUSEIPDB_API_KEY" p={e.abuseipdb} />
-            <Provider name="GreyNoise Community" envKey="GREYNOISE_API_KEY" p={e.greynoise} />
+          <div className="border-t pt-5">
+            <ProviderKeys e={e} />
           </div>
         </div>
       )}
@@ -374,14 +333,14 @@ export function SettingsPage() {
     <>
       <PageHeader
         title="Settings"
-        description="Sensor health, enrichment, retention and storage."
+        description="Sensor health, enrichment keys, retention and storage."
       />
 
       <div className="mb-6 flex items-start gap-2.5 rounded-lg border border-dashed px-4 py-3 text-sm text-fg-muted">
         <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
         <p>
-          This page is read-only. Settings live in <code className="font-mono text-fg">.env</code>;
-          change them there and restart with{" "}
+          The enrichment API keys can be edited below. Everything else lives in{" "}
+          <code className="font-mono text-fg">.env</code>: change it there and restart with{" "}
           <code className="font-mono text-fg">docker compose up -d</code>. Every option is
           documented in <code className="font-mono">.env.example</code>.
         </p>
