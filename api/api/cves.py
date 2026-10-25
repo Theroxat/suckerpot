@@ -8,6 +8,7 @@ sessions that exploit it, and we count the sessions that carry one of them.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal
 
@@ -25,6 +26,8 @@ router = APIRouter(tags=["cves"])
 MAX_LIMIT = 100
 DESCRIPTION_IN_LIST = 400
 CVE_ID = r"^CVE-[0-9]{4}-[0-9]{4,10}$"
+CVE_ID_RE = re.compile(r"CVE-[0-9]{4}-[0-9]{4,10}")
+SAFE_URL_RE = re.compile(r"https?://[\x21-\x7e]+")
 
 Relevance = Literal["high", "medium", "none", "relevant"]
 Severity = Literal["critical", "high", "medium", "low", "none"]
@@ -164,8 +167,13 @@ def _parse_cursor(cursor: str, sort: Sort) -> tuple[Any, str]:
         key, cve_id = values
         if not isinstance(cve_id, str) or not isinstance(key, str | int):
             raise TypeError
+        if not CVE_ID_RE.fullmatch(cve_id):
+            raise ValueError
         if sort == "rank":
-            return int(key), cve_id
+            rank = int(key)
+            if not -(2**31) <= rank < 2**31:
+                raise ValueError
+            return rank, cve_id
         parsed = datetime.fromisoformat(str(key))
         if parsed.tzinfo is None:
             raise ValueError
@@ -316,7 +324,7 @@ async def cve_detail(
         description_full=row.description_full,
         cwes=row.cwes,
         ghsa_ids=row.ghsa_ids,
-        refs=row.refs,
+        refs=[r for r in row.refs if SAFE_URL_RE.fullmatch(r)],
         cpes=row.cpes,
         kev_action=row.kev_action,
         traffic=traffic,

@@ -17,9 +17,9 @@ MAX_KEYWORDS = 50
 RELEVANCE_WEIGHT = {"high": 3, "medium": 2, "none": 0}
 FILE_NAME = "relevance.yaml"
 
-_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
-_TAG = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
-_CPE = re.compile(r"^[a-z0-9_.-]{1,64}(:[a-z0-9_.-]{1,64})?$")
+_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
+_TAG = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
+_CPE = re.compile(r"[a-z0-9_.-]{1,64}(:[a-z0-9_.-]{1,64})?")
 
 
 class RelevanceError(Exception):
@@ -106,13 +106,13 @@ def parse_relevance(doc: Any) -> RelevanceMap:
         if not isinstance(raw, Mapping):
             raise RelevanceError("each service must be a mapping")
         sid, label = raw.get("id"), raw.get("label")
-        if not isinstance(sid, str) or not _ID.match(sid) or sid in seen:
+        if not isinstance(sid, str) or not _ID.fullmatch(sid) or sid in seen:
             raise RelevanceError("service ids must be unique lowercase slugs")
         if not isinstance(label, str) or not 0 < len(label) <= 80:
             raise RelevanceError(f"{sid}: label is required")
         seen.add(sid)
         cpes = _str_list(raw.get("cpes", []), f"{sid}.cpes", limit=MAX_KEYWORDS)
-        if not all(_CPE.match(c.lower()) for c in cpes):
+        if not all(_CPE.fullmatch(c.lower()) for c in cpes):
             raise RelevanceError(f"{sid}.cpes: use 'vendor:product' or 'vendor'")
         keywords = _str_list(raw.get("keywords", []), f"{sid}.keywords", limit=MAX_KEYWORDS)
         services.append(
@@ -129,10 +129,10 @@ def parse_relevance(doc: Any) -> RelevanceMap:
         if not isinstance(entry, Mapping):
             raise RelevanceError("each cve_tags entry must be a mapping")
         tag = entry.get("tag")
-        if not isinstance(tag, str) or not _TAG.match(tag):
+        if not isinstance(tag, str) or not _TAG.fullmatch(tag):
             raise RelevanceError("cve_tags: 'tag' must be a lowercase slug")
         for cve in _str_list(entry.get("cves"), f"cve_tags.{tag}", limit=200):
-            if not CVE_RE.match(cve):
+            if not CVE_RE.fullmatch(cve):
                 raise RelevanceError(f"cve_tags.{tag}: bad CVE id")
             cve_tags.setdefault(cve, []).append(tag)
     return RelevanceMap(services, cve_tags)

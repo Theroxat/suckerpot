@@ -184,3 +184,34 @@ async def test_ingest_role_grants(
     async with factory() as session:
         with pytest.raises(DBAPIError):
             await session.execute(text("TRUNCATE cve"))
+
+
+async def test_a_bad_row_is_skipped_not_fatal(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    from ingest.cve.sources import Batch, CveRecord
+
+    w = watch(factory)
+    good = CveRecord(cve_id="CVE-2099-0200", title="ok")
+    bad = CveRecord(cve_id="CVE-2099-0201", cvss_score=99.0)  # violates the table's CHECK
+    batch = Batch([good, bad, CveRecord(cve_id="CVE-2099-0202")])
+    assert await w.store("nvd", batch) == 2
+    assert batch.skipped == 1
+    assert set(await rows(engine)) == {"CVE-2099-0200", "CVE-2099-0202"}
+    await w.aclose()
+
+
+async def test_unexpected_failures_are_recorded_in_the_sync_state(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    w = watch(factory)
+
+    async def boom(source: str, since: Any) -> Any:
+        raise RecursionError
+
+    monkeypatch.setattr(w, "_fetch", boom)
+    assert await w.sync_source("kev") == 0
+    async with engine.connect() as conn:
+        err = await conn.scalar(text("SELECT last_error FROM cve_sync_state WHERE source = 'kev'"))
+    assert err == "error"
+    await w.aclose()

@@ -11,10 +11,12 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import unicodedata
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -28,11 +30,11 @@ DEADLINE_S = 60.0  # wall-clock cap for one download
 KEV_MAX_BYTES = 8 * 1024 * 1024
 NVD_MAX_BYTES = 8 * 1024 * 1024
 GITHUB_MAX_BYTES = 4 * 1024 * 1024
-NVD_PAGE_SIZE = 500
-NVD_MAX_PAGES = 20
+NVD_PAGE_SIZE = 200
+NVD_MAX_PAGES = 50
 GITHUB_PAGE_SIZE = 100
 GITHUB_MAX_PAGES = 10
-USER_AGENT = "suckerpot-cve-watch/1"
+USER_AGENT = "Mozilla/5.0 (compatible; cve-fetch/1.0)"  # generic: no project name leaves the box
 
 MAX_TITLE = 300
 MAX_TEXT = 4000
@@ -41,11 +43,14 @@ MAX_REFS = 10
 MAX_URL = 500
 MAX_LIST = 20
 
-CVE_RE = re.compile(r"^CVE-[0-9]{4}-[0-9]{4,10}$")
-GHSA_RE = re.compile(r"^GHSA(-[23456789cfghjmpqrvwx]{4}){3}$")
-CWE_RE = re.compile(r"^CWE-[0-9]{1,5}$")
-URL_RE = re.compile(r"^https?://\S+$")
-_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+# Always used with ``fullmatch``: ``$`` would accept a trailing newline.
+CVE_RE = re.compile(r"CVE-[0-9]{4}-[0-9]{4,10}")
+GHSA_RE = re.compile(r"GHSA(-[23456789cfghjmpqrvwx]{4}){3}")
+CWE_RE = re.compile(r"CWE-[0-9]{1,5}")
+URL_RE = re.compile(r"https?://[\x21-\x7e]+")  # ASCII only: no spaces, controls or look-alikes
+# Control (Cc) and format (Cf: zero-width, bidi overrides) characters are dropped, line and
+# paragraph separators (Zl, Zp) and other whitespace become a space.
+_DROPPED = {"Cc", "Cf", "Cs", "Co", "Cn"}
 SEVERITIES = {"NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
 
 Reserve = Callable[[], Awaitable[bool]]
@@ -92,16 +97,22 @@ class Batch:
 
 
 def clean(value: object, limit: int) -> str | None:
+    """Single-line, printable text: whitespace is collapsed, invisible characters are dropped."""
     if not isinstance(value, str):
         return None
-    out = _CONTROL.sub("", value).strip()[:limit]
+    chars = (
+        " " if ch.isspace() else ch
+        for ch in value[: limit * 4]
+        if ch.isspace() or unicodedata.category(ch) not in _DROPPED
+    )
+    out = " ".join("".join(chars).split())[:limit].strip()
     return out or None
 
 
 def clean_urls(urls: Iterable[object]) -> list[str]:
     out: list[str] = []
     for u in urls:
-        if isinstance(u, str) and len(u) <= MAX_URL and URL_RE.match(u) and u not in out:
+        if isinstance(u, str) and len(u) <= MAX_URL and URL_RE.fullmatch(u) and u not in out:
             out.append(u)
         if len(out) >= MAX_REFS:
             break
@@ -130,7 +141,7 @@ def parse_day(value: object) -> date | None:
 def clean_cwes(values: Iterable[object]) -> list[str]:
     out: list[str] = []
     for v in values:
-        if isinstance(v, str) and CWE_RE.match(v) and v not in out:
+        if isinstance(v, str) and CWE_RE.fullmatch(v) and v not in out:
             out.append(v)
         if len(out) >= MAX_LIST:
             break
@@ -149,14 +160,14 @@ def clean_severity(value: object) -> str | None:
     return None
 
 
-async def fetch_json(
+async def fetch_json_with_headers(
     client: httpx.AsyncClient,
     url: str,
     *,
     max_bytes: int,
     params: dict[str, str] | None = None,
     headers: dict[str, str] | None = None,
-) -> Any:
+) -> tuple[Any, httpx.Headers]:
     """GET a JSON document: capped size, deadline, no redirects. Raises ``SourceError``."""
     hdrs = {"User-Agent": USER_AGENT, "Accept": "application/json", **(headers or {})}
     authed = "apiKey" in hdrs or "Authorization" in hdrs
@@ -181,14 +192,29 @@ async def fetch_json(
                 body += chunk
                 if len(body) > max_bytes:
                     raise SourceError("too_large")
+            resp_headers = httpx.Headers(resp.headers)
     except TimeoutError:
         raise SourceError("timeout") from None
     except httpx.HTTPError:
         raise SourceError("error") from None
     try:
-        return json.loads(bytes(body))
-    except ValueError:
+        return json.loads(bytes(body)), resp_headers
+    except (ValueError, RecursionError):  # deeply nested JSON must not crash the job
         raise SourceError("error") from None
+
+
+async def fetch_json(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    max_bytes: int,
+    params: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
+) -> Any:
+    doc, _ = await fetch_json_with_headers(
+        client, url, max_bytes=max_bytes, params=params, headers=headers
+    )
+    return doc
 
 
 # ---- CISA KEV -------------------------------------------------------------------------------
@@ -219,7 +245,7 @@ def parse_kev(doc: Any) -> Batch:
         except ValidationError:
             batch.skipped += 1
             continue
-        if not CVE_RE.match(item.cveID):
+        if not CVE_RE.fullmatch(item.cveID):
             batch.skipped += 1
             continue
         ransom = (item.knownRansomwareCampaignUse or "").lower()
@@ -318,7 +344,7 @@ def parse_nvd(doc: Any) -> tuple[Batch, int]:
     for raw in doc["vulnerabilities"]:
         cve = raw.get("cve") if isinstance(raw, dict) else None
         cve_id = cve.get("id") if isinstance(cve, dict) else None
-        if not isinstance(cve, dict) or not isinstance(cve_id, str) or not CVE_RE.match(cve_id):
+        if not isinstance(cve, dict) or not isinstance(cve_id, str) or not CVE_RE.fullmatch(cve_id):
             batch.skipped += 1
             continue
         if str(cve.get("vulnStatus", "")).startswith("Rejected"):
@@ -398,7 +424,7 @@ def parse_github(doc: Any) -> Batch:
     batch = Batch([])
     for raw in doc:
         cve_id = raw.get("cve_id") if isinstance(raw, dict) else None
-        if not isinstance(raw, dict) or not isinstance(cve_id, str) or not CVE_RE.match(cve_id):
+        if not isinstance(raw, dict) or not isinstance(cve_id, str) or not CVE_RE.fullmatch(cve_id):
             batch.skipped += 1  # no CVE id: cannot be joined with the other sources
             continue
         ghsa, cvss, cwes, refs = (raw.get(k) for k in ("ghsa_id", "cvss", "cwes", "references"))
@@ -416,38 +442,69 @@ def parse_github(doc: Any) -> Batch:
                     if isinstance(cwes, list)
                     else []
                 ),
-                ghsa_ids=[ghsa] if isinstance(ghsa, str) and GHSA_RE.match(ghsa) else [],
+                ghsa_ids=[ghsa] if isinstance(ghsa, str) and GHSA_RE.fullmatch(ghsa) else [],
                 refs=clean_urls(refs if isinstance(refs, list) else []),
             )
         )
     return batch
 
 
+_NEXT = re.compile(r'<([^>\s]{1,600})>\s*;[^,]*\brel="?next"?')
+
+
+def next_github_url(link: str | None) -> str | None:
+    """The ``rel="next"`` target of a Link header, only if it stays on the advisories API."""
+    if not link:
+        return None
+    found = _NEXT.search(link)
+    if not found:
+        return None
+    try:
+        parts = urlsplit(found.group(1))
+        port = parts.port
+    except ValueError:
+        return None
+    if (
+        parts.scheme != "https"
+        or parts.hostname != "api.github.com"
+        or port is not None
+        or parts.username is not None
+        or parts.path != "/advisories"
+    ):
+        return None
+    return found.group(1)
+
+
 async def fetch_github(
     client: httpx.AsyncClient, *, since: date, token: str, reserve: Reserve
 ) -> Batch:
-    """Reviewed advisories published on or after ``since`` (newest first, bounded pages)."""
+    """Reviewed advisories published on or after ``since`` (newest first, bounded pages).
+
+    GitHub paginates with cursors: the next page is the ``rel="next"`` Link target, followed only
+    when it is still ``https://api.github.com/advisories``.
+    """
     out = Batch([])
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    for page in range(1, GITHUB_MAX_PAGES + 1):
+    url: str | None = GITHUB_URL
+    params: dict[str, str] | None = {
+        "type": "reviewed",
+        "sort": "published",
+        "direction": "desc",
+        "per_page": str(GITHUB_PAGE_SIZE),
+        "published": f">={since.isoformat()}",
+    }
+    for _ in range(GITHUB_MAX_PAGES):
+        if url is None:
+            break
         if not await reserve():
             raise SourceError("quota_exhausted")
-        params = {
-            "type": "reviewed",
-            "sort": "published",
-            "direction": "desc",
-            "per_page": str(GITHUB_PAGE_SIZE),
-            "page": str(page),
-            "published": f">={since.isoformat()}",
-        }
-        doc = await fetch_json(
-            client, GITHUB_URL, max_bytes=GITHUB_MAX_BYTES, params=params, headers=headers
+        doc, resp_headers = await fetch_json_with_headers(
+            client, url, max_bytes=GITHUB_MAX_BYTES, params=params, headers=headers
         )
-        out_batch = parse_github(doc)
-        out.records.extend(out_batch.records)
-        out.skipped += out_batch.skipped
-        if len(doc) < GITHUB_PAGE_SIZE:
-            break
+        page = parse_github(doc)
+        out.records.extend(page.records)
+        out.skipped += page.skipped
+        url, params = next_github_url(resp_headers.get("link")), None
     return out
