@@ -54,8 +54,32 @@ async def test_timeseries_zero_filled(client: httpx.AsyncClient) -> None:
     assert len(pts) == 7
     by_ts = {p["ts"].replace("+00:00", "Z"): p for p in pts}
     hour = (BASE - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
-    assert by_ts[hour]["events"] == {"ssh": 8, "telnet": 0, "web": 4, "rdp": 0}
-    assert by_ts[hour]["sessions"] == {"ssh": 1, "telnet": 0, "web": 1, "rdp": 0}
+    assert by_ts[hour]["events"] == {
+        "ssh": 8,
+        "telnet": 0,
+        "web": 4,
+        "rdp": 0,
+        "redis": 0,
+        "docker": 0,
+        "mysql": 0,
+        "adb": 0,
+        "mssql": 0,
+        "smb": 0,
+        "sip": 0,
+    }
+    assert by_ts[hour]["sessions"] == {
+        "ssh": 1,
+        "telnet": 0,
+        "web": 1,
+        "rdp": 0,
+        "redis": 0,
+        "docker": 0,
+        "mysql": 0,
+        "adb": 0,
+        "mssql": 0,
+        "smb": 0,
+        "sip": 0,
+    }
     five = (BASE - timedelta(hours=5)).isoformat().replace("+00:00", "Z")
     assert by_ts[five]["events"]["ssh"] == 3
     assert sum(sum(p["events"].values()) for p in pts) == 15
@@ -286,3 +310,35 @@ async def test_sessions_value_filters(
 ) -> None:
     body = await get(client, "/sessions", **params)
     assert sorted(s["session_id"] for s in body["items"]) == expected
+
+
+@pytest.mark.parametrize("form", ["repeated", "comma"])
+async def test_multi_sensor_filter(client: httpx.AsyncClient, form: str) -> None:
+    sensors: list[tuple[str, str | int | float | bool | None]] = (
+        [("sensor", "ssh"), ("sensor", "web")] if form == "repeated" else [("sensor", "ssh,web")]
+    )
+    since, until = WIN["since"], WIN["until"]
+    r = await client.get("/stats/timeseries", params=[*sensors, ("since", since), ("until", until)])
+    assert r.status_code == 200, r.text
+    pts = r.json()["points"]
+    one_ssh = await get(client, "/stats/timeseries", sensor="ssh", **WIN)
+    one_web = await get(client, "/stats/timeseries", sensor="web", **WIN)
+    expected = sum(p["events"]["ssh"] for p in one_ssh["points"]) + sum(
+        p["events"]["web"] for p in one_web["points"]
+    )
+    assert expected > 0
+    assert sum(p["events"]["ssh"] + p["events"]["web"] for p in pts) == expected
+    assert sum(sum(p["events"].values()) for p in pts) == expected  # nothing from other sensors
+    single = await get(client, "/stats/timeseries", sensor="web", **WIN)
+    assert sum(p["events"]["web"] for p in single["points"]) == 4
+    for path in ("/sessions", "/attackers"):
+        both = await client.get(path, params=sensors)
+        one = await client.get(path, params=[("sensor", "web")])
+        assert both.status_code == 200 and one.status_code == 200
+        assert len(both.json()["items"]) >= len(one.json()["items"])
+    top = await client.get(
+        "/stats/top", params=[*sensors, ("field", "username"), ("since", since), ("until", until)]
+    )
+    heat = await client.get("/stats/heatmap", params=[*sensors, ("since", since), ("until", until)])
+    assert top.status_code == 200 and heat.status_code == 200
+    assert (await client.get("/sessions", params=[("sensor", "ftp")])).status_code == 422

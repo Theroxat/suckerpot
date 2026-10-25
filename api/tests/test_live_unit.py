@@ -219,3 +219,205 @@ async def test_poller_advances_past_bad_rows(monkeypatch: pytest.MonkeyPatch) ->
     poller.last_id = 5
     assert await poller.poll_once() == 1
     assert poller.last_id == 9 and q is not None and not q.items
+
+
+@pytest.mark.parametrize(
+    ("sensor", "etype", "data", "expected"),
+    [
+        (
+            "redis",
+            "command",
+            {"input": "CONFIG SET dir /var/spool/cron"},
+            "redis CONFIG SET dir /var/spool/cron",
+        ),
+        (
+            "redis",
+            "login_attempt",
+            {"password": "x", "success": False},
+            "redis login default failed",
+        ),
+        (
+            "docker",
+            "http_request",
+            {
+                "method": "POST",
+                "path": "/containers/create",
+                "flags": ["container_create", "privileged", "image:alpine"],
+            },
+            "docker create privileged alpine",
+        ),
+        (
+            "docker",
+            "http_request",
+            {"method": "GET", "path": "/version", "status": 200},
+            "GET /version → 200",
+        ),
+        (
+            "mysql",
+            "login_attempt",
+            {"username": "root", "success": False},
+            "mysql login root failed",
+        ),
+        ("mssql", "login_attempt", {"username": "sa", "success": True}, "mssql login sa succeeded"),
+        (
+            "mssql",
+            "command",
+            {"input": "EXEC xp_cmdshell 'whoami'"},
+            "mssql EXEC xp_cmdshell 'whoami'",
+        ),
+        ("adb", "command", {"input": "getprop", "flags": ["adb_shell"]}, "adb shell getprop"),
+        ("adb", "command", {"input": "shell getprop", "flags": ["adb_shell"]}, "adb shell getprop"),
+        (
+            "adb",
+            "command",
+            {"input": "/sdcard/x.apk", "flags": ["adb_install"]},
+            "adb install /sdcard/x.apk",
+        ),
+        ("sip", "scan", {"method": "INVITE", "to": "+41791234567"}, "SIP INVITE to +41791234567"),
+        ("sip", "scan", {"flags": ["options_scan"]}, "SIP OPTIONS scan"),
+        (
+            "smb",
+            "scan",
+            {"kind": "smb1_negotiate", "smb1_outcome": "reset", "flags": ["smbv1"]},
+            "SMBv1 negotiate (reset)",
+        ),
+        (
+            "smb",
+            "scan",
+            {"kind": "smb1_negotiate", "smb1_outcome": "steer_smb2_wildcard"},
+            "SMBv1 negotiate (steer smb2 wildcard)",
+        ),
+        (
+            "smb",
+            "scan",
+            {"kind": "smb1_command", "smb1_command_name": "trans2", "flags": ["smbv1"]},
+            "SMBv1 trans2",
+        ),
+        ("smb", "scan", {"kind": "non_smb", "protocol_guess": "http"}, "SMB non smb"),
+        (
+            "smb",
+            "login_attempt",
+            {
+                "username": "admin",
+                "domain": "WORKGROUP",
+                "method": "ntlm",
+                "success": False,
+                "password": None,
+            },
+            "SMB NTLM login WORKGROUP\\admin",
+        ),
+        (
+            "smb",
+            "login_attempt",
+            {"username": "", "anonymous": True, "flags": ["null_session"]},
+            "SMB null session",
+        ),
+        (
+            "sip",
+            "login_attempt",
+            {"username": "100", "method": "REGISTER", "response_code": 401},
+            "SIP REGISTER 100",
+        ),
+        (
+            "sip",
+            "command",
+            {
+                "input": "INVITE sip:0041@x SIP/2.0",
+                "dialled": "+41791234567",
+                "method": "INVITE",
+                "response_code": 100,
+                "flags": ["invite"],
+            },
+            "SIP INVITE to +41791234567 100",
+        ),
+        (
+            "sip",
+            "scan",
+            {"kind": "sip_summary", "messages": 40},
+            "SIP session summary (40 messages)",
+        ),
+        (
+            "sip",
+            "scan",
+            {
+                "kind": "options_scan",
+                "method": "OPTIONS",
+                "user_agent": "friendly-scanner",
+                "flags": ["options_scan", "scanner_ua"],
+            },
+            "SIP OPTIONS scan (friendly-scanner)",
+        ),
+        (
+            "adb",
+            "command",
+            {"input": "adb push /sdcard/x.sh", "flags": ["adb_push"]},
+            "adb push /sdcard/x.sh",
+        ),
+        ("adb", "scan", {"kind": "adb_service", "service": "tcp:22"}, "ADB open tcp:22"),
+        (
+            "redis",
+            "scan",
+            {"kind": "redis_replication", "master_host": "192.0.2.9", "master_port": 6379},
+            "Redis replication from 192.0.2.9:6379",
+        ),
+        (
+            "redis",
+            "scan",
+            {"kind": "cross_protocol", "protocol_guess": "http"},
+            "Redis cross-protocol (http)",
+        ),
+        (
+            "docker",
+            "command",
+            {
+                "kind": "container_create",
+                "image": "alpine",
+                "flags": ["container_create", "docker_sock_mount"],
+            },
+            "docker create host-mount alpine",
+        ),
+        ("docker", "command", {"kind": "exec", "input": "sh -c id"}, "docker exec sh -c id"),
+        (
+            "docker",
+            "login_attempt",
+            {"username": "u", "method": "registry_auth", "success": False},
+            "docker login u failed",
+        ),
+        ("docker", "scan", {"kind": "non_http"}, "Docker probe (non http)"),
+        ("smb", "scan", {"flags": ["eternalblue"]}, "SMB EternalBlue exploit attempt"),
+        ("smb", "scan", {"kind": "negotiate", "dialect": "3.1.1"}, "SMB negotiate (SMB 3.1.1)"),
+        ("smb", "scan", {"kind": "negotiate", "dialect": "SMB 2.1"}, "SMB negotiate (SMB 2.1)"),
+        ("smb", "scan", {"flags": ["smbv1"]}, "SMBv1 probe"),
+        ("smb", "scan", {}, "SMB probe"),
+        (
+            "sip",
+            "scan",
+            {"flags": ["options_scan"], "user_agent": "friendly-scanner"},
+            "SIP OPTIONS scan (friendly-scanner)",
+        ),
+        ("sip", "scan", {"method": "REGISTER", "status": 100}, "SIP REGISTER 100"),
+        ("redis", "scan", {"kind": "non_resp"}, "Redis probe (non resp)"),
+        ("docker", "scan", {"flags": ["bad_json"]}, "Docker probe (bad json)"),
+        ("adb", "scan", {"kind": "cnxn_garbage"}, "ADB probe (cnxn garbage)"),
+        ("mysql", "scan", {}, "MySQL probe"),
+        ("ssh", "command", {"input": "id"}, "ran `id`"),
+        ("redis", "disconnect", {"duration_s": 3}, "disconnected after 3s"),
+    ],
+)
+def test_build_summary_per_sensor(
+    sensor: str, etype: str, data: dict[str, object], expected: str
+) -> None:
+    assert build_summary(etype, data, sensor) == expected
+
+
+def test_service_summary_sanitises() -> None:
+    s = build_summary("command", {"input": "SET a \x1b[31m‮x" + "y" * 300}, "redis")
+    assert "\x1b" not in s and "‮" not in s and len(s) <= 160
+
+
+def test_scan_summary_sanitises_attacker_strings() -> None:
+    s = build_summary(
+        "scan", {"flags": ["options_scan"], "user_agent": "evil\x1b[2J‮" + "a" * 200}, "sip"
+    )
+    assert "\x1b" not in s and "‮" not in s and len(s) <= 160
+    assert "\n" not in build_summary("scan", {"kind": "x\ny" * 50}, "redis")

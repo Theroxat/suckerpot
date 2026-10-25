@@ -7,13 +7,14 @@ from typing import Any
 
 from sqlalchemy import Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from suckerpot_db.models import SessionRow
+from suckerpot_db.models import EventRow, SessionRow
 
 from api.insights_rules import EXPLOIT_TAGS, Counts, Facts, NewValue
 from api.trends import LOOKBACK, new_values
 
 NEW_VALUE_FIELDS = ("username", "command", "url", "asn")
 NEW_VALUE_FETCH = 5
+BRUTE_FETCH = 20
 
 
 async def _counts(
@@ -79,6 +80,27 @@ async def gather_facts(db: AsyncSession, since: datetime, until: datetime) -> Fa
     ).first()
     if top_ip is not None:
         facts.top_ip = (top_ip.ip, top_ip.n)
+
+    brute = await db.execute(
+        select(func.host(EventRow.src_ip).label("ip"), EventRow.sensor, func.count().label("n"))
+        .where(
+            EventRow.type == "login_attempt",
+            EventRow.ts >= since,
+            EventRow.ts < until,
+        )
+        .group_by(EventRow.src_ip, EventRow.sensor)
+        .order_by(func.count().desc(), func.host(EventRow.src_ip), EventRow.sensor)
+        .limit(BRUTE_FETCH)
+    )
+    facts.brute_force = [(r.ip, r.sensor, r.n) for r in brute]
+    facts.brute_total = int(
+        await db.scalar(
+            select(func.count()).where(
+                EventRow.type == "login_attempt", EventRow.ts >= since, EventRow.ts < until
+            )
+        )
+        or 0
+    )
 
     exploit_tags = list(EXPLOIT_TAGS)
     facts.exploit_current = {

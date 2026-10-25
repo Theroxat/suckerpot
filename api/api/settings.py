@@ -17,10 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db.models import EventRow
 
 from api.deps import DbSession
+from api.sensors import SENSORS
 
 router = APIRouter()
 
-SENSORS = ("ssh", "telnet", "web", "rdp")
 ACTIVE_WITHIN = timedelta(minutes=15)
 QUIET_WITHIN = timedelta(hours=24)
 AGGREGATES = ["events_hourly", "events_daily_tags", "events_daily_country", "events_daily_ip"]

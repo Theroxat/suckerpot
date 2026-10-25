@@ -7,7 +7,9 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-InsightKind = Literal["surge", "new_value", "campaign", "exploit", "success", "geo_shift"]
+InsightKind = Literal[
+    "surge", "new_value", "campaign", "exploit", "success", "geo_shift", "brute_force"
+]
 Severity = Literal["info", "notice", "warning", "severe"]
 
 

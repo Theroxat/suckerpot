@@ -71,7 +71,20 @@ async def test_system_settings(client: httpx.AsyncClient) -> None:
     assert r.status_code == 200, r.text
     body = r.json()
     by = {s["sensor"]: s for s in body["sensors"]}
-    assert list(by) == ["ssh", "telnet", "web", "rdp"]
+    assert list(by) == [
+        "ssh",
+        "telnet",
+        "web",
+        "rdp",
+        "redis",
+        "docker",
+        "mysql",
+        "adb",
+        "mssql",
+        "smb",
+        "sip",
+    ]
+    assert by["sip"]["status"] == "silent" and by["redis"]["events_last_hour"] == 0
     assert by["ssh"]["status"] == "quiet" or by["ssh"]["status"] == "active"
     assert by["ssh"]["events_last_hour"] == 8
     assert by["web"]["events_last_hour"] == 4

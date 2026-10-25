@@ -9,7 +9,6 @@ from pydantic import BaseModel
 
 from api.schemas import IpStr, SessionOut
 
-SensorName = Literal["ssh", "telnet", "web", "rdp"]
 BucketName = Literal["5m", "1h", "1d"]
 TopField = Literal[
     "country",
@@ -30,6 +29,13 @@ class SensorBreakdown(BaseModel):
     telnet: int = 0
     web: int = 0
     rdp: int = 0
+    redis: int = 0
+    docker: int = 0
+    mysql: int = 0
+    adb: int = 0
+    mssql: int = 0
+    smb: int = 0
+    sip: int = 0
 
 
 class TimeseriesPoint(BaseModel):

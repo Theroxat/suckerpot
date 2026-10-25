@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 import pytest
-from analytics_seed import Seed, api_engine, owner_engine
+from analytics_seed import Seed, api_engine, login, owner_engine
 from insights_seed import m7_dataset
 from suckerpot_db import create_session_factory
 
@@ -99,3 +99,21 @@ async def test_empty_database() -> None:
 async def test_site_settings(client: httpx.AsyncClient) -> None:
     body = (await client.get("/settings/site")).json()
     assert body == {"home": {"lat": 46.8, "lon": 8.2, "label": "Switzerland"}}
+
+
+async def test_brute_force_insight_from_events() -> None:
+    now = datetime.now(UTC)
+    seed = Seed()
+    for i in range(120):  # one login per connection, as MySQL does
+        seed.session(
+            f"bf{i}",
+            "mysql",
+            "192.0.2.9",
+            now - timedelta(minutes=i + 1),
+            [(0.0, "connect", {}), login("root", f"pw{i}")],
+        )
+    async for c in make_client(seed):
+        items = (await c.get("/insights")).json()["items"]
+        [bf] = [i for i in items if i["kind"] == "brute_force"]
+        assert bf["id"] == "brute-force-mysql-192.0.2.9"
+        assert "120 times on MySQL" in bf["sentence"]

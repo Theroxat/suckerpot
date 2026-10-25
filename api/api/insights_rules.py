@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from urllib.parse import quote, urlencode
 
 from api.insights_schemas import Evidence, Insight, Severity
+from api.sensors import SENSOR_LABELS
 
 MAX_INSIGHTS = 3
 MAX_CANDIDATES = 6
@@ -29,6 +30,8 @@ CAMPAIGN_IP_SHARE = 0.3
 GEO_MIN_TOTAL = 50
 GEO_MIN_SHARE = 0.2
 GEO_MIN_SESSIONS = 20
+BRUTE_MIN_ATTEMPTS = 100
+BRUTE_MIN_IP_ATTEMPTS = 50
 
 SEVERITY_RANK: dict[Severity, int] = {"info": 0, "notice": 1, "warning": 2, "severe": 3}
 
@@ -39,15 +42,28 @@ TAG_LABELS: dict[str, str] = {
     "crypto-miner": "Crypto-miner sessions",
     "recon": "Reconnaissance sessions",
     "brute-force": "Brute-force sessions",
+    "container-escape": "Container escape attempts",
+    "sql-rce": "Database command-execution attempts",
+    "eternalblue": "EternalBlue exploit attempts",
+    "db-ransom": "Database ransom attempts",
+    "redis-rogue-master": "Redis rogue-master attempts",
+    "sip-fraud": "SIP fraud attempts",
+    "persistence": "Persistence attempts",
 }
 TAG_SEVERITY: dict[str, Severity] = {
     "php2shell": "severe",
     "malware-drop": "severe",
     "mirai": "warning",
     "crypto-miner": "warning",
+    "container-escape": "severe",
+    "sql-rce": "severe",
+    "eternalblue": "severe",
+    "db-ransom": "warning",
+    "redis-rogue-master": "warning",
+    "sip-fraud": "warning",
+    "persistence": "warning",
 }
 EXPLOIT_TAGS = ("php2shell", "malware-drop")
-SENSOR_LABELS = {"ssh": "SSH", "telnet": "Telnet", "web": "Web", "rdp": "RDP"}
 NEW_VALUE_NOUNS = {
     "username": "username",
     "command": "command",
@@ -87,6 +103,9 @@ class Facts:
     exploit_current: dict[str, int] = field(default_factory=dict)
     exploit_seen_before: set[str] = field(default_factory=set)
     new_values: dict[str, list[NewValue]] = field(default_factory=dict)
+    # Login attempts in the window, grouped by source: (ip, sensor, attempts), busiest first.
+    brute_force: list[tuple[str, str, int]] = field(default_factory=list)
+    brute_total: int = 0
 
 
 @dataclass(frozen=True)
@@ -187,6 +206,14 @@ def exploit_sentence(label: str, count: int, span_text: str) -> str:
     return (
         f"{label} appeared for the first time: {fmt_int(count)} {plural} {span_text}, "
         "none in the 90 days before."
+    )
+
+
+def brute_force_sentence(ip: str, sensor_label: str, count: int, total: int, span_text: str) -> str:
+    pct = round(100 * count / total)
+    return (
+        f"{ip} guessed credentials {fmt_int(count)} times on {sensor_label} {span_text}, "
+        f"{pct}% of all {fmt_int(total)} login attempts."
     )
 
 
@@ -355,6 +382,29 @@ def _exploits(facts: Facts, span_text: str) -> list[Candidate]:
     return out
 
 
+def _brute_force(facts: Facts, span_text: str) -> list[Candidate]:
+    total = facts.brute_total
+    out: list[Candidate] = []
+    if facts.brute_force and total >= BRUTE_MIN_ATTEMPTS:
+        ip, sensor, n = facts.brute_force[0]
+        if n >= BRUTE_MIN_IP_ATTEMPTS:
+            label = SENSOR_LABELS.get(sensor, sensor)
+            out.append(
+                Candidate(
+                    Insight(
+                        id=f"brute-force-{sensor}-{ip}",
+                        kind="brute_force",
+                        severity="notice",
+                        sentence=brute_force_sentence(ip, label, n, total, span_text),
+                        evidence=_evidence("login_attempts_by_ip", n, 0),
+                        link=ui_link("/attackers", facts.since, facts.until, q=ip),
+                    ),
+                    float(n),
+                )
+            )
+    return out
+
+
 def _geo_shifts(facts: Facts, span_text: str) -> list[Candidate]:
     total_cur, total_prev = facts.total
     if total_cur < GEO_MIN_TOTAL or total_prev < GEO_MIN_TOTAL:
@@ -396,6 +446,7 @@ def build_candidates(facts: Facts, now: datetime) -> list[Candidate]:
         *_surges(facts, since_text),
         *_success(facts, since_text),
         *_campaigns(facts, span_text),
+        *_brute_force(facts, span_text),
         *_geo_shifts(facts, span_text),
         *_new_values(facts, span_text),
     ]
