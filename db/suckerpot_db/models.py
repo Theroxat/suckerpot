@@ -13,6 +13,7 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
+    LargeBinary,
     SmallInteger,
     Text,
     text,
@@ -147,3 +148,31 @@ class EnrichmentStatusRow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
+
+
+class ProviderSecretRow(Base):
+    """An enrichment API key set from the Settings page, encrypted with AES-256-GCM."""
+
+    __tablename__ = "provider_secrets"
+
+    provider: Mapped[str] = mapped_column(Text, primary_key=True)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    last4: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    updated_by: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class ProviderTestRequestRow(Base):
+    """A "Test key" click: the API cannot reach the internet, so ingest performs the call."""
+
+    __tablename__ = "provider_test_requests"
+
+    provider: Mapped[str] = mapped_column(Text, primary_key=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    requested_by: Mapped[str] = mapped_column(Text, nullable=False)
+    handled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
