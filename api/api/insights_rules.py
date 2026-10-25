@@ -49,6 +49,9 @@ TAG_LABELS: dict[str, str] = {
     "redis-rogue-master": "Redis rogue-master attempts",
     "sip-fraud": "SIP fraud attempts",
     "persistence": "Persistence attempts",
+    "bluekeep": "BlueKeep probes",
+    "weak-credentials": "Guessed weak credentials",
+    "rdp-cleartext": "RDP cleartext logins",
 }
 TAG_SEVERITY: dict[str, Severity] = {
     "php2shell": "severe",
@@ -62,6 +65,11 @@ TAG_SEVERITY: dict[str, Severity] = {
     "redis-rogue-master": "warning",
     "sip-fraud": "warning",
     "persistence": "warning",
+    # A BlueKeep probe only shows the scanner looked for the vulnerable channel; no payload is
+    # sent, so it is a warning, unlike eternalblue where the exploit transaction itself arrived.
+    "bluekeep": "warning",
+    # A decoy password was guessed: the RDP counterpart of a successful login.
+    "weak-credentials": "warning",
 }
 EXPLOIT_TAGS = ("php2shell", "malware-drop")
 NEW_VALUE_NOUNS = {
