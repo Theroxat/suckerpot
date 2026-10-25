@@ -104,6 +104,22 @@ const keys: Record<ProviderId, MockKey> = {
     testRequestedAt: null,
     testDoneAt: null,
   },
+  abusech: {
+    source: "settings",
+    last4: "9d41",
+    updatedAt: minutesAgo(60 * 30),
+    test: { ok: true, error: null, checked_at: minutesAgo(60 * 29) },
+    testRequestedAt: minutesAgo(60 * 29 + 1),
+    testDoneAt: null,
+  },
+  virustotal: {
+    source: null,
+    last4: null,
+    updatedAt: null,
+    test: null,
+    testRequestedAt: null,
+    testDoneAt: null,
+  },
 }
 
 const PASSWORD_REFUSED = "wrong"
@@ -171,6 +187,22 @@ export function enrichmentSettings(): EnrichmentSettings {
       paused: false,
       last_error: null,
     },
+    abusech: {
+      ...keyInfo("abusech"),
+      daily_quota: 1_000,
+      used_today: 164,
+      disabled: null,
+      paused: false,
+      last_error: null,
+    },
+    virustotal: {
+      ...keyInfo("virustotal"),
+      daily_quota: 400,
+      used_today: 0,
+      disabled: null,
+      paused: false,
+      last_error: null,
+    },
     maxmind: keyInfo("maxmind"),
     nvd: keyInfo("nvd"),
     github: keyInfo("github"),
@@ -185,7 +217,13 @@ export function enrichmentSettings(): EnrichmentSettings {
 }
 
 const isProvider = (v: unknown): v is ProviderId =>
-  v === "abuseipdb" || v === "greynoise" || v === "maxmind" || v === "nvd" || v === "github"
+  v === "abuseipdb" ||
+  v === "greynoise" ||
+  v === "maxmind" ||
+  v === "nvd" ||
+  v === "github" ||
+  v === "abusech" ||
+  v === "virustotal"
 
 const reauthFailed = () =>
   HttpResponse.json(

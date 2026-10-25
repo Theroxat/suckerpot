@@ -46,6 +46,8 @@ function settings(over: Partial<EnrichmentSettings> = {}): EnrichmentSettings {
       last4: "7c2f",
       updated_at: "2026-10-24T10:00:00Z",
     }),
+    abusech: rep({ configured: true, source: "env" }),
+    virustotal: rep({}),
     maxmind: NO_KEY,
     nvd: NO_KEY,
     github: NO_KEY,

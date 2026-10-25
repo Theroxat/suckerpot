@@ -11,6 +11,8 @@ export const PROVIDER_NAMES: Record<ProviderId, string> = {
   maxmind: "MaxMind GeoLite2",
   nvd: "NVD (CVE watch)",
   github: "GitHub advisories (CVE watch)",
+  abusech: "abuse.ch (URLhaus, ThreatFox)",
+  virustotal: "VirusTotal",
 }
 
 export const MIN_KEY_LENGTH = 16

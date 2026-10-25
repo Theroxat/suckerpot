@@ -25,6 +25,9 @@ const AttackerDetailPage = lazy(() =>
 const TrendsPage = lazy(() => import("@/pages/trends").then((m) => ({ default: m.TrendsPage })))
 const CvesPage = lazy(() => import("@/pages/cves").then((m) => ({ default: m.CvesPage })))
 const MalwarePage = lazy(() => import("@/pages/malware").then((m) => ({ default: m.MalwarePage })))
+const InfrastructurePage = lazy(() =>
+  import("@/pages/infrastructure").then((m) => ({ default: m.InfrastructurePage })),
+)
 const SettingsPage = lazy(() =>
   import("@/pages/settings").then((m) => ({ default: m.SettingsPage })),
 )
@@ -118,6 +121,14 @@ function appRoutes(): RouteObject {
         element: (
           <Lazy>
             <CvesPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "infrastructure",
+        element: (
+          <Lazy>
+            <InfrastructurePage />
           </Lazy>
         ),
       },

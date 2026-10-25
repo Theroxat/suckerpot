@@ -2,6 +2,7 @@ import {
   Bug,
   Crosshair,
   LayoutDashboard,
+  Network,
   Radio,
   ShieldAlert,
   Settings,
@@ -38,6 +39,7 @@ export const NAV: NavGroup[] = [
       { to: "/trends", label: "Trends", icon: TrendingUp },
       { to: "/malware", label: "Malware", icon: Bug },
       { to: "/cves", label: "CVE watch", icon: ShieldAlert },
+      { to: "/infrastructure", label: "Infrastructure", icon: Network },
     ],
   },
   {

@@ -81,7 +81,14 @@ export interface KeyEditing {
   reason: string | null
 }
 
-export type ProviderId = "abuseipdb" | "greynoise" | "maxmind" | "nvd" | "github"
+export type ProviderId =
+  | "abuseipdb"
+  | "greynoise"
+  | "maxmind"
+  | "nvd"
+  | "github"
+  | "abusech"
+  | "virustotal"
 
 export interface ReputationProvider extends KeyInfo {
   daily_quota: number | null
@@ -103,6 +110,8 @@ export interface EnrichmentSettings {
   }
   abuseipdb: ReputationProvider
   greynoise: ReputationProvider
+  abusech: ReputationProvider
+  virustotal: ReputationProvider
   maxmind: KeyInfo
   nvd: KeyInfo
   github: KeyInfo
