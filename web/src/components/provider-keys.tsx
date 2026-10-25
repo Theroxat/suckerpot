@@ -79,7 +79,7 @@ function KeyRow({
   const names = `${name} key`
 
   return (
-    <li className="space-y-3 py-5 first:pt-0 last:pb-0">
+    <li className="flex flex-col gap-3 py-5 first:pt-0 last:pb-0">
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-medium text-fg">{name}</span>
         <span
@@ -212,6 +212,23 @@ function KeyRow({
   )
 }
 
+/** Shows environment variable names and `.env` from a server sentence in monospace. */
+function WithCode({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\.env\b)/).map((part, i) =>
+        i % 2 === 1 ? (
+          <code key={i} className={cn("font-mono", part !== ".env" && "text-fg")}>
+            {part}
+          </code>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  )
+}
+
 /** The three provider keys: where each comes from, and the dialogs to change them. */
 export function ProviderKeys({ e }: { e: EnrichmentSettings }) {
   const editable = e.key_editing.enabled
@@ -227,8 +244,8 @@ export function ProviderKeys({ e }: { e: EnrichmentSettings }) {
           </p>
         ) : (
           <p className="text-xs text-fg-muted">
-            {e.key_editing.reason ?? "Editing keys here is turned off."} The keys in{" "}
-            <code className="font-mono">.env</code> keep working.
+            <WithCode text={e.key_editing.reason ?? "Editing keys here is turned off."} /> The keys
+            in <code className="font-mono">.env</code> keep working.
           </p>
         )}
       </div>
