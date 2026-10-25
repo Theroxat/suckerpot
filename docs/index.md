@@ -18,6 +18,7 @@ getting-started
 deployment
 demo-data
 ui
+defend
 ```
 
 ```{toctree}
