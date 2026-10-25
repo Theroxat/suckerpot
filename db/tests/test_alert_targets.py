@@ -131,7 +131,7 @@ def test_hints_do_not_reveal_the_secret() -> None:
         ("127.0.0.1", False),
         ("169.254.169.254", False),
         ("100.64.0.1", False),
-        ("0.0.0.0", False),  # noqa: S104
+        ("0.0.0.0", False),
         ("::1", False),
         ("fe80::1", False),
         ("fc00::1", False),
