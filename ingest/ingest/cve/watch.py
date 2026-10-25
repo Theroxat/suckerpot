@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ingest.cve import sources
@@ -171,13 +172,28 @@ class CveWatch:
             )
 
     async def store(self, source: str, batch: Batch) -> int:
-        """Upsert the records of one source (in chunks, one transaction per chunk)."""
+        """Upsert the records of one source, in chunks. A row the database refuses is skipped
+        and counted in ``batch.skipped``; it never fails the rest of its chunk."""
         stmt = upsert_sql(source)
         rows = [_params(r, source) for r in batch.records]
+        stored = 0
         for i in range(0, len(rows), 200):
-            async with self.factory() as session, session.begin():
-                await session.execute(stmt, rows[i : i + 200])
-        return len(rows)
+            chunk = rows[i : i + 200]
+            try:
+                async with self.factory() as session, session.begin():
+                    await session.execute(stmt, chunk)
+                stored += len(chunk)
+                continue
+            except DBAPIError:
+                pass  # fall back to one row at a time
+            for row in chunk:
+                try:
+                    async with self.factory() as session, session.begin():
+                        await session.execute(stmt, row)
+                    stored += 1
+                except DBAPIError:
+                    batch.skipped += 1
+        return stored
 
     # ---- relevance and retention --------------------------------------------------------------
     async def recompute(self) -> int:
@@ -285,9 +301,13 @@ class CveWatch:
             return 0
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # database trouble: log the type only
+        except Exception as exc:  # parse or database trouble: log the type only
             self._failed(source, "error")
-            log.warning("cve %s store failed (%s)", source, type(exc).__name__)
+            log.warning("cve %s sync failed (%s)", source, type(exc).__name__)
+            try:
+                await self._record_run(source, ok=False, items=0, error="error")
+            except Exception as rec:
+                log.warning("cve %s state not recorded (%s)", source, type(rec).__name__)
             return 0
         self.last_error.pop(source, None)
         self._retry_at.pop(source, None)

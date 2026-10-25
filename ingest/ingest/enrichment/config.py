@@ -67,7 +67,7 @@ class EnrichmentSettings:
             abuseipdb_api_key=e.get("ABUSEIPDB_API_KEY", "").strip(),
             greynoise_api_key=e.get("GREYNOISE_API_KEY", "").strip(),
             nvd_api_key=e.get("NVD_API_KEY", "").strip(),
-            github_token=e.get("GITHUB_TOKEN", "").strip(),
+            github_token=e.get("GITHUB_ADVISORY_TOKEN", "").strip(),
             cve_watch_enabled=_flag(e.get("CVE_WATCH_ENABLED", "true")),
             cve_nvd_daily_quota=max(0, int(e.get("CVE_NVD_DAILY_QUOTA", "200"))),
             cve_github_daily_quota=max(0, int(e.get("CVE_GITHUB_DAILY_QUOTA", "100"))),

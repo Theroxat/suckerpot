@@ -135,7 +135,9 @@ The CVE watch job adds three outbound destinations, all fixed in code and all re
 - **Bounded.** Redirects are not followed, every response is streamed with a hard byte cap (8 MB for KEV and NVD, 4 MB for GitHub) and a 60 s deadline, and the number of pages per run is capped.
 - **Untrusted input.** Feeds are validated item by item. An invalid item is skipped, text fields are length-capped and stripped of control characters, only `http` and `https` links are kept, and the UI renders everything as text.
 - **Quotas.** Each request spends a persisted daily quota, so a bug or a restart loop cannot hammer a public API. A feed that fails is retried after an hour.
-- **Optional keys.** `NVD_API_KEY` and `GITHUB_TOKEN` only raise rate limits. They follow the rules of the next section, travel in a request header (never in a URL) and are never logged.
+- **Optional keys.** The GitHub token must be a fine-grained token with access to public repositories only and no permissions, never a push or personal token.
+- **Generic request identity.** Requests send a generic user agent without the project name.
+- **Optional keys (details).** `NVD_API_KEY` and `GITHUB_ADVISORY_TOKEN` only raise rate limits. They follow the rules of the next section, travel in a request header (never in a URL) and are never logged.
 - **Least privilege.** The ingest role may read, insert, update and delete rows of `cve` (retention), and write `cve_sync_state`. The API role may only read them. The tables hold public data, no captured data.
 - **No automation.** The CVE page can copy a trap-sheet template for the owner to review. Nothing is built, configured or deployed from it.
 
