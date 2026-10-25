@@ -104,6 +104,7 @@ async def test_settings_enrichment(client: httpx.AsyncClient) -> None:
         "secret_error": None, "pending_apply": False, "test": None, "test_pending": False,
         "test_requested_at": None,
     }  # fmt: skip
+    assert empty["nvd"]["source"] is None and empty["github"]["configured"] is False
     assert empty["maxmind"]["source"] is None and empty["key_editing"]["enabled"] is False
 
     engine = create_engine(pool_size=1)
