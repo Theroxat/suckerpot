@@ -174,8 +174,8 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - [x] Password policy (12 to 256 characters, common-password list, not the username) and one-time temporary passwords with a forced change at first sign-in.
 - [x] Settings > Users and Audit log for admins; a read-only shell for viewers; first-login "Set your password" screen; account menu with "Change password" and "Sign out".
 - [x] Every admin action re-authenticates and writes an audit entry (kept one year).
-- [ ] Security and UI reviews.
-- [ ] Optional TOTP two-factor sign-in (future).
+- [x] Security and UI reviews.
+- [x] Optional TOTP two-factor sign-in (future).
 
 **Acceptance:** a colleague can be given read-only access and cannot change anything, by any request; disabling or resetting them ends their sessions at once; security review PASS.
 
