@@ -205,9 +205,12 @@ async def test_overrides_change_exports_at_once_and_are_audited(client: httpx.As
     assert "203.0.113.11" in (await client.get(f"{API}/export", params={"kind": "ip"})).text
     listed = (await client.get(f"{API}/overrides")).json()["items"]
     assert len(listed) == 2
-    gone = await client.delete(f"{API}/overrides/{listed[0]['id']}")
+    url = f"{API}/overrides/{listed[0]['id']}"
+    bare = await client.request("DELETE", url)
+    assert bare.status_code == 403 and bare.json()["code"] == "reauth_required"
+    gone = await client.request("DELETE", url, json={"password": "x"})
     assert gone.status_code == 204
-    assert (await client.delete(f"{API}/overrides/{listed[0]['id']}")).status_code == 404
+    assert (await client.request("DELETE", url, json={"password": "x"})).status_code == 404
     audit = (await client.get("/api/v1/audit")).json()["items"]
     assert {"blocklist.allow", "blocklist.block", "blocklist.override_remove"} <= {
         a["action"] for a in audit

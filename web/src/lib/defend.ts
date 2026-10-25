@@ -633,7 +633,8 @@ export function createOverride(input: {
   return sendJson<OverrideItem>("POST", "/defend/overrides", body)
 }
 
-export const deleteOverride = (id: number) => sendJson("DELETE", `/defend/overrides/${id}`)
+export const deleteOverride = (id: number, password: string) =>
+  sendJson("DELETE", `/defend/overrides/${id}`, { password })
 
 function inventoryBody(input: Partial<InventoryInput>) {
   const body: Record<string, unknown> = {}

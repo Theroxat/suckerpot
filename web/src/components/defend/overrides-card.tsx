@@ -1,22 +1,29 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { Ban, CircleCheck, Plus, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { useIpMask } from "@/app/ip-mask"
 import { FindingCard } from "@/components/finding-card"
 import { OverrideDialog } from "@/components/defend/override-dialog"
+import {
+  RemoveOverrideDialog,
+  type RemovingOverride,
+} from "@/components/defend/remove-override-dialog"
 import { RelativeTime } from "@/components/relative-time"
 import { SkeletonText } from "@/components/skeletons"
 import { Button } from "@/components/ui/button"
-import { defendApi, defendKeys, deleteOverride, KIND_META, type OverrideItem } from "@/lib/defend"
+import { defendApi, defendKeys, KIND_META, type OverrideItem } from "@/lib/defend"
 import { maskIpsInText, plural } from "@/lib/format"
 
-function Row({ item, canWrite }: { item: OverrideItem; canWrite: boolean }) {
+function Row({
+  item,
+  canWrite,
+  onRemove,
+}: {
+  item: OverrideItem
+  canWrite: boolean
+  onRemove: (target: RemovingOverride) => void
+}) {
   const { masked } = useIpMask()
-  const queryClient = useQueryClient()
-  const remove = useMutation({
-    mutationFn: () => deleteOverride(item.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["defend"] }),
-  })
   const allow = item.action === "allow"
   const Icon = allow ? CircleCheck : Ban
   const value = masked ? maskIpsInText(item.value) : item.value
@@ -46,8 +53,7 @@ function Row({ item, canWrite }: { item: OverrideItem; canWrite: boolean }) {
           variant="ghost"
           size="icon-xs"
           aria-label={`Remove the override for ${value}`}
-          disabled={remove.isPending}
-          onClick={() => remove.mutate()}
+          onClick={() => onRemove({ id: item.id, label: value })}
         >
           <Trash2 aria-hidden />
         </Button>
@@ -59,6 +65,7 @@ function Row({ item, canWrite }: { item: OverrideItem; canWrite: boolean }) {
 /** What you decided by hand: values that are always allowed or always blocked. */
 export function OverridesCard({ canWrite }: { canWrite: boolean }) {
   const [adding, setAdding] = useState(false)
+  const [removing, setRemoving] = useState<RemovingOverride | null>(null)
   const q = useQuery({ queryKey: defendKeys.overrides, queryFn: defendApi.overrides })
   const items = q.data?.items ?? []
   const allowed = items.filter((i) => i.action === "allow").length
@@ -89,9 +96,12 @@ export function OverridesCard({ canWrite }: { canWrite: boolean }) {
       ) : items.length > 0 ? (
         <ul aria-label="Overrides" className="divide-y border-t">
           {items.map((item) => (
-            <Row key={item.id} item={item} canWrite={canWrite} />
+            <Row key={item.id} item={item} canWrite={canWrite} onRemove={setRemoving} />
           ))}
         </ul>
+      ) : null}
+      {canWrite ? (
+        <RemoveOverrideDialog target={removing} onClose={() => setRemoving(null)} />
       ) : null}
       {canWrite ? (
         <OverrideDialog open={adding} onOpenChange={setAdding} target={null} action="allow" />

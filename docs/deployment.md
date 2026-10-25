@@ -31,6 +31,7 @@ Do these in order. Tick each item only after you have checked it.
 6. [ ] Install and verify the [host firewall](#host-firewall).
 7. [ ] Set [`DASHBOARD_BIND`](#dashboard-bind-and-upstream-filtering) and filter the dashboard port upstream.
 8. [ ] Set [`API_ALLOWED_ORIGINS`](#behind-a-tls-terminating-tunnel) if the tunnel terminates TLS.
+9. [ ] If you will turn on `FEEDS_ENABLED`, set `AUTH_TRUSTED_PROXIES` to the tunnel's address first. Without it every feed client looks like the tunnel, so the rate limits and the failure lockout are shared by everyone (see [Defend](defend.md)).
 9. [ ] Set [`INDICATORS_IGNORE`](configuration.md) to your public IP (or CIDR block) and the host names you answer to, so your own addresses are never recorded as attack infrastructure. `API_ALLOWED_HOSTS` and `API_ALLOWED_ORIGINS` are added automatically.
 10. [ ] Keep `API_ENABLE_DOCS=false`.
 11. [ ] Start the stack and check it: `just up`, then `docker compose ps`. Run `just ssh-test`.

@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { Download, SearchX, ShieldCheck, ShieldOff } from "lucide-react"
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useWindowVirtualizer } from "@tanstack/react-virtual"
@@ -7,6 +7,10 @@ import { BLOCKLIST_GRID, BlocklistRow } from "@/components/defend/blocklist-row"
 import { ExportPanel } from "@/components/defend/export-panel"
 import { KindTiles } from "@/components/defend/kind-tiles"
 import { OverrideDialog, type OverrideTarget } from "@/components/defend/override-dialog"
+import {
+  RemoveOverrideDialog,
+  type RemovingOverride,
+} from "@/components/defend/remove-override-dialog"
 import { OverridesCard } from "@/components/defend/overrides-card"
 import { UrlSearch } from "@/components/defend/url-search"
 import { EmptyState } from "@/components/empty-state"
@@ -23,7 +27,6 @@ import {
   DEFAULT_MIN_SCORE,
   defendApi,
   defendKeys,
-  deleteOverride,
   isBlockKind,
   KIND_META,
   parseMinScore,
@@ -40,7 +43,6 @@ const PAGE_SIZE = 50
 
 export function BlocklistsPage() {
   const { canWrite } = useAuth()
-  const queryClient = useQueryClient()
   const [kindParam, setKindParam] = useUrlParam("kind")
   const [scoreParam, setScoreParam] = useUrlParam("min_score")
   const [q] = useUrlParam("q")
@@ -79,16 +81,13 @@ export function BlocklistsPage() {
   const [dialog, setDialog] = useState<{ target: OverrideTarget; action: OverrideAction } | null>(
     null,
   )
-  const removeOverride = useMutation({
-    mutationFn: (entry: BlockEntry) => {
-      const found = overrides.data?.items.find(
-        (o) => o.kind === entry.kind && o.value === entry.value,
-      )
-      if (!found) return Promise.resolve(undefined)
-      return deleteOverride(found.id)
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["defend"] }),
-  })
+  const [removing, setRemoving] = useState<RemovingOverride | null>(null)
+  const askRemoveOverride = (entry: BlockEntry) => {
+    const found = overrides.data?.items.find(
+      (o) => o.kind === entry.kind && o.value === entry.value,
+    )
+    if (found) setRemoving({ id: found.id, label: entry.value })
+  }
 
   const listRef = useRef<HTMLDivElement>(null)
   const [scrollMargin, setScrollMargin] = useState(0)
@@ -312,7 +311,7 @@ export function BlocklistsPage() {
                       onOverride={(entry, action) =>
                         setDialog({ target: { kind: entry.kind, value: entry.value }, action })
                       }
-                      onRemoveOverride={(entry) => removeOverride.mutate(entry)}
+                      onRemoveOverride={askRemoveOverride}
                     />
                   ) : (
                     <SkeletonRow />
@@ -335,6 +334,9 @@ export function BlocklistsPage() {
         </p>
       ) : null}
 
+      {canWrite ? (
+        <RemoveOverrideDialog target={removing} onClose={() => setRemoving(null)} />
+      ) : null}
       {dialog ? (
         <OverrideDialog
           open

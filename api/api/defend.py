@@ -137,6 +137,11 @@ class OverrideBody(BaseModel):
         return None if v is None else _clean(v)
 
 
+class OverrideDelete(BaseModel):
+    # Required while feeds are enabled, like setting an override.
+    password: str | None = Field(default=None, max_length=1024, repr=False)
+
+
 class TokenOut(BaseModel):
     id: int
     name: str
@@ -455,9 +460,15 @@ async def set_override(body: OverrideBody, request: Request, db: DbSession) -> R
 
 @router.delete("/defend/overrides/{override_id}", status_code=204)
 async def delete_override(
-    override_id: Annotated[int, Path(ge=1, le=2**53)], request: Request, db: DbSession
+    override_id: Annotated[int, Path(ge=1, le=2**53)],
+    request: Request,
+    db: DbSession,
+    body: OverrideDelete | None = None,
 ) -> Response:
-    principal, refused = await guard(request, None, "blocklist override")
+    password = body.password if body else None
+    if feeds_enabled() and not password:
+        return error(403, "Enter your password to change what the feeds serve.", "reauth_required")
+    principal, refused = await guard(request, password, "blocklist override")
     if refused is not None or principal is None:
         return refused or error(401, "Not authenticated", "unauthenticated")
     row = await db.get(O, override_id)
