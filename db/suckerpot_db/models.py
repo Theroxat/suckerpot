@@ -213,6 +213,17 @@ class CveRow(Base):
     kev_due_date: Mapped[date | None] = mapped_column(Date)
     kev_ransomware: Mapped[bool | None] = mapped_column(Boolean)
     kev_action: Mapped[str | None] = mapped_column(Text)
+    cpes: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    relevance: Mapped[str] = mapped_column(Text, server_default=text("'none'"), nullable=False)
+    matched_services: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    rank_score: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
     sources: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
     )
@@ -227,6 +238,7 @@ class CveRow(Base):
         Index("ix_cve_published_at", text("published_at DESC")),
         Index("ix_cve_kev_added_at", text("kev_added_at DESC"), postgresql_where=text("in_kev")),
         Index("ix_cve_cvss_score", text("cvss_score DESC")),
+        Index("ix_cve_rank", text("rank_score DESC"), text("cve_id DESC")),
     )
 
 

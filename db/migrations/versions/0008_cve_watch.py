@@ -42,6 +42,11 @@ def upgrade() -> None:
             kev_due_date date,
             kev_ransomware boolean,
             kev_action text,
+            cpes text[] NOT NULL DEFAULT '{}',
+            relevance text NOT NULL DEFAULT 'none' CHECK (relevance IN ('high', 'medium', 'none')),
+            matched_services text[] NOT NULL DEFAULT '{}',
+            tags text[] NOT NULL DEFAULT '{}',
+            rank_score integer NOT NULL DEFAULT 0,
             sources text[] NOT NULL DEFAULT '{}',
             first_seen_at timestamptz NOT NULL DEFAULT now(),
             updated_at timestamptz NOT NULL DEFAULT now()
@@ -51,6 +56,7 @@ def upgrade() -> None:
     op.execute("CREATE INDEX ix_cve_published_at ON cve (published_at DESC)")
     op.execute("CREATE INDEX ix_cve_kev_added_at ON cve (kev_added_at DESC) WHERE in_kev")
     op.execute("CREATE INDEX ix_cve_cvss_score ON cve (cvss_score DESC)")
+    op.execute("CREATE INDEX ix_cve_rank ON cve (rank_score DESC, cve_id DESC)")
     op.execute(
         """
         CREATE TABLE cve_sync_state (

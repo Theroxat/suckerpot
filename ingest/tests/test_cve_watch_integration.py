@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -10,11 +11,14 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from ingest.cve.relevance import load_relevance
 from ingest.cve.watch import CveWatch
 from ingest.enrichment import EnrichmentSettings
 
 from .db_fixtures import ROLE_ENV
 from .test_cve_sources import KEV, NVD
+
+RULES = Path(__file__).resolve().parents[1] / "rules"
 
 pytestmark = [
     pytest.mark.integration,
@@ -134,7 +138,38 @@ async def test_key_test_needs_a_key_and_uses_header(
     await w.aclose()
 
 
-async def test_ingest_role_can_write_but_not_delete(
+async def test_relevance_tags_and_retention(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    w = watch(factory)
+    w.relevance = load_relevance(RULES)
+    await w.run_once()
+    got = await rows(engine)
+    one = got["CVE-2026-0001"]  # KEV vendor "Example": no service matches
+    assert one.relevance == "none" and one.rank_score > 0
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO cve (cve_id, vendor, product, published_at, in_kev) VALUES "
+                "('CVE-2099-0100', 'PHP Group', 'PHP', now(), false), "
+                "('CVE-2099-0101', 'Nobody', 'Thing', now() - interval '200 days', false), "
+                "('CVE-2099-0102', 'Nobody', 'Thing', now() - interval '200 days', true), "
+                "('CVE-2026-109618', 'PHP Group', 'PHP', now() - interval '200 days', false)"
+            )
+        )
+    await w.maintenance()
+    got = await rows(engine)
+    assert got["CVE-2099-0100"].relevance == "high"
+    assert got["CVE-2099-0100"].matched_services == ["web-php"]
+    assert got["CVE-2026-109618"].tags == ["php2shell"]
+    assert "CVE-2099-0101" not in got  # old, not KEV, not relevant: pruned
+    assert "CVE-2099-0102" in got  # KEV is kept
+    assert "CVE-2026-109618" in got  # old but relevant is kept
+    assert await w.recompute() == 0  # idempotent
+    await w.aclose()
+
+
+async def test_ingest_role_grants(
     engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
 ) -> None:
     api = ROLE_ENV["POSTGRES_API_USER"]
@@ -142,9 +177,10 @@ async def test_ingest_role_can_write_but_not_delete(
         assert await conn.scalar(
             text("SELECT has_table_privilege(:r, 'cve', 'SELECT')"), {"r": api}
         )
-        assert not await conn.scalar(
-            text("SELECT has_table_privilege(:r, 'cve', 'INSERT')"), {"r": api}
-        )
+        for p in ("INSERT", "UPDATE", "DELETE"):
+            assert not await conn.scalar(
+                text("SELECT has_table_privilege(:r, 'cve', :p)"), {"r": api, "p": p}
+            )
     async with factory() as session:
         with pytest.raises(DBAPIError):
-            await session.execute(text("DELETE FROM cve"))
+            await session.execute(text("TRUNCATE cve"))

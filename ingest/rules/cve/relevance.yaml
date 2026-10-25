@@ -1,0 +1,87 @@
+# Which public CVEs matter to SuckerPot, and which of our tags show them being exploited.
+#
+# Read by the CVE watch job (not by the tagging engine: this folder is not scanned for tag
+# rules). Edit freely; the mapping is applied to every stored CVE at the next sync.
+#
+# Matching, per service (case-insensitive, whole words):
+#   high    a CPE "vendor:product" in the NVD data matches `cpes`, or a keyword appears in the
+#           vendor or product name (for example the CISA KEV vendor/product columns);
+#   medium  a keyword appears only in the title or the description;
+#   none    no service matches.
+# `cpes` entries are "vendor:product", or just "vendor" to accept every product of a vendor.
+services:
+  - id: web-php
+    label: Apache httpd + PHP
+    sensors: [web]
+    cpes: [php:php, apache:http_server, apache:httpd]
+    keywords: [php, "apache http server", "apache httpd", mod_php]
+  - id: wordpress
+    label: WordPress
+    sensors: [web]
+    cpes: [wordpress:wordpress]
+    keywords: [wordpress]
+  - id: phpmyadmin
+    label: phpMyAdmin
+    sensors: [web]
+    cpes: [phpmyadmin:phpmyadmin]
+    keywords: [phpmyadmin]
+  - id: openssh
+    label: OpenSSH on Ubuntu
+    sensors: [ssh]
+    cpes: [openbsd:openssh, canonical:ubuntu_linux]
+    keywords: [openssh, ubuntu]
+  - id: busybox-telnet
+    label: BusyBox telnetd
+    sensors: [telnet]
+    cpes: [busybox:busybox]
+    keywords: [busybox, telnetd, telnet]
+  - id: windows-rdp
+    label: Windows Remote Desktop
+    sensors: [rdp]
+    cpes: []
+    keywords: ["remote desktop", "remote desktop services", rdp, credssp, bluekeep]
+  - id: redis
+    label: Redis
+    sensors: [redis]
+    cpes: [redis:redis, redislabs:redis]
+    keywords: [redis]
+  - id: docker-engine
+    label: Docker Engine
+    sensors: [docker]
+    cpes: [docker:docker, docker:engine, mobyproject:moby]
+    keywords: ["docker engine", moby, "docker daemon"]
+  - id: mysql
+    label: MySQL
+    sensors: [mysql]
+    cpes: [oracle:mysql, mysql:mysql, mariadb:mariadb]
+    keywords: [mysql, mariadb]
+  - id: mssql
+    label: Microsoft SQL Server
+    sensors: [mssql]
+    cpes: [microsoft:sql_server]
+    keywords: ["sql server", mssql]
+  - id: android-adb
+    label: Android ADB
+    sensors: [adb]
+    cpes: []
+    keywords: [adb, "android debug bridge"]
+  - id: windows-smb
+    label: Windows SMB
+    sensors: [smb]
+    cpes: []
+    keywords: [smb, smbv1, smbv3, "server message block", eternalblue]
+  - id: asterisk-sip
+    label: Asterisk / SIP
+    sensors: [sip]
+    cpes: [digium:asterisk, asterisk:asterisk]
+    keywords: [asterisk, sip, "session initiation protocol"]
+
+# CVE id -> the tags our rules give to sessions that exploit it. The CVE page counts the
+# sessions that carry one of these tags as "seen in our traffic".
+cve_tags:
+  - tag: php2shell
+    cves: [CVE-2026-109618, CVE-2026-109619]
+  - tag: bluekeep
+    cves: [CVE-2019-0708]
+  - tag: eternalblue
+    cves: [CVE-2017-0143, CVE-2017-0144, CVE-2017-0145, CVE-2017-0146, CVE-2017-0148]

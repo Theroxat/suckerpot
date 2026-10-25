@@ -20,6 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ingest.cve import sources
+from ingest.cve.relevance import RelevanceMap, rank_score
 from ingest.cve.sources import Batch, CveRecord, SourceError
 from ingest.enrichment.config import EnrichmentSettings
 from ingest.enrichment.reputation import reserve_quota
@@ -34,17 +35,18 @@ KEV_DAILY_QUOTA = 6  # one download per run; a few retries
 FIRST_LOOKBACK = timedelta(days=30)
 MAX_LOOKBACK = timedelta(days=30)
 OVERLAP = timedelta(days=1)
+RETENTION_DAYS = 180  # irrelevant, non-KEV CVEs older than this are pruned
 
 _UNION = "ARRAY(SELECT DISTINCT unnest(cve.{c} || excluded.{c}) ORDER BY 1)"
 
 _COLUMNS = (
     "cve_id, title, description, vendor, product, published_at, modified_at, cvss_score, "
-    "cvss_severity, cwes, ghsa_ids, refs, in_kev, kev_added_at, kev_due_date, kev_ransomware, "
-    "kev_action, sources"
+    "cvss_severity, cwes, ghsa_ids, refs, cpes, in_kev, kev_added_at, kev_due_date, "
+    "kev_ransomware, kev_action, sources"
 )
 _VALUES = (
     ":cve_id, :title, :description, :vendor, :product, :published_at, :modified_at, "
-    ":cvss_score, :cvss_severity, :cwes, :ghsa_ids, :refs, :in_kev, :kev_added_at, "
+    ":cvss_score, :cvss_severity, :cwes, :ghsa_ids, :refs, :cpes, :in_kev, :kev_added_at, "
     ":kev_due_date, :kev_ransomware, :kev_action, ARRAY[:source]"
 )
 
@@ -65,7 +67,8 @@ _UPSERTS: dict[str, str] = {
         modified_at = COALESCE(excluded.modified_at, cve.modified_at),
         cvss_score = COALESCE(excluded.cvss_score, cve.cvss_score),
         cvss_severity = COALESCE(excluded.cvss_severity, cve.cvss_severity),
-        cwes = {_UNION.format(c="cwes")}, refs = {_UNION.format(c="refs")}
+        cwes = {_UNION.format(c="cwes")}, refs = {_UNION.format(c="refs")},
+        cpes = {_UNION.format(c="cpes")}
     """,
     "github": f"""
         title = COALESCE(cve.title, excluded.title),
@@ -102,12 +105,14 @@ class CveWatch:
         settings: EnrichmentSettings,
         client: httpx.AsyncClient | None = None,
         *,
+        relevance: RelevanceMap | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self.factory = factory
         self.s = settings
         self.client = client or httpx.AsyncClient(timeout=sources.HTTP_TIMEOUT)
         self._sleep = sleep
+        self.relevance = relevance
         self._retry_at: dict[str, datetime] = {}
         self.last_error: dict[str, str] = {}
         self.test_result: dict[str, dict[str, Any]] = {}
@@ -174,6 +179,75 @@ class CveWatch:
                 await session.execute(stmt, rows[i : i + 200])
         return len(rows)
 
+    # ---- relevance and retention --------------------------------------------------------------
+    async def recompute(self) -> int:
+        """Apply the relevance mapping to every row. Returns the number of rows changed."""
+        if self.relevance is None:
+            return 0
+        async with self.factory() as session:
+            res = await session.execute(
+                text(
+                    "SELECT cve_id, vendor, product, title, description, cpes, in_kev, cvss_score, "
+                    "relevance, matched_services, tags, rank_score FROM cve"
+                )
+            )
+            rows = res.all()
+        updates: list[dict[str, Any]] = []
+        for r in rows:
+            a = self.relevance.assess(
+                cve_id=r.cve_id,
+                vendor=r.vendor,
+                product=r.product,
+                title=r.title,
+                description=r.description,
+                cpes=r.cpes,
+            )
+            score = float(r.cvss_score) if r.cvss_score is not None else None
+            new = {
+                "id": r.cve_id,
+                "rel": a.relevance,
+                "svc": a.services,
+                "tags": a.tags,
+                "rank": rank_score(a.relevance, r.in_kev, score),
+            }
+            if (r.relevance, list(r.matched_services), list(r.tags), r.rank_score) != (
+                new["rel"], new["svc"], new["tags"], new["rank"]
+            ):  # fmt: skip
+                updates.append(new)
+        stmt = text(
+            """
+            UPDATE cve SET relevance = :rel, matched_services = :svc, tags = :tags,
+                rank_score = :rank
+            WHERE cve_id = :id
+            """
+        )
+        for i in range(0, len(updates), 500):
+            async with self.factory() as session, session.begin():
+                await session.execute(stmt, updates[i : i + 500])
+        return len(updates)
+
+    async def prune(self) -> int:
+        """Retention: drop CVEs that are neither in KEV nor relevant after RETENTION_DAYS."""
+        async with self.factory() as session, session.begin():
+            res = await session.execute(
+                text(
+                    """
+                    DELETE FROM cve
+                    WHERE NOT in_kev AND relevance = 'none'
+                      AND COALESCE(published_at, first_seen_at)
+                          < now() - make_interval(days => :d)
+                    """
+                ),
+                {"d": RETENTION_DAYS},
+            )
+            return int(res.rowcount or 0)  # type: ignore[attr-defined]
+
+    async def maintenance(self) -> None:
+        changed = await self.recompute()
+        pruned = await self.prune()
+        if changed or pruned:
+            log.info("cve relevance updated for %d rows, %d pruned", changed, pruned)
+
     # ---- one source -----------------------------------------------------------------------
     async def _fetch(self, source: str, since: datetime | None) -> Batch:
         now = datetime.now(UTC)
@@ -237,6 +311,8 @@ class CveWatch:
             if last is not None and now - last < RUN_EVERY:
                 continue
             total += await self.sync_source(source)
+        if total:
+            await self.maintenance()
         return total
 
     # ---- "Test key" -----------------------------------------------------------------------
@@ -314,8 +390,12 @@ class CveWatch:
     async def run(self, publish: Callable[[dict[str, dict[str, Any]]], Awaitable[None]]) -> None:
         if not self.s.cve_watch_enabled:
             log.info("CVE watch is disabled (CVE_WATCH_ENABLED=false)")
+        first = True
         while True:
             try:
+                if first:  # a new relevance mapping applies at once, without waiting for a sync
+                    first = False
+                    await self.maintenance()
                 if self.s.cve_watch_enabled:
                     await self.run_once()
                 await publish(await self.status())

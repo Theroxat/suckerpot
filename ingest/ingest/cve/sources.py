@@ -75,6 +75,7 @@ class CveRecord:
     cwes: list[str] = field(default_factory=list)
     ghsa_ids: list[str] = field(default_factory=list)
     refs: list[str] = field(default_factory=list)
+    cpes: list[str] = field(default_factory=list)
     kev_added_at: date | None = None
     kev_due_date: date | None = None
     kev_ransomware: bool | None = None
@@ -283,6 +284,31 @@ def _nvd_cwes(weaknesses: object) -> list[object]:
     return out
 
 
+CPE_RE = re.compile(r"^cpe:2\.3:[aoh]:([a-z0-9_.\-]{1,64}):([a-z0-9_.\-]{1,64}):")
+MAX_CPES = 30
+
+
+def _nvd_cpes(configurations: object) -> list[str]:
+    """Distinct ``vendor:product`` pairs from the vulnerable CPE matches (bounded)."""
+    out: list[str] = []
+    if not isinstance(configurations, list):
+        return out
+    for conf in configurations[:50]:
+        nodes = conf.get("nodes") if isinstance(conf, dict) else None
+        for node in (nodes if isinstance(nodes, list) else [])[:50]:
+            matches = node.get("cpeMatch") if isinstance(node, dict) else None
+            for m in (matches if isinstance(matches, list) else [])[:200]:
+                crit = m.get("criteria") if isinstance(m, dict) else None
+                found = CPE_RE.match(crit.lower()) if isinstance(crit, str) else None
+                if found and m.get("vulnerable", True):
+                    pair = f"{found.group(1)}:{found.group(2)}"
+                    if pair not in out:
+                        out.append(pair)
+                if len(out) >= MAX_CPES:
+                    return out
+    return out
+
+
 def parse_nvd(doc: Any) -> tuple[Batch, int]:
     """Return the records and ``totalResults`` (for paging)."""
     if not isinstance(doc, dict) or not isinstance(doc.get("vulnerabilities"), list):
@@ -315,6 +341,7 @@ def parse_nvd(doc: Any) -> tuple[Batch, int]:
                 cvss_severity=severity,
                 cwes=clean_cwes(_nvd_cwes(cve.get("weaknesses"))),
                 refs=clean_urls(urls),
+                cpes=_nvd_cpes(cve.get("configurations")),
             )
         )
     return batch, total if isinstance(total, int) and not isinstance(total, bool) else 0
