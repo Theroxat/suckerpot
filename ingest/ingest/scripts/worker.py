@@ -14,17 +14,19 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import ARRAY, Text, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ingest.features import FeatureSettings, FeatureWorker
+from ingest.normalize import MAX_COMMANDS
 from ingest.scripts.annotations import AnnotationBase
 from ingest.scripts.library import (
     MIN_COMMANDS,
     Pair,
+    bounded_lines,
     explain_pairs,
     extract_pairs,
     script_fingerprint,
@@ -40,6 +42,7 @@ INITIAL_LOOKBACK_DAYS = 90
 BACKFILL = 200  # explanations rebuilt per cycle when the base changed
 CURSOR_KEY = "scripts_cursor"
 MAX_TEXT = 8192
+CURSOR_MARGIN = timedelta(hours=1)  # the saved progress marker stays this far behind now()
 
 
 def fit(lines: list[str], limit: int = MAX_TEXT) -> str:
@@ -84,6 +87,8 @@ class ScriptWorker(FeatureWorker):
         self.link_cap = link_cap
         self.session_budget = session_budget
         self.processed = 0
+        self.skipped = 0
+        self.rows_read = 0  # command rows fetched by the last cycle (a bound, for tests)
 
     def _db(self) -> AsyncSession:
         if self.factory is None:
@@ -143,21 +148,31 @@ class ScriptWorker(FeatureWorker):
     async def ingest_sessions(self) -> int:
         done = 0
         ts, sid = await self._cursor()
+        saved = (ts, sid)
+        self.rows_read = 0
         while done < self.session_budget:
             limit = min(BATCH, self.session_budget - done)
             async with self._db() as db, db.begin():
                 batch = await self._candidates(db, ts, sid, limit)
                 if not batch:
                     break
-                await self._load_commands(db, batch)
+                self.rows_read += await self._load_commands(db, batch)
                 groups: dict[str, list[Seen]] = {}
                 for seen in batch:
                     if len(seen.pairs) >= MIN_COMMANDS:
                         groups.setdefault(script_fingerprint(seen.pairs), []).append(seen)
                 for fp, members in groups.items():
-                    await self._store_group(db, fp, members)
+                    try:
+                        async with db.begin_nested():  # a failing group is skipped, not fatal
+                            await self._store_group(db, fp, members)
+                    except Exception as exc:  # the message may hold a statement: log the type
+                        self.skipped += 1
+                        log.warning("script group skipped (%s)", type(exc).__name__)
                 ts, sid = batch[-1].seen_at, batch[-1].session_id
-                await self._save_cursor(db, ts, sid)
+                # The saved marker trails now() by CURSOR_MARGIN, so a session that reached the
+                # database late is still picked up; sessions already linked are not re-read.
+                await self._save_cursor(db, *self._margin(saved, (ts, sid)))
+                saved = self._margin(saved, (ts, sid))
             done += len(batch)
             self.processed += len(batch)
             if len(batch) < limit:
@@ -186,30 +201,54 @@ class ScriptWorker(FeatureWorker):
         ]
 
     @staticmethod
-    async def _load_commands(db: AsyncSession, batch: list[Seen]) -> None:
+    def _margin(saved: tuple[datetime, str], reached: tuple[datetime, str]) -> tuple[datetime, str]:
+        """The progress marker to save: never behind ``saved``, never within the margin of now."""
+        floor = datetime.now(UTC) - CURSOR_MARGIN
+        ts = min(reached[0], floor)
+        return max(saved, (ts, "" if ts != reached[0] else reached[1]))
+
+    @staticmethod
+    async def _load_commands(db: AsyncSession, batch: list[Seen]) -> int:
+        """Fill ``pairs`` of every session; at most MAX_COMMANDS rows per session are read."""
         by_id = {s.session_id: s for s in batch}
         stmt = text(
             """
-            SELECT session_id,
-                   left(COALESCE(data ->> 'input', data ->> 'command', ''), 1024) AS cmd,
-                   COALESCE(data ->> 'demo', '') = 'true' AS demo
-            FROM events
-            WHERE type = 'command' AND session_id = ANY(:ids) AND ts >= :lo AND ts <= :hi
-            ORDER BY session_id, ts, id
+            SELECT s.session_id, e.cmd, e.demo
+            FROM unnest(CAST(:ids AS text[])) AS s(session_id)
+            CROSS JOIN LATERAL (
+                SELECT left(COALESCE(data ->> 'input', data ->> 'command', ''), 1024) AS cmd,
+                       COALESCE(data ->> 'demo', '') = 'true' AS demo
+                FROM events
+                WHERE type = 'command' AND session_id = s.session_id
+                  AND ts >= :lo AND ts <= :hi
+                ORDER BY ts, id
+                LIMIT :cap
+            ) AS e
             """
         ).bindparams(bindparam("ids", type_=ARRAY(Text)))
         lo = min(s.started_at for s in batch)
         hi = max(s.seen_at for s in batch)
-        rows = await db.execute(stmt, {"ids": list(by_id), "lo": lo, "hi": hi})
+        rows = await db.execute(stmt, {"ids": list(by_id), "lo": lo, "hi": hi, "cap": MAX_COMMANDS})
         commands: dict[str, list[str]] = {}
+        demo: dict[str, bool] = {}
+        count = 0
         for r in rows:
+            count += 1
             commands.setdefault(r.session_id, []).append(r.cmd)
-            by_id[r.session_id].demo = r.demo
+            demo[r.session_id] = demo.get(r.session_id, True) and r.demo
         for sid, cmds in commands.items():
             by_id[sid].pairs = extract_pairs(cmds)
+            by_id[sid].demo = demo[sid]
+        return count
 
     async def _store_group(self, db: AsyncSession, fp: str, members: list[Seen]) -> None:
         members.sort(key=lambda m: (m.seen_at, m.session_id))
+        previous = (
+            await db.execute(
+                text("SELECT last_seen FROM scripts WHERE fingerprint = decode(:fp, 'hex')"),
+                {"fp": fp},
+            )
+        ).scalar_one_or_none()
         first = members[0]
         explained = explain_pairs(first.pairs, self.annotations)
         sensors = sorted({m.sensor for m in members})
@@ -254,6 +293,12 @@ class ScriptWorker(FeatureWorker):
             )
         ).scalar_one()
         new_sources = 0
+        if linked >= self.link_cap and previous is not None:
+            # Past the cap there is no link to say "already counted": a session older than the
+            # script's newest counted one is a re-read, not a new run.
+            members = [m for m in members if m.seen_at > previous]
+            if not members:
+                return
         if linked < self.link_cap:  # past the cap the source count stops growing (lower bound)
             known = {
                 r.ip
@@ -307,8 +352,8 @@ class ScriptWorker(FeatureWorker):
             {
                 "i": script_id,
                 "v": self.annotations.version,
-                "lines": json.dumps(explained["lines"]),
-                "summary": explained["summary"],
+                "lines": json.dumps(bounded_lines(explained["lines"])),
+                "summary": explained["summary"][:600],
             },
         )
 
@@ -330,16 +375,21 @@ class ScriptWorker(FeatureWorker):
                 )
             ).all()
             for r in rows:
-                explained = explain_pairs(
-                    extract_pairs(r.sample_text.splitlines()), self.annotations
-                )
-                await self._save_explanation(db, r.id, explained)
-                await db.execute(
-                    text("UPDATE scripts SET techniques = :t WHERE id = :i").bindparams(
-                        bindparam("t", type_=ARRAY(Text))
-                    ),
-                    {"t": explained["techniques"], "i": r.id},
-                )
+                try:
+                    async with db.begin_nested():
+                        explained = explain_pairs(
+                            extract_pairs(r.sample_text.splitlines()), self.annotations
+                        )
+                        await self._save_explanation(db, r.id, explained)
+                        await db.execute(
+                            text("UPDATE scripts SET techniques = :t WHERE id = :i").bindparams(
+                                bindparam("t", type_=ARRAY(Text))
+                            ),
+                            {"t": explained["techniques"], "i": r.id},
+                        )
+                except Exception as exc:
+                    self.skipped += 1
+                    log.warning("script explanation skipped (%s)", type(exc).__name__)
         return len(rows)
 
     # ---- campaigns (M15 maps the 'script' key; this only reads it) ----------------------------

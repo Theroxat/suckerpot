@@ -8,6 +8,7 @@ page shows, and what the annotation base reads when it can (``chmod 777`` versus
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -56,6 +57,17 @@ def script_fingerprint(pairs: list[Pair]) -> str:
     return fingerprint([p.norm for p in pairs])
 
 
+MAX_LINES_JSON = 60_000  # bytes; the table refuses more than 64 KiB
+
+
+def bounded_lines(lines: list[dict[str, Any]], limit: int = MAX_LINES_JSON) -> list[dict[str, Any]]:
+    """The longest prefix of ``lines`` whose JSON form fits ``limit`` bytes."""
+    out = list(lines)
+    while out and len(json.dumps(out).encode()) > limit:
+        out.pop()
+    return out
+
+
 def _join(phrases: list[str]) -> str:
     if len(phrases) == 1:
         return phrases[0]
@@ -71,7 +83,7 @@ def explain_pairs(pairs: list[Pair], base: AnnotationBase) -> dict[str, Any]:
     unknown = 0
     for n, pair in enumerate(pairs, start=1):
         entry = base.lookup(pair.raw) or base.lookup(pair.norm)
-        item: dict[str, Any] = {"n": n, "text": pair.norm}
+        item: dict[str, Any] = {"n": n, "text": pair.norm[:MAX_RAW_LINE]}
         if entry is None:
             unknown += 1
             item.update(explanation=UNKNOWN, risk=None, technique=None, rule=None)
