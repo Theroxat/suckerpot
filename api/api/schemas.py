@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict
 
@@ -136,8 +136,27 @@ class GeoipStatus(BaseModel):
     attribution: str | None
 
 
-class ReputationProvider(BaseModel):
+class KeyTest(BaseModel):
+    ok: bool
+    error: str | None  # no_key | quota_exhausted | auth | rate_limited | error
+    checked_at: datetime | None
+
+
+class KeyInfo(BaseModel):
+    """Where a provider's key comes from. The key itself is never exposed."""
+
     configured: bool
+    source: Literal["env", "settings"] | None
+    last4: str | None  # only for keys set in Settings
+    updated_at: datetime | None
+    secret_error: str | None  # cannot_decrypt | no_encryption_key
+    pending_apply: bool  # saved, but ingest has not picked it up yet
+    test: KeyTest | None
+    test_pending: bool
+    test_requested_at: datetime | None
+
+
+class ReputationProvider(KeyInfo):
     daily_quota: int | None
     used_today: int
     disabled: str | None
@@ -145,8 +164,15 @@ class ReputationProvider(BaseModel):
     last_error: str | None
 
 
+class KeyEditing(BaseModel):
+    enabled: bool
+    reason: str | None
+
+
 class EnrichmentSettings(BaseModel):
     geoip: GeoipStatus
     abuseipdb: ReputationProvider
     greynoise: ReputationProvider
+    maxmind: KeyInfo
+    key_editing: KeyEditing
     reported_at: datetime | None

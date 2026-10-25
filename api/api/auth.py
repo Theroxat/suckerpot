@@ -195,6 +195,7 @@ class AuthService:
         self._revoked: dict[str, int] = {}
         self._per_ip: dict[str, _Window] = {}
         self._global = _Window()
+        self._scoped_global: dict[str, _Window] = {}
         self._verify_sem = asyncio.Semaphore(MAX_VERIFY_CONCURRENCY)
         self._pending = 0
 
@@ -293,11 +294,19 @@ class AuthService:
         except InvalidHashError:
             return False
 
-    def rate_limited(self, ip: str) -> int | None:
-        """Record an attempt. Returns Retry-After seconds when over the limit, else None."""
+    def rate_limited(self, ip: str, scope: str = "") -> int | None:
+        """Record an attempt. Returns Retry-After seconds when over the limit, else None.
+
+        ``scope`` gives another action (e.g. password re-authentication) its own budget, with the
+        same limits as login, so it cannot be used to guess the password around the login limit.
+        """
         ip = rate_key(ip)
+        glob = self._global
+        if scope:
+            ip = f"{scope}|{ip}"
+            glob = self._scoped_global.setdefault(scope, _Window())
         now = self.clock()
-        self._global.prune(now)
+        glob.prune(now)
         win = self._per_ip.get(ip)
         if win is None:
             if len(self._per_ip) >= MAX_TRACKED_IPS:
@@ -311,12 +320,12 @@ class AuthService:
         win.prune(now)
         for w, limit in (
             (win, self.settings.rate_per_ip),
-            (self._global, self.settings.rate_global),
+            (glob, self.settings.rate_global),
         ):
             if len(w.hits) >= limit:
                 return max(1, int(RATE_WINDOW_S - (now - w.hits[0])) + 1)
         win.hits.append(now)
-        self._global.hits.append(now)
+        glob.hits.append(now)
         return None
 
     def client_ip(self, conn: HTTPConnection) -> str:
