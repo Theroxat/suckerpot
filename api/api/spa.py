@@ -46,7 +46,10 @@ def install_security_headers(app: FastAPI, *, enable_docs: bool) -> None:
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         # Swagger UI/ReDoc load scripts from a CDN; only relax the policy for those pages.
-        if not (enable_docs and request.url.path in DOC_PATHS):
+        # A route may set a stricter policy of its own (the weekly report page): keep it.
+        if "content-security-policy" not in response.headers and not (
+            enable_docs and request.url.path in DOC_PATHS
+        ):
             response.headers["Content-Security-Policy"] = CSP
         return response
 
