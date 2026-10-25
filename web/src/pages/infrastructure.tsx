@@ -92,6 +92,7 @@ export function InfrastructurePage() {
   const [role, setRole] = useUrlParam("role")
   const [known, setKnown] = useUrlParam("known")
   const [family] = useUrlParam("family")
+  const [range, setRange] = useUrlParam("range")
   const [q] = useUrlParam("q")
   const [openId, setOpenId] = useUrlParam("indicator")
   const hours = windowHours(win)
@@ -100,6 +101,7 @@ export function InfrastructurePage() {
     role: role ?? undefined,
     known: known ?? undefined,
     family: family ?? undefined,
+    hours: range === "all" ? undefined : String(hours),
     q: q ?? undefined,
   }
   const open = (id: number) => setOpenId(String(id))
@@ -234,18 +236,30 @@ export function InfrastructurePage() {
         )}
       </FindingCard>
 
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <h2 className="text-sm font-medium text-fg">All indicators</h2>
-        <p className="text-xs text-fg-muted">
-          Every time window, most recently seen first. The diagram above covers the last{" "}
-          {WINDOWS.find((w) => w.hours === hours)?.label ?? `${Math.round(hours / 24)} days`}.
-        </p>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h2 className="text-sm font-medium text-fg">Indicators</h2>
+          <p className="text-xs text-fg-muted">
+            {range === "all"
+              ? "Every indicator on record, most recently seen first."
+              : `Seen in the last ${WINDOWS.find((w) => w.hours === hours)?.label ?? `${Math.round(hours / 24)} days`}, the same window as the diagram.`}
+          </p>
+        </div>
+        <SegmentedControl
+          label="Table time range"
+          value={range === "all" ? "all" : "window"}
+          onChange={(v) => setRange(v === "all" ? "all" : null)}
+          options={[
+            { value: "window", label: "Diagram window" },
+            { value: "all", label: "All time" },
+          ]}
+        />
       </div>
 
       <FilterBar
         className="mb-4"
         chips={[{ param: "family", label: "Family" }]}
-        alsoClears={["type", "role", "known", "q"]}
+        alsoClears={["type", "role", "known", "q", "range"]}
       >
         <SegmentedControl
           label="Indicator type"
