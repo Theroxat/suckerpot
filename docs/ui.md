@@ -91,7 +91,7 @@ With "reduce motion" set in the system, the arcs do not animate, the ticker does
 
 ## The live feed
 
-The Live page and the status dot in the sidebar share one connection per browser tab.
+The Live page and the status dot in the header share one connection per browser tab.
 
 - **WebSocket.** The app connects to `/api/v1/live`. It receives the 50 newest events first, then each new event, and statistics every 5 seconds.
 - **Reconnects.** When the socket closes, the app retries with exponential backoff and jitter (1 s, 2 s, 4 s, up to 30 s). The dot shows "Reconnecting".
@@ -110,7 +110,7 @@ The Live page and the status dot in the sidebar share one connection per browser
 
 **Glossary.** Security words in the interface (ASN, KEV, campaign, indicator, and more) have a dotted underline. Hover, tap or press Enter on one to read what it means in a sentence or two.
 
-**Research scanners.** Known, harmless crawlers such as Censys and Shodan are labelled when they connect and hidden by default, so they do not drown the real attacks. The **Hide research scanners** switch in the sidebar footer shows them again, and a line under it says how many sessions the last 24 hours hid. The list lives in `ingest/rules/scanners.yaml`. A session that signs in, runs a command, downloads a file or carries an exploit tag is never labelled a scanner, whatever it claims to be. Charts that cover more than a few days come from pre-computed totals that do not separate scanners.
+**Research scanners.** Known, harmless crawlers such as Censys and Shodan are labelled when they connect and hidden by default, so they do not drown the real attacks. The **Hide research scanners** switch in the header (the navigation drawer on a phone) shows them again, with the number of sessions the last 24 hours hid. The list lives in `ingest/rules/scanners.yaml`. A scanner is recognised by the network that owns its address, never by what it says about itself (a user-agent can be forged). Even then a session stays labelled only while it just looks around: it may connect, probe and send GET, HEAD or OPTIONS requests. A login attempt, a command, a download, a POST, an exploit flag or an attack tag makes it a normal session for good, and its earlier events too. Charts that cover more than a few days come from pre-computed totals that do not separate scanners, so they include scanner traffic.
 
 **Motion.** Cards and pages fade in softly. With `prefers-reduced-motion`, or `?motion=off`, nothing moves.
 

@@ -2,50 +2,40 @@
 # they come from. A session from one of them is labelled "benign" and hidden from the dashboard
 # by default (a sidebar switch shows it again). Nothing is blocked or dropped: it is only a label.
 #
-# A scanner matches by the network that owns the address (``asns``, ``orgs``, from the local GeoIP
-# database, which an attacker cannot forge) or by the HTTP user-agent it announces
-# (``user_agents``, which an attacker CAN forge). Matching is a case-insensitive substring test.
-# Whatever the match, a session that ran a command, signed in, downloaded a file or carries an
-# exploit tag is never labelled benign (see ingest/scanners.py), so a forged user-agent cannot
-# hide an attack.
+# A scanner is recognised only by the network that owns the address (``asns``, ``orgs``: a
+# case-insensitive substring of the organisation name), both from the local GeoIP database, which
+# an attacker cannot forge. The HTTP user-agent is never used: it is attacker-controlled.
+# Even then a session is labelled benign only while it just looks around (connects, probes, sends
+# GET, HEAD or OPTIONS: no login, command, download, exploit flag or attack tag): see
+# ingest/scanners.py. One request that does more makes it non-benign for good.
 scanners:
   - name: Censys
     asns: [398324, 398722, 398705]
     orgs: [censys]
-    user_agents: [censysinspect, about.censys.io]
 
   - name: Shodan
     orgs: [shodan]
-    user_agents: [shodan.io]
 
   - name: Shadowserver
     orgs: [shadowserver]
-    user_agents: [shadowserver.org]
 
   - name: BinaryEdge
     orgs: [binaryedge]
-    user_agents: [binaryedge]
 
   - name: Palo Alto Cortex Xpanse
-    user_agents: ["expanse, a palo alto networks"]
-
-  - name: Internet Measurement
-    user_agents: [internet-measurement.com]
+    orgs: [expanse]
 
   - name: Net Systems Research
-    user_agents: [netsystemsresearch]
+    orgs: [net systems research]
 
   - name: LeakIX
     orgs: [leakix]
-    user_agents: [leakix]
 
   - name: ONYPHE
     orgs: [onyphe]
-    user_agents: [onyphe]
 
   - name: Netlas
     orgs: [netlas]
-    user_agents: [netlas.io]
 
   - name: Stretchoid
     orgs: [stretchoid]

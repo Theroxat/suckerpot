@@ -35,7 +35,7 @@ from suckerpot_db.models import (
 from api.benign import IncludeBenign, visible_sessions
 from api.deps import DbSession
 from api.indicators import defang
-from api.insights_rules import TAG_LABELS
+from api.insights_rules import TAG_LABELS, TAG_SEVERITY
 from api.sensors import SENSOR_LABELS
 from api.trends import new_values
 
@@ -46,7 +46,8 @@ NEW_WINDOW = timedelta(days=7)
 MAX_ITEMS = 3
 CACHE_SECONDS = 60.0
 BLOCK_SCORE = 70
-SEVERE_TAGS = ["malware-drop", "php2shell", "sql-rce", "container-escape", "eternalblue"]
+# One source of truth for what is severe: the insight rules' tag table.
+SEVERE_TAGS = sorted(t for t, level in TAG_SEVERITY.items() if level == "severe")
 NEW_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("asn", "network", "networks"),
     ("url", "URL", "URLs"),
@@ -107,9 +108,11 @@ def trend_phrase(current: int, previous: int) -> str:
     """ ", 38% more than the day before" once the change is big enough to mean something."""
     if previous < 10 or current < 10:
         return ""
+    if current >= 2 * previous:
+        return f", {round(current / previous):,} times as many as the day before"
     change = round((current - previous) / previous * 100)
     if change >= 25:
-        return f", {change}% more than the day before"
+        return f", {change:,}% more than the day before"
     if change <= -25:
         return f", {-change}% fewer than the day before"
     return ""

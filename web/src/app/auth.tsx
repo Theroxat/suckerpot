@@ -5,6 +5,7 @@ import { Navigate, Outlet, useLocation } from "react-router"
 import { PageSkeleton } from "@/components/skeletons"
 import { setUnauthorizedHandler } from "@/lib/api"
 import { demoMode } from "./demo-role"
+import { clearRecentSearches } from "@/lib/search"
 import { fetchMe, loginRequest, logoutRequest, safeNext, type AuthUser } from "@/lib/auth-api"
 
 /** Mock and demo builds have no backend: the visitor is always signed in. */
@@ -115,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     generation.current++
     setSignedOut(true)
     queryClient.clear()
+    clearRecentSearches() // what one person searched for must not greet the next
     if (!AUTH_BYPASS) apply(null)
   }, [apply, queryClient])
 

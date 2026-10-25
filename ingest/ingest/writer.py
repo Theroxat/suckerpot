@@ -34,7 +34,7 @@ from ingest.bruteforce import TAG as BRUTE_TAG
 from ingest.diskguard import DiskGuard
 from ingest.enrichment.enricher import Enricher
 from ingest.indicator_store import store_indicators
-from ingest.scanners import SEVERE_TAGS, stays_benign
+from ingest.scanners import event_is_benign_safe, stays_benign
 
 log = logging.getLogger(__name__)
 
@@ -110,14 +110,22 @@ async def _cached_reputation(
     return {ip: (score, noise) for ip, score, noise in (await session.execute(stmt)).all()}
 
 
+async def _demoted_sessions(session: AsyncSession, ids: Sequence[str]) -> frozenset[str]:
+    """Sessions that exist and are already not benign (a scanner that did more earlier)."""
+    stmt = select(SessionRow.session_id).where(SessionRow.session_id.in_(ids), ~SessionRow.benign)
+    return frozenset((await session.scalars(stmt)).all())
+
+
 def _enrich_rows(
     events: Sequence[Event],
     rows: list[dict[str, Any]],
     deltas: list[SessionDelta],
     enricher: Enricher,
     reputation: dict[str, tuple[int | None, bool | None]],
+    demoted: frozenset[str] = frozenset(),
 ) -> None:
     by_session = {d.session_id: d for d in deltas}
+    safe: list[bool] = []
     for ev, row in zip(events, rows, strict=True):
         ip = str(ev.src_ip)
         geo = enricher.geo.lookup(ip)
@@ -134,25 +142,27 @@ def _enrich_rows(
             abuse_score=score, known_scanner=noise, tags=tags,
         )  # fmt: skip
         d = by_session[ev.session_id]
-        scanner = enricher.scanners.match(
-            asn=geo.asn, org=geo.org, user_agent=row["data"].get("user_agent")
-        )
+        # Only the network can name a scanner (a user-agent is attacker-controlled), and only
+        # a session that did nothing but look around stays benign (see ingest/scanners.py).
+        scanner = enricher.scanners.match(asn=geo.asn, org=geo.org)
         if scanner is not None:
-            d.benign, d.scanner_name = True, d.scanner_name or scanner
+            d.scanner_name = d.scanner_name or scanner
+        ok = event_is_benign_safe(str(ev.type), row["data"], tags)
+        safe.append(ok)
+        if not ok:
+            d.non_benign = True
         d.tags.update(tags)
         d.techniques.update(techniques)
         if d.country is None and geo.country is not None:
             d.country, d.city, d.asn, d.org = geo.country, geo.city, geo.asn, geo.org
         d.abuse_score = score if score is not None else d.abuse_score
         d.known_scanner = noise if noise is not None else d.known_scanner
-    # Events of a scanner session carry the flag (new rows only), except the ones that did more
-    # than look around; the session itself is re-checked after the upsert (_apply_session_rules).
-    for row, ev in zip(rows, events, strict=True):
-        row["benign"] = (
-            by_session[ev.session_id].benign
-            and str(ev.type) not in ("command", "download_attempt")
-            and SEVERE_TAGS.isdisjoint(row["tags"])
-        )
+    # The session verdict comes first, then every event follows it (new rows only). A session
+    # already non-benign in the database never turns benign again.
+    for d in deltas:
+        d.benign = d.scanner_name is not None and not d.non_benign and d.session_id not in demoted
+    for row, ev, ok in zip(rows, events, safe, strict=True):
+        row["benign"] = by_session[ev.session_id].benign and ok
 
 
 async def write_batch(
@@ -172,7 +182,8 @@ async def write_batch(
         if enricher is not None:
             ips = sorted({str(e.src_ip) for e in events})
             reputation = await _cached_reputation(session, ips)
-            _enrich_rows(events, rows, deltas, enricher, reputation)
+            demoted = await _demoted_sessions(session, [d.session_id for d in deltas])
+            _enrich_rows(events, rows, deltas, enricher, reputation, demoted)
             if enricher.attack is not None:
                 prior = await _prior_techniques(session, [d.session_id for d in deltas])
         if degraded and guard is not None:
@@ -203,13 +214,13 @@ async def write_batch(
                 "tags": _UNION_TAGS,
                 "client_tool": func.coalesce(ex.client_tool, t.c.client_tool),
                 "techniques": _UNION_TECHNIQUES,
-                "benign": t.c.benign | ex.benign,
+                "benign": t.c.benign & ex.benign,
                 "scanner_name": func.coalesce(t.c.scanner_name, ex.scanner_name),
             },
         ).returning(
             t.c.session_id, t.c.sensor, t.c.event_count, t.c.login_attempts, t.c.login_success,
             t.c.commands, t.c.downloads, t.c.http_requests, t.c.known_scanner, t.c.abuse_score,
-            t.c.tags, t.c.benign,
+            t.c.tags, t.c.benign, t.c.scanner_name,
         )  # fmt: skip
         result = await session.execute(upsert, [delta_to_row(d) for d in deltas])
         if enricher is not None:
@@ -226,6 +237,7 @@ async def _apply_session_rules(
     """Evaluate session-scope rules on the upserted counters and add any new tags."""
     updates: list[dict[str, Any]] = []
     demote: list[str] = []
+    retract: list[str] = []
     for r in rows:
         facts = {
             "session.sensor": r.sensor,
@@ -248,10 +260,24 @@ async def _apply_session_rules(
         if r.benign and not stays_benign(
             commands=r.commands,
             downloads=r.downloads,
+            login_attempts=r.login_attempts,
             login_success=r.login_success,
             tags={*(r.tags or []), *new},
         ):
             demote.append(r.session_id)
+        # A session named as a scanner that is not benign (now, or since an earlier batch): its
+        # earlier events must not keep the flag.
+        if r.scanner_name is not None and (not r.benign or r.session_id in demote):
+            retract.append(r.session_id)
+    if retract:
+        await session.execute(
+            text(
+                "UPDATE events e SET benign = false FROM sessions s "
+                "WHERE s.session_id = ANY(:ids) AND e.session_id = s.session_id "
+                "AND e.ts >= s.started_at AND e.benign IS TRUE"
+            ).bindparams(bindparam("ids", type_=ARRAY(Text))),
+            {"ids": retract},
+        )
     if demote:
         await session.execute(
             text("UPDATE sessions SET benign = false WHERE session_id = ANY(:ids)").bindparams(

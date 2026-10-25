@@ -8,8 +8,8 @@ Revises: 0014
   metadata-only ADD COLUMN, safe on the compressed hypertable).
 * Prefix indexes for the header search (indicator values and campaign names).
 
-Known limitation: the continuous aggregates are not split by ``benign``; long-window charts say
-how many research-scanner events they include.
+Known limitation: the continuous aggregates are not split by ``benign``, so long-window charts
+include research-scanner events (the web UI says so in its documentation, not per chart).
 """
 
 from collections.abc import Sequence
