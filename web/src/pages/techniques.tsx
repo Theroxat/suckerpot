@@ -77,7 +77,7 @@ export function TechniquesPage() {
               ? "Reading the techniques…"
               : "Nothing to show for this window."
         }
-        detail="Each row is something attackers did, grouped by the stage of the attack. Darker means more sessions that day."
+        detail="Each row is something attackers did, grouped by the stage of the attack. The stronger a cell, the more sessions that day."
       >
         {matrix.isPending ? (
           <div role="status" aria-label="Loading" className="space-y-3">

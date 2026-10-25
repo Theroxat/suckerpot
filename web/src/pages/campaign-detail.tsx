@@ -22,12 +22,13 @@ import { ApiError, api, queryKeys } from "@/lib/api"
 import {
   dailyFromHourly,
   describeScale,
+  formatDay,
   stageTrailText,
   statusLabel,
   type Campaign,
   type CampaignTimeline,
 } from "@/lib/campaigns"
-import { formatAbsolute, formatNumber, plural } from "@/lib/format"
+import { formatNumber, plural } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 const TIMELINE_DAYS = 7
@@ -43,9 +44,56 @@ function Meta({ label, children }: { label: string; children: React.ReactNode })
 }
 
 function activityFinding(t: CampaignTimeline): string {
-  if (t.linked === 0) return "No sessions in the last 7 days."
-  const peak = t.points.reduce((best, p) => Math.max(best, p.sessions), 0)
-  return `${plural(t.linked, "session")} in the last 7 days, at most ${plural(peak, "session")} in one hour.`
+  if (t.linked === 0) return `No sessions in the last ${TIMELINE_DAYS} days.`
+  const days = dailyFromHourly(t.points, TIMELINE_DAYS)
+  const busiest = days.reduce(
+    (best, d) => (d.events > best.events ? d : best),
+    days[0] ?? { day: "", events: 0 },
+  )
+  const active = days.filter((d) => d.events > 0).length
+  const lead = `${plural(t.linked, "session")} in the last ${TIMELINE_DAYS} days`
+  if (active <= 1) return `${lead}, all on ${formatDay(busiest.day)}.`
+  return `${lead}, on ${active} different days. The busiest was ${formatDay(busiest.day)} with ${plural(busiest.events, "session")}.`
+}
+
+function sessionsFinding(total: number, shown: number | null): string {
+  if (shown === 0) return `None of the ${plural(total, "session")} is still stored.`
+  if (shown !== null && total > shown)
+    return `The latest ${shown} of ${formatNumber(total)} sessions.`
+  return `${plural(total, "session")}, newest first.`
+}
+
+/** The advice, first sentence as the finding and the rest as an ordered checklist. */
+function WhatToDo({
+  tips,
+  className,
+}: {
+  tips: readonly string[] | undefined
+  className?: string
+}) {
+  return (
+    <FindingCard
+      className={className}
+      eyebrow="What to do"
+      finding={tips?.[0] ?? "Working out what to do…"}
+      detail={tips && tips.length > 1 ? "Then, in this order:" : undefined}
+    >
+      {tips && tips.length > 1 ? (
+        <ol className="space-y-2.5">
+          {tips.slice(1).map((tip) => (
+            <li key={tip} className="flex gap-2.5 text-sm text-fg">
+              <ShieldCheck
+                aria-hidden
+                className="mt-0.5 size-4 shrink-0 text-fg-subtle"
+                strokeWidth={1.75}
+              />
+              <span className="text-pretty">{tip}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </FindingCard>
+  )
 }
 
 function Back() {
@@ -192,7 +240,7 @@ export function CampaignDetailPage() {
           </Meta>
           <Meta label="Networks">{formatNumber(c.asns.length)}</Meta>
           <Meta label="First seen">
-            <time dateTime={c.first_seen}>{formatAbsolute(c.first_seen)}</time>
+            <RelativeTime iso={c.first_seen} className="text-sm font-medium text-fg" />
           </Meta>
           <Meta label="Last seen">
             <RelativeTime iso={c.last_seen} className="text-sm font-medium text-fg" />
@@ -209,9 +257,9 @@ export function CampaignDetailPage() {
                 ? `${plural(c.stages.length, "stage")}: ${stageTrailText(c.stages)}.`
                 : "Reading the story…"
             }
-            detail="Each step is in plain English, with the MITRE ATT&CK techniques behind it."
+            detail="Each step in plain English, with the MITRE ATT&CK techniques behind it."
           >
-            {c ? <StageTrail stages={c.stages} labels className="mb-5 hidden sm:block" /> : null}
+            {c ? <StageTrail stages={c.stages} variant="steps" className="mb-6" /> : null}
             {story.isPending ? (
               <div role="status" aria-label="Loading" className="space-y-4">
                 <Skeleton className="h-16 w-full" />
@@ -221,7 +269,7 @@ export function CampaignDetailPage() {
             ) : story.isError ? (
               <p className="text-sm text-fg-muted">Could not load the story.</p>
             ) : st && st.stages.length > 0 ? (
-              <StoryStages stages={st.stages} campaignId={id} />
+              <StoryStages stages={st.stages} campaignId={id} className="border-t pt-5" />
             ) : (
               <EmptyState
                 variant="bare"
@@ -232,6 +280,9 @@ export function CampaignDetailPage() {
               />
             )}
           </FindingCard>
+
+          {/* Phones and tablets: what to do comes right after the story, not after every card. */}
+          <WhatToDo tips={st?.what_to_do} className="lg:hidden" />
 
           {st?.excerpt ? (
             <FindingCard
@@ -266,69 +317,10 @@ export function CampaignDetailPage() {
               />
             )}
           </FindingCard>
-
-          <FindingCard
-            eyebrow="Sessions"
-            finding={
-              c
-                ? c.sessions > SESSIONS_SHOWN
-                  ? `The latest ${SESSIONS_SHOWN} of ${formatNumber(c.sessions)} sessions.`
-                  : `${plural(c.sessions, "session")}.`
-                : "…"
-            }
-            bodyClassName="px-0 sm:px-0 pt-2 pb-0 sm:pb-0"
-            footer={
-              <Link
-                className="inline-flex items-center gap-1.5 font-medium text-fg hover:underline hover:underline-offset-4"
-                to={`/attacks?campaign_id=${id}`}
-              >
-                See every session in Attacks <ArrowRight aria-hidden className="size-3.5" />
-              </Link>
-            }
-          >
-            {sessions.isPending ? (
-              <SkeletonList rows={4} />
-            ) : sessionItems.length === 0 ? (
-              <EmptyState
-                variant="bare"
-                icon={FileQuestion}
-                title="The raw sessions have aged out"
-                description="Sessions are kept for a limited time. The counters above stay."
-                className="py-8"
-              />
-            ) : (
-              <ul aria-label="Sessions" className="divide-y border-t">
-                {sessionItems.map((s) => (
-                  <li key={s.session_id}>
-                    <SessionRow session={s} masked={masked} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </FindingCard>
         </div>
 
         <div className="space-y-4 self-start">
-          <FindingCard
-            eyebrow="What to do"
-            finding={st?.what_to_do[0] ?? "Working out what to do…"}
-            detail={st && st.what_to_do.length > 1 ? "Then, in this order:" : undefined}
-          >
-            {st && st.what_to_do.length > 1 ? (
-              <ul className="space-y-2.5">
-                {st.what_to_do.slice(1).map((tip) => (
-                  <li key={tip} className="flex gap-2.5 text-sm text-fg">
-                    <ShieldCheck
-                      aria-hidden
-                      className="mt-0.5 size-4 shrink-0 text-fg-subtle"
-                      strokeWidth={1.75}
-                    />
-                    <span className="text-pretty">{tip}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </FindingCard>
+          <WhatToDo tips={st?.what_to_do} className="hidden lg:block" />
 
           <FindingCard
             eyebrow="What ties it together"
@@ -348,6 +340,46 @@ export function CampaignDetailPage() {
             ) : null}
           </FindingCard>
         </div>
+
+        {/* Full width, so each session keeps its one-line story instead of a truncated stub. */}
+        <FindingCard
+          className="lg:col-span-3"
+          eyebrow="Sessions"
+          finding={
+            c ? sessionsFinding(c.sessions, sessions.isSuccess ? sessionItems.length : null) : "…"
+          }
+          bodyClassName="px-0 sm:px-0 pt-2 pb-0 sm:pb-0"
+          footer={
+            sessionItems.length > 0 ? (
+              <Link
+                className="inline-flex items-center gap-1.5 font-medium text-fg hover:underline hover:underline-offset-4"
+                to={`/attacks?campaign_id=${id}`}
+              >
+                See every session in Attacks <ArrowRight aria-hidden className="size-3.5" />
+              </Link>
+            ) : undefined
+          }
+        >
+          {sessions.isPending ? (
+            <SkeletonList rows={4} />
+          ) : sessionItems.length === 0 ? (
+            <EmptyState
+              variant="bare"
+              icon={FileQuestion}
+              title="The raw sessions have aged out"
+              description="Sessions are kept for a limited time. The counters above stay."
+              className="py-8"
+            />
+          ) : (
+            <ul aria-label="Sessions" className="divide-y border-t">
+              {sessionItems.map((s) => (
+                <li key={s.session_id}>
+                  <SessionRow session={s} masked={masked} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </FindingCard>
       </div>
     </>
   )

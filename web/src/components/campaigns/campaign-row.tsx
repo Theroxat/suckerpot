@@ -8,7 +8,7 @@ import { describeScale, statusLabel, type Campaign } from "@/lib/campaigns"
 import { cn } from "@/lib/utils"
 
 /** The grid shared by the list header and its rows (desktop). */
-export const CAMPAIGN_GRID = "md:grid-cols-[minmax(0,1.6fr)_9rem_minmax(0,1fr)_6rem] md:gap-x-5"
+export const CAMPAIGN_GRID = "md:grid-cols-[minmax(0,1.6fr)_10.5rem_minmax(0,1fr)_6rem] md:gap-x-5"
 
 function StatusChip({ status }: { status: Campaign["status"] }) {
   const active = status === "active"

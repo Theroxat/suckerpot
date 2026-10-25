@@ -156,6 +156,14 @@ Pages for people who act at their company: block, detect, check exposure. Each o
 - Kinds have a title (`label`, "IP addresses"), a singular (`singular`, "IP address") and an in-sentence form (`phrase`, "IP addresses and domains"). Never derive one from the other with string tricks.
 - The feeds-off state keeps the tab: the finding says feeds are off, a dashed note says how to turn them on, and "Create token" is disabled.
 
+## Campaigns and techniques
+
+A campaign is told as up to six **stages**, always in story order: Looking around, Getting in, Running code, Staying in, Bringing tools, The goal. Stages are neutral: each has one icon (`components/campaigns/stage-icons.ts`) shown next to its name, and never a hue (a hue means a sensor family or a severity). Seen and not seen differ by shape and words, not colour.
+
+- **List** (`CampaignRow`): severity icon, name, scale in words with flags, a compact `StageTrail` (six slots in story order: an icon in a box where the stage was seen, a dot where it was not, and "3 stages, up to bringing tools" under it), sensor badges, status and last seen.
+- **Detail**, top to bottom: header (severity, status, sensors, malware family, one sentence), the counters strip, then "How the attack unfolded": the six-step stepper (`StageTrail variant="steps"`, solid ring seen, dashed ring not seen) and the numbered `StoryStages` (a plain question, one sentence, ATT&CK chips that open this campaign's matching sessions plus an external link). On phones and tablets **What to do** comes right after the story; on desktop it heads the side column above the clues. Then a real excerpt (repeated lines folded into "× 4"), activity per day, and the latest sessions full width so each row keeps its one-line story.
+- **Techniques**: the heatmap groups rows by stage (icon and name in each group heading), uses the neutral five-step scale, and the full technique name gets 19 rem on desktop.
+
 ## Loading
 
 Heavy pages (Overview, Live, Attackers, attacker profile, session detail, styleguide) load on demand behind a `PageSkeleton` in the final layout. Recharts and xterm get their own chunks, so the first load stays small.
@@ -199,6 +207,11 @@ Lists scroll with the window. The desktop sidebar scrolls as one block when the 
 | DayBars                    | `charts/day-bars.tsx`                    | 30 neutral daily bars for one attacker, sr-only table                                                                                           |
 | TopList                    | `top-list.tsx`                           | ranked rows with printed count + share (bar is decoration), each row a filtered link                                                            |
 | AttackerRow                | `attacker-row.tsx`                       | one-line attacker profile story; row opens the profile, chips/flags/tags open filtered lists                                                    |
+| StageTrail                 | `campaigns/stage-trail.tsx`              | the playbook in story order: `compact` (lists, icon or dot plus words) or `steps` (detail, stepper with names); never a hue                     |
+| StoryStages                | `campaigns/story-stages.tsx`             | numbered steps: icon, plain question, one sentence, ATT&CK chips (campaign sessions + external link)                                            |
+| ExcerptBlock               | `campaigns/excerpt-block.tsx`            | real lines from one session, text only, back-to-back repeats folded with a count                                                                |
+| CampaignRow, CampaignChip  | `campaigns/campaign-row.tsx`, `-chip`    | one campaign as one story line; "Part of campaign" on the session page                                                                          |
+| TechniqueHeatmap           | `techniques/technique-heatmap.tsx`       | techniques by day, grouped by stage, neutral scale, readout line, sr-only table                                                                 |
 | LiveIndicator, ThemeToggle | `live-indicator.tsx`, `theme-toggle.tsx` | shell chrome                                                                                                                                    |
 
 Primitives (button, card, badge, tooltip, dropdown-menu, sheet, separator, skeleton, scroll-area, tabs, toggle, toggle-group, command, dialog, popover, input) come from shadcn/ui via the CLI and live in `src/components/ui/`. They read our tokens through the shadcn variable contract mapped in `index.css`. Do not edit them for one page: add a variant here instead.
