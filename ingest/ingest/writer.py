@@ -270,13 +270,10 @@ async def _apply_session_rules(
         if r.scanner_name is not None and (not r.benign or r.session_id in demote):
             retract.append(r.session_id)
     if retract:
+        # Ingest cannot UPDATE events: this SECURITY DEFINER function is its one way in.
         await session.execute(
-            text(
-                "UPDATE events e SET benign = false FROM sessions s "
-                "WHERE s.session_id = ANY(:ids) AND e.session_id = s.session_id "
-                "AND e.ts >= s.started_at AND e.benign IS TRUE"
-            ).bindparams(bindparam("ids", type_=ARRAY(Text))),
-            {"ids": retract},
+            text("SELECT retract_benign(:ids)").bindparams(bindparam("ids", type_=ARRAY(Text))),
+            {"ids": retract[:1000]},
         )
     if demote:
         await session.execute(

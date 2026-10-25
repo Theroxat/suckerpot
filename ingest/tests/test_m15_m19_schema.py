@@ -477,3 +477,30 @@ async def test_script_and_alert_prune(conn: AsyncConnection) -> None:
     keys = {r[0] for r in await exec_(conn, "SELECT dedupe_key FROM alert_outbox")}
     assert keys == {"new"}
     assert (await exec_(conn, "SELECT count(*) FROM weekly_reports")).scalar_one() == 1
+
+
+async def test_ingest_cannot_update_events_only_call_retract_benign(engine: AsyncEngine) -> None:
+    ingest, api = ROLE_ENV["POSTGRES_INGEST_USER"], ROLE_ENV["POSTGRES_API_USER"]
+    assert not await has_priv(engine, ingest, "events", "UPDATE")
+    assert not await has_priv(engine, api, "events", "UPDATE")
+    async with engine.connect() as conn:
+
+        async def can_run(role: str) -> bool:
+            return bool(
+                await conn.scalar(
+                    text("SELECT has_function_privilege(:r, 'retract_benign(text[])', 'EXECUTE')"),
+                    {"r": role},
+                )
+            )
+
+        assert await can_run(ingest)
+        assert not await can_run(api)
+        definer, path = (
+            await conn.execute(
+                text(
+                    "SELECT prosecdef, proconfig::text FROM pg_proc "
+                    "WHERE proname = 'retract_benign'"
+                )
+            )
+        ).one()
+        assert definer is True and "search_path=pg_catalog, public" in path
