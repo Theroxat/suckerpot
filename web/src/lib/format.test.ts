@@ -4,9 +4,16 @@ import {
   formatNumber,
   formatRelative,
   maskIp,
+  maskDefangedText,
   maskIpsInText,
   plural,
 } from "./format"
+
+describe("maskDefangedText", () => {
+  it("masks addresses that were defanged", () => {
+    expect(maskDefangedText("Block 203[.]0[.]113[.]66 now")).toBe("Block 203.0.x.x now")
+  })
+})
 
 describe("format", () => {
   it("groups thousands", () => {

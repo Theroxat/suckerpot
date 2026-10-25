@@ -38,7 +38,13 @@ export function IndicatorList({ items }: { items: readonly CampaignIndicator[] }
     <ul className="divide-y" aria-label="What ties the campaign together">
       {items.map((i) => {
         const long = i.value.length > 40
-        const shown = masked ? maskIpsInText(i.defanged) : i.defanged
+        // Mask the raw value first, then defang it: a defanged address would slip past the mask.
+        const shown =
+          i.kind === "payload_host" && masked
+            ? maskIpsInText(i.value).replaceAll(".", "[.]")
+            : masked
+              ? maskIpsInText(i.defanged)
+              : i.defanged
         return (
           <li
             key={`${i.kind}:${i.value}`}
@@ -51,8 +57,16 @@ export function IndicatorList({ items }: { items: readonly CampaignIndicator[] }
                   {" "}
                   · {plural(i.sources, "address", "addresses")}
                 </span>
+                {i.confidence === "low" ? (
+                  <span className="ml-2 rounded-sm border border-border-strong px-1.5 py-px text-2xs text-fg-muted">
+                    Low confidence: one source
+                  </span>
+                ) : null}
               </p>
-              <p className="font-mono text-xs break-all text-fg" title={long ? i.value : undefined}>
+              <p
+                className="font-mono text-xs break-all text-fg"
+                title={long && !masked ? i.value : undefined}
+              >
                 {long ? `${shown.slice(0, 16)}…${shown.slice(-8)}` : shown}
               </p>
             </div>
