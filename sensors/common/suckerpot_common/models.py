@@ -40,6 +40,13 @@ class SensorName(StrEnum):
     telnet = "telnet"
     web = "web"
     rdp = "rdp"
+    redis = "redis"
+    docker = "docker"
+    mysql = "mysql"
+    adb = "adb"
+    mssql = "mssql"
+    smb = "smb"
+    sip = "sip"
 
 
 class EventType(StrEnum):

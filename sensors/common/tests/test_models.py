@@ -148,3 +148,11 @@ def test_raw_event_field_too_large_rejected_before_parse() -> None:
         Event.from_stream_fields({"v": "1", "event": "x" * (64 * 1024 + 1)})
     with pytest.raises(ValueError, match="too large"):
         Event.from_stream_fields({b"v": b"1", b"event": b"\xc3\xa9" * (33 * 1024)})
+
+
+def test_sensor_names_are_stable_and_ordered() -> None:
+    assert [s.value for s in SensorName] == [
+        "ssh", "telnet", "web", "rdp", "redis", "docker", "mysql", "adb", "mssql", "smb", "sip",
+    ]  # fmt: skip
+    for name in SensorName:
+        assert make(sensor=name.value).sensor is name
