@@ -22,6 +22,7 @@ from ingest.enrichment import EnrichmentSettings, GeoResolver
 from ingest.enrichment.credentials import CredentialSync
 from ingest.enrichment.downloader import GeoManager
 from ingest.enrichment.enricher import Enricher
+from ingest.enrichment.intel import IntelWorker
 from ingest.enrichment.reputation import ReputationWorker
 from ingest.enrichment.status import publish_status
 from ingest.indicators import IndicatorExtractor, IndicatorSettings
@@ -99,6 +100,8 @@ async def run() -> None:
     appliers.append(reputation.apply_settings)
     cve_watch = CveWatch(factory, enrich, relevance=load_relevance(enrich.rules_dir))
     appliers.append(cve_watch.apply_settings)
+    intel = IntelWorker(factory, enrich)
+    appliers.append(intel.apply_settings)
 
     async def rep_status(detail: dict[str, Any]) -> None:
         for name, value in detail.items():
@@ -112,10 +115,13 @@ async def run() -> None:
     async def publish_all() -> None:
         await rep_status(await reputation.status())
         await cve_status(await cve_watch.status())
+        await rep_status(await intel.status())
         await publish_status(factory, "maxmind", sync.status("maxmind"))
 
     async def run_test(provider: str) -> None:
-        if provider == "maxmind":
+        if provider in ("abusech", "virustotal"):
+            await intel.run_key_test(provider)
+        elif provider == "maxmind":
             await sync.test_maxmind()
         elif provider in ("nvd", "github"):
             await cve_watch.run_key_test(provider)
@@ -128,6 +134,7 @@ async def run() -> None:
         asyncio.create_task(geo.run(), name="geoip"),
         asyncio.create_task(reputation.run(rep_status), name="reputation"),
         asyncio.create_task(cve_watch.run(cve_status), name="cve-watch"),
+        asyncio.create_task(intel.run(rep_status), name="intel"),
         asyncio.create_task(sync.run(), name="credentials"),
     ]
     loop = asyncio.get_running_loop()
@@ -143,6 +150,7 @@ async def run() -> None:
                 await task
         await reputation.aclose()
         await cve_watch.aclose()
+        await intel.aclose()
         await sync.aclose()
         resolver.close()
         await redis.aclose()
