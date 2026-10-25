@@ -72,9 +72,6 @@ export default defineConfig(({ mode }) => {
       // Flags are loaded one by one as <img>, never inlined into the bundle.
       assetsInlineLimit: (file: string) =>
         file.includes("country-flag-icons") ? false : undefined,
-      // Only the lazy globe chunk (three.js + globe.gl, ~490 kB gzip, Live page only) is
-      // above the default 500 kB; every eagerly loaded chunk stays well under it.
-      chunkSizeWarningLimit: 1_800,
       // React in its own long-lived chunk; heavy libraries split per feature.
       rolldownOptions: {
         output: {

@@ -30,6 +30,7 @@ import { SessionStory } from "@/components/session-story"
 import { SeverityBadge } from "@/components/severity-badge"
 import { SkeletonCard, SkeletonList, SkeletonText, SkeletonTile } from "@/components/skeletons"
 import { Sparkline } from "@/components/sparkline"
+import { FamilyStrip } from "@/components/family-strip"
 import { FamilyTile } from "@/components/family-tile"
 import { StatTile } from "@/components/stat-tile"
 import { TagBadge } from "@/components/tag-badge"
@@ -569,8 +570,8 @@ export function StyleguidePage() {
           })}
         </div>
         <p className="mt-4 max-w-3xl text-xs text-fg-muted">
-          Badges, dots, globe arcs and the default charts use the family hue (AA as text, on its
-          tint too). The per-sensor shades are fills for the &ldquo;Sensors&rdquo; chart split only,
+          Badges, dots, map arcs and the default charts use the family hue (AA as text, on its tint
+          too). The per-sensor shades are fills for the &ldquo;Sensors&rdquo; chart split only,
           never text (3:1 or more on the surface). Stacks always run in registry order, so a family
           stays one block of its hue.
         </p>
@@ -905,6 +906,15 @@ export function StyleguidePage() {
               unitShort="/ min"
             />
           ))}
+        </div>
+
+        <div className="mt-4 space-y-3 rounded-lg border bg-surface p-4 shadow-sm sm:p-5">
+          <p className="font-mono text-2xs text-fg-subtle">
+            FamilyStrip (Live: overlay on the map, grid under it on narrow cards; a family toggles
+            the page filter)
+          </p>
+          <FamilyStrip bySensor={SAMPLE_LIVE} className="w-fit max-w-full overflow-x-auto" />
+          <FamilyStrip bySensor={SAMPLE_LIVE} layout="grid" />
         </div>
 
         <div className="mt-4 overflow-hidden rounded-lg border bg-surface shadow-sm">

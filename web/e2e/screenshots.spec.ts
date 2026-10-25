@@ -109,57 +109,58 @@ test("shell", async ({ page }, info) => {
 })
 
 test("live", async ({ page }, info) => {
-  // Software-rendered WebGL for the globe view: slower than the other pages.
-  test.setTimeout(240_000)
-  // Test hook: freeze motion (no dashes, pulses, rotation) so the shots are deterministic.
+  test.setTimeout(120_000)
+  // Test hook: freeze motion (no dashes, pulses or glides) so the shots are deterministic.
   await page.addInitScript(() => {
-    ;(window as unknown as { __SUCKERPOT_GLOBE__: { freeze: boolean } }).__SUCKERPOT_GLOBE__ = {
+    ;(window as unknown as { __SUCKERPOT_MAP__: { freeze: boolean } }).__SUCKERPOT_MAP__ = {
       freeze: true,
     }
   })
-  // M9: the flat map is the default view.
+  const ready = async () => {
+    await expect(h1(page, "Live")).toBeVisible()
+    await expect(page.getByRole("group", { name: /Map of attack origins/ })).toBeVisible()
+    // Backfill arrives over the mocked WebSocket.
+    await expect(page.getByRole("list", { name: "Latest events" })).toBeVisible()
+    await expect(page.getByRole("list", { name: "Top addresses" })).toBeVisible()
+    await settle(page)
+  }
   await page.goto("/live")
-  await expect(h1(page, "Live")).toBeVisible()
-  await expect(page.getByRole("group", { name: /Map of attack origins/ })).toBeVisible()
-  // Backfill (50 events) arrives over the mocked WebSocket.
-  await expect(page.getByRole("list", { name: "Live events" })).toBeVisible()
-  await expect(page.getByRole("listitem").first()).toBeVisible()
-  await expect(page.getByRole("list", { name: /Top sources/ })).toBeVisible()
-  await settle(page)
-  await shoot(page, "live", info.project.name, true)
+  await ready()
+  await shoot(page, "live", info.project.name)
+  await shoot(page, "live-full", info.project.name, true)
 
-  await page.goto("/live?view=globe")
-  await expect(page.getByRole("img", { name: /Globe of recent attack origins/ })).toBeVisible()
-  await expect(page.locator("canvas").first()).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByRole("listitem").first()).toBeVisible()
-  await settle(page)
-  await page.waitForTimeout(1_500)
-  await shoot(page, "live-globe", info.project.name)
+  // Hovering a top address lights its country on the map.
+  if (info.project.name.startsWith("desktop")) {
+    await page.getByRole("list", { name: "Top countries" }).getByRole("link").first().hover()
+    await expect(page.getByRole("tooltip")).toBeVisible()
+    await page.getByRole("list", { name: "Top countries" }).scrollIntoViewIfNeeded()
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await shoot(page, "live-focus", info.project.name)
+    await page.mouse.move(0, 0)
+  }
 
-  await page.goto("/live?sensor=web&view=map")
-  await expect(page.getByRole("list", { name: "Live events" })).toBeVisible()
-  await settle(page)
+  await page.goto("/live?sensor=web,docker")
+  await ready()
   await shoot(page, "live-web", info.project.name)
 
   if (info.project.name.startsWith("desktop")) {
     await page.setViewportSize({ width: 1920, height: 1080 })
-    for (const view of ["map", "globe"] as const) {
-      await page.goto(`/live?view=${view}`)
-      await expect(page.getByRole("listitem").first()).toBeVisible()
-      if (view === "globe") await expect(page.locator("canvas").first()).toBeVisible()
-      await settle(page)
-      await page.waitForTimeout(view === "globe" ? 1_500 : 300)
-      await shoot(page, `live-1920-${view}`, info.project.name)
-    }
+    await page.goto("/live")
+    await ready()
+    await shoot(page, "live-1920", info.project.name)
   }
 
   // The "World" preset (remembered on this browser afterwards, so it goes last).
-  await page.goto("/live?view=map")
-  await expect(page.getByRole("listitem").first()).toBeVisible()
-  await settle(page)
+  await page.goto("/live")
+  await ready()
   await page.getByRole("button", { name: "World", exact: true }).click()
   await page.waitForTimeout(300)
   await shoot(page, "live-world", info.project.name)
+  if (info.project.name.startsWith("desktop")) {
+    await page.setViewportSize({ width: 1920, height: 1080 })
+    await page.waitForTimeout(300)
+    await shoot(page, "live-1920-world", info.project.name)
+  }
 })
 
 test("screenshot mode masks every address", async ({ page }, info) => {
@@ -173,7 +174,7 @@ test("screenshot mode masks every address", async ({ page }, info) => {
 
   // The setting persists without the flag.
   await page.goto("/live")
-  await expect(page.getByRole("listitem").first()).toBeVisible()
+  await expect(page.getByRole("list", { name: "Top addresses" })).toBeVisible()
   await settle(page)
   const live = await page.locator("main").innerText()
   expect(live).not.toMatch(/\b(192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}\b/)

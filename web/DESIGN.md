@@ -50,7 +50,7 @@ Eleven sensors cannot each get a hue and stay calm, colour-blind safe and AA. So
 | Databases `data`         | bluish green   | `#3cc6a4` | `#0a7a62` | Redis (database zap, 6379), MySQL (database, 3306), MSSQL (server, 1433) |
 | Windows & VoIP `windows` | ochre          | `#e0b341` | `#8a6100` | RDP (monitor, 3389), SMB (folder, 445), SIP (phone, 5060/udp)            |
 
-- Badges, dots, tiles, globe and map arcs and the default charts use the **family** hue. Each family hue is AA (≥ 4.5:1) as text on `--bg`, `--surface` and its own tint (`tint-family-*`: 14 % in dark, 10 % in light).
+- Badges, dots, tiles, map arcs and the default charts use the **family** hue. Each family hue is AA (≥ 4.5:1) as text on `--bg`, `--surface` and its own tint (`tint-family-*`: 14 % in dark, 10 % in light).
 - `--sensor-*` are **per-sensor shades** of the family hue (base, lighter, deeper), used only as fills in the "Sensors" chart split. Never text; ≥ 3:1 on `--surface` and `--bg`, and distinct inside a family (tested in `contrast.test.ts`).
 - Stacks always run in registry order, so one family is one contiguous block of its hue.
 - The sensor filter is a multi-select popover (`SensorFilter`), grouped by family, typed to narrow, a family row toggles all its sensors. It writes `?sensor=ssh,telnet` (comma list; no param = every sensor). The API receives repeated `sensor=` params.
@@ -118,14 +118,24 @@ Only one tag is red: the leading payload tag, which is what the card's finding s
 
 Day × hour uses a five-step neutral scale (color-mix of `--fg` into `--surface`), a "Fewer … More" key, and a readout line for the hovered or tapped cell. Hours are shown in the browser time zone.
 
-## Live map and globe
+## Live page
 
-The Live card shows a **flat map by default** and the 3D globe on request ("Map / Globe" toggle, `?view=globe`, remembered per browser). Both draw the same calm, persistent picture (`components/map/activity.ts`): the last **15 minutes** of sources, aggregated **per country**, one arc per country to home, coloured by the country's dominant sensor family, thicker for more events (log scale) and fading with age (never below 22 % inside the window). A new event sends one short dash along its arc; active sources (last minute) pulse softly. Nothing flashes, and a quiet minute still shows where traffic came from.
+Live is the screen left running on a wall or a second monitor, so the map is the hero and everything else stays out of its way. There is no 3D globe: a flat map is easier to read at a glance and puts every source in its real place at once.
 
-- **Flat map** (`components/map/world-map.tsx`): Equal Earth projection, land and borders from Natural Earth 110m pre-projected into SVG paths (`scripts/gen-map-data.mjs`, Antarctica left out). Presets "Europe" (default, home slightly off-centre, because most real attackers of a Swiss sensor are neighbours) and "World", remembered per browser; wheel, drag, pinch, and the keyboard (arrows, + / -, E, 0) pan and zoom. Strokes and dots keep their screen size at any zoom. The busiest visible sources carry a small "FR 26" label (skipped where labels would collide); every source dot is a button with a tooltip (country, events, addresses, sensors) that opens the country's Attacks view.
-- **Globe**: same sources as solid arcs and labelled dots, comets for new events. Short arcs (from 0.3°) are drawn low (0.015–0.18 globe radii) so European arcs read as bows, not needles. The camera fits the whole sphere to the card (altitude from the card's aspect ratio), faces Europe, and does not auto-rotate.
-- Footer: "Top sources, 15 min" (flag, code, count; each opens the filtered Attacks view), unlocated events count, family colour key, landing place.
-- Reduced motion: no dashes, pulses, comets or tweens. Without WebGL the globe toggle falls back to the map. three.js (about 490 kB gzip) loads only when the globe view is on; the map paths are about 30 kB gzip, Live only.
+**Layout, top to bottom.** The page header (title, one sentence, sensor filter, Pause), then one card: the map, full content width (the Live page lifts the 1200 px cap, up to 2400 px), about `100dvh - 17rem` tall on desktop (26rem to 72rem), 26rem on tablets, 19rem on phones; the live ticker is the card's footer. Below the card, three ranking cards. On a 1440 × 900 screen the map, the ticker and the ranking titles are above the fold.
+
+**The picture** (`components/map/activity.ts`): the last **15 minutes** of sources, aggregated **per country**, one arc per country to home, coloured by the country's dominant sensor family, thicker for more events (log scale) and fading with age (never below 22 % inside the window). A new event sends one short dash along its arc; active sources (last minute) pulse softly. Nothing flashes, and a quiet minute still shows where traffic came from.
+
+- **Map** (`map/world-map.tsx`): Equal Earth, land and borders from Natural Earth 110m pre-projected into SVG paths (`scripts/gen-map-data.mjs`), country centres from `scripts/gen-centroids.mjs`. Presets "Europe" (default) and "World", remembered per browser. Presets fit the card edge to edge (no empty bands): "World" crops to the inhabited band, Alaska to New Zealand, and on near-square cards (phones) to the Americas through South-East Asia. Presets keep the 48 px overlay band clear. Wheel, drag, pinch and the keyboard (arrows, + / -, E, 0) pan and zoom; strokes, dots and labels keep their screen size.
+- **Home** is a solid dot, a fixed ring, a slow pulse and a "⌂ Switzerland" label (from `GET /settings/site`), always on top and never covered by source labels.
+- **Labels**: "FR 37" next to the 12 busiest visible sources, skipped where they would collide. Every source dot is a button (tooltip: country, events, addresses, sensors) that opens the country's Attacks view. The tooltip opens on the side away from home, so the lit arc stays visible.
+- **Stats strip** (`FamilyStrip`): events per minute in total and per family, on the map's top-left corner on cards 896 px or wider, under the map otherwise. The family swatch is the arc colour, so the strip is also the legend. A family button filters the whole page (`?sensor=`), a second press clears it.
+- **Ticker** (`LiveTicker`): the newest events as one row of fixed-width chips (sensor icon, flag, address, summary; red outline and icon for a severe event). A new chip fades in on the left while the others glide right (500 ms); the row is clipped with a short fade on the right. Hovering or focusing the ticker holds it; held events show as an "N new events" pill that resumes. Phones get the latest five as stacked `LiveEventRow`s instead. "All attacks" links to the full list.
+- **Rankings** (`LiveLeaders`): Top addresses, Top countries, Top networks over the same 15 minutes, six rows each, each card opening with its finding ("France leads with 21% of events, from 10 addresses."). Rows show flag, name, up to three sensor icons, count and share, with a neutral share bar. Each row opens the filtered Attacks view (`src_ip`, `country`, `asn`).
+- **Linked highlight**: hovering or focusing a ranking row, a ticker chip or a map dot lights that country everywhere: its arc goes full opacity and one pixel thicker, other arcs, dots and labels step back to 28 %, its tooltip opens on the map, and matching rows and chips get the hover background.
+- **Pause** freezes the whole picture (map, rankings, ticker) at the newest event; Resume or the pill catches up.
+- **Reduced motion**: no dashes, pulses, glides or tweens; the picture is the same. Screenshots set `window.__SUCKERPOT_MAP__ = { freeze: true }` for the same effect.
+- **Weight**: the map paths are about 30 kB gzip, Live only. No WebGL, no three.js.
 
 ## Settings
 
@@ -137,40 +147,43 @@ Heavy pages (Overview, Live, Attackers, attacker profile, session detail, styleg
 
 ## Scrolling
 
-Lists scroll with the window (Attacks), except the Live feed: it is a "leave it running" screen whose hold-to-read and "N new events" logic need their own scroll area. It fills the viewport height, so there is never a scroll area inside a short box.
+Lists scroll with the window. The Live page has no scrolling list: its ticker and rankings are bounded (ten chips, six rows), and the full history is the Attacks list.
 
 ## Components
 
-| Component                  | File                                        | Notes                                                                                                                                           |
-| -------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| FindingCard ("Card")       | `finding-card.tsx`                          | eyebrow + finding sentence + optional detail, action, footer                                                                                    |
-| StatTile                   | `stat-tile.tsx`                             | label, tweened value, neutral delta or hint, sparkline slot, loading                                                                            |
-| Sparkline                  | `sparkline.tsx`                             | tiny line, flat 8 % area, accessible label                                                                                                      |
-| SensorShare                | `sensor-share.tsx`                          | stacked bar + labelled legend, links to filtered list                                                                                           |
-| SensorBadge                | `sensor-badge.tsx`                          | `badge` (family tint + sensor icon + label) or `dot`                                                                                            |
-| SensorFilter               | `sensor-filter.tsx`                         | multi-select popover grouped by family, `?sensor=a,b`, keyboard: type, arrows, Enter                                                            |
-| FamilyTile                 | `family-tile.tsx`                           | Live KPI per family: total in its hue, one line per sensor (icon, name, count), each a filtered link                                            |
-| LiveMap, WorldMap          | `globe/live-globe.tsx`, `map/world-map.tsx` | Live card: flat map (default) or globe, top sources, family key                                                                                 |
-| SeverityBadge              | `severity-badge.tsx`                        | icon + label, or icon only with an accessible name                                                                                              |
-| TagBadge                   | `tag-badge.tsx`                             | mono, neutral; red diamond for payload tags                                                                                                     |
-| IPChip                     | `ip-chip.tsx`                               | mono, copy button, links to `?src_ip=`, `masked`, `chip` or `ghost`                                                                             |
-| CountryFlag                | `country-flag.tsx`                          | SVG flag (`country-flag-icons`, one small asset each) + name tooltip, `?` for unknown                                                           |
-| RelativeTime               | `relative-time.tsx`                         | shared 30 s clock, absolute time tooltip                                                                                                        |
-| EventRow                   | `event-row.tsx`                             | icon per event type, mono details, red only for downloads, optional sensor accent                                                               |
-| EventTimeline              | `event-timeline.tsx`                        | EventRows with folded runs                                                                                                                      |
-| SessionStory               | `session-story.tsx`                         | IP chip + flag + origin + predicate, `inline` or `block`                                                                                        |
-| SessionRow                 | `session-row.tsx`                           | one line on desktop, two on mobile, stretched link                                                                                              |
-| FilterBar, SensorFilter    | `filter-bar.tsx`                            | URL-synced segmented control and removable chips                                                                                                |
-| PageHeader                 | `page-header.tsx`                           | title + one sentence + actions                                                                                                                  |
-| EmptyState                 | `empty-state.tsx`                           | icon, optional "Coming in Mx" badge, text, action                                                                                               |
-| Skeletons                  | `skeletons.tsx`                             | text, row, list, tile, card                                                                                                                     |
-| LiveEventRow               | `live-event-row.tsx`                        | one live event: sensor badge, summary (text only), tags, IP, flag, time; whole row opens the session                                            |
-| LiveSensorTile             | `live-sensor-tile.tsx`                      | events in the last minute for one sensor, in its hue, links to filtered Attacks                                                                 |
-| LatestEventsCard           | `latest-events-card.tsx`                    | FindingCard with the newest live events (Overview)                                                                                              |
-| SensorActivityChart        | `charts/sensor-activity-chart.tsx`          | Recharts stacked bars (events per hour, fixed sensor order, sensor hues), legend with icons + totals linking to filtered Attacks, sr-only table |
-| DayBars                    | `charts/day-bars.tsx`                       | 30 neutral daily bars for one attacker, sr-only table                                                                                           |
-| TopList                    | `top-list.tsx`                              | ranked rows with printed count + share (bar is decoration), each row a filtered link                                                            |
-| AttackerRow                | `attacker-row.tsx`                          | one-line attacker profile story; row opens the profile, chips/flags/tags open filtered lists                                                    |
-| LiveIndicator, ThemeToggle | `live-indicator.tsx`, `theme-toggle.tsx`    | shell chrome                                                                                                                                    |
+| Component                  | File                                     | Notes                                                                                                                                           |
+| -------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| FindingCard ("Card")       | `finding-card.tsx`                       | eyebrow + finding sentence + optional detail, action, footer                                                                                    |
+| StatTile                   | `stat-tile.tsx`                          | label, tweened value, neutral delta or hint, sparkline slot, loading                                                                            |
+| Sparkline                  | `sparkline.tsx`                          | tiny line, flat 8 % area, accessible label                                                                                                      |
+| SensorShare                | `sensor-share.tsx`                       | stacked bar + labelled legend, links to filtered list                                                                                           |
+| SensorBadge                | `sensor-badge.tsx`                       | `badge` (family tint + sensor icon + label) or `dot`                                                                                            |
+| SensorFilter               | `sensor-filter.tsx`                      | multi-select popover grouped by family, `?sensor=a,b`, keyboard: type, arrows, Enter                                                            |
+| FamilyTile                 | `family-tile.tsx`                        | KPI per family: total in its hue, one line per sensor (icon, name, count), each a filtered link                                                 |
+| LiveMap, WorldMap          | `map/live-map.tsx`, `map/world-map.tsx`  | Live hero card: flat map, stats strip, ticker footer; linked highlight                                                                          |
+| FamilyStrip                | `family-strip.tsx`                       | events / min in total and per family; family toggles filter the page; doubles as the arc legend                                                 |
+| LiveTicker                 | `live-ticker.tsx`                        | newest events as gliding chips (stacked rows on phones), hold on hover, "N new events" pill                                                     |
+| LiveLeaders                | `live-leaders.tsx`                       | top addresses, countries and networks of the last 15 minutes, finding first, rows link to filtered Attacks                                      |
+| SeverityBadge              | `severity-badge.tsx`                     | icon + label, or icon only with an accessible name                                                                                              |
+| TagBadge                   | `tag-badge.tsx`                          | mono, neutral; red diamond for payload tags                                                                                                     |
+| IPChip                     | `ip-chip.tsx`                            | mono, copy button, links to `?src_ip=`, `masked`, `chip` or `ghost`                                                                             |
+| CountryFlag                | `country-flag.tsx`                       | SVG flag (`country-flag-icons`, one small asset each) + name tooltip, `?` for unknown                                                           |
+| RelativeTime               | `relative-time.tsx`                      | shared 30 s clock, absolute time tooltip                                                                                                        |
+| EventRow                   | `event-row.tsx`                          | icon per event type, mono details, red only for downloads, optional sensor accent                                                               |
+| EventTimeline              | `event-timeline.tsx`                     | EventRows with folded runs                                                                                                                      |
+| SessionStory               | `session-story.tsx`                      | IP chip + flag + origin + predicate, `inline` or `block`                                                                                        |
+| SessionRow                 | `session-row.tsx`                        | one line on desktop, two on mobile, stretched link                                                                                              |
+| FilterBar, SensorFilter    | `filter-bar.tsx`                         | URL-synced segmented control and removable chips                                                                                                |
+| PageHeader                 | `page-header.tsx`                        | title + one sentence + actions                                                                                                                  |
+| EmptyState                 | `empty-state.tsx`                        | icon, optional "Coming in Mx" badge, text, action                                                                                               |
+| Skeletons                  | `skeletons.tsx`                          | text, row, list, tile, card                                                                                                                     |
+| LiveEventRow               | `live-event-row.tsx`                     | one live event: sensor badge, summary (text only), tags, IP, flag, time; whole row opens the session                                            |
+| LiveSensorTile             | `live-sensor-tile.tsx`                   | events in the last minute for one sensor, in its hue, links to filtered Attacks                                                                 |
+| LatestEventsCard           | `latest-events-card.tsx`                 | FindingCard with the newest live events (Overview)                                                                                              |
+| SensorActivityChart        | `charts/sensor-activity-chart.tsx`       | Recharts stacked bars (events per hour, fixed sensor order, sensor hues), legend with icons + totals linking to filtered Attacks, sr-only table |
+| DayBars                    | `charts/day-bars.tsx`                    | 30 neutral daily bars for one attacker, sr-only table                                                                                           |
+| TopList                    | `top-list.tsx`                           | ranked rows with printed count + share (bar is decoration), each row a filtered link                                                            |
+| AttackerRow                | `attacker-row.tsx`                       | one-line attacker profile story; row opens the profile, chips/flags/tags open filtered lists                                                    |
+| LiveIndicator, ThemeToggle | `live-indicator.tsx`, `theme-toggle.tsx` | shell chrome                                                                                                                                    |
 
 Primitives (button, card, badge, tooltip, dropdown-menu, sheet, separator, skeleton, scroll-area, tabs, toggle, toggle-group, command, dialog, popover, input) come from shadcn/ui via the CLI and live in `src/components/ui/`. They read our tokens through the shadcn variable contract mapped in `index.css`. Do not edit them for one page: add a variant here instead.

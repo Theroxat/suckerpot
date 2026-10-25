@@ -58,8 +58,8 @@ function sample(rand: () => number): SensorEvent {
   return e
 }
 
-/** Newest first, spread over the last few minutes. */
-function backfill(count = 50): LiveEvent[] {
+/** Newest first, spread over the last 13 minutes (the Live map shows a 15-minute window). */
+function backfill(count = 180): LiveEvent[] {
   let seed = 11
   const rand = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0
