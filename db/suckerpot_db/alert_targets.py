@@ -47,7 +47,7 @@ TEAMS_PATH_PREFIXES = (
     "/powerautomate/",
 )
 _PATH_CHARS = re.compile(r"^/[A-Za-z0-9._~@:/+=,-]*$")
-_QUERY_CHARS = re.compile(r"^[A-Za-z0-9._~@:/+=,&-]{0,300}$")
+_QUERY_CHARS = re.compile(r"^(?:[A-Za-z0-9._~@:/+=,&-]|%[0-9A-Fa-f]{2}){0,300}$")
 _HOST_RE = re.compile(r"^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$")
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]{1,64}@([A-Za-z0-9-]{1,63}\.)+[A-Za-z]{2,24}$")
 

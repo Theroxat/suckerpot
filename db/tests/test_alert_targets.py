@@ -39,7 +39,7 @@ def test_official_urls_are_accepted() -> None:
         DISCORD.replace("discord.com", "evildiscord.com"),
         DISCORD.replace("https://", "https://user:pw@"),
         DISCORD.replace("https://", "https://discord.com@evil.example/#"),
-        DISCORD.replace("discord.com", "discord.com:8443"),
+        DISCORD.replace("discord.com", "discord.com:8080"),
         DISCORD + "?x=1",
         DISCORD + "#frag",
         DISCORD.replace("/api/", "/api/../"),
@@ -76,6 +76,14 @@ def test_bad_discord_urls_are_refused(url: str) -> None:
 def test_bad_teams_urls_are_refused(url: str) -> None:
     with pytest.raises(TargetError):
         validate_webhook("teams", url)
+
+
+def test_percent_escapes_in_a_teams_query_are_checked() -> None:
+    ok = TEAMS_WORKFLOW.replace("sig=abc", "sig=a%2Bb%3D")
+    assert validate_webhook("teams", ok)
+    for bad in ("sig=a%2", "sig=a%zz", "sig=%"):
+        with pytest.raises(TargetError):
+            validate_webhook("teams", TEAMS_WORKFLOW.replace("sig=abc", bad))
 
 
 def test_unknown_kind_is_refused() -> None:
