@@ -12,7 +12,10 @@ from sqlalchemy import insert, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from suckerpot_db import EventRow, SessionRow, create_engine, database_url_from_env
 
-PORTS = {"ssh": 2222, "telnet": 2323, "web": 8080, "rdp": 3389}
+PORTS = {
+    "ssh": 2222, "telnet": 2323, "web": 8080, "rdp": 3389, "redis": 6379, "docker": 2375,
+    "mysql": 3306, "adb": 5555, "mssql": 1433, "smb": 4450, "sip": 5060,
+}  # fmt: skip
 
 
 def api_engine() -> AsyncEngine:

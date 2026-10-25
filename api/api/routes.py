@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from ipaddress import IPv4Address, IPv6Address, ip_address
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, Response
 from pydantic import AfterValidator, AwareDatetime
@@ -35,6 +35,7 @@ from api.schemas import (
     SessionPage,
     StatsSummary,
 )
+from api.sensors import SensorFilter
 
 router = APIRouter()
 health_router = APIRouter()
@@ -43,7 +44,6 @@ MAX_LIMIT = 200
 SessionId = Annotated[str, Path(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]{1,64}$")]
 Limit = Annotated[int, Query(ge=1, le=MAX_LIMIT)]
 Cursor = Annotated[str | None, Query(max_length=512)]
-Sensor = Literal["ssh", "telnet", "web", "rdp"]
 TagFilter = Annotated[str, Query(pattern=r"^[a-z0-9-]{1,32}$")]
 CountryFilter = Annotated[str, Query(pattern=r"^[A-Za-z]{2}$")]
 AsnFilter = Annotated[int, Query(ge=0, le=4294967295)]
@@ -89,7 +89,7 @@ async def list_sessions(
     session: DbSession,
     limit: Limit = 50,
     cursor: Cursor = None,
-    sensor: Sensor | None = None,
+    sensor: SensorFilter = None,
     src_ip: Annotated[SrcIp | None, Query()] = None,
     since: AwareDatetime | None = None,
     until: AwareDatetime | None = None,
@@ -103,7 +103,7 @@ async def list_sessions(
 ) -> SessionPage:
     stmt = select(SessionRow)
     if sensor is not None:
-        stmt = stmt.where(SessionRow.sensor == sensor)
+        stmt = stmt.where(SessionRow.sensor.in_(sensor))
     if src_ip is not None:
         stmt = stmt.where(SessionRow.src_ip == src_ip)
     if tag is not None:

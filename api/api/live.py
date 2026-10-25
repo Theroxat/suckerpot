@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_db.models import EventRow, SessionRow
 
 from api.schemas import LiveEvent, LiveStats, SensorCounts
+from api.sensors import SENSOR_LABELS, SENSORS
 
 log = logging.getLogger(__name__)
 
@@ -72,9 +73,184 @@ def _clean(value: Any, limit: int = FIELD_MAX) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def build_summary(etype: str, data: Mapping[str, Any] | None) -> str:
+def _flags(d: Mapping[str, Any]) -> set[str]:
+    flags = d.get("flags")
+    if not isinstance(flags, list):
+        return set()
+    return {f.lower() for f in flags if isinstance(f, str)}
+
+
+def _image(d: Mapping[str, Any], flags: Sequence[Any]) -> str:
+    image = d.get("image")
+    if isinstance(image, str) and image:
+        return _clean(image, 40)
+    for f in flags:
+        if isinstance(f, str) and f.lower().startswith("image:"):
+            return _clean(f[6:], 40)
+    return ""
+
+
+def _spaced(value: Any, limit: int = 24) -> str:
+    return _clean(value, limit).replace("_", " ")
+
+
+def _first_flag(d: Mapping[str, Any]) -> str | None:
+    raw = d.get("flags")
+    if isinstance(raw, list):
+        return next((f for f in raw if isinstance(f, str) and f), None)
+    return None
+
+
+def _sip_summary(etype: str, d: Mapping[str, Any], flags: set[str]) -> str:
+    kind = d.get("kind")
+    if kind == "sip_summary":
+        n = d.get("messages")
+        return (
+            f"SIP session summary ({_clean(n, 8)} messages)"
+            if n is not None
+            else "SIP session summary"
+        )
+    if kind == "sip_malformed":
+        return "SIP malformed message"
+    if kind in ("rate_limited", "rate_limited_aggregate"):
+        return "SIP rate limited"
+    method = d.get("method")
+    if not (isinstance(method, str) and method):
+        known = [m for m in ("invite", "register", "options") if m in flags or f"{m}_scan" in flags]
+        method = known[0] if known else "request"
+    name = _clean(method, 16).upper()
+    if etype == "login_attempt":
+        user = d.get("username")
+        who = f" {_clean(user, 32)}" if user else ""
+        return f"SIP {name}{who}"
+    scan = " scan" if kind == "options_scan" or "options_scan" in flags else ""
+    target = d.get("dialled") or d.get("to") or d.get("uri")
+    tail = f" to {_clean(target, 60)}" if target else ""
+    status = d.get("status", d.get("response_code"))
+    code = f" {_clean(status, 6)}" if status not in (None, "") else ""
+    agent = d.get("user_agent")
+    ua = f" ({_clean(agent, 32)})" if scan and agent else ""
+    return f"SIP {name}{scan}{tail}{code}{ua}"
+
+
+def _smb_summary(etype: str, d: Mapping[str, Any], flags: set[str]) -> str:
+    if flags & {"eternalblue", "ms17_010"}:
+        return "SMB EternalBlue exploit attempt"
+    if etype == "login_attempt":
+        if d.get("anonymous") is True or "null_session" in flags:
+            return "SMB null session"
+        user = _clean(d.get("username") or "?", 40)
+        domain = d.get("domain")
+        who = f"{_clean(domain, 24)}\\{user}" if domain else user
+        return f"SMB NTLM login {who}"
+    if "null_session" in flags:
+        return "SMB null session"
+    kind = d.get("kind")
+    dialect = d.get("dialect")
+    version = ""
+    if dialect:
+        version = _clean(dialect, 16)
+        if not version.upper().startswith("SMB"):
+            version = f"SMB {version}"
+    if kind == "smb1_negotiate":
+        outcome = d.get("smb1_outcome")
+        return f"SMBv1 negotiate ({_spaced(outcome)})" if outcome else "SMBv1 negotiate"
+    if kind == "smb1_command":
+        name = d.get("smb1_command_name")
+        return f"SMBv1 {_spaced(name)}" if name else "SMBv1 probe"
+    if not kind:
+        if version:
+            return f"SMB probe ({version})"
+        return "SMBv1 probe" if "smbv1" in flags else "SMB probe"
+    name = _spaced(kind)
+    return f"SMB {name} ({version})" if version else f"SMB {name}"
+
+
+def _adb_summary(etype: str, d: Mapping[str, Any], flags: set[str]) -> str | None:
+    if etype == "command":
+        text = _clean(d.get("input", ""), 100)
+        if text.startswith("adb "):
+            text = text[4:]
+        for verb, flag in (
+            ("shell", "adb_shell"),
+            ("push", "adb_push"),
+            ("install", "adb_install"),
+        ):
+            if flag in flags and not text.lower().startswith(verb):
+                return f"adb {verb} {text}"
+        return f"adb {text}"
+    if etype == "scan":
+        kind = d.get("kind")
+        if kind == "adb_service":
+            return f"ADB open {_clean(d.get('service', '?'), 40)}"
+        if kind == "adb_auth":
+            return "ADB auth probe"
+    return None
+
+
+def _service_summary(sensor: str, etype: str, d: Mapping[str, Any]) -> str | None:
+    """Sensor-aware one-liners for the non-shell sensors; None falls back to the generic ones."""
+    flags = _flags(d)
+    raw = d.get("flags")
+    raw_flags: list[Any] = raw if isinstance(raw, list) else []
+    if sensor == "docker" and etype in ("http_request", "command"):
+        if "container_create" in flags or d.get("kind") == "container_create":
+            parts = ["docker create"]
+            if "privileged" in flags:
+                parts.append("privileged")
+            if flags & {"host_mount", "docker_sock_mount"}:
+                parts.append("host-mount")
+            image = _image(d, raw_flags)
+            if image:
+                parts.append(image)
+            return " ".join(parts)
+        if etype == "command" and d.get("kind") == "exec":
+            return f"docker exec {_clean(d.get('input', ''), 100)}"
+        return None
+    if sensor in ("redis", "mysql", "mssql", "docker") and etype == "login_attempt":
+        outcome = "succeeded" if d.get("success") is True else "failed"
+        user = _clean(d.get("username") or ("default" if sensor == "redis" else "?"))
+        return f"{sensor} login {user} {outcome}"
+    if sensor in ("redis", "mysql", "mssql") and etype == "command":
+        return f"{sensor} {_clean(d.get('input', ''), 100)}"
+    if sensor == "adb":
+        adb = _adb_summary(etype, d, flags)
+        if adb is not None:
+            return adb
+    if sensor == "sip" and etype in ("scan", "command", "login_attempt"):
+        return _sip_summary(etype, d, flags)
+    if sensor == "smb" and etype in ("scan", "command", "login_attempt"):
+        return _smb_summary(etype, d, flags)
+    if sensor == "redis" and etype == "scan":
+        kind = d.get("kind")
+        if kind == "redis_replication":
+            host, port = d.get("master_host"), d.get("master_port")
+            return (
+                f"Redis replication from {_clean(host, 60)}:{_clean(port, 6)}"
+                if host
+                else "Redis replication probe"
+            )
+        if kind == "cross_protocol":
+            guess = d.get("protocol_guess")
+            return (
+                f"Redis cross-protocol ({_clean(guess, 24)})"
+                if guess
+                else "Redis cross-protocol probe"
+            )
+    if sensor in ("redis", "docker", "adb", "mysql", "mssql") and etype == "scan":
+        label = SENSOR_LABELS.get(sensor, sensor)
+        detail = d.get("kind") or d.get("method") or _first_flag(d)
+        return f"{label} probe ({_spaced(detail)})" if detail else f"{label} probe"
+    return None
+
+
+def build_summary(etype: str, data: Mapping[str, Any] | None, sensor: str | None = None) -> str:
     """One short human line describing an event (attacker-controlled text is sanitised)."""
     d: Mapping[str, Any] = data or {}
+    if sensor is not None:
+        special = _service_summary(sensor, etype, d)
+        if special is not None:
+            return special
     if etype == "connect":
         return "connected"
     if etype == "login_attempt":
@@ -140,7 +316,7 @@ def row_to_live(row: Any) -> LiveEvent:
         src_ip=row.src_ip,
         src_port=row.src_port,
         dst_port=row.dst_port,
-        summary=build_summary(row.type, row.data),
+        summary=build_summary(row.type, row.data, row.sensor),
         country=row.country,
         city=row.city,
         asn=row.asn,
@@ -190,7 +366,7 @@ async def fetch_stats(session: AsyncSession) -> LiveStats:
             .group_by(SessionRow.sensor)
         )
     ).all()
-    by_sensor: dict[str, SensorCounts] = {}
+    by_sensor: dict[str, SensorCounts] = {s: SensorCounts(events=0, sessions=0) for s in SENSORS}
     for name, n in ev:
         by_sensor.setdefault(name, SensorCounts(events=0, sessions=0)).events = n
     for name, n in ses:

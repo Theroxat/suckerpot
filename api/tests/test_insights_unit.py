@@ -273,3 +273,30 @@ async def test_site_settings_endpoint(client: httpx.AsyncClient) -> None:
     r_ = await client.get("/settings/site")
     assert r_.status_code == 200
     assert set(r_.json()["home"]) == {"lat", "lon", "label"}
+
+
+def test_brute_force_insight() -> None:
+    facts = mk(
+        brute_force=[("192.0.2.9", "mysql", 120), ("192.0.2.10", "redis", 40)], brute_total=200
+    )
+    [item] = r.build_insights(facts, NOW)
+    assert item.id == "brute-force-mysql-192.0.2.9"
+    assert item.kind == "brute_force"
+    assert item.sentence == (
+        "192.0.2.9 guessed credentials 120 times on MySQL in the last 7 days, "
+        "60% of all 200 login attempts."
+    )
+    assert item.link.startswith("/attackers?q=192.0.2.9&since=")
+
+
+def test_brute_force_needs_volume() -> None:
+    assert r.build_insights(mk(brute_force=[("192.0.2.9", "mysql", 99)], brute_total=99), NOW) == []
+    spread = mk(brute_force=[("192.0.2.9", "mysql", 49)], brute_total=300)
+    assert r.build_insights(spread, NOW) == []
+
+
+def test_new_tag_severities() -> None:
+    for tag in ("container-escape", "sql-rce", "eternalblue"):
+        assert r.TAG_SEVERITY[tag] == "severe"
+    for tag in ("db-ransom", "redis-rogue-master", "sip-fraud", "persistence"):
+        assert r.TAG_SEVERITY[tag] == "warning"

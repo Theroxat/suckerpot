@@ -17,7 +17,6 @@ from api.analytics_schemas import (
     AttackerPage,
     BucketName,
     Heatmap,
-    SensorName,
     Timeseries,
     TopField,
     TopStats,
@@ -25,6 +24,7 @@ from api.analytics_schemas import (
 from api.cursor import InvalidCursorError
 from api.deps import DbSession
 from api.schemas import SessionOut
+from api.sensors import SensorFilter
 
 router = APIRouter()
 
@@ -61,7 +61,7 @@ async def stats_timeseries(
     bucket: BucketName = "1h",
     since: AwareDatetime | None = None,
     until: AwareDatetime | None = None,
-    sensor: SensorName | None = None,
+    sensor: SensorFilter = None,
 ) -> Timeseries:
     window = _window(since, until)
     try:
@@ -78,7 +78,7 @@ async def stats_top(
     field: TopField,
     since: AwareDatetime | None = None,
     until: AwareDatetime | None = None,
-    sensor: SensorName | None = None,
+    sensor: SensorFilter = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
 ) -> TopStats:
     window = _window(since, until)
@@ -91,7 +91,7 @@ async def stats_heatmap(
     db: DbSession,
     since: AwareDatetime | None = None,
     until: AwareDatetime | None = None,
-    sensor: SensorName | None = None,
+    sensor: SensorFilter = None,
 ) -> Heatmap:
     window = _window(since, until, default_days=7)
     cells = await q.heatmap(db, window, sensor)
@@ -107,7 +107,7 @@ async def list_attackers(
     limit: Limit = 50,
     country: CountryFilter | None = None,
     asn: AsnFilter | None = None,
-    sensor: SensorName | None = None,
+    sensor: SensorFilter = None,
     tag: TagFilter | None = None,
     prefix: Annotated[IpPrefix | None, Query(alias="q")] = None,
 ) -> AttackerPage:

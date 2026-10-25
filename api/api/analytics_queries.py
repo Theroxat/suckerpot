@@ -7,6 +7,7 @@ fragments (bucket intervals, the truncation length) come from fixed constants, n
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from ipaddress import ip_address
@@ -39,12 +40,12 @@ from api.analytics_schemas import (
     ValueCount,
 )
 from api.cursor import InvalidCursorError, decode_cursor, encode_cursor
+from api.sensors import SENSORS
 
 MAX_WINDOW = timedelta(days=30)
 DEFAULT_WINDOW = timedelta(hours=24)
 MAX_POINTS = 500
 MAX_VALUE_LEN = 256
-SENSORS = ("ssh", "telnet", "web", "rdp")
 
 # Fixed SQL fragments, keyed by the validated enum value.
 BUCKET_SQL = {
@@ -120,7 +121,7 @@ def _bucket_stmt(
     sensor_col: Any,
     bucket: str,
     window: Window,
-    sensor: str | None,
+    sensor: Sequence[str] | None,
 ) -> Select[Any]:
     interval, step = BUCKET_SQL[bucket]
     b = func.time_bucket(literal_column(interval), ts_col)
@@ -130,20 +131,20 @@ def _bucket_stmt(
         .group_by(b, sensor_col)
     )
     if sensor is not None:
-        stmt = stmt.where(sensor_col == sensor)
+        stmt = stmt.where(sensor_col.in_(sensor))
     return stmt
 
 
-def events_bucket_stmt(bucket: str, window: Window, sensor: str | None) -> Select[Any]:
+def events_bucket_stmt(bucket: str, window: Window, sensor: Sequence[str] | None) -> Select[Any]:
     return _bucket_stmt(EventRow.ts, EventRow.sensor, bucket, window, sensor)
 
 
-def sessions_bucket_stmt(bucket: str, window: Window, sensor: str | None) -> Select[Any]:
+def sessions_bucket_stmt(bucket: str, window: Window, sensor: Sequence[str] | None) -> Select[Any]:
     return _bucket_stmt(SessionRow.started_at, SessionRow.sensor, bucket, window, sensor)
 
 
 async def timeseries(
-    db: AsyncSession, bucket: str, window: Window, sensor: str | None
+    db: AsyncSession, bucket: str, window: Window, sensor: Sequence[str] | None
 ) -> list[TimeseriesPoint]:
     starts = bucket_starts(window, BUCKET_SQL[bucket][1])
     ev: dict[datetime, dict[str, int]] = {s: {} for s in starts}
@@ -204,7 +205,7 @@ def _session_value(field: str) -> Any:
 def top_stmt(
     field: str,
     window: Window,
-    sensor: str | None,
+    sensor: Sequence[str] | None,
     limit: int,
     *,
     src_ip: str | None = None,
@@ -220,7 +221,7 @@ def top_stmt(
             _session_value(field).label("value"), SessionRow.started_at.label("ts")
         ).where(SessionRow.started_at >= window.since, SessionRow.started_at < window.until)
         if sensor is not None:
-            inner = inner.where(SessionRow.sensor == sensor)
+            inner = inner.where(SessionRow.sensor.in_(sensor))
         if src_ip is not None:
             inner = inner.where(SessionRow.src_ip == src_ip)
     else:
@@ -231,7 +232,7 @@ def top_stmt(
             EventRow.type.in_(types),
         )
         if sensor is not None:
-            inner = inner.where(EventRow.sensor == sensor)
+            inner = inner.where(EventRow.sensor.in_(sensor))
         if src_ip is not None:
             inner = inner.where(EventRow.src_ip == src_ip)
     sub = inner.subquery("v")
@@ -255,7 +256,7 @@ async def top(
     db: AsyncSession,
     field: str,
     window: Window,
-    sensor: str | None,
+    sensor: Sequence[str] | None,
     limit: int,
     *,
     src_ip: str | None = None,
@@ -287,7 +288,7 @@ async def top_values(db: AsyncSession, field: str, ip: str, limit: int = 10) -> 
 # --------------------------------------------------------------------------- heatmap
 
 
-def heatmap_stmt(window: Window, sensor: str | None) -> Select[Any]:
+def heatmap_stmt(window: Window, sensor: Sequence[str] | None) -> Select[Any]:
     local = func.timezone(literal_column("'UTC'"), EventRow.ts)
     dow = (extract("isodow", local) - 1).label("dow")
     hour = extract("hour", local).label("hour")
@@ -297,11 +298,13 @@ def heatmap_stmt(window: Window, sensor: str | None) -> Select[Any]:
         .group_by(dow, hour)
     )
     if sensor is not None:
-        stmt = stmt.where(EventRow.sensor == sensor)
+        stmt = stmt.where(EventRow.sensor.in_(sensor))
     return stmt
 
 
-async def heatmap(db: AsyncSession, window: Window, sensor: str | None) -> list[HeatmapCell]:
+async def heatmap(
+    db: AsyncSession, window: Window, sensor: Sequence[str] | None
+) -> list[HeatmapCell]:
     result = await db.execute(heatmap_stmt(window, sensor))
     counts = {(int(r.dow), int(r.hour)): r.n for r in result}
     return [
@@ -333,7 +336,7 @@ def attackers_stmt(
     limit: int,
     country: str | None = None,
     asn: int | None = None,
-    sensor: str | None = None,
+    sensor: Sequence[str] | None = None,
     tag: str | None = None,
     q: str | None = None,
     after: tuple[datetime | int, str] | None = None,
@@ -369,7 +372,7 @@ def attackers_stmt(
         escaped = q.lower().replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
         stmt = stmt.where(func.host(s.src_ip).like(escaped + "%", escape="\\"))
     if sensor is not None:
-        stmt = stmt.having(func.bool_or(s.sensor == sensor))
+        stmt = stmt.having(func.bool_or(s.sensor.in_(sensor)))
     if tag is not None:
         stmt = stmt.having(func.bool_or(s.tags.contains([tag])))
     key = keys[sort]
@@ -460,7 +463,7 @@ async def list_attackers(
     cursor: str | None,
     country: str | None,
     asn: int | None,
-    sensor: str | None,
+    sensor: Sequence[str] | None,
     tag: str | None,
     q: str | None,
 ) -> tuple[list[Attacker], str | None]:

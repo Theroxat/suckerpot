@@ -107,7 +107,7 @@ def _sql(stmt: Select[Any]) -> str:
 
 def test_top_stmt_binds_values_and_truncates() -> None:
     w = q.Window(T0 - timedelta(hours=1), T0)
-    sql = _sql(q.top_stmt("username", w, "ssh", 10))
+    sql = _sql(q.top_stmt("username", w, ["ssh"], 10))
     assert "left(" in sql and "256" in sql
     assert "ssh" not in sql and "login_attempt" not in sql  # bound, not inlined
     assert "LIMIT" in sql
