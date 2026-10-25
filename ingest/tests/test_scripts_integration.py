@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -173,6 +174,7 @@ async def test_campaign_and_rule_changes_are_picked_up(
 
 
 # ---- the LLM explainer ------------------------------------------------------------------------
+USAGE = {"input_tokens": 70, "output_tokens": 30}
 ANSWER = {
     "content": [
         {
@@ -234,8 +236,10 @@ async def test_a_request_is_answered_cached_and_sends_only_the_normalised_script
     await w.run_once()
     assert await states(engine) == [("done", None)]
     body = json.loads(seen[0].content)
-    sent = json.dumps(body)
-    assert "192.0.2.5" not in sent and "203.0.113.1" not in sent and "<url>" in sent
+    sent = json.dumps(body, ensure_ascii=False)
+    assert "192.0.2.5" not in sent and "203.0.113.1" not in sent and "\u2039url\u203a" in sent
+    marker = re.findall(r"untrusted-script-[0-9a-f]{16}", body["system"])[0]
+    assert body["messages"][0]["content"].startswith(f"<{marker}>\nL01|")
     assert seen[0].headers["x-api-key"] == "test-key"
     llm = (
         await rows(
@@ -265,6 +269,7 @@ async def test_a_request_is_answered_cached_and_sends_only_the_normalised_script
         ("limit", ("failed", "rate_limited")),
         ("garbage", ("failed", "bad_answer")),
         ("refusal", ("failed", "refused")),
+        ("cut", ("failed", "truncated")),
         ("net", ("failed", "network")),
     ],
 )
@@ -287,10 +292,16 @@ async def test_limits_and_errors_end_a_request_cleanly(
                 return httpx.Response(429)
             case "garbage":
                 return httpx.Response(
-                    200, json={"content": [{"type": "text", "text": "hello"}], "usage": {}}
+                    200, json={"content": [{"type": "text", "text": "hello"}], "usage": USAGE}
+                )
+            case "cut":
+                return httpx.Response(
+                    200, json={"content": [], "usage": USAGE, "stop_reason": "max_tokens"}
                 )
             case "refusal":
-                return httpx.Response(200, json={"content": [], "stop_reason": "refusal"})
+                return httpx.Response(
+                    200, json={"content": [], "usage": USAGE, "stop_reason": "refusal"}
+                )
             case "net":
                 raise httpx.ConnectError("down")
         return httpx.Response(200, json=ANSWER)
@@ -313,6 +324,14 @@ async def test_limits_and_errors_end_a_request_cleanly(
     assert await states(engine) == [expected]
     if expected[0] == "refused":
         assert calls == 0
+    spent = await rows(
+        engine,
+        "SELECT used FROM enrichment_quota WHERE provider = 'anthropic:tokens' AND used > 10",
+    )
+    if case in {"garbage", "refusal", "cut"}:
+        assert spent[0].used == 100  # a 200 answer costs tokens whatever came out of it
+    elif case != "tokens":
+        assert spent == []
     detail = (await states(engine))[0][1] or ""
     assert "test-key" not in detail
     await w.aclose()
@@ -331,4 +350,107 @@ async def test_the_key_test_lists_models_and_spends_no_tokens(
     assert (await w.run_key_test())["ok"] is True and paths == ["/v1/models"]
     w.api_key = ""
     assert (await w.run_key_test())["error"] == "no_key"
+    await w.aclose()
+
+
+# ---- bounds and failure isolation ---------------------------------------------------------------
+async def test_a_session_with_thousands_of_commands_is_read_in_bounded_rows(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    last = NOW - timedelta(minutes=60)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                INSERT INTO sessions (session_id, sensor, src_ip, src_port, dst_port, started_at,
+                                      last_event_at, commands)
+                VALUES ('big', 'ssh', '203.0.113.7', 40000, 22, :start, :last, 6000)
+                """
+            ),
+            {"start": last - timedelta(minutes=30), "last": last},
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO events (ts, sensor, session_id, type, src_ip, src_port, dst_port, data)
+                SELECT CAST(:start AS timestamptz) + make_interval(secs => g * 0.1), 'ssh', 'big', 'command',
+                       '203.0.113.7', 40000, 22,
+                       jsonb_build_object('input', 'echo ' || g || ' ' || repeat('x', 40))
+                FROM generate_series(1, 6000) AS g
+                """
+            ),
+            {"start": last - timedelta(minutes=29)},
+        )
+    w = worker(factory)
+    await w.run_once()
+    assert w.rows_read <= 64  # not 6,000 rows of up to 1 KiB
+    sc = (await rows(engine, "SELECT line_count, length(sample_text) AS n FROM scripts"))[0]
+    assert sc.line_count == 64 and sc.n <= 8192
+
+
+async def test_long_lines_and_a_failing_group_do_not_stop_the_cycle(
+    engine: AsyncEngine,
+    factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    long_line = "echo " + "a b " * 40  # more than 32 tokens: the normaliser keeps 32
+    await seed(engine, "ok1", "203.0.113.1", ["uname -a", "id"], age_min=90)
+    await seed(engine, "bad", "203.0.113.2", ["whoami", "id", "uname"], age_min=80)
+    await seed(engine, "ok2", "203.0.113.3", [long_line, "uname -a"], age_min=70)
+    w = worker(factory)
+    real = w._store_group
+
+    async def flaky(db: AsyncSession, fp: str, members: list[Any]) -> None:
+        if members[0].session_id == "bad":
+            await db.execute(text("SELECT 1/0"))
+        await real(db, fp, members)
+
+    monkeypatch.setattr(w, "_store_group", flaky)
+    await w.run_once()
+    assert w.skipped == 1
+    got = await rows(engine, "SELECT line_count FROM scripts ORDER BY line_count")
+    assert [r.line_count for r in got] == [2, 2]  # the other two groups were stored
+    lines = (await rows(engine, "SELECT lines FROM script_explanations"))[0].lines
+    assert all(len(item["text"]) <= 300 for item in lines)
+    cursor = await rows(engine, "SELECT value FROM system_status WHERE key = 'scripts_cursor'")
+    assert cursor and cursor[0].value["session_id"] in {"ok2", ""}  # it moved past the failure
+
+
+async def test_past_the_link_cap_a_re_read_is_not_counted_twice(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    for i in range(3):
+        await seed(engine, f"s{i}", f"203.0.113.{i + 1}", ["uname -a", "id"], age_min=90 - i)
+    w = worker(factory, link_cap=1)
+    await w.run_once()
+    await engine_exec(engine, "DELETE FROM system_status WHERE key = 'scripts_cursor'")
+    await worker(factory, link_cap=1).run_once()  # the marker is lost: everything is re-read
+    s = (await rows(engine, "SELECT sessions FROM scripts"))[0]
+    assert s.sessions == 3
+
+
+async def engine_exec(engine: AsyncEngine, sql: str) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(text(sql))
+
+
+async def test_each_request_gets_its_own_unguessable_marker(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await seed(engine, "a", "203.0.113.1", ["uname -a", "id"], age_min=60)
+    await seed(engine, "b", "203.0.113.2", ["whoami", "uname -a"], age_min=59)
+    await worker(factory).run_once()
+    ids = [r.id for r in await rows(engine, "SELECT id FROM scripts ORDER BY id")]
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=ANSWER)
+
+    w = explainer(factory, handler)
+    for script_id in ids:
+        await queue(engine, script_id)
+        await w.run_once()
+    found = [re.findall(r"untrusted-script-[0-9a-f]{16}", b["system"])[0] for b in bodies]
+    assert len(found) == 2 and found[0] != found[1]
     await w.aclose()

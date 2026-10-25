@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +60,22 @@ class Annotation:
 class AnnotationBase:
     entries: tuple[Annotation, ...]
     version: int  # changes whenever any rule file changes, so explanations are rebuilt
+    # Entries by command name (plus the prefix entries, in file order), so a lookup only looks at
+    # the few entries that can match instead of the whole base.
+    _by_command: dict[str, tuple[Annotation, ...]] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
+    _prefixed: tuple[Annotation, ...] = field(default=(), init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        prefixed = tuple(e for e in self.entries if not e.commands)
+        names = {c for e in self.entries for c in e.commands}
+        by_command = {
+            name: tuple(e for e in self.entries if name in e.commands or not e.commands)
+            for name in names
+        }
+        object.__setattr__(self, "_by_command", by_command)
+        object.__setattr__(self, "_prefixed", prefixed)
 
     def lookup(self, command: str) -> Annotation | None:
         """The first entry that matches one command (a raw or a normalised line)."""
@@ -69,7 +85,7 @@ class AnnotationBase:
         name = tokens[0].strip("\"'`").lower()
         base = name.rsplit("/", 1)[-1]
         args = " ".join(tokens[1:]).lower()
-        for entry in self.entries:
+        for entry in self._by_command.get(base, self._prefixed):
             if entry.matches(name, base, args):
                 return entry
         return None
