@@ -120,8 +120,12 @@ psql:
 
 # Lint every Python package (ruff check + format check).
 lint:
-    {{just_executable()}} _py "uv run ruff check && uv run ruff format --check"
-    {{just_executable()}} web-lint
+    #!/usr/bin/env bash
+    # Runs everything even when a step fails, then exits non-zero with a summary.
+    rc=0
+    {{just_executable()}} _py "uv run ruff check && uv run ruff format --check" || rc=1
+    {{just_executable()}} web-lint || { echo "FAILED: web (lint/typecheck)"; rc=1; }
+    exit $rc
 
 # Format every Python package.
 fmt:
@@ -133,8 +137,11 @@ typecheck:
 
 # Unit tests of every Python package (integration tests are excluded).
 test:
-    {{just_executable()}} _py "uv run pytest -q -p no:cacheprovider -m 'not integration'"
-    {{just_executable()}} web-test
+    #!/usr/bin/env bash
+    rc=0
+    {{just_executable()}} _py "uv run pytest -q -p no:cacheprovider -m 'not integration'" || rc=1
+    {{just_executable()}} web-test || { echo "FAILED: web (tests)"; rc=1; }
+    exit $rc
 
 # Integration tests against the real database and Redis of the compose stack.
 test-integration:
@@ -184,6 +191,7 @@ _py cmd: _cache
     #!/usr/bin/env bash
     set -euo pipefail
     status=0
+    failed=""
     for pkg in {{packages}}; do
       [ -f "$pkg/pyproject.toml" ] || { echo "-- skip $pkg (no pyproject.toml)"; continue; }
       echo "== $pkg"
@@ -191,6 +199,7 @@ _py cmd: _cache
         -v "$PWD:/work" -v "{{uv_cache}}:/cache" -w "/work/$pkg" \
         -e HOME=/tmp -e UV_CACHE_DIR=/cache -e UV_LINK_MODE=copy -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
         -e RUFF_CACHE_DIR=/tmp/ruff -e MYPY_CACHE_DIR=/tmp/mypy -e USER=x -e LOGNAME=x \
-        {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api && {{cmd}}" || status=1
+        {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api && {{cmd}}" || { status=1; failed="$failed $pkg"; }
     done
+    if [ "$status" -ne 0 ]; then echo "FAILED packages:$failed" >&2; fi
     exit $status
