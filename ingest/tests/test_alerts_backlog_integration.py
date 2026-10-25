@@ -41,6 +41,7 @@ async def test_the_backlog_of_a_channel_is_bounded(
     await w._evaluate()
     for i in range(70):
         await add_campaign(clean, f"Flood #{i}", "severe")
+    await w._evaluate()  # a rule reads at most 50 new rows a cycle
     await w._evaluate()
     rows = await outbox(clean)
     for channel in (ch, other):
@@ -150,7 +151,7 @@ async def test_an_unexpected_exception_does_not_block_other_alerts_or_tests(
     await w._evaluate()
     await w._deliver()
     rows = await outbox(clean)
-    assert sorted(r["state"] for r in rows) == ["pending", "sent"]
+    assert sorted(r["state"] for r in rows) == ["failed", "sent"]  # internal errors are final
     assert HOOK not in str(rows) and "boom" not in str(rows)
     async with clean.begin() as conn:
         await conn.execute(
