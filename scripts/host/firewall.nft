@@ -56,4 +56,14 @@ table inet suckerpot_host {
     # (3) Nothing new may start from the sensor or dashboard networks.
     iifname { "sp-ingress", "sp-dashboard" } ct state new counter drop
   }
+
+  # OPTIONAL: rate-limit new SIP flows (udp/5060) before they reach the sensor. The
+  # sensor already caps its own replies; this protects the conntrack table. Docker
+  # publishes the port through DNAT, so the packets traverse "forward". Uncomment, then
+  # re-apply the file, and check `nft list table inet suckerpot_host` afterwards.
+  #
+  # chain sip_limit {
+  #   type filter hook forward priority -11; policy accept;
+  #   udp dport 5060 ct state new meter sip_new { ip saddr timeout 60s limit rate over 20/second burst 40 packets } counter drop
+  # }
 }

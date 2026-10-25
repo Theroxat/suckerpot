@@ -34,7 +34,7 @@ hash() {
   printf '%s' "$1" | sha256sum | cut -d' ' -f1
 }
 
-VARS="REDIS_PASSWORD REDIS_HEALTH_PASSWORD REDIS_INGEST_PASSWORD REDIS_SENSOR_SSH_PASSWORD REDIS_SENSOR_RDP_PASSWORD REDIS_SENSOR_TELNET_PASSWORD REDIS_SENSOR_WEB_PASSWORD REDIS_DEMO_PASSWORD"
+VARS="REDIS_PASSWORD REDIS_HEALTH_PASSWORD REDIS_INGEST_PASSWORD REDIS_SENSOR_SSH_PASSWORD REDIS_SENSOR_RDP_PASSWORD REDIS_SENSOR_TELNET_PASSWORD REDIS_SENSOR_WEB_PASSWORD REDIS_SENSOR_REDIS_PASSWORD REDIS_SENSOR_DOCKER_PASSWORD REDIS_SENSOR_MYSQL_PASSWORD REDIS_SENSOR_MSSQL_PASSWORD REDIS_SENSOR_ADB_PASSWORD REDIS_SENSOR_SMB_PASSWORD REDIS_SENSOR_SIP_PASSWORD REDIS_DEMO_PASSWORD"
 for v in $VARS; do
   check "$v"
 done
@@ -47,8 +47,7 @@ done
 
 h() { hash "$(eval "printf %s \"\$$1\"")"; }
 
-# One user per sensor: it may only append to its own stream. Telnet, web and RDP
-# users are added together with their sensors.
+# One user per sensor: it may only append to its own stream.
 cat > "$ACL_FILE" <<ACL
 user default off
 user admin on #$(h REDIS_PASSWORD) ~* &* +@all
@@ -57,6 +56,13 @@ user sensor-ssh on #$(h REDIS_SENSOR_SSH_PASSWORD) resetkeys ~events:ssh -@all +
 user sensor-rdp on #$(h REDIS_SENSOR_RDP_PASSWORD) resetkeys ~events:rdp -@all +xadd +hello +auth
 user sensor-telnet on #$(h REDIS_SENSOR_TELNET_PASSWORD) resetkeys ~events:telnet -@all +xadd +hello +auth
 user sensor-web on #$(h REDIS_SENSOR_WEB_PASSWORD) resetkeys ~events:web -@all +xadd +hello +auth
+user sensor-redis on #$(h REDIS_SENSOR_REDIS_PASSWORD) resetkeys ~events:redis -@all +xadd +hello +auth
+user sensor-docker on #$(h REDIS_SENSOR_DOCKER_PASSWORD) resetkeys ~events:docker -@all +xadd +hello +auth
+user sensor-mysql on #$(h REDIS_SENSOR_MYSQL_PASSWORD) resetkeys ~events:mysql -@all +xadd +hello +auth
+user sensor-mssql on #$(h REDIS_SENSOR_MSSQL_PASSWORD) resetkeys ~events:mssql -@all +xadd +hello +auth
+user sensor-adb on #$(h REDIS_SENSOR_ADB_PASSWORD) resetkeys ~events:adb -@all +xadd +hello +auth
+user sensor-smb on #$(h REDIS_SENSOR_SMB_PASSWORD) resetkeys ~events:smb -@all +xadd +hello +auth
+user sensor-sip on #$(h REDIS_SENSOR_SIP_PASSWORD) resetkeys ~events:sip -@all +xadd +hello +auth
 user demo on #$(h REDIS_DEMO_PASSWORD) resetkeys ~events:* -@all +xadd +hello +auth
 user ingest on #$(h REDIS_INGEST_PASSWORD) resetkeys ~events:* -@all +xreadgroup +xack +xgroup|create +xautoclaim +xtrim +hello +auth
 ACL

@@ -1,0 +1,18 @@
+# OPTIONAL aggregate cap for all sensor containers together. Per-container limits in
+# docker-compose.yml already apply; this slice bounds their SUM so that a simultaneous
+# flood on every sensor cannot starve the core services (redis, db, ingest, api) or the
+# host. Nothing uses it by default: Compose does not set cgroup_parent.
+#
+# Opt in (owner only):
+#   sudo install -m 0644 scripts/host/suckerpot-sensors.slice /etc/systemd/system/
+#   sudo systemctl daemon-reload
+# then add `cgroup_parent: suckerpot-sensors.slice` to each sensor-* service in
+# docker-compose.yml and recreate the sensors. Skip it if the Docker daemon uses the
+# cgroupfs driver (check: docker info | grep -i 'cgroup driver').
+[Unit]
+Description=SuckerPot sensor containers (aggregate resource cap)
+
+[Slice]
+MemoryMax=1536M
+MemorySwapMax=0
+CPUQuota=120%

@@ -98,3 +98,143 @@ updates:
     groups:
       docker_api:
         patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/sensors/redis"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_redis:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/redis"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_redis:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/sensors/docker"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_docker:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/docker"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_docker:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/sensors/mysql"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_mysql:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/mysql"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_mysql:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/sensors/mssql"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_mssql:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/mssql"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_mssql:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/sensors/adb"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_adb:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/adb"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_adb:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/sensors/smb"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_smb:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/smb"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_smb:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/sensors/sip"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_sip:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/sip"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_sip:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/sensors/rdp"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_rdp:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/rdp"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_rdp:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/sensors/web"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_web:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/web"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_web:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/sensors/telnet"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_telnet:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/telnet"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_telnet:
+        patterns: ["*"]

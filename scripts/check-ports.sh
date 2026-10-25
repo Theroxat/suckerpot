@@ -1,6 +1,7 @@
 #!/bin/sh
 # Refuses a port layout that would expose the wrong thing:
-#   - the dashboard port is one of the classic service ports (22, 23, 80, 443, 3389);
+#   - the dashboard port is a sensor service port (22, 23, 80, 443, 3389, 6379, 2375, 3306,
+#     1433, 5555, 445, 5060);
 #   - two of DASHBOARD_PORT / *_HOST_PORT are the same;
 #   - one of them equals the optional ADMIN_SSH_PORT (the host's own admin SSH port).
 # Values come from the environment, then from .env, then from the compose defaults.
@@ -21,7 +22,7 @@ fail=0
 err() { echo "check-ports: $*" >&2; fail=1; }
 
 list=""
-for spec in DASHBOARD_PORT:8443 SSH_HOST_PORT:22 TELNET_HOST_PORT:23 HTTP_HOST_PORT:80 HTTPS_HOST_PORT:443 RDP_HOST_PORT:3389; do
+for spec in DASHBOARD_PORT:8443 SSH_HOST_PORT:22 TELNET_HOST_PORT:23 HTTP_HOST_PORT:80 HTTPS_HOST_PORT:443 RDP_HOST_PORT:3389 REDIS_HOST_PORT:6379 DOCKER_HOST_PORT:2375 MYSQL_HOST_PORT:3306 MSSQL_HOST_PORT:1433 ADB_HOST_PORT:5555 SMB_HOST_PORT:445 SIP_HOST_PORT:5060; do
   name=${spec%%:*}
   port=$(get "$name" "${spec#*:}")
   case $port in
@@ -49,7 +50,7 @@ for a in $list; do
 done
 
 case ${p_DASHBOARD_PORT:-} in
-  22 | 23 | 80 | 443 | 3389) err "DASHBOARD_PORT=$p_DASHBOARD_PORT is a service port; pick another one" ;;
+  22 | 23 | 80 | 443 | 3389 | 6379 | 2375 | 3306 | 1433 | 5555 | 445 | 5060) err "DASHBOARD_PORT=$p_DASHBOARD_PORT is a service port; pick another one" ;;
 esac
 
 [ "$fail" -eq 0 ] && echo "check-ports: ok"
