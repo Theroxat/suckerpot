@@ -24,6 +24,35 @@ async function shoot(page: Page, name: string, projectName: string, fullPage = f
   await page.screenshot({ path: `${OUT}/${name}-${projectName}.png`, fullPage })
 }
 
+/**
+ * Full-page shot of a page with a window-virtualized list: grow the viewport to the page height
+ * first, so every row is really rendered (a plain full-page capture only paints the rows the
+ * virtualizer drew for the original viewport, leaving blank space below them).
+ */
+async function shootTall(page: Page, name: string, projectName: string) {
+  const original = page.viewportSize()
+  if (!original) throw new Error("no viewport")
+  await page.evaluate(() => window.scrollTo(0, 0))
+  let height = original.height
+  for (let i = 0; i < 6; i++) {
+    const next = await page.evaluate(() => document.documentElement.scrollHeight)
+    if (next <= height) break
+    height = next
+    await page.setViewportSize({ width: original.width, height })
+    await page.evaluate(
+      () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+    )
+  }
+  // Chromium repeats content past about 8,192 device pixels: very tall phone shots are taken at
+  // CSS pixel scale instead.
+  const dpr = await page.evaluate(() => window.devicePixelRatio)
+  await page.screenshot({
+    path: `${OUT}/${name}-${projectName}.png`,
+    scale: height * dpr > 8000 ? "css" : "device",
+  })
+  await page.setViewportSize(original)
+}
+
 test("styleguide", async ({ page }, info) => {
   // A very long page plus one crop per section: slow on software-rendered mobile runs.
   test.setTimeout(150_000)
@@ -354,7 +383,7 @@ test("infrastructure", async ({ page }, info) => {
     page.getByRole("list", { name: "Indicators", exact: true }).locator('a[href^="http"]'),
   ).toHaveCount(0)
   await settle(page)
-  await shoot(page, "infrastructure", info.project.name, true)
+  await shootTall(page, "infrastructure", info.project.name)
 
   await page.goto("/infrastructure?mask=1")
   await expect(page.getByRole("list", { name: "Indicators", exact: true })).toBeVisible()
@@ -363,7 +392,11 @@ test("infrastructure", async ({ page }, info) => {
   expect(text).not.toMatch(/\b(192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}\b/)
   await page.goto("/infrastructure?mask=0")
 
-  await page.getByRole("list", { name: "Indicators", exact: true }).getByRole("button").first().click({ position: { x: 4, y: 4 } })
+  await page
+    .getByRole("list", { name: "Indicators", exact: true })
+    .getByRole("button")
+    .first()
+    .click({ position: { x: 4, y: 4 } })
   await expect(page.getByRole("dialog")).toBeVisible()
   await expect(page.getByRole("dialog").getByRole("status", { name: "Loading" })).toHaveCount(0)
   await expect(page.getByRole("dialog").getByText("Threat intelligence").first()).toBeVisible()

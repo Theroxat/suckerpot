@@ -131,7 +131,7 @@ describe("FlowDiagram", () => {
     expect(onOpen).toHaveBeenCalledWith(7)
     // nothing in the SVG links out
     expect(document.querySelectorAll("svg a[href]")).toHaveLength(0)
-    expect(screen.getByText(/A diamond marks an indicator/)).toBeInTheDocument()
+    expect(screen.getByText(/red octagon marks an indicator/)).toBeInTheDocument()
   })
 })
 

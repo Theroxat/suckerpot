@@ -327,10 +327,37 @@ export function buildFlow(
   }
   for (const e of famEdges) if (famKept.has(e.target)) edges.push(e)
 
+  // Fewer crossings: each address and each family sits next to the indicators it is linked to
+  // (weighted mean of their ranks), so lines run mostly straight and groups read as groups.
+  // Indicators keep their ranking; the folded node stays last.
+  const rank = new Map(indicators.map((n, i) => [n.id, i]))
+  const center = (id: string): number => {
+    let sum = 0
+    let total = 0
+    for (const e of edges) {
+      const other = e.source === id ? e.target : e.target === id ? e.source : null
+      const r = other === null ? undefined : rank.get(other)
+      if (r === undefined) continue
+      sum += r * e.weight
+      total += e.weight
+    }
+    return total > 0 ? sum / total : Number.POSITIVE_INFINITY
+  }
+  const byCenter = (list: FlowNode[]): FlowNode[] => {
+    const c = new Map(list.map((n) => [n.id, center(n.id)]))
+    const order = new Map(list.map((n, i) => [n.id, i]))
+    return [...list].sort(
+      (a, b) =>
+        (c.get(a.id) ?? 0) - (c.get(b.id) ?? 0) || (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0),
+    )
+  }
+  const named = byCenter(sources.filter((s) => s.folded === undefined))
+  const foldedNode = sources.filter((s) => s.folded !== undefined)
+
   return {
-    sources,
+    sources: [...named, ...foldedNode],
     indicators,
-    families,
+    families: byCenter(families),
     edges,
     hidden: {
       sources: foldedCount,

@@ -42,8 +42,12 @@ export function IndicatorRow({ item, onOpen }: IndicatorRowProps) {
         </p>
         <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-fg-muted">
           <span>{TYPE_LABELS[item.type]}</span>
-          <span aria-hidden>·</span>
-          <span>{ROLE_LABELS[item.role]}</span>
+          {item.role !== "hash" ? (
+            <>
+              <span aria-hidden>·</span>
+              <span>{ROLE_LABELS[item.role]}</span>
+            </>
+          ) : null}
           {item.sensors.map((s) => (
             <SensorBadge key={s} sensor={s} variant="dot" />
           ))}
@@ -57,13 +61,17 @@ export function IndicatorRow({ item, onOpen }: IndicatorRowProps) {
       <div className="col-span-2 flex flex-wrap items-center gap-2 md:contents">
         <IntelBadge item={item} className="md:justify-self-start" />
         {item.family ? (
-          <Link
-            to={`/infrastructure?family=${encodeURIComponent(item.family)}`}
-            className="relative z-10 min-w-0 truncate rounded-sm text-sm text-fg hover:underline hover:decoration-fg-subtle hover:underline-offset-4"
-            aria-label={`Show indicators of family ${item.family}`}
-          >
-            {item.family}
-          </Link>
+          <>
+            {/* On phones the whole row is one tap target (the family link is in the panel). */}
+            <span className="min-w-0 truncate text-sm text-fg md:hidden">{item.family}</span>
+            <Link
+              to={`/infrastructure?family=${encodeURIComponent(item.family)}`}
+              className="relative z-10 hidden min-w-0 justify-self-start truncate rounded-sm text-sm text-fg hover:underline hover:decoration-fg-subtle hover:underline-offset-4 md:block"
+              aria-label={`Show indicators of family ${item.family}`}
+            >
+              {item.family}
+            </Link>
+          </>
         ) : (
           <span className="text-sm text-fg-subtle">No family</span>
         )}
@@ -74,7 +82,7 @@ export function IndicatorRow({ item, onOpen }: IndicatorRowProps) {
           <span>
             <span className="text-fg">{formatNumber(item.sightings)}</span> sightings
           </span>
-          <RelativeTime iso={item.last_seen} className="relative z-10 text-xs" />
+          <RelativeTime iso={item.last_seen} className="text-xs" />
         </p>
       </div>
 

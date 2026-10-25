@@ -125,7 +125,7 @@ export function IndicatorDrawer({ id, onClose, onSelect }: IndicatorDrawerProps)
             it.
           </SheetDescription>
           {item ? (
-            <div className="flex items-start gap-2">
+            <div className="flex items-center gap-2">
               <p className="min-w-0 flex-1 font-mono text-xs break-all text-fg">
                 {shown(item.defanged)}
               </p>
@@ -152,6 +152,19 @@ export function IndicatorDrawer({ id, onClose, onSelect }: IndicatorDrawerProps)
             <>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
                 <Fact label="Role">{ROLE_LABELS[item.role]}</Fact>
+                <Fact label="Family">
+                  {item.family ? (
+                    <Link
+                      to={`/infrastructure?family=${encodeURIComponent(item.family)}`}
+                      className="text-fg underline decoration-fg-subtle underline-offset-4"
+                      aria-label={`Show indicators of family ${item.family}`}
+                    >
+                      {item.family}
+                    </Link>
+                  ) : (
+                    <span className="text-fg-subtle">None named</span>
+                  )}
+                </Fact>
                 <Fact label="Addresses">{formatNumber(item.ips)}</Fact>
                 <Fact label="Sightings">{formatNumber(item.sightings)}</Fact>
                 <Fact label="First seen">

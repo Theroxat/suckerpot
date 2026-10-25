@@ -29,8 +29,10 @@ export function FindingCard({
 }: FindingCardProps) {
   return (
     <Card className={cn("gap-0 rounded-lg py-0 shadow-sm", className)}>
-      <header className="flex items-start justify-between gap-4 px-4 pt-4 sm:px-5 sm:pt-5">
-        <div className="min-w-0 space-y-1.5">
+      {/* The action wraps under the sentence when both cannot sit side by side (wide segmented
+          controls on phones), so the finding never shrinks into a narrow column. */}
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-4 pt-4 sm:px-5 sm:pt-5">
+        <div className="min-w-0 flex-[1_1_16rem] space-y-1.5">
           <p className="text-xs font-medium text-fg-muted">{eyebrow}</p>
           <h3 className="text-base font-medium text-pretty text-fg">{finding}</h3>
           {detail ? <p className="text-sm text-fg-muted">{detail}</p> : null}

@@ -141,10 +141,15 @@ export function InfrastructurePage() {
     return () => ro.disconnect()
   }, [query.isPending])
 
+  // Row height differs between the stacked phone layout and the desktop grid.
+  const [wide] = useState(() =>
+    "matchMedia" in window ? window.matchMedia("(min-width: 768px)").matches : true,
+  )
   const count = rows.length + (query.hasNextPage ? 1 : 0)
   const virtualizer = useWindowVirtualizer({
     count,
-    estimateSize: () => 84,
+    // Close to the real row heights, so the list never shows blank space below the drawn rows.
+    estimateSize: () => (wide ? 62 : 120),
     overscan: 10,
     scrollMargin,
     getItemKey: (i) => rows[i]?.id ?? `loader-${i}`,
@@ -228,6 +233,14 @@ export function InfrastructurePage() {
           </>
         )}
       </FindingCard>
+
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <h2 className="text-sm font-medium text-fg">All indicators</h2>
+        <p className="text-xs text-fg-muted">
+          Every time window, most recently seen first. The diagram above covers the last{" "}
+          {WINDOWS.find((w) => w.hours === hours)?.label ?? `${Math.round(hours / 24)} days`}.
+        </p>
+      </div>
 
       <FilterBar
         className="mb-4"
