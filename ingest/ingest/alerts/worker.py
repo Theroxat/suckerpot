@@ -18,6 +18,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -51,6 +52,16 @@ class Channel:
     enabled: bool
     ciphertext: bytes
     mask_ips: bool
+
+
+def _saved_before(cursor: dict[str, Any], moment: datetime) -> bool:
+    raw = cursor.get("_at")
+    if not isinstance(raw, str):
+        return True  # no timestamp: cannot be trusted after a re-enable
+    try:
+        return datetime.fromisoformat(raw) < moment
+    except ValueError:
+        return True
 
 
 class AlertWorker(FeatureWorker):
@@ -132,7 +143,7 @@ class AlertWorker(FeatureWorker):
             rules = (
                 await session.execute(
                     text(
-                        "SELECT kind, channel_ids, min_severity FROM alert_rules "
+                        "SELECT kind, channel_ids, min_severity, enabled_at FROM alert_rules "
                         "WHERE enabled AND kind <> 'weekly_report' ORDER BY kind"
                     )
                 )
@@ -145,12 +156,19 @@ class AlertWorker(FeatureWorker):
                 channels[i] for i in rule.channel_ids if i in channels and channels[i].enabled
             ]
             try:
-                await self._run_rule(rule.kind, collector, rule.min_severity, targets)
+                await self._run_rule(
+                    rule.kind, collector, rule.min_severity, targets, rule.enabled_at
+                )
             except Exception as exc:  # one broken rule must not stop the others
                 log.warning("alert rule %s failed (%s)", rule.kind, type(exc).__name__)
 
     async def _run_rule(
-        self, kind: str, collector: Any, min_severity: str, targets: list[Channel]
+        self,
+        kind: str,
+        collector: Any,
+        min_severity: str,
+        targets: list[Channel],
+        enabled_at: datetime | None = None,
     ) -> None:
         threshold = SEVERITY_RANK.get(min_severity, 2)
         async with self.sf() as session, session.begin():
@@ -161,7 +179,12 @@ class AlertWorker(FeatureWorker):
                     {"k": kind},
                 )
             ).scalar_one_or_none()
+            # A cursor saved before the rule was last switched on is stale: start again at "now"
+            # instead of replaying everything that happened while the rule was off.
+            if raw is not None and enabled_at is not None and _saved_before(raw, enabled_at):
+                raw = None
             candidates, cursor = await collector(session, raw)
+            cursor = {**cursor, "_at": datetime.now(UTC).isoformat()}
             for cand in candidates:
                 if SEVERITY_RANK.get(cand.severity, 0) < threshold:
                     continue
@@ -178,27 +201,37 @@ class AlertWorker(FeatureWorker):
                 {"k": kind, "c": json.dumps(cursor)},
             )
 
+    async def _send(self, channel: Channel, message: dict[str, Any]) -> None:
+        """One send. Whatever goes wrong becomes a ``SendError`` with a constant code."""
+        try:
+            await self.sender.send(channel.kind, self._target(channel), message)
+        except SendError:
+            raise
+        except Exception as exc:  # the text may hold a target: log the type only
+            log.warning("alert send failed unexpectedly (%s)", type(exc).__name__)
+            raise SendError("internal") from None
+
     # ---- outbox -> channels -------------------------------------------------------------------
     async def _deliver(self) -> None:
         channels = await self._channels()
         usage, _ = await outbox.read_usage(self.sf)
         total_day = sum(u.day for u in usage.values())
-        by_channel: dict[int, list[Pending]] = {}
-        for item in await outbox.read_pending(self.sf):
-            by_channel.setdefault(item.channel_id, []).append(item)
         left = outbox.CYCLE_LIMIT
-        for channel_id, items in by_channel.items():
+        for channel_id in await outbox.pending_channels(self.sf):
             channel = channels.get(channel_id)
             if channel is None or not channel.enabled:
-                await outbox.mark(self.sf, [i.id for i in items], "suppressed",
-                                  error="channel_disabled")  # fmt: skip
+                await outbox.mark_channel_pending(
+                    self.sf, channel_id, "suppressed", "channel_disabled"
+                )
                 continue
             use = usage.setdefault(channel_id, Usage())
             use.global_day = total_day
+            if left <= 0:
+                break
+            items, _ = await outbox.read_pending(self.sf, channel_id)
             plan = outbox.plan_channel(len(items), use, left)
             if plan is Plan.DROP:
-                await outbox.mark(self.sf, [i.id for i in items], "suppressed",
-                                  error="daily_limit")  # fmt: skip
+                await outbox.mark_channel_pending(self.sf, channel_id, "suppressed", "daily_limit")
             elif plan is Plan.EACH:
                 for item in items:
                     sent = await self._send_items(channel, [item], item.payload)
@@ -216,8 +249,6 @@ class AlertWorker(FeatureWorker):
                 use.minute += sent
                 use.day += sent
                 total_day += sent
-            if left <= 0:
-                break
         self.sent_cycle = outbox.CYCLE_LIMIT - left
 
     async def _send_items(
@@ -232,7 +263,7 @@ class AlertWorker(FeatureWorker):
         """Send one message for ``items``. Returns 1 when it left, else 0."""
         ids = [i.id for i in items]
         try:
-            await self.sender.send(channel.kind, self._target(channel), message)
+            await self._send(channel, message)
         except SendError as exc:
             log.info("alert delivery failed (%s)", exc.code)
             await outbox.record_retry(self.sf, items, exc.code, exc.retryable)
@@ -266,7 +297,7 @@ class AlertWorker(FeatureWorker):
                 state, detail = "failed", "channel_missing"
             else:
                 try:
-                    await self.sender.send(channel.kind, self._target(channel), sample_message())
+                    await self._send(channel, sample_message())
                     state, detail = "done", "sent"
                 except SendError as exc:
                     refused = exc.code in ("blocked_target", "private_address", "no_encryption_key",

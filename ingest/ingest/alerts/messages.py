@@ -13,7 +13,7 @@ import html
 from dataclasses import dataclass, field
 from typing import Any
 
-from ingest.alerts.text import clean, defang, show_ip
+from ingest.alerts.text import clean_text, defang, show_ip
 
 SEVERITIES = ("info", "notice", "warning", "severe")
 SEVERITY_RANK = {name: i for i, name in enumerate(SEVERITIES)}
@@ -34,7 +34,7 @@ class Candidate:
 
 
 def _join(values: list[Any], limit: int = 4) -> str:
-    items = [clean(v, 40) for v in values[:limit] if str(v)]
+    items = [clean_text(v, 40) for v in values[:limit] if str(v)]
     extra = len(values) - limit
     return ", ".join(items) + (f" and {extra} more" if extra > 0 else "")
 
@@ -49,7 +49,7 @@ def build_message(c: Candidate, *, mask_ips: bool) -> dict[str, Any]:
     link: str | None = None
     if c.rule == "new_campaign":
         sources = int(d.get("sources", 0))
-        title = f"New campaign: {clean(d.get('name', 'unnamed'), 80)}"
+        title = f"New campaign: {clean_text(d.get('name', 'unnamed'), 80)}"
         summary = (
             f"A new coordinated campaign appeared: {_plural(sources, 'address', 'addresses')} "
             f"are running the same attack against the honeypot."
@@ -73,38 +73,43 @@ def build_message(c: Candidate, *, mask_ips: bool) -> dict[str, Any]:
             ["Sensors", _join(list(d.get("sensors") or []))],
         ]
         if d.get("family"):
-            facts.append(["Known as", clean(d["family"], 60)])
+            facts.append(["Known as", clean_text(d["family"], 60)])
         action = "Block this host on your web proxy or DNS filter."
         link = "/malware"
     elif c.rule == "malware_drop":
         title = "Malware was dropped on the honeypot"
         summary = (
             "An attacker downloaded or ran a payload in a session on the "
-            f"{clean(d.get('sensor', ''), 20)} sensor."
+            f"{clean_text(d.get('sensor', ''), 20)} sensor."
         )
         facts = [
             ["Source", show_ip(str(d.get("src_ip", "")), mask_ips)],
-            ["Country", clean(d.get("country") or "unknown", 40)],
-            ["Network", clean(d.get("org") or "unknown", 60)],
+            ["Country", clean_text(d.get("country") or "unknown", 40)],
+            ["Network", clean_text(d.get("org") or "unknown", 60)],
             ["Tags", _join(list(d.get("tags") or []), 5)],
         ]
         action = "Open the session to see the commands and the download URL."
-        link = f"/attacks/{clean(d.get('session_id', ''), 64)}" if d.get("session_id") else None
+        link = (
+            f"/attacks/{clean_text(d.get('session_id', ''), 64)}" if d.get("session_id") else None
+        )
     elif c.rule == "watched_cve_seen":
-        cve = clean(d.get("cve_id", ""), 24)
+        cve = clean_text(d.get("cve_id", ""), 24)
         n = int(d.get("sessions", 0))
         title = f"{cve} is being exploited against the honeypot"
         summary = f"A vulnerability you watch was tried in {_plural(n, 'session')} today."
         facts = [["CVE", cve], ["Sessions", f"{n:,}"]]
         if d.get("title"):
-            facts.append(["About", clean(d["title"], 100)])
+            facts.append(["About", clean_text(d["title"], 100)])
         action = "Check that your own systems are patched against this vulnerability."
         link = "/cves"
     elif c.rule == "weekly_report":
-        week = clean(d.get("week_start", ""), 12)
+        week = clean_text(d.get("week_start", ""), 12)
         title = f"Weekly report for the week of {week}"
-        summary = clean(d.get("headline", "Your weekly honeypot report is ready."), 200)
-        facts = [[clean(k, 40), clean(v, 80)] for k, v in list(d.get("facts") or [])[:MAX_FACTS]]
+        summary = clean_text(d.get("headline", "Your weekly honeypot report is ready."), 200)
+        facts = [
+            [clean_text(k, 40), clean_text(v, 80)]
+            for k, v in list(d.get("facts") or [])[:MAX_FACTS]
+        ]
         action = "Open the report for what changed and what to do next."
         link = f"/reports/{week}"
     else:
@@ -133,7 +138,7 @@ def build_digest(messages: list[dict[str, Any]], period: str) -> dict[str, Any]:
         "summary": (
             "Too many alerts arrived at once, so here is a short list instead of one message each."
         ),
-        "facts": [[m["severity"], clean(m["title"], 100)] for m in shown],
+        "facts": [[m["severity"], clean_text(m["title"], 100)] for m in shown],
         "action": "Open Alerts and reports in the dashboard for the full list.",
         "link": "/defend/alerts",
         "digest": True,
@@ -163,14 +168,14 @@ def _url(base: str, link: str | None) -> str | None:
 
 def render_discord(msg: dict[str, Any], base_url: str = "") -> dict[str, Any]:
     fields = [
-        {"name": _md(clean(k, 60)), "value": _md(clean(v, 200)) or "-", "inline": True}
+        {"name": _md(clean_text(k, 60)), "value": _md(clean_text(v, 200)) or "-", "inline": True}
         for k, v in msg.get("facts", [])
     ]
     embed: dict[str, Any] = {
-        "title": _md(clean(msg["title"], 200)),
-        "description": _md(clean(msg["summary"], 500))
+        "title": _md(clean_text(msg["title"], 200)),
+        "description": _md(clean_text(msg["summary"], 500))
         + "\n\n**Next:** "
-        + _md(clean(msg["action"], 200)),
+        + _md(clean_text(msg["action"], 200)),
         "color": COLORS.get(msg["severity"], COLORS["info"]),
         "fields": fields[:MAX_FACTS],
     }
@@ -185,25 +190,25 @@ def render_teams(msg: dict[str, Any], base_url: str = "") -> dict[str, Any]:
     body: list[dict[str, Any]] = [
         {
             "type": "TextBlock",
-            "text": _md(clean(msg["title"], 200)),
+            "text": _md(clean_text(msg["title"], 200)),
             "weight": "Bolder",
             "size": "Medium",
             "wrap": True,
         },
-        {"type": "TextBlock", "text": _md(clean(msg["summary"], 500)), "wrap": True},
+        {"type": "TextBlock", "text": _md(clean_text(msg["summary"], 500)), "wrap": True},
     ]
     if msg.get("facts"):
         body.append(
             {
                 "type": "FactSet",
                 "facts": [
-                    {"title": _md(clean(k, 60)), "value": _md(clean(v, 200))}
+                    {"title": _md(clean_text(k, 60)), "value": _md(clean_text(v, 200))}
                     for k, v in msg["facts"]
                 ],
             }
         )
     body.append(
-        {"type": "TextBlock", "text": "Next: " + _md(clean(msg["action"], 200)), "wrap": True}
+        {"type": "TextBlock", "text": "Next: " + _md(clean_text(msg["action"], 200)), "wrap": True}
     )
     card: dict[str, Any] = {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -228,25 +233,25 @@ def render_teams(msg: dict[str, Any], base_url: str = "") -> dict[str, Any]:
 
 def render_email(msg: dict[str, Any], base_url: str = "") -> tuple[str, str, str]:
     """Return ``(subject, plain text, html)``. The HTML escapes every value."""
-    subject = clean(f"[{msg['severity']}] {msg['title']}", 150)
+    subject = clean_text(f"[{msg['severity']}] {msg['title']}", 150)
     url = _url(base_url, msg.get("link"))
-    lines = [clean(msg["title"], 200), "", clean(msg["summary"], 500), ""]
-    lines += [f"{clean(k, 60)}: {clean(v, 200)}" for k, v in msg.get("facts", [])]
-    lines += ["", "Next: " + clean(msg["action"], 200)]
+    lines = [clean_text(msg["title"], 200), "", clean_text(msg["summary"], 500), ""]
+    lines += [f"{clean_text(k, 60)}: {clean_text(v, 200)}" for k, v in msg.get("facts", [])]
+    lines += ["", "Next: " + clean_text(msg["action"], 200)]
     if url:
         lines += ["", f"Open: {url}"]
     text = "\n".join(lines) + "\n"
     esc = html.escape
     rows = "".join(
-        f'<tr><td style="padding:2px 12px 2px 0;color:#555">{esc(clean(k, 60))}</td>'
-        f'<td style="padding:2px 0">{esc(clean(v, 200))}</td></tr>'
+        f'<tr><td style="padding:2px 12px 2px 0;color:#555">{esc(clean_text(k, 60))}</td>'
+        f'<td style="padding:2px 0">{esc(clean_text(v, 200))}</td></tr>'
         for k, v in msg.get("facts", [])
     )
     link = f'<p><a href="{esc(url, quote=True)}">Open in the dashboard</a></p>' if url else ""
     body = (
         '<div style="font-family:system-ui,sans-serif;max-width:560px">'
-        f'<h2 style="margin:0 0 8px">{esc(clean(msg["title"], 200))}</h2>'
-        f"<p>{esc(clean(msg['summary'], 500))}</p><table>{rows}</table>"
-        f"<p><strong>Next:</strong> {esc(clean(msg['action'], 200))}</p>{link}</div>"
+        f'<h2 style="margin:0 0 8px">{esc(clean_text(msg["title"], 200))}</h2>'
+        f"<p>{esc(clean_text(msg['summary'], 500))}</p><table>{rows}</table>"
+        f"<p><strong>Next:</strong> {esc(clean_text(msg['action'], 200))}</p>{link}</div>"
     )
     return subject, text, body

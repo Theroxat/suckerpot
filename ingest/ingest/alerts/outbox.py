@@ -26,7 +26,8 @@ DAY_LIMIT = 100
 GLOBAL_DAY_LIMIT = 300
 CYCLE_LIMIT = 50
 MAX_ATTEMPTS = 3
-MAX_PENDING_READ = 200
+MAX_PENDING_READ = 50  # per channel and cycle
+MAX_PENDING_PER_CHANNEL = 50  # more than this waiting: new alerts are kept as suppressed
 
 
 class Plan(StrEnum):
@@ -70,16 +71,31 @@ def plan_channel(count: int, usage: Usage, cycle_left: int) -> Plan:
 async def enqueue(
     session: AsyncSession, rule_kind: str, dedupe_key: str, channel_id: int, payload: dict[str, Any]
 ) -> bool:
-    """Queue one alert. False when the same alert was queued before."""
+    """Queue one alert. False when the same alert was queued before.
+
+    A channel that already has ``MAX_PENDING_PER_CHANNEL`` alerts waiting gets the new one stored
+    as ``suppressed`` (``backlog``): visible in the list, never sent, so the backlog stays bounded
+    whatever the channel does.
+    """
     result = await session.execute(
         text(
             """
-            INSERT INTO alert_outbox (rule_kind, dedupe_key, channel_id, payload)
-            VALUES (:r, :k, :c, CAST(:p AS jsonb))
+            INSERT INTO alert_outbox (rule_kind, dedupe_key, channel_id, payload, state, error_code)
+            SELECT :r, :k, :c, CAST(:p AS jsonb),
+                   CASE WHEN waiting >= :cap THEN 'suppressed' ELSE 'pending' END,
+                   CASE WHEN waiting >= :cap THEN 'backlog' END
+            FROM (SELECT count(*) AS waiting FROM alert_outbox
+                  WHERE channel_id = :c AND state = 'pending') w
             ON CONFLICT (rule_kind, dedupe_key, channel_id) DO NOTHING
             """
         ),
-        {"r": rule_kind, "k": dedupe_key[:128], "c": channel_id, "p": json.dumps(payload)},
+        {
+            "r": rule_kind,
+            "k": dedupe_key[:128],
+            "c": channel_id,
+            "p": json.dumps(payload),
+            "cap": MAX_PENDING_PER_CHANNEL,
+        },
     )
     return bool(result.rowcount)  # type: ignore[attr-defined]
 
@@ -109,21 +125,54 @@ async def read_usage(
     return usage, total
 
 
-async def read_pending(factory: async_sessionmaker[AsyncSession]) -> list[Pending]:
+async def pending_channels(factory: async_sessionmaker[AsyncSession]) -> list[int]:
+    """Channels with something waiting, the one waiting longest first."""
+    async with factory() as session:
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT channel_id FROM alert_outbox WHERE state = 'pending' "
+                    "GROUP BY channel_id ORDER BY min(id)"
+                )
+            )
+        ).all()
+    return [int(r.channel_id) for r in rows]
+
+
+async def read_pending(
+    factory: async_sessionmaker[AsyncSession], channel_id: int
+) -> tuple[list[Pending], int]:
+    """The oldest waiting alerts of ONE channel (bounded) and how many wait in all."""
     async with factory() as session:
         rows = (
             await session.execute(
                 text(
                     """
-                    SELECT id, rule_kind, channel_id, payload, attempts
-                    FROM alert_outbox WHERE state = 'pending'
+                    SELECT id, rule_kind, channel_id, payload, attempts,
+                           count(*) OVER () AS total
+                    FROM alert_outbox WHERE state = 'pending' AND channel_id = :c
                     ORDER BY id LIMIT :n
                     """
                 ),
-                {"n": MAX_PENDING_READ},
+                {"c": channel_id, "n": MAX_PENDING_READ},
             )
         ).all()
-    return [Pending(r.id, r.rule_kind, r.channel_id, dict(r.payload), r.attempts) for r in rows]
+    items = [Pending(r.id, r.rule_kind, r.channel_id, dict(r.payload), r.attempts) for r in rows]
+    return items, int(rows[0].total) if rows else 0
+
+
+async def mark_channel_pending(
+    factory: async_sessionmaker[AsyncSession], channel_id: int, state: str, error: str
+) -> None:
+    """Every waiting alert of a channel at once (one statement, however many there are)."""
+    async with factory() as session, session.begin():
+        await session.execute(
+            text(
+                "UPDATE alert_outbox SET state = :s, error_code = :e "
+                "WHERE channel_id = :c AND state = 'pending'"
+            ),
+            {"s": state, "e": error, "c": channel_id},
+        )
 
 
 async def mark(
