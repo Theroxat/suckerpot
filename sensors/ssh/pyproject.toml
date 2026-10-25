@@ -5,7 +5,9 @@ description = "SuckerPot SSH sensor: SSH server with a pure-emulation fake shell
 requires-python = ">=3.13"
 dependencies = [
     "suckerpot-common",
-    "asyncssh>=2.18,<3",
+    # Exact pin: ssh_sensor.server swaps __class__ on asyncssh objects and reads private
+    # attributes (flow control). Upgrade deliberately; tests/test_asyncssh_contract.py must pass.
+    "asyncssh==2.24.1",
 ]
 
 [build-system]
