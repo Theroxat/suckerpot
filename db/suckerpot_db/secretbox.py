@@ -31,6 +31,7 @@ PROVIDERS: tuple[str, ...] = get_args(Provider)
 ENV_VAR = "SETTINGS_ENCRYPTION_KEY"
 HKDF_INFO = b"suckerpot/provider-secrets/v1"
 MIN_MASTER_BYTES = 32
+MIN_DISTINCT_BYTES = 16  # rejects "AAAA…" and other low-entropy values
 NONCE_BYTES = 12
 MAX_KEY_LEN = 128
 MIN_KEY_LEN = 16
@@ -83,6 +84,8 @@ class SecretBox:
     def __init__(self, master: bytes) -> None:
         if len(master) < MIN_MASTER_BYTES:
             raise SecretError(f"{ENV_VAR} must decode to at least {MIN_MASTER_BYTES} bytes")
+        if len(set(master)) < MIN_DISTINCT_BYTES:
+            raise SecretError(f"{ENV_VAR} is too predictable (use openssl rand -base64 32)")
         derived = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=HKDF_INFO).derive(
             master
         )
@@ -123,4 +126,11 @@ def box_from_env(env: Mapping[str, str] | None = None) -> SecretBox | None:
         master = base64.b64decode(raw + "=" * (-len(raw) % 4), altchars=b"-_", validate=True)
     except (binascii.Error, ValueError):
         raise SecretError(f"{ENV_VAR} must be base64 (openssl rand -base64 32)") from None
+    for name, value in e.items():
+        if (
+            name != ENV_VAR
+            and value.strip() == raw
+            and (name.endswith("_PASSWORD") or name == "SESSION_SECRET")
+        ):
+            raise SecretError(f"{ENV_VAR} must differ from {name}")
     return SecretBox(master)
