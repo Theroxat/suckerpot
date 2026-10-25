@@ -254,7 +254,7 @@ export function ProviderKeys({ e }: { e: EnrichmentSettings }) {
         <KeyRow id="greynoise" info={e.greynoise} editable={editable} envName="GREYNOISE_API_KEY" />
         <KeyRow id="maxmind" info={e.maxmind} editable={editable} envName="MAXMIND_LICENSE_KEY" />
         <KeyRow id="nvd" info={e.nvd} editable={editable} envName="NVD_API_KEY" />
-        <KeyRow id="github" info={e.github} editable={editable} envName="GITHUB_TOKEN" />
+        <KeyRow id="github" info={e.github} editable={editable} envName="GITHUB_ADVISORY_TOKEN" />
       </ul>
     </div>
   )
