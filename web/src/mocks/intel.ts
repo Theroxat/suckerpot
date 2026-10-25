@@ -275,8 +275,11 @@ export function intelHandlers(sessions: readonly Session[] = []) {
     const known = u.searchParams.get("known")
     const family = u.searchParams.get("family")?.toLowerCase()
     const q = (u.searchParams.get("q") ?? "").toLowerCase()
+    const hours = Number(u.searchParams.get("hours") ?? 0)
+    const since = hours > 0 ? now - hours * HOUR : 0
     return items.filter(
       (b) =>
+        Date.parse(b.last_seen) >= since &&
         (!type || b.type === type) &&
         (!role || b.role === role) &&
         (known === null || (known === "true" ? b.known === true : b.known !== true)) &&

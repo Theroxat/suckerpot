@@ -142,6 +142,8 @@ export interface IndicatorFilters {
   role?: string | undefined
   known?: string | undefined
   family?: string | undefined
+  /** Only indicators seen in the last N hours (the diagram's window); absent = all time. */
+  hours?: string | undefined
   q?: string | undefined
 }
 
@@ -374,7 +376,7 @@ export type ExportFormat = "csv" | "stix"
 /** Same-origin API URL of the download. Filters are the ones the table uses. */
 export function exportHref(format: ExportFormat, f: IndicatorFilters): string {
   const p = new URLSearchParams({ format })
-  for (const k of ["type", "role", "known", "family", "q"] as const) {
+  for (const k of ["type", "role", "known", "family", "hours", "q"] as const) {
     const v = f[k]
     if (v) p.set(k, v)
   }

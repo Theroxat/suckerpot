@@ -146,12 +146,10 @@ function EnrichmentCard() {
     // While a saved key or a test is still going through ingest, look again every few seconds.
     refetchInterval: (query) => {
       const d = query.state.data
-      return (
-        d &&
+      return d &&
         [d.abuseipdb, d.greynoise, d.maxmind, d.nvd, d.github, d.abusech, d.virustotal].some((k) =>
           keyInFlight(k),
         )
-      )
         ? 3_000
         : false
     },
