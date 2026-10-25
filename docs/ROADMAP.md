@@ -143,9 +143,9 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M11 — Settings you can edit
 
-- [ ] Enter, replace and remove enrichment API keys (AbuseIPDB, GreyNoise, MaxMind) from Settings, with no restart.
-- [ ] Keys stored encrypted at rest (key from `.env`), write-only in the UI (only the last 4 characters shown), every change logged, CSRF and re-authentication required; `.env` values stay a supported fallback.
-- [ ] Ingest picks up new keys within a minute; Settings shows where each key comes from (`.env` or Settings) and a "Test key" button that spends one quota call.
+- [x] Enter, replace and remove enrichment API keys (AbuseIPDB, GreyNoise, MaxMind) from Settings, with no restart.
+- [x] Keys stored encrypted at rest (key from `.env`), write-only in the UI (only the last 4 characters shown), every change logged, CSRF and re-authentication required; `.env` values stay a supported fallback.
+- [x] Ingest picks up new keys within a minute; Settings shows where each key comes from (`.env` or Settings) and a "Test key" button that spends one quota call.
 
 **Acceptance:** a key added in Settings turns the provider on without a restart; keys never leave the server in clear text; security review PASS.
 
