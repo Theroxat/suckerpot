@@ -35,6 +35,7 @@ services:
       REDIS_SENSOR_SSH_PASSWORD: ${REDIS_SENSOR_SSH_PASSWORD:?REDIS_SENSOR_SSH_PASSWORD must be set in .env}
       REDIS_SENSOR_RDP_PASSWORD: ${REDIS_SENSOR_RDP_PASSWORD:?REDIS_SENSOR_RDP_PASSWORD must be set in .env}
       REDIS_SENSOR_TELNET_PASSWORD: ${REDIS_SENSOR_TELNET_PASSWORD:?REDIS_SENSOR_TELNET_PASSWORD must be set in .env}
+      REDIS_SENSOR_WEB_PASSWORD: ${REDIS_SENSOR_WEB_PASSWORD:?REDIS_SENSOR_WEB_PASSWORD must be set in .env}
       REDIS_DEMO_PASSWORD: ${REDIS_DEMO_PASSWORD:?REDIS_DEMO_PASSWORD must be set in .env}
       REDIS_INGEST_PASSWORD: ${REDIS_INGEST_PASSWORD:?REDIS_INGEST_PASSWORD must be set in .env}
       REDIS_HEALTH_PASSWORD: ${REDIS_HEALTH_PASSWORD:?REDIS_HEALTH_PASSWORD must be set in .env}
@@ -44,7 +45,7 @@ services:
     tmpfs:
       # Generated ACL file (mode 0600, hashed passwords).
       - /run/redis:rw,noexec,nosuid,nodev,size=1m,mode=0700,uid=999,gid=999
-    networks: [sensors-ssh, sensors-rdp, sensors-telnet, tools, backend]
+    networks: [sensors-ssh, sensors-rdp, sensors-telnet, sensors-web, tools, backend]
     mem_limit: 384m
     cpus: 0.5
     pids_limit: 64
@@ -385,6 +386,62 @@ services:
       retries: 3
       start_period: 20s
 
+  # Web sensor: a fake Apache + PHP 8.3 stack, pure emulation, never executes attacker input.
+  sensor-web:
+    build:
+      context: .
+      dockerfile: sensors/web/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor-web
+      REDIS_PASSWORD: ${REDIS_SENSOR_WEB_PASSWORD:?REDIS_SENSOR_WEB_PASSWORD must be set in .env}
+      EVENTS_STREAM: events:web
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN:-10000}
+      EVENTS_MAX_BYTES_PER_SEC: ${EVENTS_MAX_BYTES_PER_SEC:-200000}
+      EVENTS_MAX_BYTES_BURST: ${EVENTS_MAX_BYTES_BURST:-2000000}
+      WEB_HTTP_PORT: "8080"
+      WEB_HTTPS_PORT: "8443"
+      WEB_HTTP_PUBLIC_PORT: ${HTTP_HOST_PORT:-80}
+      WEB_HTTPS_PUBLIC_PORT: ${HTTPS_HOST_PORT:-443}
+      WEB_HOSTNAME: ${WEB_HOSTNAME:-srv-web01}
+      WEB_DATA_DIR: /data
+      WEB_PHP_VERSION: ${WEB_PHP_VERSION:-8.3.6}
+      WEB_WP_VERSION: ${WEB_WP_VERSION:-6.8.1}
+      WEB_MAX_CONNECTIONS: ${WEB_MAX_CONNECTIONS:-200}
+      WEB_MAX_PER_IP: ${WEB_MAX_PER_IP:-10}
+      # Keep equal to mem_limit below: the sensor sheds load as it nears this figure.
+      WEB_MEMORY_LIMIT_MB: "256"
+    # Explicit IPv4 so Docker does not also publish on [::]. No capability needed.
+    ports:
+      - "0.0.0.0:${HTTP_HOST_PORT:-80}:8080"
+      - "0.0.0.0:${HTTPS_HOST_PORT:-443}:8443"
+    # Docker's embedded DNS still resolves service names; external names fail.
+    dns: ["127.0.0.1"]
+    # ingress: inbound only. sensors-web: internal link to Redis.
+    networks: [ingress, sensors-web]
+    volumes:
+      # Profile secret and TLS certificate, generated on first start. Never committed.
+      - web-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 256m
+    memswap_limit: 256m  # no swap: overload fails fast instead of stalling the host
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "web_sensor.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   # Synthetic attack generator. Publishes to Redis as the restricted "sensor" user.
   # Run with: docker compose --profile tools run --rm demo [args]
   demo:
@@ -436,6 +493,9 @@ networks:
   # Telnet sensor <-> Redis only.
   sensors-telnet:
     internal: true
+  # Web sensor <-> Redis only.
+  sensors-web:
+    internal: true
   # Demo generator <-> Redis only.
   tools:
     internal: true
@@ -458,4 +518,5 @@ volumes:
   ssh-hostkeys:
   rdp-data:
   telnet-data:
+  web-data:
   geoip-data:

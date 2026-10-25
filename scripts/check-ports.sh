@@ -21,7 +21,7 @@ fail=0
 err() { echo "check-ports: $*" >&2; fail=1; }
 
 list=""
-for spec in DASHBOARD_PORT:8443 SSH_HOST_PORT:22 TELNET_HOST_PORT:23 HTTP_HOST_PORT:80 RDP_HOST_PORT:3389; do
+for spec in DASHBOARD_PORT:8443 SSH_HOST_PORT:22 TELNET_HOST_PORT:23 HTTP_HOST_PORT:80 HTTPS_HOST_PORT:443 RDP_HOST_PORT:3389; do
   name=${spec%%:*}
   port=$(get "$name" "${spec#*:}")
   case $port in
