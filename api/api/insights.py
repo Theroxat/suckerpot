@@ -10,6 +10,7 @@ from pydantic import AwareDatetime
 
 from api import analytics_queries as q
 from api.analytics_queries import WindowError
+from api.benign import IncludeBenign
 from api.deps import DbSession
 from api.insights_queries import gather_facts
 from api.insights_rules import build_insights
@@ -26,13 +27,14 @@ async def get_insights(
     db: DbSession,
     since: AwareDatetime | None = None,
     until: AwareDatetime | None = None,
+    include_benign: IncludeBenign = False,
 ) -> InsightList:
     now = datetime.now(UTC)
     try:
         window = q.resolve_window(since, until, default=timedelta(days=7), now=now)
     except WindowError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    facts = await gather_facts(db, window.since, window.until)
+    facts = await gather_facts(db, window.since, window.until, include_benign)
     return InsightList(generated_at=now, items=build_insights(facts, now))
 
 

@@ -65,6 +65,7 @@ def test_hub_limits_and_broadcast() -> None:
     assert set(msg["event"]) == {
         "id", "ts", "sensor", "session_id", "type", "src_ip", "src_port", "dst_port",
         "summary", "country", "city", "asn", "org", "abuse_score", "known_scanner", "tags",
+        "benign",
     }  # fmt: skip
     hub.remove(a)
     assert hub.add() is not None

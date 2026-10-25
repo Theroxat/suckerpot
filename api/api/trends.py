@@ -14,6 +14,7 @@ from suckerpot_db.models import EventRow, SessionRow
 from api import analytics_queries as q
 from api.analytics_queries import Window, WindowError
 from api.analytics_schemas import BucketName
+from api.benign import IncludeBenign, visible_events, visible_sessions
 from api.deps import DbSession
 
 router = APIRouter()
@@ -58,24 +59,27 @@ async def new_values(
     limit: int,
     *,
     min_count: int = 1,
+    include_benign: bool = True,
 ) -> list[NewValueItem]:
     """Values seen in ``[since, until)`` and never in the 90 days before ``since``."""
     lookback_start = since - LOOKBACK
     if field == "asn":
         value = SessionRow.asn.cast(Text)
+        sess_ok = visible_sessions(include_benign)
         cur_inner = select(value.label("value"), SessionRow.started_at.label("ts")).where(
-            SessionRow.started_at >= since, SessionRow.started_at < until
+            SessionRow.started_at >= since, SessionRow.started_at < until, *sess_ok
         )
         prev_inner = select(value.label("value")).where(
-            SessionRow.started_at >= lookback_start, SessionRow.started_at < since
+            SessionRow.started_at >= lookback_start, SessionRow.started_at < since, *sess_ok
         )
     else:
         expr, types = q._event_value(field)
+        ev_ok = visible_events(include_benign)
         cur_inner = select(expr.label("value"), EventRow.ts.label("ts")).where(
-            EventRow.ts >= since, EventRow.ts < until, EventRow.type.in_(types)
+            EventRow.ts >= since, EventRow.ts < until, EventRow.type.in_(types), *ev_ok
         )
         prev_inner = select(expr.label("value")).where(
-            EventRow.ts >= lookback_start, EventRow.ts < since, EventRow.type.in_(types)
+            EventRow.ts >= lookback_start, EventRow.ts < since, EventRow.type.in_(types), *ev_ok
         )
     cur = cur_inner.subquery("cur")
     prev = prev_inner.subquery("prev")
@@ -102,16 +106,18 @@ async def trends_new(
     field: NewField,
     days: Annotated[int, Query(ge=1, le=30)] = 7,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    include_benign: IncludeBenign = False,
 ) -> NewValues:
     until = datetime.now(UTC) + timedelta(minutes=1)
     since = until - timedelta(days=days)
-    return NewValues(field=field, items=await new_values(db, field, since, until, limit))
+    items = await new_values(db, field, since, until, limit, include_benign=include_benign)
+    return NewValues(field=field, items=items)
 
 
 # --------------------------------------------------------------------------- tags over time
 
 
-def _tag_stmt(bucket: str, window: Window) -> Select[Any]:
+def _tag_stmt(bucket: str, window: Window, include_benign: bool = True) -> Select[Any]:
     interval, step = q.BUCKET_SQL[bucket]
     sub = (
         select(
@@ -121,6 +127,7 @@ def _tag_stmt(bucket: str, window: Window) -> Select[Any]:
         .where(
             SessionRow.started_at >= q.floor_to_bucket(window.since, step),
             SessionRow.started_at < window.until,
+            *visible_sessions(include_benign),
         )
         .subquery("t")
     )
@@ -134,6 +141,7 @@ async def trends_tags(
     bucket: BucketName = "1d",
     since: AwareDatetime | None = None,
     until: AwareDatetime | None = None,
+    include_benign: IncludeBenign = False,
 ) -> TagSeries:
     try:
         window = q.resolve_window(since, until, default=timedelta(days=7))
@@ -144,7 +152,7 @@ async def trends_tags(
     starts = q.bucket_starts(window, step)
     cells: dict[datetime, dict[str, int]] = {s: {} for s in starts}
     totals: dict[str, int] = {}
-    for b, tag, n in (await db.execute(_tag_stmt(bucket, window))).all():
+    for b, tag, n in (await db.execute(_tag_stmt(bucket, window, include_benign))).all():
         slot = cells.get(b.astimezone(UTC))
         if slot is None:
             continue

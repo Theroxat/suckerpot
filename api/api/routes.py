@@ -20,6 +20,7 @@ from suckerpot_db.models import (
 )
 
 from api.analytics_queries import session_has_value
+from api.benign import IncludeBenign, visible_events, visible_sessions
 from api.cursor import (
     InvalidCursorError,
     event_cursor,
@@ -91,9 +92,11 @@ async def healthz(session: DbSession, response: Response) -> Health:
 
 
 @router.get("/events/recent", response_model=RecentEvents)
-async def recent_events(session: DbSession, limit: Limit = 50) -> RecentEvents:
+async def recent_events(
+    session: DbSession, limit: Limit = 50, include_benign: IncludeBenign = False
+) -> RecentEvents:
     """The latest events, newest first (REST equivalent of the WebSocket backfill)."""
-    return RecentEvents(items=await fetch_recent(session, limit))
+    return RecentEvents(items=await fetch_recent(session, limit, include_benign=include_benign))
 
 
 @router.get("/sessions", response_model=SessionPage)
@@ -114,8 +117,10 @@ async def list_sessions(
     url: ValueFilter | None = None,
     technique: TechniqueFilter | None = None,
     campaign_id: Annotated[int | None, Query(ge=1, le=2**62)] = None,
+    include_benign: IncludeBenign = False,
 ) -> SessionPage:
-    stmt = select(SessionRow)
+    # Asking for one address by name is on purpose: its sessions are shown whatever the switch says.
+    stmt = select(SessionRow).where(*visible_sessions(include_benign or src_ip is not None))
     if technique is not None:
         stmt = stmt.where(SessionRow.techniques.contains([technique]))
     if campaign_id is not None:
@@ -200,31 +205,37 @@ async def list_session_events(
 
 
 @router.get("/stats/summary", response_model=StatsSummary)
-async def stats_summary(session: DbSession) -> StatsSummary:
+async def stats_summary(session: DbSession, include_benign: IncludeBenign = False) -> StatsSummary:
     since = datetime.now(UTC) - timedelta(hours=24)
+    ev_ok = visible_events(include_benign)
+    se_ok = visible_sessions(include_benign)
 
     ev_by_sensor = (
         await session.execute(
             select(EventRow.sensor, func.count())
-            .where(EventRow.ts >= since)
+            .where(EventRow.ts >= since, *ev_ok)
             .group_by(EventRow.sensor)
         )
     ).all()
     downloads = await session.scalar(
-        select(func.count()).where(EventRow.ts >= since, EventRow.type == "download_attempt")
+        select(func.count()).where(
+            EventRow.ts >= since, EventRow.type == "download_attempt", *ev_ok
+        )
     )
     ses_by_sensor = (
         await session.execute(
             select(SessionRow.sensor, func.count())
-            .where(SessionRow.started_at >= since)
+            .where(SessionRow.started_at >= since, *se_ok)
             .group_by(SessionRow.sensor)
         )
     ).all()
     unique_ips = await session.scalar(
-        select(func.count(func.distinct(SessionRow.src_ip))).where(SessionRow.started_at >= since)
+        select(func.count(func.distinct(SessionRow.src_ip))).where(
+            SessionRow.started_at >= since, *se_ok
+        )
     )
     with_cmds = await session.scalar(
-        select(func.count()).where(SessionRow.started_at >= since, SessionRow.commands > 0)
+        select(func.count()).where(SessionRow.started_at >= since, SessionRow.commands > 0, *se_ok)
     )
 
     by_sensor: dict[str, SensorCounts] = {}
