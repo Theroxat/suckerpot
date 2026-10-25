@@ -118,7 +118,7 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - [x] DB volume backup script.
 - [x] Full security review.
 - [x] README with demo-data screenshots.
-- [ ] GitHub release `v0.1.0`.
+- [x] GitHub release `v0.1.0`.
 - [ ] Remind the owner of the go-live checklist (dashboard firewall rule, `/logout`, token revocation, snapshot, then DMZ).
 
 ## Later (not part of the loop)
