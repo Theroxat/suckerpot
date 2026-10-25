@@ -42,6 +42,7 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S104", "S105", "S106"]
 "api/main.py" = ["S104"]
+"api/guidance.py" = ["E501"]  # prose: long lines read better than wrapped strings
 
 [tool.mypy]
 strict = true

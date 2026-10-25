@@ -52,7 +52,10 @@ def install_security_headers(app: FastAPI, *, enable_docs: bool) -> None:
 
 
 def _is_api_path(path: str) -> bool:
-    return path == "api" or path.startswith("api/") or path == "healthz"
+    # "feeds" is the opt-in blocklist feed (api.feeds): never answer it with the web app.
+    return (
+        path in ("api", "feeds", "healthz") or path.startswith("api/") or path.startswith("feeds/")
+    )
 
 
 def install_spa(app: FastAPI, dist: Path) -> None:
