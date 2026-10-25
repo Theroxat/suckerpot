@@ -298,7 +298,14 @@ def build_ssh(rng: random.Random, ip: str) -> Plan:
 # ---------------------------------------------------------------- Telnet
 
 
+# Loader variants reuse the same probe word, like real botnet families do. That is what lets the
+# Campaigns page group the demo sessions: same script from many sources.
+_TOKENS = ("ECCHI", "MIRAI", "KOMODO", "OWARI")
+
+
 def _token(rng: random.Random) -> str:
+    if rng.random() < 0.85:
+        return rng.choices(_TOKENS, (5, 3, 2, 2))[0]
     return _rand_alnum(rng, rng.randint(4, 6), "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 

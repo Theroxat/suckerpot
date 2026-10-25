@@ -28,6 +28,10 @@ just demo --days 3 --sessions 200 --seed 7
 
 Some demo droppers use a few shared hosts (documentation addresses and example domains) and carry made-up payload hashes, so the Infrastructure page has shared infrastructure to show. Every demo event carries `demo: true`, so the extraction keeps these documentation addresses and example (`.example`, `.test`) domains, flags them, and never sends them to an intel service. Only the source addresses of the demo sessions look like public addresses. `just demo` prints a note when intel keys are set.
 
+## Campaigns and techniques in the demo
+
+Telnet loaders reuse a few probe words and several droppers share hosts, so with `ATTACK_ENABLED=true` and `CAMPAIGNS_ENABLED=true` in `.env` the Campaigns and Techniques pages fill with demo campaigns a few minutes after `just demo` (ingest groups finished sessions every five minutes).
+
 ## What it generates
 
 The generator first creates a **backfill**: sessions spread over the last `--days` days. Then, with `--live`, it keeps sending new sessions. Each session is a short story made of events. The four sensors are covered:
