@@ -6,8 +6,6 @@ import { h1, settle, shoot } from "./helpers"
 const PLACEHOLDERS: [path: string, title: string][] = [
   ["/scripts", "Scripts"],
   ["/scripts/42", "Script"],
-  ["/defend/alerts", "Alerts and reports"],
-  ["/reports/2026-10-19", "Weekly report"],
 ]
 
 test("nav spaces and placeholder routes", async ({ page }, info) => {
@@ -47,7 +45,7 @@ test("settings tabs", async ({ page }, info) => {
   ])
   await page.getByRole("tab", { name: "Alert channels" }).click()
   await expect(page).toHaveURL(/tab=alerts/)
-  await expect(page.getByText("Alert channels are on their way")).toBeVisible()
+  await expect(page.getByRole("list", { name: "Alert channels" })).toBeVisible()
   await settle(page)
   await shoot(page, "settings-alert-channels", info.project.name)
 })
