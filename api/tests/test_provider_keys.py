@@ -139,13 +139,62 @@ def test_wrong_password_is_refused_and_logged(
     assert client.get("/api/v1/auth/me").status_code == 200  # the session survives
 
 
-def test_reauth_is_rate_limited_but_login_budget_is_separate(client: TestClient) -> None:
-    hdr = login(client)
-    codes = [put(client, hdr, password="nope").status_code for _ in range(7)]
-    assert codes[:5] == [403] * 5 and codes[5:] == [429, 429]
-    r = put(client, hdr)  # even the right password waits for the window
-    assert r.status_code == 429 and "retry-after" in r.headers
-    assert client.get("/api/v1/auth/me").status_code == 200
+def test_reauth_is_rate_limited_per_address(
+    monkeypatch: pytest.MonkeyPatch, db: FakeSession
+) -> None:
+    monkeypatch.setenv(ENV_VAR, MASTER_B64)
+    with build(db, rate_per_ip=3) as c:
+        hdr = login(c)  # the login attempt has its own per-address key
+        codes = [put(c, hdr, password="nope").status_code for _ in range(4)]
+        assert codes == [403, 403, 403, 429]
+        r = put(c, hdr)  # even the right password waits for the window
+        assert r.status_code == 429 and "retry-after" in r.headers
+        assert c.get("/api/v1/auth/me").status_code == 200
+
+
+def test_reauth_attempts_are_charged_to_the_login_global_window(
+    monkeypatch: pytest.MonkeyPatch, db: FakeSession
+) -> None:
+    monkeypatch.setenv(ENV_VAR, MASTER_B64)
+    with build(db, rate_global=4) as c:
+        hdr = login(c)  # 1
+        assert [put(c, hdr, password="x").status_code for _ in range(3)] == [403] * 3  # 2-4
+        assert put(c, hdr).status_code == 429
+        r = c.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": PASSWORD},
+            headers={"Origin": ORIGIN},
+        )
+        assert r.status_code == 429  # the shared window is spent for login too
+
+
+def test_five_wrong_passwords_revoke_the_session(
+    monkeypatch: pytest.MonkeyPatch, db: FakeSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv(ENV_VAR, MASTER_B64)
+    with build(db, rate_per_ip=20, rate_global=50) as c:
+        hdr = login(c)
+        with caplog.at_level(logging.INFO):
+            codes = [put(c, hdr, password="nope").status_code for _ in range(5)]
+        assert codes == [403, 403, 403, 403, 401]
+        assert any("session revoked" in m for m in caplog.messages)
+        assert c.get("/api/v1/auth/me").status_code == 401
+        assert put(c, hdr).status_code == 401  # the right password no longer helps
+        assert not db.executed
+
+
+def test_wrong_password_counter_resets_after_a_success(
+    monkeypatch: pytest.MonkeyPatch, db: FakeSession
+) -> None:
+    monkeypatch.setenv(ENV_VAR, MASTER_B64)
+    with build(db, rate_per_ip=30, rate_global=60) as c:
+        hdr = login(c)
+        for _ in range(3):
+            assert put(c, hdr, password="nope").status_code == 403
+        assert put(c, hdr).status_code == 200
+        for _ in range(3):
+            assert put(c, hdr, password="nope").status_code == 403
+        assert c.get("/api/v1/auth/me").status_code == 200
 
 
 # ---- happy path, storage and leaks -----------------------------------------------------------

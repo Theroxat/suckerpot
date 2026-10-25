@@ -112,7 +112,14 @@ async def _guard(request: Request, password: str | None) -> tuple[str, Response 
     if not ok:
         audit.warning("provider key change refused: wrong password actor=%s ip=%s", actor, ip[:64])
         await asyncio.sleep(auth_mod.FAILURE_DELAY_S)
+        if info is not None and service.reauth_failed(info):
+            audit.warning("session revoked after repeated wrong passwords actor=%s", actor)
+            return actor, _error(
+                401, "Signed out after too many wrong passwords.", "session_revoked"
+            )
         return actor, _error(403, "The password is incorrect.", "reauth_failed")
+    if info is not None:
+        service.reauth_ok(info)
     return actor, None
 
 
