@@ -200,7 +200,11 @@ class CredentialSync:
     # ---- status for the API (no secrets) --------------------------------------------------------
     def status(self, provider: str) -> dict[str, Any]:
         info = self.info[provider]
-        out: dict[str, Any] = {"source": info.source, "secret_error": info.error}
+        out: dict[str, Any] = {
+            "source": info.source,
+            "secret_error": info.error,
+            "env_configured": _env_has(self.base, provider),
+        }
         if provider == "maxmind":
             out["configured"] = self.current.maxmind_enabled
             out["test"] = self.maxmind_test

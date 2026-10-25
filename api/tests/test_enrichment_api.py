@@ -100,8 +100,11 @@ async def test_settings_enrichment(client: httpx.AsyncClient) -> None:
     assert empty["geoip"]["provider"] == "unknown" and empty["geoip"]["available"] is False
     assert empty["abuseipdb"] == {
         "configured": False, "daily_quota": None, "used_today": 0, "disabled": None,
-        "paused": False, "last_error": None,
+        "paused": False, "last_error": None, "source": None, "last4": None, "updated_at": None,
+        "secret_error": None, "pending_apply": False, "test": None, "test_pending": False,
+        "test_requested_at": None,
     }  # fmt: skip
+    assert empty["maxmind"]["source"] is None and empty["key_editing"]["enabled"] is False
 
     engine = create_engine(pool_size=1)
     updated = (NOW - timedelta(days=3)).isoformat()
@@ -136,4 +139,5 @@ async def test_settings_enrichment(client: httpx.AsyncClient) -> None:
     assert body["abuseipdb"]["used_today"] == 17 and body["abuseipdb"]["paused"] is True
     assert body["abuseipdb"]["last_error"] == "rate_limited"
     assert body["greynoise"]["configured"] is False
+    assert body["abuseipdb"]["source"] == "env" and body["abuseipdb"]["last4"] is None
     assert body["reported_at"] is not None

@@ -4,12 +4,19 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from ipaddress import IPv4Address, IPv6Address, ip_address
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Path, Query, Response
+from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
 from pydantic import AfterValidator, AwareDatetime
 from sqlalchemy import func, select, tuple_
-from suckerpot_db.models import EnrichmentQuotaRow, EnrichmentStatusRow, EventRow, SessionRow
+from suckerpot_db.models import (
+    EnrichmentQuotaRow,
+    EnrichmentStatusRow,
+    EventRow,
+    ProviderSecretRow,
+    ProviderTestRequestRow,
+    SessionRow,
+)
 
 from api.analytics_queries import session_has_value
 from api.cursor import (
@@ -28,6 +35,9 @@ from api.schemas import (
     GeoFile,
     GeoipStatus,
     Health,
+    KeyEditing,
+    KeyInfo,
+    KeyTest,
     RecentEvents,
     ReputationProvider,
     SensorCounts,
@@ -229,8 +239,8 @@ MAXMIND_ATTRIBUTION = (
 
 
 @router.get("/settings/enrichment", response_model=EnrichmentSettings)
-async def enrichment_settings(session: DbSession) -> EnrichmentSettings:
-    """Provider status, GeoIP database age and today's quota usage (no secrets)."""
+async def enrichment_settings(session: DbSession, request: Request) -> EnrichmentSettings:
+    """Provider status, GeoIP database age and today's quota usage. Never a key."""
     status = {r.name: r for r in (await session.scalars(select(EnrichmentStatusRow))).all()}
     today = datetime.now(UTC).date()
     used = {
@@ -266,11 +276,50 @@ async def enrichment_settings(session: DbSession) -> EnrichmentSettings:
         attribution=attribution,
     )
 
+    secrets = {r.provider: r for r in (await session.scalars(select(ProviderSecretRow))).all()}
+    tests = {r.provider: r for r in (await session.scalars(select(ProviderTestRequestRow))).all()}
+
+    def key_info(name: str) -> dict[str, Any]:
+        det = status[name].detail if name in status else {}
+        row = secrets.get(name)
+        reported_source = det.get("source")
+        error = det.get("secret_error")
+        source: str | None
+        if row is not None and not error:
+            source = "settings"
+        elif row is None:  # a key removed a moment ago may still be reported as "settings"
+            source = "env" if det.get("env_configured", det.get("configured")) else None
+        else:
+            source = reported_source
+        raw = det.get("test")
+        test = None
+        if isinstance(raw, dict):
+            try:
+                checked = datetime.fromisoformat(str(raw["checked_at"]))
+            except (KeyError, ValueError):
+                checked = None
+            test = KeyTest(ok=bool(raw.get("ok")), error=raw.get("error"), checked_at=checked)
+        req = tests.get(name)
+        pending = bool(
+            req is not None
+            and (test is None or test.checked_at is None or test.checked_at < req.requested_at)
+        )
+        return {
+            "configured": bool(det.get("configured", False)) or row is not None,
+            "source": source,
+            "last4": row.last4 if row is not None and source == "settings" else None,
+            "updated_at": row.updated_at if row is not None and source == "settings" else None,
+            "secret_error": error,
+            "pending_apply": bool(row is not None and not error and reported_source != "settings"),
+            "test": test,
+            "test_pending": pending,
+            "test_requested_at": req.requested_at if req is not None else None,
+        }
+
     def rep(name: str) -> ReputationProvider:
-        row = status.get(name)
-        det = row.detail if row else {}
+        det = status[name].detail if name in status else {}
         return ReputationProvider(
-            configured=bool(det.get("configured", False)),
+            **key_info(name),
             daily_quota=det.get("daily_quota"),
             used_today=used.get(name, 0),
             disabled=det.get("disabled"),
@@ -278,7 +327,16 @@ async def enrichment_settings(session: DbSession) -> EnrichmentSettings:
             last_error=det.get("last_error"),
         )
 
+    editing = request.app.state.secret_box is not None
+    key_editing = KeyEditing(
+        enabled=editing, reason=None if editing else request.app.state.secret_box_reason
+    )
     reported = max((r.updated_at for r in status.values()), default=None)
     return EnrichmentSettings(
-        geoip=geoip, abuseipdb=rep("abuseipdb"), greynoise=rep("greynoise"), reported_at=reported
+        geoip=geoip,
+        abuseipdb=rep("abuseipdb"),
+        greynoise=rep("greynoise"),
+        maxmind=KeyInfo(**key_info("maxmind")),
+        key_editing=key_editing,
+        reported_at=reported,
     )
