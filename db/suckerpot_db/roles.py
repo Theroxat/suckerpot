@@ -2,8 +2,9 @@
 
 ``suckerpot_ingest`` may read and write events/sessions; ``suckerpot_api`` is read-only, except
 for the encrypted provider keys it manages (``provider_secrets``) and the dashboard accounts and
-audit log (``users``, ``audit_log``); ingest has no access to those two. Names and passwords
-come from POSTGRES_INGEST_USER/PASSWORD and POSTGRES_API_USER/PASSWORD.
+audit log (``users``, ``audit_log``); ingest has no access to those two. From M15 on, the
+campaign, defend, script and alert tables follow the matrix in the migrations' docstrings.
+Names and passwords come from POSTGRES_INGEST_USER/PASSWORD and POSTGRES_API_USER/PASSWORD.
 
 Passwords never reach the server as plain text: a SCRAM-SHA-256 verifier is computed here and
 sent instead (PostgreSQL accepts pre-hashed passwords), so server logs and error CONTEXT
@@ -84,7 +85,12 @@ DECLARE
                   'sessions_daily', 'events_hourly', 'events_daily_tags', 'events_daily_country',
                   'events_daily_ip', 'system_status', 'maintenance_log', 'provider_secrets',
                   'provider_test_requests', 'cve', 'cve_sync_state', 'indicators',
-                  'indicator_sessions', 'indicator_intel', 'users', 'audit_log']
+                  'indicator_sessions', 'indicator_intel', 'users', 'audit_log',
+                  'attack_techniques', 'technique_daily', 'campaigns', 'campaign_keys',
+                  'campaign_sessions', 'blocklist_entries', 'blocklist_overrides', 'feed_tokens',
+                  'inventory_services', 'scripts', 'script_sessions', 'script_explanations',
+                  'llm_requests', 'alert_channels', 'alert_rules', 'watched_cves',
+                  'alert_outbox', 'alert_cursors', 'weekly_reports', 'alert_test_requests']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -117,6 +123,36 @@ BEGIN
             'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.indicators', 'id'),
             r);
     END IF;
+    IF to_regclass('public.campaigns') IS NOT NULL THEN
+        -- M15: ingest is the only writer of the ATT&CK catalogue, counters and campaigns.
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE ON attack_techniques, technique_daily, campaigns, '
+            'campaign_keys, campaign_sessions TO %I', r);
+        EXECUTE format('GRANT DELETE ON campaign_keys TO %I', r);
+    END IF;
+    IF to_regclass('public.blocklist_entries') IS NOT NULL THEN
+        -- M16: ingest recomputes the blocklist (stale rows are deleted); it only reads what
+        -- the API manages. feed_tokens: no access at all.
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE, DELETE ON blocklist_entries TO %I', r);
+        EXECUTE format('GRANT SELECT ON blocklist_overrides, inventory_services TO %I', r);
+    END IF;
+    IF to_regclass('public.scripts') IS NOT NULL THEN
+        -- M17: the script library is written by ingest; LLM requests are inserted by the API.
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE ON scripts, script_sessions, script_explanations '
+            'TO %I', r);
+        EXECUTE format('GRANT SELECT, UPDATE ON llm_requests TO %I', r);
+    END IF;
+    IF to_regclass('public.alert_channels') IS NOT NULL THEN
+        -- M18: the API manages channels, rules and watched CVEs; ingest sends and records.
+        EXECUTE format(
+            'GRANT SELECT ON alert_channels, alert_rules, watched_cves TO %I', r);
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE ON alert_outbox, alert_cursors, weekly_reports TO %I',
+            r);
+        EXECUTE format('GRANT SELECT, UPDATE ON alert_test_requests TO %I', r);
+    END IF;
     EXECUTE format(
         'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.events', 'id'), r);
 END
@@ -133,7 +169,12 @@ DECLARE
                   'sessions_daily', 'events_hourly', 'events_daily_tags', 'events_daily_country',
                   'events_daily_ip', 'system_status', 'maintenance_log', 'provider_secrets',
                   'provider_test_requests', 'cve', 'cve_sync_state', 'indicators',
-                  'indicator_sessions', 'indicator_intel', 'users', 'audit_log']
+                  'indicator_sessions', 'indicator_intel', 'users', 'audit_log',
+                  'attack_techniques', 'technique_daily', 'campaigns', 'campaign_keys',
+                  'campaign_sessions', 'blocklist_entries', 'blocklist_overrides', 'feed_tokens',
+                  'inventory_services', 'scripts', 'script_sessions', 'script_explanations',
+                  'llm_requests', 'alert_channels', 'alert_rules', 'watched_cves',
+                  'alert_outbox', 'alert_cursors', 'weekly_reports', 'alert_test_requests']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -167,6 +208,31 @@ BEGIN
         -- is append-only for the API; the retention job, owned by the migration role, prunes it.
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON users TO %I', r);
         EXECUTE format('GRANT SELECT, INSERT ON audit_log TO %I', r);
+    END IF;
+    IF to_regclass('public.campaigns') IS NOT NULL THEN
+        EXECUTE format(
+            'GRANT SELECT ON attack_techniques, technique_daily, campaigns, campaign_keys, '
+            'campaign_sessions TO %I', r);
+    END IF;
+    IF to_regclass('public.blocklist_entries') IS NOT NULL THEN
+        EXECUTE format('GRANT SELECT ON blocklist_entries TO %I', r);
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE, DELETE ON blocklist_overrides, inventory_services '
+            'TO %I', r);
+        -- Feed tokens are revoked (UPDATE), never deleted.
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE ON feed_tokens TO %I', r);
+    END IF;
+    IF to_regclass('public.scripts') IS NOT NULL THEN
+        EXECUTE format(
+            'GRANT SELECT ON scripts, script_sessions, script_explanations TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT ON llm_requests TO %I', r);
+    END IF;
+    IF to_regclass('public.alert_channels') IS NOT NULL THEN
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE, DELETE ON alert_channels, watched_cves TO %I', r);
+        EXECUTE format('GRANT SELECT, UPDATE ON alert_rules TO %I', r);
+        EXECUTE format('GRANT SELECT ON alert_outbox, weekly_reports TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT ON alert_test_requests TO %I', r);
     END IF;
 END
 $$
