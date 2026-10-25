@@ -43,7 +43,8 @@ function Field({
       </label>
       {children}
       {error ? (
-        <p id={`${id}-error`} className="text-xs text-fg">
+        <p id={`${id}-error`} className="flex items-start gap-1.5 text-xs text-fg">
+          <CircleAlert aria-hidden className="mt-0.5 size-3 shrink-0 text-fg-muted" />
           {error}
         </p>
       ) : hint ? (
@@ -131,7 +132,7 @@ function SetKeyForm({ provider, onDone, onCancel, replacing }: FormProps & { rep
       noValidate
       autoComplete="off"
     >
-      <DialogHeader>
+      <DialogHeader className="text-left">
         <DialogTitle>
           {replacing ? "Replace" : "Set"} the {name} key
         </DialogTitle>
@@ -262,7 +263,7 @@ function RemoveKeyForm({ provider, onDone, onCancel }: FormProps) {
       className="flex flex-col gap-4"
       noValidate
     >
-      <DialogHeader>
+      <DialogHeader className="text-left">
         <DialogTitle>Remove the {name} key</DialogTitle>
         <DialogDescription>
           The key stored in Settings is deleted. If <code className="font-mono">.env</code> also has

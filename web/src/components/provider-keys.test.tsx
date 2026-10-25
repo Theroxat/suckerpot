@@ -103,8 +103,13 @@ describe("ProviderKeys", () => {
       }),
     )
     expect(
-      screen.getByText(/Set SETTINGS_ENCRYPTION_KEY in \.env to enable it\./),
+      screen.getByText(
+        (_, el) =>
+          el?.tagName === "P" &&
+          el.textContent.startsWith("Set SETTINGS_ENCRYPTION_KEY in .env to enable it."),
+      ),
     ).toBeInTheDocument()
+    expect(screen.getByText("SETTINGS_ENCRYPTION_KEY").tagName).toBe("CODE")
     expect(screen.getByRole("button", { name: "Set the AbuseIPDB key" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Set the MaxMind GeoLite2 key" })).toBeDisabled()
   })
