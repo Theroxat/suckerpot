@@ -31,7 +31,9 @@ def test_round_trip_maxmind_account() -> None:
 
 def test_nonce_is_unique() -> None:
     box = SecretBox(MASTER)
-    assert box.encrypt("greynoise", Credential(SAMPLE)) != box.encrypt("greynoise", Credential(SAMPLE))
+    assert box.encrypt("greynoise", Credential(SAMPLE)) != box.encrypt(
+        "greynoise", Credential(SAMPLE)
+    )
 
 
 def test_wrong_master_key() -> None:
