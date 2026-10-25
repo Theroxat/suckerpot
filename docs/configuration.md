@@ -401,6 +401,17 @@ See [Demo data](demo-data.md) for the command-line options that override these.
 | `RETENTION_DAYS` | `90` | Days to keep raw events (7 to 3650). Aggregates are kept forever. Read by the `migrate` service, which re-applies the policies on every run. See [Data retention](retention.md). |
 | `DB_MAX_SIZE_GB` | `10` | Size ceiling of the database (at least 1). Above 90% the disk guard drops the oldest raw chunks down to 80%. Above 95% ingest keeps only payload previews. Read by `migrate` and `ingest`. |
 
+## Blocklists and feeds (M16)
+
+Details in [Defend](defend.md). Ingest scores indicators into blocklists when `BLOCKLIST_ENABLED=true`; the API serves a token-protected feed when `FEEDS_ENABLED=true`. Both are off by default.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `BLOCKLIST_ENABLED` | `false` | Score addresses, hosts, URLs and hashes into the blocklists (ingest, every 15 minutes) |
+| `BLOCKLIST_WINDOW_DAYS` | `30` | How many days of sessions and indicators to score (1 to 365) |
+| `BLOCKLIST_MAX_ROWS` | `20000` | Most entries kept, best score first (100 to 1,000,000) |
+| `FEEDS_ENABLED` | `false` | Serve `/feeds/*` with bearer tokens made in Settings. The only part of the API outside the dashboard login |
+
 ## In `.env.example` but not used yet
 
 These names are in the template. The code does not read them, so setting them has no effect today.

@@ -264,6 +264,18 @@ SuckerPot does not:
 
 Fake services must look real to an attacker. Banners and versions are plausible and current. Hostnames are ordinary. The words "honeypot" and "suckerpot" never appear anywhere a client could see. This applies to every sensor.
 
+## Defend: feeds, exports and generated rules (M16)
+
+The Defend pages turn recorded data into lists and rules (see [Defend](defend.md)). The rules for that code:
+
+- **The feed is opt-in and the only route outside the login.** `FEEDS_ENABLED` is `false` by default. When it is on, `/feeds/*` is the only part of the API that does not need the dashboard session, and a test (`test_authz.py`) fails if any other route appears outside `/api/v1`. The feed is read-only (GET only).
+- **Tokens.** 256 random bits, shown once, stored only as a sha256 hash (the table also keeps the first six characters to tell tokens apart). A token can be revoked at once or given an expiry, and limits which kinds, which minimum score and whether research scanners are served. Creating one needs an administrator and the account password again; the audit log records it without the token.
+- **Probing.** Requests are rate limited per client address and per token; wrong tokens count against the client address; every refusal (unknown, revoked, expired, wrong kind, disabled feeds) is the same plain `404`. A token in a URL can end up in a firewall's or a proxy's logs, so the API writes no access log and the docs say to treat that URL like a password. The header form avoids the problem for tools that support it.
+- **Database grants.** Ingest has no access to `feed_tokens`. The API can read, insert and update it, not delete.
+- **Lists never contain your own network.** Private, loopback, link-local, multicast and reserved addresses and shared hosting names are refused when ingest scores them, when an override is set and again when a list is written. Every value is re-validated at export time.
+- **Captured strings are untrusted.** CSV cells are defused against formula injection. Rule generators accept printable ASCII only, cut it to a fixed length, quote it (Sigma) or hex-escape it (Suricata), and never put it in a title or message. Every generated rule and export is marked "review before deploying".
+- **Nothing is contacted.** The exposure inventory is only compared with our own data. No list is pushed anywhere and nothing is reported to AbuseIPDB or anyone else.
+
 ## Terminal replay safety contract
 
 SSH and Telnet sessions are recorded as the bytes the attacker typed and the bytes sent back. Those bytes are attacker-controlled, and a terminal emulator interprets them. The replay player (xterm.js, planned for M5) must follow these rules:
