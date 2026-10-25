@@ -1,0 +1,47 @@
+# Curated subset of MITRE ATT&CK (Enterprise) that a honeypot can actually observe.
+# Technique ids and names follow https://attack.mitre.org/ (see THIRD_PARTY_NOTICES.md).
+#
+# stage is the plain-English phase SuckerPot tells the story in:
+#   recon          looking around            access       getting in
+#   execution      running code              persistence  staying in
+#   tool_transfer  bringing tools            objective    what the attacker wanted
+# For the tactics in the loader's table the stage must match it; other tactics state it.
+techniques:
+  - {id: T1595, name: Active Scanning, tactic: reconnaissance, stage: recon}
+  - {id: T1595.002, name: Vulnerability Scanning, tactic: reconnaissance, stage: recon}
+  - {id: T1046, name: Network Service Discovery, tactic: discovery, stage: recon}
+  - {id: T1082, name: System Information Discovery, tactic: discovery, stage: recon}
+  - {id: T1033, name: System Owner/User Discovery, tactic: discovery, stage: recon}
+  - {id: T1083, name: File and Directory Discovery, tactic: discovery, stage: recon}
+  - {id: T1057, name: Process Discovery, tactic: discovery, stage: recon}
+  - {id: T1016, name: System Network Configuration Discovery, tactic: discovery, stage: recon}
+  - {id: T1087.001, name: "Account Discovery: Local Account", tactic: discovery, stage: recon}
+
+  - {id: T1190, name: Exploit Public-Facing Application, tactic: initial-access, stage: access}
+  - {id: T1133, name: External Remote Services, tactic: initial-access, stage: access}
+  - {id: T1078, name: Valid Accounts, tactic: initial-access, stage: access}
+  - {id: T1210, name: Exploitation of Remote Services, tactic: lateral-movement, stage: access}
+  - {id: T1110, name: Brute Force, tactic: credential-access, stage: access}
+  - {id: T1110.001, name: "Brute Force: Password Guessing", tactic: credential-access, stage: access}
+  - {id: T1110.003, name: "Brute Force: Password Spraying", tactic: credential-access, stage: access}
+  - {id: T1110.004, name: "Brute Force: Credential Stuffing", tactic: credential-access, stage: access}
+
+  - {id: T1059, name: Command and Scripting Interpreter, tactic: execution, stage: execution}
+  - {id: T1059.004, name: "Command and Scripting Interpreter: Unix Shell", tactic: execution, stage: execution}
+  - {id: T1059.006, name: "Command and Scripting Interpreter: Python", tactic: execution, stage: execution}
+  - {id: T1610, name: Deploy Container, tactic: execution, stage: execution}
+  - {id: T1611, name: Escape to Host, tactic: privilege-escalation, stage: persistence}
+
+  - {id: T1053.003, name: "Scheduled Task/Job: Cron", tactic: persistence, stage: persistence}
+  - {id: T1098.004, name: "Account Manipulation: SSH Authorized Keys", tactic: persistence, stage: persistence}
+  - {id: T1136.001, name: "Create Account: Local Account", tactic: persistence, stage: persistence}
+  - {id: T1505.003, name: "Server Software Component: Web Shell", tactic: persistence, stage: persistence}
+
+  - {id: T1105, name: Ingress Tool Transfer, tactic: command-and-control, stage: tool_transfer}
+  - {id: T1071.001, name: "Application Layer Protocol: Web Protocols", tactic: command-and-control, stage: tool_transfer}
+  - {id: T1570, name: Lateral Tool Transfer, tactic: lateral-movement, stage: tool_transfer}
+
+  - {id: T1496, name: Resource Hijacking, tactic: impact, stage: objective}
+  - {id: T1486, name: Data Encrypted for Impact, tactic: impact, stage: objective}
+  - {id: T1657, name: Financial Theft, tactic: impact, stage: objective}
+  - {id: T1499, name: Endpoint Denial of Service, tactic: impact, stage: objective}

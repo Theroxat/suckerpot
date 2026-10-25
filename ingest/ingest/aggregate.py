@@ -35,6 +35,7 @@ class SessionDelta:
     abuse_score: int | None = None
     known_scanner: bool | None = None
     client_tool: str | None = None
+    techniques: set[str] = field(default_factory=set)
 
 
 _TOOL_MAX = 24

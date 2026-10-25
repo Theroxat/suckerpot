@@ -43,7 +43,7 @@ EVENT_FIELDS = {"type", "sensor"}
 DATA_FIELDS = {
     "input", "path", "query", "user_agent", "method", "url", "username", "password",
     "body_preview", "tool", "command", "kind", "host", "port", "status", "flags", "reason",
-    "smb1_command_name",
+    "smb1_command_name", "success",
 }  # fmt: skip
 SESSION_FIELDS = {
     "session.sensor", "session.event_count", "session.login_attempts", "session.login_success",
@@ -261,6 +261,32 @@ def _parse_cond(raw: Any, depth: int, where: str) -> Cond:
     else:
         raise RuleError(f"{where}: field {fld!r} is not allowed")
     return Leaf(fld, op, arg, ci)
+
+
+def compile_condition(raw: Any, where: str) -> Cond:
+    """Compile a ``when:`` condition of any rule-like file; raises RuleError on a bad one.
+
+    Public so other rule files (the ATT&CK mapping) share the grammar and its safety limits.
+    """
+    return _parse_cond(raw, 0, where)
+
+
+def match_event_condition(cond: Cond, etype: str, sensor: str, data: Mapping[str, Any]) -> bool:
+    """Evaluate a compiled event-scope condition on one event."""
+
+    def get(name: str) -> Any:
+        if name == "type":
+            return etype
+        if name == "sensor":
+            return sensor
+        return data.get(name[5:])
+
+    return _eval(cond, get)
+
+
+def condition_fields(cond: Cond) -> set[str]:
+    """Every field a compiled condition reads."""
+    return _fields_of(cond)
 
 
 def _parse_rule(raw: Any, source: str) -> Rule:

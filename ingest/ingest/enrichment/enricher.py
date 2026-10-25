@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ingest.attack.mapping import AttackMap
 from ingest.bruteforce import BruteForceTracker
 from ingest.enrichment.geo import GeoResolver
 from ingest.indicators import IndicatorExtractor
@@ -17,3 +18,4 @@ class Enricher:
     brute: BruteForceTracker = field(default_factory=BruteForceTracker)
     indicators: IndicatorExtractor | None = None
     link_cap: int = 500
+    attack: AttackMap | None = None
