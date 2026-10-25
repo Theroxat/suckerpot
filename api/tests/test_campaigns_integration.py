@@ -241,6 +241,7 @@ async def test_detail_story_timeline_sessions_and_indicators(client: httpx.Async
     assert sessions["items"][0]["techniques"] == ["T1082"]
 
     indicators = (await get(client, f"/campaigns/{cid}/indicators"))["items"]
+    assert {i["confidence"] for i in indicators} == {"normal"}
     assert [(i["kind"], i["defanged"]) for i in indicators] == [
         ("family", "mirai"),
         ("payload_host", "192[.]0[.]2[.]66"),

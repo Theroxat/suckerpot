@@ -17,6 +17,7 @@ it is cut at 8 KiB and 64 commands, and every step is a linear scan.
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from collections.abc import Iterable
 
 MAX_INPUT_CHARS = 8192
@@ -45,6 +46,12 @@ _FILE_EXTENSIONS = frozenset(
         "key", "pub", "pem", "crt", "service", "timer", "x86", "arm", "mips", "mpsl",
     }
 )  # fmt: skip
+
+
+def _strip_controls(text: str) -> str:
+    """Drop control and format characters (Cc, Cf) except line breaks and tabs: invisible
+    characters must not make two copies of one script look different."""
+    return "".join(c for c in text if c in "\n\r\t" or unicodedata.category(c) not in ("Cc", "Cf"))
 
 
 def _split_commands(line: str) -> list[str]:
@@ -136,7 +143,7 @@ def normalize_commands(commands: Iterable[str]) -> list[str]:
     for line in commands:
         if budget <= 0 or len(out) >= MAX_COMMANDS:
             break
-        chunk = line[:budget]
+        chunk = _strip_controls(line[:budget])
         budget -= len(chunk)
         for piece in _split_commands(chunk.replace("\r", "\n").replace("\n", ";")):
             normalized = normalize_command(piece)

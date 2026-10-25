@@ -25,6 +25,8 @@ MIN_SCRIPT_COMMANDS = 2
 MIN_CREDLIST_ATTEMPTS = 20
 CREDLIST_PAIRS = 32
 MAX_KEYS_PER_SESSION = 16
+#: How many keys of each kind one session may carry: a session cannot bridge more than this.
+KEY_CAPS = {"script": 1, "exploit": 3, "credlist": 1, "hash": 4, "payload_host": 4, "family": 4}
 MAX_VALUE = 128
 #: Tags of a request or statement that carries a payload: only these get an ``exploit`` key.
 PAYLOAD_TAGS = ("php2shell", "sql-rce", "container-escape", "redis-rogue-master")
@@ -102,3 +104,13 @@ def clamp(key: Key) -> Key | None:
     kind, value = key
     value = value.strip().lower()[:MAX_VALUE]
     return (kind, value) if kind in KINDS and value else None
+
+
+def cap_keys(keys: Iterable[Key]) -> set[Key]:
+    """Clamp every key and keep at most ``KEY_CAPS[kind]`` per kind (deterministic)."""
+    kept: dict[str, list[Key]] = {}
+    for key in sorted(k for k in (clamp(k) for k in keys) if k):
+        bucket = kept.setdefault(key[0], [])
+        if len(bucket) < KEY_CAPS[key[0]]:
+            bucket.append(key)
+    return {k for bucket in kept.values() for k in bucket}

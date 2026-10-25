@@ -36,16 +36,18 @@ DECLARE
 BEGIN
     -- Links go with the raw events; the campaign counters stay.
     DELETE FROM campaign_sessions WHERE seen_at < cutoff;
+    -- Keys seen from one source only are weak evidence: they do not outlive the raw events.
+    DELETE FROM campaign_keys WHERE sources < 2 AND last_seen < cutoff;
     IF guard_active THEN
         max_rows := max_rows / 2;
     END IF;
     SELECT count(*) INTO total FROM campaigns;
     IF total > max_rows THEN
-        -- Quiet single-source campaigns first, then the least sighted and oldest ones.
+        -- Least evidence first (few sources, few sessions), then the oldest: a flood of cheap
+        -- single-source campaigns can never push out a well-evidenced one.
         DELETE FROM campaigns WHERE id IN (
             SELECT c.id FROM campaigns c
-            ORDER BY (c.status = 'quiet' AND c.sources < 2) DESC,
-                     (c.status <> 'active') DESC, c.sessions, c.last_seen, c.id
+            ORDER BY c.sources, c.sessions, c.last_seen, c.id
             LIMIT total - max_rows);
     END IF;
 END
