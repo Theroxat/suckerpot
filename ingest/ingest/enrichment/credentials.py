@@ -180,13 +180,18 @@ class CredentialSync:
             auth = httpx.BasicAuth(cur.maxmind_account_id, cur.maxmind_license_key)
             try:
                 resp = await self.client.get(
-                    MAXMIND_TEST_URL, params={"suffix": "tar.gz.sha256"}, auth=auth
+                    MAXMIND_TEST_URL,
+                    params={"suffix": "tar.gz.sha256"},
+                    auth=auth,
+                    follow_redirects=False,
                 )
                 if resp.status_code in (401, 403):
                     error = "auth"
                 elif resp.status_code == 429:
                     error = "rate_limited"
-                elif resp.status_code != 200:
+                elif resp.status_code != 200 and not 300 <= resp.status_code < 400:
+                    # A valid key is answered with a redirect to the file store: not followed
+                    # (that would download the database), and proof enough that the key works.
                     error = "error"
             except httpx.HTTPError:
                 error = "error"

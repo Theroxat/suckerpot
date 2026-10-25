@@ -123,7 +123,7 @@ async def test_maxmind_test_results(monkeypatch: pytest.MonkeyPatch) -> None:
         return True
 
     monkeypatch.setattr("ingest.enrichment.credentials.reserve_quota", reserve)
-    codes = iter([200, 401])
+    codes = iter([200, 401, 302, 500])
     auths: list[str] = []
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -135,5 +135,7 @@ async def test_maxmind_test_results(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (await s.test_maxmind())["ok"] is True
     assert (await s.test_maxmind())["error"] == "auth"
     assert s.status("maxmind")["test"]["error"] == "auth"
+    assert (await s.test_maxmind())["ok"] is True  # a redirect is a valid key, not followed
+    assert (await s.test_maxmind())["error"] == "error"
     assert ENV_VALUE not in repr(s.status("maxmind"))
-    assert len(auths) == 2
+    assert len(auths) == 4
