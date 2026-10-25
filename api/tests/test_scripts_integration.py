@@ -253,7 +253,7 @@ async def test_detail_pairs_lines_with_explanations(
     assert body["campaign"]["name"] == "Dropper wave" and body["ai"] is None
     assert body["demo"] is True and body["unexplained"] == 0
     other = (await client.get(f"/scripts/{ids['new']}")).json()
-    assert other["unexplained"] == 1 and other["techniques_detail"] == []
+    assert other["lines"] == [] and other["unexplained"] == 0 and other["techniques_detail"] == []
     assert (await client.get("/scripts/999999")).status_code == 404
     assert (await client.get("/scripts/abc")).status_code == 422
 
