@@ -134,6 +134,7 @@ services:
       POSTGRES_API_USER: ${POSTGRES_API_USER:-suckerpot_api}
       POSTGRES_API_PASSWORD: ${POSTGRES_API_PASSWORD:?POSTGRES_API_PASSWORD must be set in .env}
       RETENTION_DAYS: ${RETENTION_DAYS:-90}
+      INDICATORS_MAX_ROWS: ${INDICATORS_MAX_ROWS:-500000}
       DB_MAX_SIZE_GB: ${DB_MAX_SIZE_GB:-10}
       SUCKERPOT_ALLOW_DEFAULT_SECRETS: ${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}
     tmpfs:
@@ -190,6 +191,9 @@ services:
       INDICATORS_ENABLED: ${INDICATORS_ENABLED:-true}
       INDICATORS_IGNORE: ${INDICATORS_IGNORE:-}
       INDICATORS_KEEP_DOCUMENTATION: ${INDICATORS_KEEP_DOCUMENTATION:-false}
+      # This deployment's own names: never recorded as attack infrastructure.
+      API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
+      API_ALLOWED_ORIGINS: ${API_ALLOWED_ORIGINS:-}
       INDICATORS_LINK_CAP: ${INDICATORS_LINK_CAP:-500}
     volumes:
       # GeoIP databases downloaded by ingest (the only writable path besides /tmp).

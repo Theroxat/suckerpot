@@ -31,11 +31,12 @@ Do these in order. Tick each item only after you have checked it.
 6. [ ] Install and verify the [host firewall](#host-firewall).
 7. [ ] Set [`DASHBOARD_BIND`](#dashboard-bind-and-upstream-filtering) and filter the dashboard port upstream.
 8. [ ] Set [`API_ALLOWED_ORIGINS`](#behind-a-tls-terminating-tunnel) if the tunnel terminates TLS.
-9. [ ] Keep `API_ENABLE_DOCS=false`.
-10. [ ] Start the stack and check it: `just up`, then `docker compose ps`. Run `just ssh-test`.
-11. [ ] Take a [snapshot](#snapshot).
-12. [ ] [Forward the ports](#forward-the-ports).
-13. [ ] [Verify from outside](#verify-from-outside).
+9. [ ] Set [`INDICATORS_IGNORE`](configuration.md) to your public IP (or CIDR block) and the host names you answer to, so your own addresses are never recorded as attack infrastructure. `API_ALLOWED_HOSTS` and `API_ALLOWED_ORIGINS` are added automatically.
+10. [ ] Keep `API_ENABLE_DOCS=false`.
+11. [ ] Start the stack and check it: `just up`, then `docker compose ps`. Run `just ssh-test`.
+12. [ ] Take a [snapshot](#snapshot).
+13. [ ] [Forward the ports](#forward-the-ports).
+14. [ ] [Verify from outside](#verify-from-outside).
 
 ## Secrets
 

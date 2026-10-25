@@ -26,7 +26,7 @@ just demo --days 3 --sessions 200 --seed 7
 
 ## Indicators in the demo
 
-Some demo droppers use a few shared hosts (documentation addresses and example domains) and carry made-up payload hashes, so the Infrastructure page has shared infrastructure to show. A real stack drops those values while extracting indicators. To see them, set `INDICATORS_KEEP_DOCUMENTATION=true` in `.env` and restart ingest. They are never sent to an intel service.
+Some demo droppers use a few shared hosts (documentation addresses and example domains) and carry made-up payload hashes, so the Infrastructure page has shared infrastructure to show. Every demo event carries `demo: true`, so the extraction keeps these documentation addresses and example (`.example`, `.test`) domains, flags them, and never sends them to an intel service. Only the source addresses of the demo sessions look like public addresses. `just demo` prints a note when intel keys are set.
 
 ## What it generates
 
