@@ -24,11 +24,11 @@ import {
   defendApi,
   defendKeys,
   deleteOverride,
-  HIGH_SCORE,
   isBlockKind,
   KIND_META,
-  LISTED_SCORE,
+  parseMinScore,
   reasonLabel,
+  SCORE_OPTIONS,
   type BlocklistFilters,
   type BlockEntry,
   type OverrideAction,
@@ -37,17 +37,6 @@ import { formatNumber } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 50
-
-const SCORE_OPTIONS = [
-  { value: "10", label: "Everything seen" },
-  { value: String(LISTED_SCORE), label: `Listed (${LISTED_SCORE}+)` },
-  { value: String(HIGH_SCORE), label: `High (${HIGH_SCORE}+)` },
-]
-
-function parseMinScore(raw: string | null): number {
-  const n = Number(raw)
-  return SCORE_OPTIONS.some((o) => o.value === raw) ? n : DEFAULT_MIN_SCORE
-}
 
 export function BlocklistsPage() {
   const { canWrite } = useAuth()
@@ -193,8 +182,21 @@ export function BlocklistsPage() {
 
       <KindTiles summary={s} kind={kind} onSelect={(k) => setKindParam(k)} />
 
+      {/* Act first: the export and your own rules sit above the evidence, so they stay reachable
+          however long the list grows (it loads more rows as you scroll). */}
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start">
+        <ExportPanel summary={s} initialKind={kind ?? "ip"} initialScore={minScore} />
+        <OverridesCard canWrite={canWrite} />
+      </div>
+
+      <h2 className="mt-10 text-lg font-semibold tracking-tight text-fg">Entries</h2>
+      <p className="mt-1.5 max-w-2xl text-base text-fg-muted">
+        Every value with its score, the reasons behind it and when it was last seen. Pick a reason
+        or a type to narrow it down.
+      </p>
+
       <FilterBar
-        className="mt-6 mb-4"
+        className="mt-4 mb-4"
         chips={[
           {
             param: "kind",
@@ -332,11 +334,6 @@ export function BlocklistsPage() {
           exported.
         </p>
       ) : null}
-
-      <div className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
-        <ExportPanel summary={s} initialKind={kind ?? "ip"} />
-        <OverridesCard canWrite={canWrite} />
-      </div>
 
       {dialog ? (
         <OverrideDialog

@@ -8,6 +8,7 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react"
+import { useEffect, useRef } from "react"
 import { Link } from "react-router"
 import { EmptyState } from "@/components/empty-state"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -352,6 +353,16 @@ export function SettingsPage() {
   const tab = tabs.find((t) => t.id === tabParam)?.id ?? "general"
   // The tab lives in the URL, so a section can be linked; "general" is the default and stays bare.
   const setTab = (next: string) => setTabParam(next === "general" ? null : next)
+  // On phones the tab strip scrolls sideways: keep the open tab in view (e.g. ?tab=feeds).
+  const tabsRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const list = tabsRef.current
+    const active = list?.querySelector<HTMLElement>('[data-state="active"]')
+    if (!list || !active) return
+    const a = active.getBoundingClientRect()
+    const l = list.getBoundingClientRect()
+    if (a.left < l.left || a.right > l.right) list.scrollLeft += a.left - l.left - 16
+  }, [tab])
   const q = useQuery({
     queryKey: queryKeys.systemSettings,
     queryFn: api.systemSettings,
@@ -387,9 +398,10 @@ export function SettingsPage() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList
+          ref={tabsRef}
           variant="line"
           aria-label="Settings sections"
-          className="mb-2 max-w-full overflow-x-auto"
+          className="mb-2 max-w-full justify-start overflow-x-auto"
         >
           {tabs.map((t) => (
             <TabsTrigger key={t.id} value={t.id} className="flex-none px-3">

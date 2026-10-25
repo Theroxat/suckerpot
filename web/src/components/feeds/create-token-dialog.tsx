@@ -12,7 +12,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import {
   BLOCK_KINDS,
@@ -20,8 +19,10 @@ import {
   createFeedToken,
   describeDefendError,
   EXPIRY_OPTIONS,
+  DEFAULT_MIN_SCORE,
   KIND_META,
-  LISTED_SCORE,
+  SCORE_OPTIONS,
+  scorePreset,
   type BlockKind,
   type FeedToken,
 } from "@/lib/defend"
@@ -41,7 +42,7 @@ function CreateForm({
   const queryClient = useQueryClient()
   const [name, setName] = useState("")
   const [kinds, setKinds] = useState<BlockKind[]>(["ip"])
-  const [minScore, setMinScore] = useState<number>(LISTED_SCORE)
+  const [minScore, setMinScore] = useState<number>(DEFAULT_MIN_SCORE)
   const [includeBenign, setIncludeBenign] = useState(false)
   const [expiry, setExpiry] = useState("none")
   const [password, setPassword] = useState("")
@@ -153,25 +154,17 @@ function CreateForm({
         ) : null}
       </fieldset>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex items-baseline justify-between gap-3">
-          <span id={ids.score} className="text-sm font-medium text-fg">
-            Minimum score
-          </span>
-          <span className="text-sm font-medium text-fg">{minScore}</span>
-        </div>
-        <Slider
-          min={0}
-          max={100}
-          step={5}
-          value={[minScore]}
-          onValueChange={(v) => setMinScore(v[0] ?? LISTED_SCORE)}
-          thumbLabel="Minimum score"
-          thumbValueText={`${minScore} out of 100`}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-fg">Minimum score</span>
+        <SegmentedControl
+          label="Minimum score"
+          value={String(minScore)}
+          onChange={(v) => setMinScore(Number(v))}
+          options={SCORE_OPTIONS}
+          className="flex-wrap self-start"
         />
-        <p className="text-xs text-fg-muted">
-          Only entries that scored at least this much are served. {LISTED_SCORE} is a good start;
-          raise it to block less and be surer.
+        <p id={ids.score} className="text-xs text-fg-muted">
+          {scorePreset(minScore)?.hint}
         </p>
       </div>
 

@@ -14,6 +14,8 @@ import {
   feedUrl,
   firewallInstructions,
   kindsPhrase,
+  parseMinScore,
+  SCORE_OPTIONS,
   parseDays,
   previousComparison,
   reasonLabel,
@@ -193,13 +195,29 @@ describe("detections and exposure sentences", () => {
   })
 })
 
+describe("score presets", () => {
+  it("offers the same three choices everywhere, Balanced by default", () => {
+    expect(SCORE_OPTIONS.map((o) => o.label)).toEqual([
+      "High confidence 70+",
+      "Balanced 50+",
+      "Everything 20+",
+    ])
+    expect(parseMinScore(null)).toBe(50)
+    expect(parseMinScore("70")).toBe(70)
+    expect(parseMinScore("20")).toBe(20)
+    expect(parseMinScore("10")).toBe(50)
+    expect(parseMinScore("junk")).toBe(50)
+  })
+})
+
 describe("feeds", () => {
   it("explains the off state and the empty state", () => {
     expect(feedsSentence({ enabled: false, items: [] })).toMatch(/Feeds are off/)
     expect(feedsSentence({ enabled: true, items: [] })).toMatch(/no token exists yet/)
   })
   it("names the kinds a token covers", () => {
-    expect(kindsPhrase(["domain", "ip"])).toBe("ip addresses and domains")
+    expect(kindsPhrase(["domain", "ip"])).toBe("IP addresses and domains")
+    expect(kindsPhrase(["url", "hash", "domain"])).toBe("domains, URLs and file hashes")
   })
 })
 

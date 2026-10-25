@@ -17,7 +17,7 @@ import {
   revokeFeedToken,
   type FeedToken,
 } from "@/lib/defend"
-import { formatNumber } from "@/lib/format"
+import { plural } from "@/lib/format"
 import { CreateTokenDialog, type CreatedToken } from "./create-token-dialog"
 import { TokenReveal } from "./token-reveal"
 
@@ -38,22 +38,27 @@ function TokenRow({ token }: { token: FeedToken }) {
   })
   const s = STATE[token.state]
   const Icon = s.icon
+  const badge = (
+    <Badge variant="outline" className="rounded-sm text-fg">
+      <Icon aria-hidden />
+      {s.label}
+    </Badge>
+  )
   return (
     <li className={`flex flex-col gap-2 px-4 py-3.5 sm:px-5 md:py-3 ${GRID}`}>
-      <div className="min-w-0 space-y-0.5">
-        <p className="truncate text-sm font-medium text-fg">{token.name}</p>
-        <p className="font-mono text-xs text-fg-muted">{token.hint}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-0.5">
+          <p className="truncate text-sm font-medium text-fg">{token.name}</p>
+          <p className="font-mono text-xs text-fg-muted">{token.hint}</p>
+        </div>
+        {/* On phones the state sits next to the name; from md it has its own column. */}
+        <div className="md:hidden">{badge}</div>
       </div>
       <div className="min-w-0 text-xs text-fg-muted">
-        <span className="block text-fg">{kindsPhrase(token.kinds)}</span>
+        <span className="block text-fg first-letter:uppercase">{kindsPhrase(token.kinds)}</span>
         score {token.min_score}+{token.include_benign ? " · with research scanners" : ""}
       </div>
-      <div>
-        <Badge variant="outline" className="rounded-sm text-fg">
-          <Icon aria-hidden />
-          {s.label}
-        </Badge>
-      </div>
+      <div className="hidden md:block">{badge}</div>
       <div className="text-xs text-fg-muted">
         <span className="block">
           Created <RelativeTime iso={token.created_at} className="text-xs" />
@@ -77,9 +82,12 @@ function TokenRow({ token }: { token: FeedToken }) {
             </span>
             <span className="flex flex-wrap items-center gap-x-1.5">
               {token.last_used_ip ? (
-                <IPChip ip={token.last_used_ip} variant="ghost" href={null} />
+                <>
+                  <IPChip ip={token.last_used_ip} variant="ghost" href={null} copyable={false} />
+                  <span aria-hidden>·</span>
+                </>
               ) : null}
-              <span>{formatNumber(token.use_count)} pulls</span>
+              <span className="whitespace-nowrap">{plural(token.use_count, "pull")}</span>
             </span>
           </>
         ) : (
@@ -139,10 +147,10 @@ export function FeedsTab() {
           <div className="flex items-start gap-2.5 rounded-md border border-dashed px-4 py-3 text-sm text-fg-muted">
             <Rss aria-hidden className="mt-0.5 size-4 shrink-0" />
             <p>
-              Feeds are <span className="font-medium text-fg">off</span>, which is the default. Set{" "}
+              Off is the default. To turn feeds on, set{" "}
               <code className="font-mono text-fg">FEEDS_ENABLED=true</code> in{" "}
-              <code className="font-mono text-fg">.env</code> and restart the stack to turn them on.
-              Until then no token works and the public feed address answers nothing.
+              <code className="font-mono text-fg">.env</code> and restart the stack. Until then no
+              token works and the public feed address answers nothing.
             </p>
           </div>
         ) : (

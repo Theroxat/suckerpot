@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query"
+import { ChevronDown } from "lucide-react"
 import { useId, useState, type SyntheticEvent } from "react"
 import { Field, FormError } from "@/components/form-parts"
 import { SegmentedControl } from "@/components/segmented-control"
@@ -16,6 +17,7 @@ import {
   createInventory,
   describeDefendError,
   EXPOSURE_OPTIONS,
+  PRODUCT_EXAMPLE,
   updateInventory,
   validateInventory,
   type Exposure,
@@ -53,6 +55,8 @@ function InventoryForm({
     notes: useId(),
     err: useId(),
   }
+
+  const example = PRODUCT_EXAMPLE[service]
 
   async function submit() {
     if (pending) return
@@ -105,19 +109,30 @@ function InventoryForm({
         />
       </Field>
 
-      <Field id={ids.service} label="Kind of service">
-        <select
-          id={ids.service}
-          value={service}
-          onChange={(e) => setService(e.target.value)}
-          className="h-9 w-full rounded-md border border-input bg-bg px-3 text-base text-fg shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm"
-        >
-          {SENSORS.map((s) => (
-            <option key={s} value={s}>
-              {sensorMeta(s)?.label ?? s} · {sensorMeta(s)?.description ?? ""}
-            </option>
-          ))}
-        </select>
+      <Field
+        id={ids.service}
+        label="Kind of service"
+        hint="It is compared with what the decoy of the same kind recorded."
+      >
+        <div className="relative">
+          <select
+            id={ids.service}
+            aria-describedby={`${ids.service}-hint`}
+            value={service}
+            onChange={(e) => setService(e.target.value)}
+            className="h-9 w-full cursor-pointer appearance-none rounded-md border border-input bg-transparent pr-9 pl-3 text-base text-fg shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30 [&>option]:bg-popover [&>option]:text-fg"
+          >
+            {SENSORS.map((s) => (
+              <option key={s} value={s}>
+                {sensorMeta(s)?.label ?? s}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-fg-subtle"
+          />
+        </div>
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
@@ -128,7 +143,7 @@ function InventoryForm({
             onChange={(e) => setProduct(e.target.value)}
             autoComplete="off"
             maxLength={80}
-            placeholder="OpenSSH"
+            placeholder={example?.product}
           />
         </Field>
         <Field id={ids.version} label="Version (optional)">
@@ -138,7 +153,7 @@ function InventoryForm({
             onChange={(e) => setVersion(e.target.value)}
             autoComplete="off"
             maxLength={40}
-            placeholder="9.6"
+            placeholder={example?.version}
           />
         </Field>
       </div>

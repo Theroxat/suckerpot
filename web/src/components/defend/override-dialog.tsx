@@ -52,16 +52,23 @@ function OverrideForm({
   const [action, setAction] = useState<OverrideAction>(initialAction)
   const [note, setNote] = useState("")
   const [expiry, setExpiry] = useState("0")
+  const [password, setPassword] = useState("")
+  const [passwordError, setPasswordError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [valueError, setValueError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
-  const ids = { value: useId(), note: useId(), err: useId() }
+  const ids = { value: useId(), note: useId(), pass: useId(), err: useId() }
   const allow = action === "allow"
 
   async function submit() {
     if (pending) return
     setError(null)
     setValueError(null)
+    setPasswordError(null)
+    if (!password) {
+      setPasswordError("Enter your password to confirm.")
+      return
+    }
     if (!value.trim()) {
       setValueError("Enter the value to " + (allow ? "allow" : "block") + ".")
       return
@@ -74,12 +81,15 @@ function OverrideForm({
         action,
         note,
         expiresInDays: Number(expiry) || null,
+        password,
       })
       await queryClient.invalidateQueries({ queryKey: ["defend"] })
       onDone()
     } catch (e) {
       // A refused value (private address, shared host) belongs to the value field.
-      if (classifyFailure(e) === "invalid") setValueError(describeDefendError(e))
+      const failure = classifyFailure(e)
+      if (failure === "invalid") setValueError(describeDefendError(e))
+      else if (failure === "wrong-password") setPasswordError(describeDefendError(e))
       else setError(describeDefendError(e))
     } finally {
       setPending(false)
@@ -127,11 +137,7 @@ function OverrideForm({
         </>
       )}
 
-      <Field
-        id={ids.value}
-        label={KIND_META[kind].label.replace(/s$/, "")}
-        error={valueError ?? undefined}
-      >
+      <Field id={ids.value} label={KIND_META[kind].singular} error={valueError ?? undefined}>
         {target ? (
           <p className="rounded-md border bg-bg px-3 py-2 font-mono text-xs break-all text-fg">
             {value}
@@ -174,6 +180,24 @@ function OverrideForm({
           className="self-start"
         />
       </div>
+
+      <Field
+        id={ids.pass}
+        label="Your password"
+        hint="Changing what the lists contain asks for your dashboard password again."
+        error={passwordError ?? undefined}
+      >
+        <Input
+          id={ids.pass}
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          aria-invalid={passwordError ? true : undefined}
+          aria-describedby={passwordError ? `${ids.pass}-error` : `${ids.pass}-hint`}
+        />
+      </Field>
 
       <FormError id={ids.err} message={error} />
 
