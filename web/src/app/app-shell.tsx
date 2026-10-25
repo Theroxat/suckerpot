@@ -33,7 +33,7 @@ function NavList({
   return (
     <nav
       aria-label={part === "footer" ? "System" : "Main"}
-      className={cn("flex flex-col", part === "footer" ? "gap-0.5 px-3 pb-3" : "gap-5")}
+      className={cn("flex flex-col", part === "footer" ? "gap-0.5 px-3 pb-3" : "gap-5 lg:gap-4")}
     >
       {groups.map((group) => (
         <div
@@ -55,7 +55,7 @@ function NavList({
               onClick={onNavigate}
               className={({ isActive }) =>
                 cn(
-                  "group flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors duration-150",
+                  "group flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors duration-150 lg:h-7",
                   isActive
                     ? "bg-surface-hover text-fg"
                     : "text-fg-muted hover:bg-surface-hover/60 hover:text-fg",
@@ -133,11 +133,13 @@ export function AppShell() {
       </a>
 
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r bg-bg py-4 lg:flex">
-        <div className="px-5 pt-1 pb-6">
+      {/* The whole sidebar scrolls when the window is short, so a group is never cut in half;
+          on tall windows the spacer keeps System and the status footer at the bottom. */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col overflow-y-auto overscroll-contain border-r bg-bg py-4 lg:flex">
+        <div className="px-5 pt-1 pb-5">
           <Logo />
         </div>
-        <div className="flex-1 overflow-y-auto px-3">
+        <div className="flex-1 px-3">
           <NavList part="main" />
         </div>
         <div className="pt-2">

@@ -16,17 +16,89 @@ export function isBlockKind(v: unknown): v is BlockKind {
   return typeof v === "string" && (BLOCK_KINDS as readonly string[]).includes(v)
 }
 
-export const KIND_META: Record<BlockKind, { label: string; one: string; many: string }> = {
-  ip: { label: "IP addresses", one: "address", many: "addresses" },
-  domain: { label: "Domains", one: "domain", many: "domains" },
-  url: { label: "URLs", one: "URL", many: "URLs" },
-  hash: { label: "File hashes", one: "file hash", many: "file hashes" },
+export const KIND_META: Record<
+  BlockKind,
+  {
+    /** Plural title: tiles, segmented controls, buttons. */
+    label: string
+    /** Singular title: form labels ("IP address"). */
+    singular: string
+    /** Plural inside a sentence ("IP addresses and domains"). */
+    phrase: string
+    one: string
+    many: string
+  }
+> = {
+  ip: {
+    label: "IP addresses",
+    singular: "IP address",
+    phrase: "IP addresses",
+    one: "address",
+    many: "addresses",
+  },
+  domain: {
+    label: "Domains",
+    singular: "Domain",
+    phrase: "domains",
+    one: "domain",
+    many: "domains",
+  },
+  url: { label: "URLs", singular: "URL", phrase: "URLs", one: "URL", many: "URLs" },
+  hash: {
+    label: "File hashes",
+    singular: "File hash",
+    phrase: "file hashes",
+    one: "file hash",
+    many: "file hashes",
+  },
 }
 
 /** Scores: "listed" entries go to the firewall, "high" ones are the surest. */
 export const LISTED_SCORE = 50
 export const HIGH_SCORE = 70
+/** The floor of the "Everything" preset: below it an entry was barely seen. */
+export const EVERYTHING_SCORE = 20
 export const DEFAULT_MIN_SCORE = LISTED_SCORE
+
+/**
+ * The three minimum-score choices, the same everywhere: the list filter, the export and the feed
+ * tokens. "Balanced" is the default.
+ */
+export const SCORE_PRESETS = [
+  {
+    score: HIGH_SCORE,
+    label: "High confidence",
+    hint: "Only the surest entries. Fewest false positives; start here if you block right away.",
+  },
+  {
+    score: LISTED_SCORE,
+    label: "Balanced",
+    hint: "Everything we would put on a firewall. The default, and a good start.",
+  },
+  {
+    score: EVERYTHING_SCORE,
+    label: "Everything",
+    hint: "Also entries seen only once or twice. Better for watching than for blocking.",
+  },
+] as const
+
+export type ScorePreset = (typeof SCORE_PRESETS)[number]
+
+export function scorePreset(score: number): ScorePreset | undefined {
+  return SCORE_PRESETS.find((p) => p.score === score)
+}
+
+/** Segmented-control options: "High confidence 70+", "Balanced 50+", "Everything 20+". */
+export const SCORE_OPTIONS = SCORE_PRESETS.map((p) => ({
+  value: String(p.score),
+  label: `${p.label} ${p.score}+`,
+}))
+
+/** A minimum score from the URL: a preset, else the default. */
+export function parseMinScore(raw: string | null): number {
+  const n = Number(raw)
+  return raw !== null && scorePreset(n) ? n : DEFAULT_MIN_SCORE
+}
 
 export interface KindSummary {
   kind: BlockKind
@@ -388,6 +460,21 @@ export function previousComparison(current: number, previous: number): string {
   return `${change > 0 ? "up" : "down"} ${Math.round(Math.abs(change) * 100)}% from ${formatNumber(previous)} before`
 }
 
+/** Placeholder product and version for the inventory form, so the example fits the kind. */
+export const PRODUCT_EXAMPLE: Record<string, { product: string; version: string }> = {
+  ssh: { product: "OpenSSH", version: "9.6" },
+  telnet: { product: "BusyBox", version: "1.36" },
+  adb: { product: "Android", version: "13" },
+  web: { product: "Apache", version: "2.4.58" },
+  docker: { product: "Docker Engine", version: "27.3" },
+  redis: { product: "Redis", version: "7.2" },
+  mysql: { product: "MySQL", version: "8.0" },
+  mssql: { product: "SQL Server", version: "2022" },
+  rdp: { product: "Windows Server", version: "2022" },
+  smb: { product: "Samba", version: "4.19" },
+  sip: { product: "Asterisk", version: "20" },
+}
+
 export function serviceLabel(service: string): string {
   return sensorMeta(service)?.label ?? service.toUpperCase()
 }
@@ -448,11 +535,9 @@ export function feedsSentence(list: FeedTokenList | undefined): string {
   return `${plural(active, "token")} can read your blocklists right now. Revoke any you no longer use.`
 }
 
-/** The kinds a token covers, as words: "ip addresses and domains". */
+/** The kinds a token covers, as words: "IP addresses and domains". */
 export function kindsPhrase(kinds: readonly BlockKind[]): string {
-  const names = BLOCK_KINDS.filter((k) => kinds.includes(k)).map((k) =>
-    KIND_META[k].label.toLowerCase(),
-  )
+  const names = BLOCK_KINDS.filter((k) => kinds.includes(k)).map((k) => KIND_META[k].phrase)
   if (names.length <= 1) return names[0] ?? "nothing"
   return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
 }
@@ -535,11 +620,13 @@ export function createOverride(input: {
   action: OverrideAction
   note?: string
   expiresInDays?: number | null
+  password: string
 }): Promise<OverrideItem> {
   const body: Record<string, unknown> = {
     kind: input.kind,
     value: input.value,
     action: input.action,
+    password: input.password,
   }
   if (input.note?.trim()) body.note = input.note.trim()
   if (input.expiresInDays) body.expires_in_days = input.expiresInDays

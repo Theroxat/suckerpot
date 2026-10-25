@@ -20,7 +20,7 @@ test("blocklists", async ({ page }, info) => {
   // Filters live in the URL: one kind, high scores only.
   await page.goto("/defend/blocklists?kind=ip&min_score=70")
   await expect(page.getByRole("list", { name: "Blocklist entries" })).toBeVisible()
-  await expect(page.getByRole("button", { name: /^IP addresses/ })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: /^IP addresses/ }).first()).toHaveAttribute(
     "aria-pressed",
     "true",
   )
@@ -36,6 +36,9 @@ test("blocklists", async ({ page }, info) => {
   const dialog = page.getByRole("dialog")
   await expect(dialog).toBeVisible()
   await dialog.getByLabel("Note (optional)").fill("Our own scanner")
+  // Changing the lists may ask for the dashboard password again.
+  const password = dialog.getByLabel("Your password")
+  if ((await password.count()) > 0) await password.fill("a-demo-password")
   await shoot(page, "defend-override-dialog", info.project.name)
   await dialog.getByRole("button", { name: "Always allow" }).click()
   await expect(dialog).toBeHidden()
@@ -67,7 +70,7 @@ test("exposure", async ({ page }, info) => {
   await settle(page)
   await shoot(page, "defend-exposure", info.project.name, true)
 
-  await page.getByRole("button", { name: /^Add MYSQL to my list/ }).click()
+  await page.getByRole("button", { name: /^Add MySQL to my list/ }).click()
   const dialog = page.getByRole("dialog")
   await expect(dialog).toBeVisible()
   await dialog.getByLabel("Name").fill("Orders database")
@@ -102,4 +105,22 @@ test("settings feeds", async ({ page }, info) => {
   await expect(reveal.getByText(/cannot be shown again/)).toBeVisible()
   await settle(page)
   await shoot(page, "defend-feeds-token", info.project.name, true)
+})
+
+test("settings feeds off", async ({ page }, info) => {
+  // Mock-only switch: the feeds endpoint answers as if FEEDS_ENABLED were false (the default).
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem("suckerpot-mock-feeds", "off")
+    } catch {
+      // Storage blocked: the shot below then fails on its assertion, which is what we want.
+    }
+  })
+  await page.goto("/settings?tab=feeds")
+  await expect(h1(page, "Settings")).toBeVisible()
+  await expect(page.getByText(/FEEDS_ENABLED=true/)).toBeVisible()
+  await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled()
+  await expect(page.getByRole("tab", { name: "Feeds" })).toBeInViewport()
+  await settle(page)
+  await shoot(page, "defend-feeds-off", info.project.name, true)
 })

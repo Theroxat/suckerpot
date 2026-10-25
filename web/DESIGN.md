@@ -145,13 +145,24 @@ Read-only by design: a dashed note says settings live in `.env`. Four cards, eac
 
 A ranked list of vulnerabilities under one plain-English finding ("3 new critical CVEs this week affect services we emulate"). Severity is a word plus a number: a filled orange triangle and a stronger word for critical, an outlined orange triangle for high, a neutral dot for medium and low (never red: red is for severe events). Feed prose (titles, descriptions, dates) uses `normal-nums`, because Inter's tabular figures also widen the hyphen ("pre - auth"). KEV is a small outlined badge with a tooltip, relevance is three dots plus a word, and matched services are neutral chips. The detail panel shows the description, the CISA entry, the sessions of ours that match (links to the filtered Attacks view) and a "Propose a trap" button that copies a plain-text sheet: nothing is built from it. Feed status and the optional NVD and GitHub keys sit under the list. Everything fetched from the feeds is rendered as text.
 
+## Defend
+
+Pages for people who act at their company: block, detect, check exposure. Each opens with a sentence that says what is ready ("44 addresses … are ready for your firewall").
+
+- **Minimum score** is always one of three presets, from `SCORE_PRESETS` in `lib/defend.ts`: **High confidence 70+**, **Balanced 50+** (the default, no `min_score` in the URL) and **Everything 20+**, each with a one-line hint. The list filter, the export and the feed-token dialog use the same control; any other `min_score` in a URL falls back to Balanced.
+- **Act before evidence.** On Blocklists the export and your overrides sit above the entries, because the entries load more as you scroll and anything under them would drift out of reach.
+- **Scores**: a neutral meter, orange from 70 (a warning, never red), always with the number and a word (High, Listed, Seen).
+- **Exposure cards** show their numbers as label-left, value-right rows, then one muted line (trend and last attack), so cards line up whatever the label length.
+- Kinds have a title (`label`, "IP addresses"), a singular (`singular`, "IP address") and an in-sentence form (`phrase`, "IP addresses and domains"). Never derive one from the other with string tricks.
+- The feeds-off state keeps the tab: the finding says feeds are off, a dashed note says how to turn them on, and "Create token" is disabled.
+
 ## Loading
 
 Heavy pages (Overview, Live, Attackers, attacker profile, session detail, styleguide) load on demand behind a `PageSkeleton` in the final layout. Recharts and xterm get their own chunks, so the first load stays small.
 
 ## Scrolling
 
-Lists scroll with the window. The Live page has no scrolling list: its ticker and rankings are bounded (ten chips, six rows), and the full history is the Attacks list.
+Lists scroll with the window. The desktop sidebar scrolls as one block when the window is too short (nav items are 28 px tall from `lg`, so every group fits at 1440 × 900), never one group cut in half. A tab strip that scrolls sideways starts at the left and keeps the open tab in view. The Live page has no scrolling list: its ticker and rankings are bounded (ten chips, six rows), and the full history is the Attacks list.
 
 ## Components
 

@@ -16,6 +16,15 @@ import type {
   OverrideItem,
 } from "@/lib/defend"
 
+/** Mock-only switch for the "feeds are off" screenshot: localStorage "suckerpot-mock-feeds" = "off". */
+function mockFeedsOff(): boolean {
+  try {
+    return window.localStorage.getItem("suckerpot-mock-feeds") === "off"
+  } catch {
+    return false
+  }
+}
+
 const LATENCY_MS = 160
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -190,7 +199,7 @@ function summary(): DefendSummary {
   return {
     computed_at: ago(14 * 60_000),
     worker_enabled: true,
-    feeds_enabled: true,
+    feeds_enabled: !mockFeedsOff(),
     kinds,
     top_reasons: [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
@@ -745,6 +754,7 @@ export const defendHandlers: RequestHandler[] = [
 
   http.get("/api/v1/defend/feed-tokens", async () => {
     await delay(LATENCY_MS)
+    if (mockFeedsOff()) return HttpResponse.json({ enabled: false, items: [] })
     return HttpResponse.json({ enabled: true, items: tokens })
   }),
   http.post("/api/v1/defend/feed-tokens", async ({ request }) => {

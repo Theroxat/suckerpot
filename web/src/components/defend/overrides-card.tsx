@@ -29,7 +29,7 @@ function Row({ item, canWrite }: { item: OverrideItem; canWrite: boolean }) {
           <span className="font-mono text-xs break-all">{value}</span>
         </p>
         <p className="text-xs text-fg-muted">
-          {KIND_META[item.kind].label.replace(/s$/, "")}
+          {KIND_META[item.kind].singular}
           {item.note ? ` · ${item.note}` : ""}
           {" · "}
           {item.expires_at ? (

@@ -11,34 +11,48 @@ import {
   firewallInstructions,
   FIREWALL_LABEL,
   instructionsText,
+  DEFAULT_MIN_SCORE,
+  HIGH_SCORE,
   KIND_META,
   LISTED_SCORE,
+  SCORE_OPTIONS,
+  scorePreset,
   type BlockKind,
   type DefendSummary,
   type Firewall,
 } from "@/lib/defend"
 import { formatNumber } from "@/lib/format"
 
-const SCORES = [LISTED_SCORE, 70, 90] as const
 type Format = "txt" | "alias" | "csv"
 
 /** Download a list, or read how to point a firewall at it. */
 export function ExportPanel({
   summary,
   initialKind,
+  initialScore = DEFAULT_MIN_SCORE,
 }: {
   summary: DefendSummary | undefined
   initialKind: BlockKind
+  /** Starts from the list filter, so "High confidence" on the page exports the same thing. */
+  initialScore?: number
 }) {
   const [kind, setKind] = useState<BlockKind>(initialKind)
   const [format, setFormat] = useState<Format>("txt")
-  const [minScore, setMinScore] = useState<number>(LISTED_SCORE)
+  const [minScore, setMinScore] = useState<number>(initialScore)
   const [firewall, setFirewall] = useState<Firewall>("opnsense")
 
   const effectiveFormat: Format = kind === "ip" ? format : format === "alias" ? "txt" : format
   const href = exportUrl({ kind, format: effectiveFormat, minScore })
-  const count =
-    summary?.kinds.find((k) => k.kind === kind)?.[minScore >= 70 ? "high" : "listed"] ?? null
+  const counts = summary?.kinds.find((k) => k.kind === kind)
+  // The summary knows the 50+ and 70+ counts; below 50 only the total is known, so it is a ceiling.
+  const count = counts
+    ? minScore >= HIGH_SCORE
+      ? counts.high
+      : minScore >= LISTED_SCORE
+        ? counts.listed
+        : counts.total
+    : null
+  const countPrefix = minScore >= LISTED_SCORE ? "About" : "Up to"
   const feed = `${window.location.origin}/feeds/<your-token>/${kind}.txt`
   const steps = firewallInstructions(firewall, feed)
 
@@ -82,10 +96,12 @@ export function ExportPanel({
                 label="Minimum score"
                 value={String(minScore)}
                 onChange={(v) => setMinScore(Number(v))}
-                options={SCORES.map((s) => ({ value: String(s), label: `${s}+` }))}
+                options={SCORE_OPTIONS}
+                className="flex-wrap"
               />
             </div>
           </div>
+          <p className="-mt-2 text-xs text-fg-muted">{scorePreset(minScore)?.hint}</p>
 
           <div className="flex flex-wrap items-center gap-3">
             <Button asChild>
@@ -96,7 +112,7 @@ export function ExportPanel({
             </Button>
             {count !== null ? (
               <p className="text-sm text-fg-muted">
-                About {formatNumber(count)}{" "}
+                {countPrefix} {formatNumber(count)}{" "}
                 {count === 1 ? KIND_META[kind].one : KIND_META[kind].many} at this score.
               </p>
             ) : null}

@@ -17,6 +17,7 @@ import {
   defendKeys,
   deleteInventory,
   exposureSentence,
+  serviceLabel,
   type InventoryItem,
 } from "@/lib/defend"
 import { plural } from "@/lib/format"
@@ -146,7 +147,7 @@ export function ExposurePage() {
                           onClick={() => setDialog({ item: null, preset: u.service })}
                         >
                           <Plus aria-hidden />
-                          Add {u.label} to my list
+                          Add {serviceLabel(u.service)} to my list
                         </Button>
                       ) : null}
                     </div>

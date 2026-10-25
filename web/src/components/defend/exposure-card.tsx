@@ -55,11 +55,15 @@ export function Checks({ checks, title = "Checks to run" }: { checks: string[]; 
   )
 }
 
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="min-w-0 space-y-0.5">
-      <dt className="text-xs text-fg-muted">{label}</dt>
-      <dd className="text-sm text-fg">{children}</dd>
+    <div className="flex items-baseline justify-between gap-4 py-1.5">
+      <dt className="min-w-0 text-sm text-fg-muted">{label}</dt>
+      <dd className="shrink-0 text-sm font-medium text-fg">{children}</dd>
     </div>
   )
 }
@@ -123,29 +127,32 @@ export function ExposureCard({
         <span className="text-fg">{VERDICT_SENTENCE[verdict]}</span>
       </p>
 
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
-        <Stat label="Attacks on this kind of service">
-          <Link
-            to={`/attacks?sensor=${item.service}`}
-            className="font-medium underline-offset-4 hover:underline"
-          >
-            {plural(attacks.sessions, "session")}
-          </Link>
-          <span className="block text-xs text-fg-muted">
-            {previousComparison(attacks.sessions, attacks.previous_sessions)}
-          </span>
-        </Stat>
-        <Stat label="From">{plural(attacks.sources, "source")}</Stat>
-        <Stat label="Went deeper">
-          {formatNumber(attacks.deep_sessions)}
-          <span className="block text-xs text-fg-muted">ran commands or fetched files</span>
-        </Stat>
-      </dl>
-      {attacks.last_attack_at ? (
-        <p className="-mt-1 text-xs text-fg-muted">
-          Last attack <RelativeTime iso={attacks.last_attack_at} className="text-xs" />
+      {/* Label left, number right: three rows that read like a sentence and always line up. */}
+      <div>
+        <dl className="divide-y border-y">
+          <Stat label="Attacks on this kind of service">
+            <Link
+              to={`/attacks?sensor=${item.service}`}
+              className="font-medium underline-offset-4 hover:underline"
+            >
+              {plural(attacks.sessions, "session")}
+            </Link>
+          </Stat>
+          <Stat label="From">{plural(attacks.sources, "source")}</Stat>
+          <Stat label="Ran commands or fetched files">
+            {plural(attacks.deep_sessions, "session")}
+          </Stat>
+        </dl>
+        <p className="mt-2 text-xs text-fg-muted">
+          {capitalize(previousComparison(attacks.sessions, attacks.previous_sessions))}
+          {attacks.last_attack_at ? (
+            <>
+              {" · last attack "}
+              <RelativeTime iso={attacks.last_attack_at} className="text-xs" />
+            </>
+          ) : null}
         </p>
-      ) : null}
+      </div>
 
       {service.top_tags.length > 0 ? (
         <div className="space-y-1.5">
@@ -166,22 +173,26 @@ export function ExposureCard({
           <h5 className="text-xs font-medium text-fg-muted">Known flaws that match</h5>
           <ul className="space-y-1.5">
             {service.cves.map((c) => (
-              <li key={c.cve_id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                <Link
-                  to={`/cves?cve=${encodeURIComponent(c.cve_id)}`}
-                  className="font-mono text-xs text-fg underline underline-offset-4"
-                >
-                  {c.cve_id}
-                </Link>
-                {c.cvss_score !== null ? (
-                  <span className="text-xs text-fg-muted">CVSS {c.cvss_score.toFixed(1)}</span>
+              <li key={c.cve_id} className="space-y-0.5">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <Link
+                    to={`/cves?cve=${encodeURIComponent(c.cve_id)}`}
+                    className="font-mono text-xs text-fg underline underline-offset-4"
+                  >
+                    {c.cve_id}
+                  </Link>
+                  {c.cvss_score !== null ? (
+                    <span className="text-xs text-fg-muted">CVSS {c.cvss_score.toFixed(1)}</span>
+                  ) : null}
+                  {c.in_kev ? (
+                    <Badge variant="outline" className="rounded-sm text-fg">
+                      Exploited in the wild
+                    </Badge>
+                  ) : null}
+                </div>
+                {c.title ? (
+                  <p className="text-xs text-pretty text-fg-muted normal-nums">{c.title}</p>
                 ) : null}
-                {c.in_kev ? (
-                  <Badge variant="outline" className="rounded-sm text-fg">
-                    Exploited in the wild
-                  </Badge>
-                ) : null}
-                {c.title ? <span className="text-xs text-fg-muted">{c.title}</span> : null}
               </li>
             ))}
           </ul>
