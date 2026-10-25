@@ -134,10 +134,10 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M10 — RDP sensor, deeper
 
-- [ ] CredSSP up to the NTLM challenge: record domain, user and workstation for every brute-force attempt, and check the NTLMv2 response against the configured weak passwords (nothing cracked).
-- [ ] Optional "NLA disabled" mode: standard TLS security up to the Client Info PDU, recording the user name and the cleartext password the client sends.
-- [ ] Client tool identification from JA3, CredSSP version and client OS version (nmap, hydra, ncrack, FreeRDP, mstsc, common brute-force bots), shown on the session page.
-- [ ] Lessons 1–18 kept; security review PASS.
+- [x] CredSSP up to the NTLM challenge: record domain, user and workstation for every brute-force attempt, and check the NTLMv2 response against the configured weak passwords (nothing cracked).
+- [x] Optional "NLA disabled" mode: standard TLS security up to the Client Info PDU, recording the user name and the cleartext password the client sends.
+- [x] Client tool identification from JA3, CredSSP version and client OS version (nmap, hydra, ncrack, FreeRDP, mstsc, common brute-force bots), shown on the session page.
+- [x] Lessons 1–18 kept; security review PASS.
 
 **Acceptance:** hydra/ncrack/FreeRDP against the sensor record user names, and weak passwords are recognised; security review PASS.
 
