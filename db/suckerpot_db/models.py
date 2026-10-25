@@ -270,6 +270,10 @@ class IndicatorRow(Base):
     sensors: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
     )
+    # A hash computed by a sensor (not just a string in a command).
+    trusted: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    # Seen only in demo events: never sent to an intel service.
+    demo: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
 
 
 class IndicatorSessionRow(Base):
