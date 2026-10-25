@@ -48,6 +48,8 @@ KEY_FIELDS = {
     "github": "github_token",
     "abusech": "abusech_auth_key",
     "virustotal": "virustotal_api_key",
+    "anthropic": "anthropic_api_key",
+    "smtp": "smtp_password",
 }
 
 
