@@ -12,7 +12,6 @@ database: ingest makes the one real call and writes the outcome into ``enrichmen
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
@@ -40,15 +39,15 @@ from suckerpot_db.secretbox import (
     validate_credential,
 )
 
+from api import audit as audit_db
 from api import auth as auth_mod
-from api.auth import LoginBusy, same_origin
+from api import reauth
 from api.deps import DbSession
 
 router = APIRouter(tags=["settings"])
 audit = logging.getLogger("api.audit")
 log = logging.getLogger(__name__)
 
-REAUTH_SCOPE = "reauth"
 TEST_COOLDOWN = timedelta(seconds=20)
 MAX_TESTS_PER_DAY = 10  # per provider: every test spends one unit of the provider's daily quota
 
@@ -91,39 +90,18 @@ def load_box() -> tuple[SecretBox | None, str | None]:
     return box, None
 
 
-def _error(status: int, detail: str, code: str, headers: dict[str, str] | None = None) -> Response:
-    return JSONResponse({"detail": detail, "code": code}, status_code=status, headers=headers)
+_error = reauth.error
 
 
 async def _guard(request: Request, password: str | None) -> tuple[str, Response | None]:
     """Origin, rate limit and re-authentication. Returns (actor, error response or None)."""
+    principal, refused = await reauth.guard(request, password, "provider key change")
+    return (principal.username if principal else "unknown"), refused
+
+
+def _ip(request: Request) -> str:
     service: auth_mod.AuthService = request.app.state.auth
-    info = service.validate(service.session_token(request.scope))
-    actor = info.username if info else "unknown"
-    if not service.settings.disabled and not same_origin(request):
-        return actor, _error(403, "Cross-origin request refused", "origin")
-    if password is None or service.settings.disabled:
-        return actor, None
-    ip = service.client_ip(request)
-    retry = service.rate_limited(ip, REAUTH_SCOPE)
-    if retry is not None:
-        return actor, _error(429, "Too many attempts", "rate_limited", {"Retry-After": str(retry)})
-    try:
-        ok = await service.check_credentials(actor, password)
-    except LoginBusy:
-        return actor, _error(429, "Too many attempts", "rate_limited", {"Retry-After": "2"})
-    if not ok:
-        audit.warning("provider key change refused: wrong password actor=%s ip=%s", actor, ip[:64])
-        await asyncio.sleep(auth_mod.FAILURE_DELAY_S)
-        if info is not None and service.reauth_failed(info):
-            audit.warning("session revoked after repeated wrong passwords actor=%s", actor)
-            return actor, _error(
-                401, "Signed out after too many wrong passwords.", "session_revoked"
-            )
-        return actor, _error(403, "The password is incorrect.", "reauth_failed")
-    if info is not None:
-        service.reauth_ok(info)
-    return actor, None
+    return service.client_ip(request)
 
 
 def _disabled_response(request: Request) -> Response:
@@ -156,6 +134,9 @@ async def set_key(
     }
     stmt = insert(ProviderSecretRow).values(provider=provider, **values)
     await session.execute(stmt.on_conflict_do_update(index_elements=["provider"], set_=values))
+    await audit_db.record(
+        session, actor=actor, action="provider_key.set", target=provider, ip=_ip(request)
+    )
     await session.commit()
     audit.info("provider key set provider=%s actor=%s at=%s", provider, actor, now.isoformat())
     return JSONResponse(
@@ -175,6 +156,9 @@ async def remove_key(
     if refused is not None:
         return refused
     await session.execute(delete(ProviderSecretRow).where(ProviderSecretRow.provider == provider))
+    await audit_db.record(
+        session, actor=actor, action="provider_key.remove", target=provider, ip=_ip(request)
+    )
     await session.commit()
     audit.info(
         "provider key removed provider=%s actor=%s at=%s", provider, actor, datetime.now(UTC)
@@ -232,6 +216,9 @@ async def request_test(provider: ProviderName, request: Request, session: DbSess
             )
         wait = TEST_COOLDOWN.seconds
         return _error(429, "A test was just requested.", "cooldown", {"Retry-After": str(wait)})
+    await audit_db.record(
+        session, actor=actor, action="provider_key.test", target=provider, ip=_ip(request)
+    )
     await session.commit()
     audit.info("provider key test requested provider=%s actor=%s", provider, actor)
     return JSONResponse(

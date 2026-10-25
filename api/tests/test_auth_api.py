@@ -19,11 +19,37 @@ HASH = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1).hash(PASSWORD)
 ORIGIN = {"Origin": "http://testserver"}
 
 
+class NoUsers:
+    """A database session where no dashboard user exists and every write is accepted."""
+
+    async def __aenter__(self) -> "NoUsers":
+        return self
+
+    async def __aexit__(self, *a: object) -> None:
+        return None
+
+    async def execute(self, *a: object, **k: object) -> Any:
+        class R:
+            def scalar_one_or_none(self) -> None:
+                return None
+
+        return R()
+
+    async def get(self, *a: object) -> None:
+        return None
+
+    def add(self, obj: object) -> None:
+        return None
+
+    async def commit(self) -> None:
+        return None
+
+
 def make_app(enable_live: bool = False, **kw: Any) -> FastAPI:
     s = AuthSettings(
         password_hash=HASH, secret=b"k" * 40, cookie_secure=kw.pop("cookie_secure", True), **kw
     )
-    return create_app(enable_live=enable_live, auth_settings=s)
+    return create_app(NoUsers, enable_live=enable_live, auth_settings=s)  # type: ignore[arg-type]
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +89,9 @@ def test_login_ok_sets_flagged_cookies(client: TestClient) -> None:
     assert "path=/" in sess and "max-age=43200" in sess
     csrf = cookies[COOKIE_CSRF].lower()
     assert "httponly" not in csrf and "secure" in csrf and "samesite=strict" in csrf
-    assert client.get("/api/v1/auth/me").json() == {"username": "admin"}
+    me = client.get("/api/v1/auth/me").json()
+    assert me["username"] == "admin" and me["role"] == "admin" and me["is_owner"] is True
+    assert me["read_only"] is False and me["must_change_password"] is False
 
 
 def test_cookie_not_secure_when_configured() -> None:
@@ -266,8 +294,8 @@ def test_websocket_accepts_session_then_closes_on_logout(
 
             return R()
 
-    app.state.session_factory = lambda: FakeSession()
     login(client)
+    app.state.session_factory = lambda: FakeSession()
     # The Secure cookie is not sent over ws:// by the client jar: pass it by hand.
     cookie = f"{COOKIE_SESSION}={client.cookies[COOKIE_SESSION]}"
     with client.websocket_connect("/api/v1/live", headers={"cookie": cookie}) as ws:
@@ -283,7 +311,8 @@ def test_websocket_accepts_session_then_closes_on_logout(
 def test_auth_disabled_is_open() -> None:
     app = create_app(enable_live=False, auth_settings=AuthSettings(disabled=True))
     with TestClient(app) as c:
-        assert c.get("/api/v1/auth/me").json() == {"username": "admin"}
+        me = c.get("/api/v1/auth/me").json()
+        assert me["username"] == "admin" and me["role"] == "admin"
         assert (
             c.post("/api/v1/auth/login", json={"username": "x", "password": "y"}).status_code == 204
         )

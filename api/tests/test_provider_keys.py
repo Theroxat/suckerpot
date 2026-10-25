@@ -38,6 +38,10 @@ class FakeSession:
         self.commits = 0
         self.store: dict[tuple[type, str], Any] = {}
         self.deny_upsert = False  # the guarded test-request upsert matched no row
+        self.added: list[Any] = []
+
+    def add(self, obj: Any) -> None:
+        self.added.append(obj)
 
     async def execute(self, stmt: Any) -> MagicMock:
         self.executed.append(stmt)
@@ -211,6 +215,7 @@ def test_set_key_encrypts_and_never_echoes(
     client: TestClient, db: FakeSession, caplog: pytest.LogCaptureFixture
 ) -> None:
     hdr = login(client)
+    db.commits = 0  # the owner's sign-in wrote its audit entry
     with caplog.at_level(logging.INFO):
         r = put(client, hdr)
     assert r.status_code == 200
@@ -273,6 +278,7 @@ def test_intel_providers_accept_encrypted_keys(
 
 def test_remove_key(client: TestClient, db: FakeSession, caplog: pytest.LogCaptureFixture) -> None:
     hdr = login(client)
+    db.commits = 0  # the owner's sign-in wrote its audit entry
     url = "/api/v1/settings/providers/greynoise"
     assert client.request("DELETE", url, json={"password": "bad"}, headers=hdr).status_code == 403
     assert not db.executed

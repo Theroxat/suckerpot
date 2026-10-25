@@ -9,12 +9,15 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from fastapi.routing import APIRouter
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from suckerpot_db import create_engine, create_session_factory
 
+from api import authz
 from api.analytics import router as analytics_router
+from api.audit_routes import router as audit_router
 from api.auth import AuthMiddleware, AuthService, AuthSettings, allowed_hosts_from_env
 from api.auth import router as auth_router
 from api.cves import router as cves_router
@@ -28,6 +31,7 @@ from api.routes import health_router, router
 from api.settings import router as settings_router
 from api.spa import install_security_headers, install_spa
 from api.trends import router as trends_router
+from api.users import router as users_router
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 DEFAULT_WEB_DIST = "/app/web"
@@ -82,18 +86,29 @@ def create_app(
     app.add_middleware(AuthMiddleware, auth=auth)
     install_security_headers(app, enable_docs=enable_docs)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts_from_env())
-    app.include_router(auth_router, prefix="/api/v1")
+    authz.install(app)
+
+    def include(router_: APIRouter) -> None:
+        # Default deny: every /api/v1 HTTP route goes through the role check (see api.authz).
+        app.include_router(router_, prefix="/api/v1", dependencies=[Depends(authz.authorize)])
+
     app.include_router(health_router)
-    app.include_router(router, prefix="/api/v1")
-    app.include_router(live_router, prefix="/api/v1")
-    app.include_router(analytics_router, prefix="/api/v1")
-    app.include_router(insights_router, prefix="/api/v1")
-    app.include_router(trends_router, prefix="/api/v1")
-    app.include_router(cves_router, prefix="/api/v1")
-    app.include_router(malware_router, prefix="/api/v1")
-    app.include_router(indicators_router, prefix="/api/v1")
-    app.include_router(settings_router, prefix="/api/v1")
-    app.include_router(provider_keys_router, prefix="/api/v1")
+    include(auth_router)
+    include(router)
+    app.include_router(live_router, prefix="/api/v1")  # WebSocket: read-only, both roles
+    for api_router in (
+        analytics_router,
+        insights_router,
+        trends_router,
+        cves_router,
+        malware_router,
+        indicators_router,
+        settings_router,
+        provider_keys_router,
+        users_router,
+        audit_router,
+    ):
+        include(api_router)
     install_provider_keys(app)
     app.state.hub = LiveHub()
 
