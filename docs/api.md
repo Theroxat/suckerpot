@@ -128,6 +128,9 @@ These pages are generated from the code, so they match the running version. Use 
 | `GET` | `/api/v1/stats/summary` | Totals for the last 24 hours |
 | `GET` | `/api/v1/settings/system` | Sensor status, retention policy, disk guard state and database size. See [System settings](#get-apiv1settingssystem). |
 | `GET` | `/api/v1/settings/enrichment` | GeoIP database status and reputation quotas. See [Enrichment status](#get-apiv1settingsenrichment). |
+| `PUT` | `/api/v1/settings/providers/{provider}` | Set or replace an enrichment API key. See [Provider keys](#provider-keys). |
+| `DELETE` | `/api/v1/settings/providers/{provider}` | Remove a key set in Settings. See [Provider keys](#provider-keys). |
+| `POST` | `/api/v1/settings/providers/{provider}/test` | Ask ingest to test the key with one real call. See [Provider keys](#provider-keys). |
 | `WebSocket` | `/api/v1/live` | Live feed of new events and statistics. See [Live feed](#live-feed). |
 
 ### `GET /healthz`
@@ -421,13 +424,38 @@ The status of the enrichment providers and today's quota use. It never returns a
     "refresh_days": 30,
     "attribution": "IP geolocation by DB-IP.com (https://db-ip.com), CC BY 4.0"
   },
-  "abuseipdb": {"configured": false, "daily_quota": null, "used_today": 0, "disabled": null, "paused": false, "last_error": null},
-  "greynoise": {"configured": false, "daily_quota": null, "used_today": 0, "disabled": null, "paused": false, "last_error": null},
+  "abuseipdb": {
+    "configured": true, "source": "settings", "last4": "a1b2", "updated_at": "2026-10-25T09:00:00Z",
+    "secret_error": null, "pending_apply": false,
+    "test": {"ok": true, "error": null, "checked_at": "2026-10-25T09:01:00Z"},
+    "test_pending": false, "test_requested_at": "2026-10-25T09:00:50Z",
+    "daily_quota": 1000, "used_today": 12, "disabled": null, "paused": false, "last_error": null
+  },
+  "greynoise": {"configured": false, "source": null, "last4": null, "updated_at": null, "secret_error": null,
+                "pending_apply": false, "test": null, "test_pending": false, "test_requested_at": null,
+                "daily_quota": null, "used_today": 0, "disabled": null, "paused": false, "last_error": null},
+  "maxmind": {"configured": false, "source": null, "last4": null, "updated_at": null, "secret_error": null,
+              "pending_apply": false, "test": null, "test_pending": false, "test_requested_at": null},
+  "key_editing": {"enabled": true, "reason": null},
   "reported_at": null
 }
 ```
 
+For each provider, `source` is `env` (the key comes from `.env`), `settings` (set on the Settings page) or `null` (no key). `last4` and `updated_at` are set only for keys saved in Settings. `secret_error` is `cannot_decrypt` or `no_encryption_key` when a saved key cannot be used; ingest then falls back to the `.env` key. `pending_apply` is true for the few seconds before ingest picks up a change. `test` is the last "Test key" result (`error` is one of `no_key`, `quota_exhausted`, `auth`, `rate_limited`, `error`). `key_editing.enabled` is false when `SETTINGS_ENCRYPTION_KEY` is not set, with the reason in `reason`.
+
 `provider` is `maxmind`, `dbip`, `off`, or `unknown` when ingest has not reported yet. The attribution text must be shown wherever DB-IP data is displayed.
+
+### Provider keys
+
+`provider` is `abuseipdb`, `greynoise` or `maxmind`. A key is never returned by any endpoint.
+
+| Request | Body | Answer |
+| --- | --- | --- |
+| `PUT` | `{"key": "...", "password": "<admin password>"}`, plus `"account_id": "<digits>"` for `maxmind` | `200` with `provider`, `source`, `last4`, `updated_at` |
+| `DELETE` | `{"password": "<admin password>"}` | `204` |
+| `POST .../test` | none | `202` with `requested_at`. Poll `GET /api/v1/settings/enrichment` for `test`. |
+
+Changes need the session cookie, the `X-CSRF-Token` header, a same-origin request and the admin password again. Errors carry a `code`: `editing_disabled` (`503`, no `SETTINGS_ENCRYPTION_KEY`), `invalid_key` (`422`, wrong length or characters), `reauth_failed` (`403`, wrong password), `origin` (`403`), `rate_limited` (`429`, the password check has its own limit), `no_key` (`409`) and `cooldown` (`429`, one test per 20 seconds). A `422` never repeats the submitted values.
 
 ## Analytics endpoints
 
