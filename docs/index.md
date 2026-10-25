@@ -4,7 +4,7 @@ SuckerPot is a self-hosted honeypot with a dashboard that makes internet attacks
 
 Everything runs in Docker Compose on one host.
 
-> **Status: early development.** Built: the event pipeline, the API and live feed, the SSH, RDP and Telnet sensors, enrichment and tagging, the host firewall template, dashboard login, and the dashboard pages (Live, Overview, Attacks, Session detail, Attackers, Trends, Malware). In progress: the web sensor (under security review), milestone M9 (seven more sensors: Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP, which bring the total to eleven) and the Live globe. Also built: retention and the database disk guard. Each page says clearly what is built and what is planned.
+> **Status: early development.** Built: the event pipeline, the API and live feed, the SSH, RDP and Telnet sensors, enrichment and tagging, the host firewall template, dashboard login, and the dashboard pages (Live, Overview, Attacks, Session detail, Attackers, Trends, Malware). In progress: the web sensor (under security review) and milestone M9 (seven more sensors: Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP, which bring the total to eleven). Also built: retention and the database disk guard. Each page says clearly what is built and what is planned.
 
 ```{warning}
 SuckerPot is built to be attacked. Deploy it only on a dedicated, isolated machine that you are ready to lose. Read [Getting started](getting-started.md) before you install it.

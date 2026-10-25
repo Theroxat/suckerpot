@@ -7,7 +7,7 @@ The dashboard is a single-page web app in `web/`. The API serves the built files
 
 **Built:** the app shell, the design system, the login page, **Live** (feed), **Overview** (with insights), **Attacks**, **Session detail**, **Attackers** (list and profile), **Trends** and **Malware**.
 
-**In progress:** the 3D globe on the Live page (it uses `GET /api/v1/settings/site` for the landing point) and the terminal replay (M5).
+**In progress:** the terminal replay (M5).
 
 The pages read the endpoints described in [API](api.md).
 ```
@@ -26,7 +26,7 @@ The pages read the endpoints described in [API](api.md).
 | Page | Path | Status | What it shows |
 | --- | --- | --- | --- |
 | Sign in | `/login` | Built | The login form. Any other page sends you here when there is no session. |
-| Live | `/live` | Feed built, globe in progress | A live feed of events as sensors record them, and events per minute for each sensor. The globe shows attack arcs landing at the home point. |
+| Live | `/live` | Built | A flat world map of the last 15 minutes of attacks, with arcs landing at the home point, a stats strip, a ticker of the newest events and rankings of addresses, countries and networks. See [The Live page](#the-live-page). |
 | Overview | `/overview` | Built | KPIs for the last 24 hours, activity per sensor, the sensor mix, the latest events and up to three insights (see below). |
 | Attacks | `/attacks` | Built | Sessions, newest first, one line each, as a short story. Filters: sensor, source address and period in the app today. The API also filters by tag, country and network. Pages of 50, virtualised. |
 | Session detail | `/attacks/<session id>` | Built (replay in progress) | The attack timeline, with long runs of the same event folded, and a source panel. |
@@ -56,6 +56,23 @@ The Overview page opens with up to three insights, each one a plain sentence wit
 A session row reads like a sentence, for example: "203.0.113.9 tried 37 SSH passwords, then ran 5 commands and tried to download 1 file". The text is written by one pure function in the app and covered by unit tests. The same words are used on the Attacks list, the Live feed and the Session page.
 
 A session is marked severe when it downloaded something or carries a payload tag (such as `php2shell`, `crypto-miner`, `mirai` or `malware-drop`). A single event gets the red icon only when the event itself is severe.
+
+## The Live page
+
+The Live page is the screen to leave running on a wall or a second monitor. The map is the main element. There is no 3D globe: a flat map is easier to read at a glance, and it shows every source in its real place.
+
+From top to bottom:
+
+- **Map.** A flat world map (Equal Earth projection) with land and borders. It shows the last 15 minutes of traffic: one arc per source country, landing at the home point (Switzerland by default). An arc takes the colour of the sensor family that sends most traffic from that country, and gets thicker with more events. Presets are "Europe" (the default) and "World". Drag, scroll, pinch or use the arrow keys, `+`, `-`, `E` and `0` to pan and zoom.
+- **Stats strip.** Events per minute, in total and per sensor family, in the top-left corner of the map (or under it on phones). The family colour is also the arc colour, so the strip is the legend. Click a family to filter the page. Click it again to clear the filter.
+- **Ticker.** The newest events, as one row of chips under the map. Hover or focus the ticker to hold it still. New events then wait behind an "N new events" pill. Click the pill to catch up.
+- **Rankings.** Three cards show the top addresses, the top countries and the top networks over the same 15 minutes. Each card opens with a sentence, such as "France leads with 21% of events, from 10 addresses." Each row opens the filtered Attacks view.
+
+Hovering a ranking row, a ticker chip or a map dot highlights that country everywhere. Its arc becomes fully opaque, and the other arcs fade. **Pause** freezes the map, the rankings and the ticker at the newest event.
+
+The home point comes from `GET /api/v1/settings/site`. Its position is set with `SITE_HOME_LAT` and `SITE_HOME_LON` (see [Configuration](configuration.md#site-live-map-home)).
+
+With "reduce motion" set in the system, the arcs do not animate, the ticker does not glide and the numbers do not tween. The picture stays the same.
 
 ## The live feed
 

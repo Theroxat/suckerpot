@@ -44,7 +44,7 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 
 Each sensor records what the attacker does and never runs it. SIP answers are capped so that the sensor cannot be used to amplify a flood.
 - **Enrichment and tags.** GeoIP and ASN from DB-IP Lite (no key needed) or MaxMind GeoLite2, optional AbuseIPDB and GreyNoise Community reputation with a 24 h cache and enforced daily quotas, and a declarative YAML rules engine (no regular expressions) for tags such as `recon`, `mirai`, `crypto-miner`, `malware-drop` and `php2shell`.
-- **Dashboard.** Live (3D globe and event feed), Overview (KPIs and auto-written insights), Attacks, Session detail with a terminal replay at real speed, Attackers (by IP and by ASN), Trends, Malware (defanged URLs) and Settings (sensor health, quotas, retention, storage). Dark and light, desktop and mobile. A single admin login (argon2, CSRF protection) guards it, and a screenshot mode (`?mask=1`) masks addresses.
+- **Dashboard.** Live (a flat world map of the last 15 minutes, with a stats strip, a ticker and rankings), Overview (KPIs and auto-written insights), Attacks, Session detail with a terminal replay at real speed, Attackers (by IP and by ASN), Trends, Malware (defanged URLs) and Settings (sensor health, quotas, retention, storage). Dark and light, desktop and mobile. A single admin login (argon2, CSRF protection) guards it, and a screenshot mode (`?mask=1`) masks addresses.
 - **Retention and backups.** Raw events kept 90 days, aggregates forever, compression after 7 days, a disk guard, and `just backup` / `just restore`.
 - **Hardened by default.** Non-root, read-only containers with all capabilities dropped and `no-new-privileges`; isolated networks with an internal backend; one Redis ACL user per sensor, limited to `XADD` on its own stream; least-privilege database roles; no outbound route for the API; and an nftables [host firewall template](scripts/host/firewall.nft).
 
@@ -132,7 +132,7 @@ SuckerPot runs hostile traffic through containers, so isolation is a feature, no
 | M4 | Enrichment and tagging | Done |
 | M5 | Core pages and terminal replay | Done |
 | M6 | Telnet, web and RDP sensors | Done |
-| M7 | Live globe, Trends, Malware | Done |
+| M7 | Live page, Trends, Malware | Done |
 | M8 | Dashboard login, retention, backups, `v0.1.0` | Done (`v0.1.0`) |
 | M9 | Seven more sensors (Redis, Docker, MySQL, MSSQL, ADB, SMB, SIP) | In progress |
 
