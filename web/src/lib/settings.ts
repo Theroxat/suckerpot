@@ -51,8 +51,39 @@ export interface GeoFile {
   age_days?: number | null
 }
 
-export interface ReputationProvider {
+export type KeySource = "env" | "settings"
+
+export interface KeyTest {
+  ok: boolean
+  /** no_key | quota_exhausted | auth | rate_limited | error */
+  error: string | null
+  checked_at: string | null
+}
+
+/** Where a provider's key comes from. The key itself never reaches the browser. */
+export interface KeyInfo {
   configured: boolean
+  source: KeySource | null
+  /** Last four characters, only for keys saved in Settings. */
+  last4: string | null
+  updated_at: string | null
+  /** cannot_decrypt | no_encryption_key: a saved key that ingest cannot use. */
+  secret_error: string | null
+  /** Saved, but ingest has not picked it up yet. */
+  pending_apply: boolean
+  test: KeyTest | null
+  test_pending: boolean
+  test_requested_at: string | null
+}
+
+export interface KeyEditing {
+  enabled: boolean
+  reason: string | null
+}
+
+export type ProviderId = "abuseipdb" | "greynoise" | "maxmind"
+
+export interface ReputationProvider extends KeyInfo {
   daily_quota: number | null
   used_today: number
   disabled: string | null
@@ -72,7 +103,66 @@ export interface EnrichmentSettings {
   }
   abuseipdb: ReputationProvider
   greynoise: ReputationProvider
+  maxmind: KeyInfo
+  key_editing: KeyEditing
   reported_at: string | null
+}
+
+/** How long a "Test key" may stay pending before the page says ingest did not answer. */
+export const TEST_TIMEOUT_MS = 90_000
+
+export function sourceLabel(source: KeySource | null): string {
+  if (source === "env") return "From .env"
+  if (source === "settings") return "Set in Settings"
+  return "No key"
+}
+
+export function testTimedOut(k: KeyInfo, now = Date.now()): boolean {
+  if (!k.test_pending || !k.test_requested_at) return false
+  return now - Date.parse(k.test_requested_at) > TEST_TIMEOUT_MS
+}
+
+/** True while a test or a saved change is still on its way through ingest. */
+export function keyInFlight(k: KeyInfo, now = Date.now()): boolean {
+  return k.pending_apply || (k.test_pending && !testTimedOut(k, now))
+}
+
+export interface TestMessage {
+  tone: "ok" | "warning" | "pending"
+  text: string
+}
+
+/** Plain-English outcome of the last key test, or null when there is nothing to say. */
+export function testMessage(k: KeyInfo, now = Date.now()): TestMessage | null {
+  if (k.test_pending) {
+    return testTimedOut(k, now)
+      ? { tone: "warning", text: "Ingest did not answer the test. Try again in a moment." }
+      : { tone: "pending", text: "Testing the key…" }
+  }
+  const t = k.test
+  if (!t) return null
+  if (t.ok) return { tone: "ok", text: "The provider accepted the key." }
+  switch (t.error) {
+    case "auth":
+      return { tone: "warning", text: "The provider rejected the key. Check it and replace it." }
+    case "rate_limited":
+      return { tone: "warning", text: "The provider is rate limiting this key. Try again later." }
+    case "quota_exhausted":
+      return { tone: "warning", text: "Today's quota is used up, so the test was not sent." }
+    case "no_key":
+      return { tone: "warning", text: "There is no key to test." }
+    default:
+      return { tone: "warning", text: "The test could not reach the provider." }
+  }
+}
+
+/** One line for a saved key that ingest cannot use, or null. */
+export function secretErrorMessage(code: string | null): string | null {
+  if (code === "cannot_decrypt")
+    return "The saved key cannot be read, probably because SETTINGS_ENCRYPTION_KEY changed. Replace or remove it."
+  if (code === "no_encryption_key")
+    return "A key is saved but SETTINGS_ENCRYPTION_KEY is not set, so it is not used."
+  return null
 }
 
 const label = (s: string) => sensorMeta(s)?.label ?? s.toUpperCase()

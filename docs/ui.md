@@ -33,7 +33,7 @@ The pages read the endpoints described in [API](api.md).
 | Attackers | `/attackers`, `/attackers/<ip>` | Built | Profiles by address and by network: first and last seen, sensors targeted, reputation. |
 | Trends | `/trends` | Built | Top usernames, passwords, commands and URLs, tags over time, a day by hour heatmap, and "new this week" (values never seen in the 90 days before). |
 | Malware | `/malware` | Built | Download URLs, defanged, with how often, from how many addresses and with which tool. File hashes and VirusTotal links appear only if payload fetching exists, which it does not yet. |
-| Settings | `/settings` | Built | Sensor status, enrichment quotas, retention, the disk guard and the database size. Read-only. It uses `GET /api/v1/settings/system` and `/settings/enrichment`. |
+| Settings | `/settings` | Built | Sensor status, enrichment quotas, retention, the disk guard and the database size. The enrichment API keys (AbuseIPDB, GreyNoise, MaxMind) can be set, replaced, removed and tested here: write-only, with a password prompt for every change (see [Enrichment keys in Settings](configuration.md#enrichment-keys-in-settings)). It uses `GET /api/v1/settings/system`, `/settings/enrichment` and `/settings/providers/{provider}`. |
 | Styleguide | `/styleguide` | Built | Every token and component, in every state. |
 
 ## Sign in

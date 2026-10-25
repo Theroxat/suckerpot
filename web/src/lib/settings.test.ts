@@ -1,15 +1,31 @@
 import { formatBytes } from "./format"
 import {
   enrichmentFinding,
+  keyInFlight,
   retentionFinding,
+  secretErrorMessage,
   sensorsFinding,
+  sourceLabel,
   storageFinding,
+  testMessage,
   type EnrichmentSettings,
+  type KeyInfo,
   type SensorStatus,
   type SystemSettings,
 } from "./settings"
 
 const NOW = Date.parse("2026-10-24T18:00:00Z")
+const NO_KEY: KeyInfo = {
+  configured: false,
+  source: null,
+  last4: null,
+  updated_at: null,
+  secret_error: null,
+  pending_apply: false,
+  test: null,
+  test_pending: false,
+  test_requested_at: null,
+}
 const s = (sensor: string, status: SensorStatus["status"], last: string | null): SensorStatus => ({
   sensor,
   status,
@@ -50,7 +66,9 @@ describe("settings findings", () => {
       attribution: "IP geolocation by DB-IP.com",
     },
     abuseipdb: {
+      ...NO_KEY,
       configured: true,
+      source: "env",
       daily_quota: 1000,
       used_today: 312,
       disabled: null,
@@ -58,13 +76,15 @@ describe("settings findings", () => {
       last_error: null,
     },
     greynoise: {
-      configured: false,
+      ...NO_KEY,
       daily_quota: null,
       used_today: 0,
       disabled: null,
       paused: false,
       last_error: null,
     },
+    maxmind: NO_KEY,
+    key_editing: { enabled: true, reason: null },
     reported_at: null,
   }
 
@@ -115,5 +135,47 @@ describe("settings findings", () => {
     expect(formatBytes(820)).toBe("820 B")
     expect(formatBytes(3_200_000_000)).toBe("3.2 GB")
     expect(formatBytes(512_000_000)).toBe("512 MB")
+  })
+})
+
+describe("provider key status", () => {
+  it("names the source", () => {
+    expect(sourceLabel("env")).toBe("From .env")
+    expect(sourceLabel("settings")).toBe("Set in Settings")
+    expect(sourceLabel(null)).toBe("No key")
+  })
+
+  it("reports a pending test, then its outcome", () => {
+    const requested = new Date(NOW - 5_000).toISOString()
+    const pending = {
+      ...NO_KEY,
+      configured: true,
+      test_pending: true,
+      test_requested_at: requested,
+    }
+    expect(testMessage(pending, NOW)).toEqual({ tone: "pending", text: "Testing the key…" })
+    expect(keyInFlight(pending, NOW)).toBe(true)
+
+    const stale = { ...pending, test_requested_at: new Date(NOW - 120_000).toISOString() }
+    expect(testMessage(stale, NOW)?.tone).toBe("warning")
+    expect(keyInFlight(stale, NOW)).toBe(false)
+
+    const checked_at = new Date(NOW).toISOString()
+    const ok = { ...NO_KEY, test: { ok: true, error: null, checked_at } }
+    expect(testMessage(ok, NOW)).toEqual({ tone: "ok", text: "The provider accepted the key." })
+    const bad = { ...NO_KEY, test: { ok: false, error: "auth", checked_at } }
+    expect(testMessage(bad, NOW)?.text).toMatch(/rejected the key/)
+    expect(testMessage(NO_KEY, NOW)).toBeNull()
+  })
+
+  it("tracks a saved key that ingest has not applied yet", () => {
+    expect(keyInFlight({ ...NO_KEY, pending_apply: true }, NOW)).toBe(true)
+    expect(keyInFlight(NO_KEY, NOW)).toBe(false)
+  })
+
+  it("explains a saved key that cannot be used", () => {
+    expect(secretErrorMessage("cannot_decrypt")).toMatch(/SETTINGS_ENCRYPTION_KEY changed/)
+    expect(secretErrorMessage("no_encryption_key")).toMatch(/not set/)
+    expect(secretErrorMessage(null)).toBeNull()
   })
 })
