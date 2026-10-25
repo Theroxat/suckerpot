@@ -31,6 +31,8 @@ DEFAULT_INDICATOR_MAX_ROWS = 500_000
 REFRESH_WINDOW_DAYS = 3
 MAINTENANCE_PROC = "suckerpot_maintenance"
 INDICATOR_PRUNE_PROC = "suckerpot_indicator_prune"  # created by migration 0009
+AUDIT_PRUNE_PROC = "suckerpot_audit_prune"  # created by migration 0010
+AUDIT_RETENTION_DAYS = 365
 
 # Name of each continuous aggregate with its bucket width.
 AGGREGATES: dict[str, str] = {
@@ -135,6 +137,24 @@ def apply_policies(conn: Connection, days: int, indicator_rows: int | None = Non
                 "'max_rows', CAST(:r AS bigint)))"
             ),
             {"d": days, "r": indicator_rows or DEFAULT_INDICATOR_MAX_ROWS},
+        )
+    # The audit log is kept for a year, whatever RETENTION_DAYS says. The procedure only exists
+    # from migration 0010 on.
+    conn.execute(
+        text("SELECT delete_job(job_id) FROM timescaledb_information.jobs WHERE proc_name = :p"),
+        {"p": AUDIT_PRUNE_PROC},
+    )
+    audit_exists = conn.execute(
+        text("SELECT to_regprocedure(:p) IS NOT NULL"),
+        {"p": f"{AUDIT_PRUNE_PROC}(integer, jsonb)"},
+    ).scalar()
+    if audit_exists:
+        conn.execute(
+            text(
+                f"SELECT add_job('{AUDIT_PRUNE_PROC}', INTERVAL '1 day', "
+                "config => jsonb_build_object('retention_days', CAST(:d AS integer)))"
+            ),
+            {"d": AUDIT_RETENTION_DAYS},
         )
 
 

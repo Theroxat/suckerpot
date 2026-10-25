@@ -1,7 +1,8 @@
 """Least-privilege database roles, applied idempotently on every migrate run.
 
 ``suckerpot_ingest`` may read and write events/sessions; ``suckerpot_api`` is read-only, except
-for the encrypted provider keys it manages (``provider_secrets``). Names and passwords
+for the encrypted provider keys it manages (``provider_secrets``) and the dashboard accounts and
+audit log (``users``, ``audit_log``); ingest has no access to those two. Names and passwords
 come from POSTGRES_INGEST_USER/PASSWORD and POSTGRES_API_USER/PASSWORD.
 
 Passwords never reach the server as plain text: a SCRAM-SHA-256 verifier is computed here and
@@ -83,7 +84,7 @@ DECLARE
                   'sessions_daily', 'events_hourly', 'events_daily_tags', 'events_daily_country',
                   'events_daily_ip', 'system_status', 'maintenance_log', 'provider_secrets',
                   'provider_test_requests', 'cve', 'cve_sync_state', 'indicators',
-                  'indicator_sessions', 'indicator_intel']
+                  'indicator_sessions', 'indicator_intel', 'users', 'audit_log']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -132,7 +133,7 @@ DECLARE
                   'sessions_daily', 'events_hourly', 'events_daily_tags', 'events_daily_country',
                   'events_daily_ip', 'system_status', 'maintenance_log', 'provider_secrets',
                   'provider_test_requests', 'cve', 'cve_sync_state', 'indicators',
-                  'indicator_sessions', 'indicator_intel']
+                  'indicator_sessions', 'indicator_intel', 'users', 'audit_log']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -160,6 +161,12 @@ BEGIN
     END IF;
     IF to_regclass('public.indicators') IS NOT NULL THEN
         EXECUTE format('GRANT SELECT ON indicators, indicator_sessions, indicator_intel TO %I', r);
+    END IF;
+    IF to_regclass('public.users') IS NOT NULL THEN
+        -- Dashboard accounts: the API manages them (deleting a user is allowed). The audit log
+        -- is append-only for the API; the retention job, owned by the migration role, prunes it.
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON users TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT ON audit_log TO %I', r);
     END IF;
 END
 $$
