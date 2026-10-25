@@ -89,7 +89,8 @@ async def seed() -> dict[str, int]:
                 text(
                     "INSERT INTO attack_techniques (id, name, tactic, stage, url) VALUES "
                     "('T1105', 'Ingress Tool Transfer', 'command-and-control', 'tool_transfer', "
-                    "'https://attack.mitre.org/techniques/T1105/') ON CONFLICT DO NOTHING"
+                    "'https://attack.mitre.org/techniques/T1105/') ON CONFLICT (id) DO UPDATE SET "
+                    "name = EXCLUDED.name, tactic = EXCLUDED.tactic, url = EXCLUDED.url"
                 )
             )
             for i, sc in enumerate(SCRIPTS):
