@@ -96,9 +96,16 @@ suckerpot/
 ├── sensors/
 │   ├── common/             # suckerpot-common: the shared Event schema
 │   ├── ssh/                # SSH sensor
-│   ├── web/                # web sensor (not yet in Compose)
+│   ├── telnet/             # Telnet sensor
+│   ├── adb/                # ADB sensor (Android TV box)
+│   ├── web/                # web sensor
+│   ├── docker/             # Docker Engine API sensor
+│   ├── redis/              # Redis sensor
+│   ├── mysql/              # MySQL sensor
+│   ├── mssql/              # MSSQL sensor
 │   ├── rdp/                # RDP sensor
-│   └── telnet/             # Telnet sensor
+│   ├── smb/                # SMB sensor
+│   └── sip/                # SIP sensor
 ├── ingest/                 # suckerpot-ingest: consumer, writer, enrichment, rules/*.yaml
 ├── api/                    # suckerpot-api: FastAPI app
 ├── db/                     # suckerpot-db: SQLAlchemy models and Alembic migrations
@@ -112,7 +119,7 @@ suckerpot/
 └── docs/                   # this documentation site
 ```
 
-The web sensor is not in `docker-compose.yml` yet.
+All eleven sensors are in `docker-compose.yml`.
 
 ## Python packages
 
@@ -126,11 +133,20 @@ Each package has its own `pyproject.toml` and a committed `uv.lock`. The code ta
 | `ingest` | `suckerpot-ingest` | `ingest` | Redis consumer, validation and database writes |
 | `api` | `suckerpot-api` | `api` | REST API and live feed |
 | `sensors/ssh` | `suckerpot-sensor-ssh` | `ssh_sensor` | SSH sensor |
-| `sensors/web` | `suckerpot-sensor-web` | `web_sensor` | Web sensor (not yet in Compose) |
-| `sensors/rdp` | `suckerpot-sensor-rdp` | `rdp_sensor` | RDP sensor |
 | `sensors/telnet` | `suckerpot-sensor-telnet` | `telnet_sensor` | Telnet sensor |
+| `sensors/adb` | `suckerpot-sensor-adb` | `adb_sensor` | ADB sensor |
+| `sensors/web` | `suckerpot-sensor-web` | `web_sensor` | Web sensor |
+| `sensors/docker` | `suckerpot-sensor-docker` | `docker_sensor` | Docker Engine API sensor |
+| `sensors/redis` | `suckerpot-sensor-redis` | `redis_sensor` | Redis sensor |
+| `sensors/mysql` | `suckerpot-sensor-mysql` | `mysql_sensor` | MySQL sensor |
+| `sensors/mssql` | `suckerpot-sensor-mssql` | `mssql_sensor` | MSSQL sensor |
+| `sensors/rdp` | `suckerpot-sensor-rdp` | `rdp_sensor` | RDP sensor |
+| `sensors/smb` | `suckerpot-sensor-smb` | `smb_sensor` | SMB sensor |
+| `sensors/sip` | `suckerpot-sensor-sip` | `sip_sensor` | SIP sensor |
 
-The recipes `just lint`, `just typecheck` and `just test` cover `sensors/common`, `scripts/demo`, `db`, `ingest` and `api`, and the CI `python` job does the same. The sensor packages (`ssh`, `web`, `rdp`, `telnet`) are checked from their own directory with `uv sync`, `uv run ruff check`, `uv run ruff format --check`, `uv run mypy .` and `uv run python -m pytest`. The RDP sensor also has a black-box script that runs real `nmap` and FreeRDP clients (`sensors/rdp/tests/blackbox.sh`).
+The recipes `just lint`, `just typecheck` and `just test` run over every directory in the `packages` variable of the `justfile`: all eleven sensors, `sensors/common`, `scripts/demo`, `db`, `ingest` and `api`. The CI `python` job uses the same list. Each package also has its own `pyproject.toml`, so you can run `uv sync`, `uv run ruff check`, `uv run mypy .` and `uv run python -m pytest` from its directory.
+
+Every sensor has a `tests/test_static.py`. It reads the sensor's own code and fails on forbidden calls (`subprocess`, `eval`, `exec` and the like), on outbound sockets and on file writes outside the data folder. Several sensors also ship a `tests/blackbox.sh` script that runs real clients (such as `nmap`) against the sensor. Read the header of the script for the tools it needs.
 
 Packages depend on each other by path. For example, `ingest` depends on `suckerpot-common` and `suckerpot-db`.
 

@@ -30,11 +30,19 @@ openssl rand -base64 32
 | `REDIS_SENSOR_SSH_PASSWORD` | `redis`, `sensor-ssh` | Redis `sensor-ssh` user. It can only `XADD` to `events:ssh`. |
 | `REDIS_SENSOR_RDP_PASSWORD` | `redis`, `sensor-rdp` | Redis `sensor-rdp` user. It can only `XADD` to `events:rdp`. |
 | `REDIS_SENSOR_TELNET_PASSWORD` | `redis`, `sensor-telnet` | Redis `sensor-telnet` user. It can only `XADD` to `events:telnet`. |
+| `REDIS_SENSOR_WEB_PASSWORD` | `redis`, `sensor-web` | Redis `sensor-web` user. It can only `XADD` to `events:web`. |
+| `REDIS_SENSOR_REDIS_PASSWORD` | `redis`, `sensor-redis` | Redis `sensor-redis` user. It can only `XADD` to `events:redis`. |
+| `REDIS_SENSOR_DOCKER_PASSWORD` | `redis`, `sensor-docker` | Redis `sensor-docker` user. It can only `XADD` to `events:docker`. |
+| `REDIS_SENSOR_MYSQL_PASSWORD` | `redis`, `sensor-mysql` | Redis `sensor-mysql` user. It can only `XADD` to `events:mysql`. |
+| `REDIS_SENSOR_MSSQL_PASSWORD` | `redis`, `sensor-mssql` | Redis `sensor-mssql` user. It can only `XADD` to `events:mssql`. |
+| `REDIS_SENSOR_ADB_PASSWORD` | `redis`, `sensor-adb` | Redis `sensor-adb` user. It can only `XADD` to `events:adb`. |
+| `REDIS_SENSOR_SMB_PASSWORD` | `redis`, `sensor-smb` | Redis `sensor-smb` user. It can only `XADD` to `events:smb`. |
+| `REDIS_SENSOR_SIP_PASSWORD` | `redis`, `sensor-sip` | Redis `sensor-sip` user. It can only `XADD` to `events:sip`. |
 | `REDIS_DEMO_PASSWORD` | `redis`, `demo` | Redis `demo` user. It can only `XADD` to `events:*`. |
 | `SESSION_SECRET` | `api` | Signs the dashboard session cookie (at least 32 bytes). See [Dashboard authentication](#dashboard-authentication). |
 | `ADMIN_PASSWORD_HASH` | `api` | Argon2 hash of the dashboard password. A hash, not a password, but treat it as a secret. |
 
-Each sensor has its own Redis secret: `REDIS_SENSOR_SSH_PASSWORD`, `REDIS_SENSOR_RDP_PASSWORD` and `REDIS_SENSOR_TELNET_PASSWORD`. The web sensor will add a fourth. To rotate secrets, see [Deployment](deployment.md#rotating-secrets).
+Each of the eleven sensors has its own Redis secret, `REDIS_SENSOR_<NAME>_PASSWORD`, for SSH, Telnet, RDP, web, Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP. To rotate secrets, see [Deployment](deployment.md#rotating-secrets).
 
 ```{warning}
 The template uses `change-me` as a placeholder. It is too short for the policy, so the stack refuses to start until you replace it. `SUCKERPOT_ALLOW_DEFAULT_SECRETS=1` turns the check off. Set it only in CI or throwaway tests.
@@ -50,8 +58,16 @@ The template uses `change-me` as a placeholder. It is too short for the policy, 
 | `ADMIN_SSH_PORT` | empty | `.env` | Optional. The port of the host's own admin SSH daemon. Read only by `scripts/check-ports.sh`, to refuse a collision. |
 | `SSH_HOST_PORT` | `22` | `.env` | Host port of the SSH sensor (IPv4 only) |
 | `TELNET_HOST_PORT` | `23` | `.env` | Host port of the Telnet sensor |
-| `HTTP_HOST_PORT` | `80` | `.env` | Host port of the web sensor (not yet in Compose) |
+| `HTTP_HOST_PORT` | `80` | `.env` | Host port of the web sensor (IPv4 only) |
+| `HTTPS_HOST_PORT` | `443` | `.env` | Host port of the web sensor's TLS listener (IPv4 only) |
 | `RDP_HOST_PORT` | `3389` | `.env` | Host port of the RDP sensor |
+| `REDIS_HOST_PORT` | `6379` | `.env` | Host port of the Redis sensor (IPv4 only) |
+| `DOCKER_HOST_PORT` | `2375` | `.env` | Host port of the Docker API sensor (IPv4 only) |
+| `MYSQL_HOST_PORT` | `3306` | `.env` | Host port of the MySQL sensor (IPv4 only) |
+| `MSSQL_HOST_PORT` | `1433` | `.env` | Host port of the MSSQL sensor (IPv4 only) |
+| `ADB_HOST_PORT` | `5555` | `.env` | Host port of the ADB sensor (IPv4 only) |
+| `SMB_HOST_PORT` | `445` | `.env` | Host port of the SMB sensor (IPv4 only). The sensor listens on container port 4450. |
+| `SIP_HOST_PORT` | `5060` | `.env` | Host port of the SIP sensor, for both UDP and TCP (IPv4 only) |
 | `SUCKERPOT_ALLOW_DEFAULT_SECRETS` | `0` | `.env` | `1` turns off the secret length and uniqueness checks. CI and throwaway tests only. |
 
 ## Database
@@ -75,13 +91,14 @@ Inside `ingest` and `api`, Compose sets `POSTGRES_USER` and `POSTGRES_PASSWORD` 
 | Variable | Default | Source | Description |
 | --- | --- | --- | --- |
 | `REDIS_PASSWORD` and the other `REDIS_*_PASSWORD` secrets | none | `.env`, required | See [Secrets](#secrets) |
-| `EVENTS_MAXLEN` | `10000` | `.env` | Approximate maximum length of each sensor's stream (`XADD MAXLEN ~`) |
+| `EVENTS_MAXLEN` | `10000` | `.env` | Approximate maximum length of each sensor's stream (`XADD MAXLEN ~`) for SSH, Telnet, Web and RDP |
+| `EVENTS_MAXLEN_LOW` | `3000` | `.env` | The same cap for the seven M9 sensors: Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP. Kept short so a burst on seven more streams cannot fill Redis memory. Ingest drains the streams, and a sensor drops an event when `XADD` fails. |
 | `DEMO_EVENTS_MAXLEN` | `100000` | `.env` | The same cap, for the demo generator only. Keep it above the number of events per sensor in a backfill, or entries ingest has not read yet are trimmed. |
 | `EVENTS_MAX_BYTES_PER_SEC` | `200000` | Code default | Publisher backstop for **every** sensor: a token bucket on serialized event bytes per second. Beyond it the publisher drops events and counts them. |
 | `EVENTS_MAX_BYTES_BURST` | `2000000` | Code default | Burst of that bucket, in bytes |
 | `REDIS_HOST` | `redis` | Fixed by Compose | Redis host |
 | `REDIS_PORT` | `6379` | Fixed by Compose | Redis port |
-| `REDIS_USER` | per service | Fixed by Compose | `ingest`, `sensor-ssh`, `demo` |
+| `REDIS_USER` | per service | Fixed by Compose | `ingest`, `demo`, and one `sensor-<name>` user per sensor |
 | `EVENTS_STREAM` | per service | Fixed by Compose | Stream a sensor writes to (`events:ssh`). The code default is `events`. |
 
 Inside each service, Compose sets `REDIS_PASSWORD` to the password of that service's own Redis user.
@@ -213,7 +230,7 @@ The variables in the first group are passed through from `.env`. The second grou
 ```{admonition} Status
 :class: note
 
-The sensor reads these variables, but it is not in `docker-compose.yml` yet (it is still under security review).
+Built (M6) and wired into `docker-compose.yml`. It is still under security review. Compose sets the ports, the hostname and the Redis settings. The other variables use the defaults below unless you add them with an override file.
 ```
 
 | Variable | Default | Description |
@@ -286,6 +303,30 @@ Built. Compose sets `TELNET_PUBLIC_PORT` (from `TELNET_HOST_PORT`) and the Redis
 | `TELNET_EVENTS_PER_SEC`, `TELNET_GLOBAL_EVENTS_PER_SEC` | `20`, `200` | Event caps per source address and for the sensor |
 | `TELNET_CONN_RATE_PER_IP`, `TELNET_CONN_BURST_PER_IP` | `1`, `10` | New connections per second per source address, and the burst |
 | `TELNET_SUMMARY_INTERVAL` | `60` | Seconds between summaries of unrecorded connections (at least 5) |
+
+## Sensors added in M9
+
+Seven sensors were added in M9: Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP. Compose wires each one with its own Redis user, stream and network. It sets the public port, the connection caps and the memory limit. The table lists the variables you can set in `.env`. The sensor's own tunables (timeouts, budgets, rate limits) keep their defaults unless you add them with an override file. Each sensor page lists them, and the sensor README has the full table.
+
+| Variable | Default | Sensor | Description |
+| --- | --- | --- | --- |
+| `REDIS_MAX_CONNECTIONS`, `REDIS_MAX_PER_IP` | `200`, `8` | Redis | Connection caps, in total and per source address |
+| `DOCKER_MAX_CONNECTIONS`, `DOCKER_MAX_PER_IP` | `200`, `8` | Docker | Connection caps |
+| `MYSQL_MAX_CONNECTIONS`, `MYSQL_MAX_PER_IP` | `200`, `8` | MySQL | Connection caps |
+| `MYSQL_ACCOUNTS` | `root:,root:root,admin:admin,mysql:mysql` | MySQL | Comma-separated `user:password` pairs that log in. Weak on purpose. |
+| `MSSQL_MAX_CONNECTIONS`, `MSSQL_MAX_PER_IP` | `200`, `8` | MSSQL | Connection caps |
+| `ADB_MAX_CONNECTIONS`, `ADB_MAX_PER_IP` | `200`, `8` | ADB | Connection caps |
+| `SMB_MAX_CONNECTIONS`, `SMB_MAX_PER_IP` | `200`, `10` | SMB | Connection caps |
+| `SMB_HOSTNAME`, `SMB_DOMAIN` | empty (derived) | SMB | NetBIOS computer name (1 to 15 characters) and domain or workgroup. Empty means a realistic name derived from the sensor's secret. |
+| `SMB_SMB1_MODE` | `steer` | SMB | `steer` switches SMB1 clients to SMB2 and records them. `reset` records and drops them. |
+| `SIP_MAX_CONNECTIONS`, `SIP_MAX_PER_IP` | `200`, `8` | SIP | TCP connection caps |
+| `SIP_OWN_IPS` | empty | SIP | Comma-separated addresses of this host. The sensor never answers them, so it cannot be made to talk to itself. |
+
+```{note}
+For ADB, Docker and SIP, the connection caps that Compose sets (200 and 8) are higher than the defaults in the sensor README. When you run the stack, the Compose values apply.
+```
+
+Each of these sensors needs its own Redis password in `.env` (`REDIS_SENSOR_<NAME>_PASSWORD`). See [Secrets](#secrets). Each host port must differ from the others and from `DASHBOARD_PORT`. The [port guard](deployment.md#port-guard) checks this.
 
 ## Demo data
 

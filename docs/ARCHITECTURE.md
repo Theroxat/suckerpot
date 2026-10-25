@@ -5,9 +5,9 @@ This page describes how SuckerPot is built: the services, the networks, the queu
 ```{admonition} Build status
 :class: note
 
-**Built and wired in Compose:** Redis, the database and its migrations, ingest (multi-stream, with GeoIP, reputation and tagging), the API with its REST endpoints and live WebSocket feed, the SSH, RDP and Telnet sensors, and the web UI (served by the API once built).
+**Built and wired in Compose:** Redis, the database and its migrations, ingest (multi-stream, with GeoIP, reputation and tagging), the API with its REST endpoints and live WebSocket feed, the SSH, RDP, Telnet and web sensors, the seven sensors of M9 (Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP), and the web UI (served by the API once built).
 
-**Code exists, not yet in Compose:** the web sensor (M6), which is still under security review.
+**Under security review:** the web sensor (M6) and the M9 sensors. The sensor pages show the status of each one.
 
 **In progress:** the analytics API (M5).
 
@@ -31,10 +31,16 @@ Router or hypervisor firewall
    ▼
 Host (nftables table "suckerpot_host", see Deployment)
    │
-   ├─► sensor-ssh     ─┐  each sensor: sp-ingress (inbound only)
-   ├─► sensor-web      │  + its own internal network to Redis
-   ├─► sensor-rdp      │  (web: not yet in Compose)
-   └─► sensor-telnet  ─┘
+   ├─► 11 sensors      ─┐  each sensor: sp-ingress (inbound only)
+   │   remote shells:     │  + its own internal network to Redis
+   │     ssh, telnet, adb │
+   │   web and APIs:      │
+   │     web, docker      │
+   │   databases:         │
+   │     redis, mysql,    │
+   │     mssql            │
+   │   Windows and VoIP:  │
+   │     rdp, smb, sip   ─┘
                 │  XADD events:<sensor>   (one Redis user per sensor)
                 ▼
           Redis Streams  ◄── demo (just demo, network "tools")
@@ -58,15 +64,22 @@ Host (nftables table "suckerpot_host", see Deployment)
 
 | Service | Networks | Role | Status |
 | --- | --- | --- | --- |
-| `redis` | `sensors-ssh`, `sensors-rdp`, `sensors-telnet`, `tools`, `backend` | Redis Streams queue. Named ACL users (see below). AOF persistence on `redis-data`. | Built |
+| `redis` | `sensors-ssh`, `sensors-rdp`, `sensors-telnet`, `sensors-web`, `sensors-redis`, `sensors-docker`, `sensors-mysql`, `sensors-mssql`, `sensors-adb`, `sensors-smb`, `sensors-sip`, `tools`, `backend` | Redis Streams queue. Named ACL users (see below). AOF persistence on `redis-data`. | Built |
 | `db` | `backend` | PostgreSQL 17 with TimescaleDB 2.22.1, on `db-data`. Runs only as the owner role. | Built |
 | `migrate` | `backend` | One-shot. Checks the secrets policy, runs `alembic upgrade head`, then re-applies the application roles and their passwords, and exits with code 0. | Built |
 | `ingest` | `backend`, `egress` | Reads all sensor streams, validates events, enriches and tags them, writes them to the database. | Built. GeoIP files live on the `geoip-data` volume. |
 | `api` | `backend`, `dashboard` | FastAPI (512 MB memory limit). REST endpoints, WebSocket feed, `/healthz`, and the built web UI when present. The only service with a dashboard port. | Built |
 | `sensor-ssh` | `ingress`, `sensors-ssh` | SSH honeypot. See [SSH sensor](sensors/ssh.md). | Built |
-| `sensor-rdp` | `ingress`, `sensors-rdp` | RDP handshake sensor. See [RDP](sensors/rdp.md). Stream `events:rdp`. | Built |
 | `sensor-telnet` | `ingress`, `sensors-telnet` | BusyBox-style Telnet sensor. See [Telnet](sensors/telnet.md). Stream `events:telnet`. | Built |
-| `sensor-web` | `ingress`, `sensors-web` | See [Web](sensors/web.md). Stream `events:web`. | Code exists, not yet in Compose (under security review) |
+| `sensor-adb` | `ingress`, `sensors-adb` | Android TV box with `adbd`. See [ADB](sensors/adb.md). Stream `events:adb`. | Built (M9) |
+| `sensor-web` | `ingress`, `sensors-web` | See [Web](sensors/web.md). Stream `events:web`. | Built (M6), under security review |
+| `sensor-docker` | `ingress`, `sensors-docker` | Exposed Docker Engine API. See [Docker](sensors/docker.md). Stream `events:docker`. | Built (M9) |
+| `sensor-redis` | `ingress`, `sensors-redis` | Redis 7.2 with no password. See [Redis](sensors/redis.md). Stream `events:redis`. | Built (M9) |
+| `sensor-mysql` | `ingress`, `sensors-mysql` | MySQL 8.0 with weak logins. See [MySQL](sensors/mysql.md). Stream `events:mysql`. | Built (M9) |
+| `sensor-mssql` | `ingress`, `sensors-mssql` | SQL Server look-alike. See [MSSQL](sensors/mssql.md). Stream `events:mssql`. | Built (M9) |
+| `sensor-rdp` | `ingress`, `sensors-rdp` | RDP handshake sensor. See [RDP](sensors/rdp.md). Stream `events:rdp`. | Built |
+| `sensor-smb` | `ingress`, `sensors-smb` | SMB file service, observation only. See [SMB](sensors/smb.md). Stream `events:smb`. | Built (M9) |
+| `sensor-sip` | `ingress`, `sensors-sip` | Asterisk-style PBX on UDP and TCP 5060. See [SIP](sensors/sip.md). Stream `events:sip`. | Built (M9) |
 | `demo` | `tools` | Synthetic attack generator. Runs only with `--profile tools`. | Built |
 
 Start order: `redis` and `db` first. `migrate` runs once the database is healthy. `ingest` and `api` start after `migrate` has finished with code 0. Sensors start after Redis is healthy.
@@ -78,7 +91,7 @@ Each network has a single job. The point of the layout is that a compromised sen
 | Network | Docker name | Outbound internet | Connected services | Why |
 | --- | --- | --- | --- | --- |
 | `ingress` | `sp-ingress` | None. Masquerading off, inter-container communication off. | Every sensor | Inbound traffic from attackers. Sensors cannot reach each other or the internet. |
-| `sensors-ssh`, `sensors-rdp`, `sensors-telnet` (and `sensors-web` later) | (project prefix) | None (`internal: true`) | `redis` and one sensor | The one link between a sensor and Redis. One network per sensor. |
+| `sensors-<name>`, one per sensor (`sensors-ssh`, `sensors-web`, `sensors-sip`, ...) | (project prefix) | None (`internal: true`) | `redis` and one sensor | The one link between a sensor and Redis. One network per sensor. |
 | `tools` | (project prefix) | None (`internal: true`) | `redis`, `demo` | The demo generator reaches Redis and nothing else. |
 | `backend` | (project prefix) | None (`internal: true`) | `redis`, `db`, `migrate`, `ingest`, `api` | Storage and processing stay off the internet. |
 | `egress` | (project prefix) | Outbound | `ingest` only | The one place for outbound calls (GeoIP downloads, reputation lookups). |
@@ -115,7 +128,7 @@ Only `ingest` needs outbound calls: GeoIP database downloads, AbuseIPDB and Grey
 
 ### Streams
 
-Each sensor writes to its own stream: `events:ssh`, `events:telnet`, `events:web` and `events:rdp`. The demo generator writes to the same streams. One stream per sensor means a flood on one sensor cannot hide the events of another, and each stream is trimmed on its own.
+Each sensor writes to its own stream: `events:ssh`, `events:telnet`, `events:adb`, `events:web`, `events:docker`, `events:redis`, `events:mysql`, `events:mssql`, `events:rdp`, `events:smb` and `events:sip`. The demo generator writes to the same streams. One stream per sensor means a flood on one sensor cannot hide the events of another, and each stream is trimmed on its own.
 
 ### Users and permissions
 
@@ -129,10 +142,18 @@ Redis runs with the `default` user disabled. Each named user has its own passwor
 | `sensor-ssh` | `REDIS_SENSOR_SSH_PASSWORD` | `resetkeys ~events:ssh -@all +xadd +hello +auth` | `sensor-ssh` |
 | `sensor-rdp` | `REDIS_SENSOR_RDP_PASSWORD` | `resetkeys ~events:rdp -@all +xadd +hello +auth` | `sensor-rdp` |
 | `sensor-telnet` | `REDIS_SENSOR_TELNET_PASSWORD` | `resetkeys ~events:telnet -@all +xadd +hello +auth` | `sensor-telnet` |
+| `sensor-web` | `REDIS_SENSOR_WEB_PASSWORD` | `resetkeys ~events:web -@all +xadd +hello +auth` | `sensor-web` |
+| `sensor-redis` | `REDIS_SENSOR_REDIS_PASSWORD` | `resetkeys ~events:redis -@all +xadd +hello +auth` | `sensor-redis` |
+| `sensor-docker` | `REDIS_SENSOR_DOCKER_PASSWORD` | `resetkeys ~events:docker -@all +xadd +hello +auth` | `sensor-docker` |
+| `sensor-mysql` | `REDIS_SENSOR_MYSQL_PASSWORD` | `resetkeys ~events:mysql -@all +xadd +hello +auth` | `sensor-mysql` |
+| `sensor-mssql` | `REDIS_SENSOR_MSSQL_PASSWORD` | `resetkeys ~events:mssql -@all +xadd +hello +auth` | `sensor-mssql` |
+| `sensor-adb` | `REDIS_SENSOR_ADB_PASSWORD` | `resetkeys ~events:adb -@all +xadd +hello +auth` | `sensor-adb` |
+| `sensor-smb` | `REDIS_SENSOR_SMB_PASSWORD` | `resetkeys ~events:smb -@all +xadd +hello +auth` | `sensor-smb` |
+| `sensor-sip` | `REDIS_SENSOR_SIP_PASSWORD` | `resetkeys ~events:sip -@all +xadd +hello +auth` | `sensor-sip` |
 | `demo` | `REDIS_DEMO_PASSWORD` | `resetkeys ~events:* -@all +xadd +hello +auth` | The demo generator |
 | `ingest` | `REDIS_INGEST_PASSWORD` | `resetkeys ~events:* -@all +xreadgroup +xack +xgroup\|create +xautoclaim +xtrim +hello +auth` | `ingest` |
 
-A `sensor-web` user is added to the entrypoint together with the web sensor. Like the others, it will be limited to `XADD` on its own stream (`~events:web`).
+Every sensor user can only `XADD` to its own stream (`~events:<name>`). Ingest checks the `sensor` field of each event against the stream it came from, so a sensor cannot write as another sensor even if its user had wider rights.
 
 A sensor user can only append to its own stream. It cannot read it, delete it or change its settings. The publisher turns off client info commands so the sensor users do not need `CLIENT SETINFO`. All Redis passwords must be at least 24 characters and pairwise different, or the container refuses to start.
 
@@ -211,7 +232,7 @@ Built (M4) and wired into Compose: ingest gets the provider variables and the `g
 
 - **GeoIP and ASN** are read from local MMDB files, never from a web service per event. The provider is MaxMind GeoLite2 when `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` are set, otherwise DB-IP Lite (no key, CC BY 4.0, attribution shown in the dashboard). Ingest downloads and refreshes the files itself, with a size cap and a check that the file opens. `GEOIP_PROVIDER=off` turns it off.
 - **Reputation** (AbuseIPDB and GreyNoise Community) runs in a background worker, not in the event path. It picks the busiest addresses with no fresh answer, spends one unit of a persisted daily quota per lookup (`ABUSEIPDB_DAILY_QUOTA`, `GREYNOISE_DAILY_QUOTA`), caches the answer for 24 hours, and pauses for an hour after a rate-limit answer. It only reads. Nothing is ever reported to AbuseIPDB.
-- **Tags** come from a declarative rules engine. Rules are YAML files in `ingest/rules/` (`shell.yaml` for commands, `web.yaml` for HTTP, `session.yaml` for session counters). A rule can match URL patterns, typical shell commands, user agents or CVE signatures. Tags include `recon`, `mirai`, `crypto-miner`, `exec-attempt`, `malware-drop`, `credential-stuffing`, `scanner` and `php2shell`. A broken rule file stops ingest at start-up.
+- **Tags** come from a declarative rules engine. Rules are YAML files in `ingest/rules/` (`shell.yaml` for commands, `web.yaml` for HTTP, `services.yaml` for the database, container, mobile, file-sharing and VoIP sensors, and `session.yaml` for session counters). A rule can match URL patterns, typical shell commands, user agents or CVE signatures. Tags include `recon`, `mirai`, `crypto-miner`, `exec-attempt`, `malware-drop`, `credential-stuffing`, `scanner`, `php2shell`, and for the M9 sensors `persistence`, `container-escape`, `sql-rce`, `db-ransom`, `eternalblue` and `sip-fraud`. A broken rule file stops ingest at start-up.
 
 A **session** is one connection. It is the unit the dashboard tells as a story, such as "tried 37 SSH passwords, then ran a crypto-miner".
 
@@ -242,7 +263,7 @@ The WebSocket checks the `Origin` header. Requests with no `Origin` (non-browser
 
 | Layer | Choice |
 | --- | --- |
-| Sensors | Python 3.13, asyncio, asyncssh (SSH), raw asyncio (Telnet and RDP), a hand-written HTTP server (web) |
+| Sensors | Python 3.13, asyncio, asyncssh (SSH), raw asyncio (Telnet, RDP, ADB, Redis, MySQL, MSSQL, SMB and SIP), hand-written HTTP servers (web and Docker API) |
 | Ingest and API | FastAPI, SQLAlchemy 2 with asyncpg, Alembic |
 | Queue | Redis 7.4 Streams |
 | Database | PostgreSQL 17 with TimescaleDB 2.22.1 |
@@ -264,6 +285,19 @@ Every service follows the same rules:
 - A health check, plus a watchdog inside each sensor (Docker does not restart a container that is only unhealthy).
 - Logs rotated by Docker (10 MB, 3 files).
 
+### Resource priorities
+
+When the host runs short of memory, the kernel must pick a victim. `oom_score_adj` sets the order, and `cpu_shares` sets the CPU share when the host is busy. Compose sets them as follows.
+
+| Service | `oom_score_adj` | `cpu_shares` | Why |
+| --- | --- | --- | --- |
+| `redis`, `db` | `-500` | default | The data path. Last to be killed. |
+| `ingest` | `-200` | default | Keeps the events flowing into the database. |
+| `api` | `300` | default | The dashboard. Killed before the data path, after the sensors. |
+| All eleven `sensor-*` services | `800` | `256` | Sensors take attacker load, so they are the first to be killed under memory pressure, and get a smaller CPU share when the host is busy. Docker restarts them. |
+
+Each sensor has a memory limit (`mem_limit`), no swap, a CPU limit (`cpus`) and a process limit (`pids_limit`). The sensors' combined share can also be capped with an optional systemd slice. See [Deployment](deployment.md#host-safeguards).
+
 The rules are explained in [Security](SECURITY.md#containers).
 
 ## Repository layout
@@ -274,7 +308,7 @@ suckerpot/
 ├── justfile
 ├── .env.example
 ├── redis/             # Redis image, ACL entrypoint and config
-├── sensors/           # common (Event schema), ssh, web, rdp, telnet (last four: see status)
+├── sensors/           # common (Event schema) and the eleven sensors: ssh, telnet, adb, web, docker, redis, mysql, mssql, rdp, smb, sip
 ├── ingest/            # consumer, writer, enrichment, tagging, rules/*.yaml
 ├── api/               # FastAPI app: REST, live feed, SPA serving
 ├── db/                # SQLAlchemy models, Alembic migrations, roles, secrets check
