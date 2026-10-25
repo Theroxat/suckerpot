@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
 import {
-  Bell,
   CircleCheck,
   CircleDashed,
   Info,
@@ -10,6 +9,7 @@ import {
 } from "lucide-react"
 import { useEffect, useRef } from "react"
 import { Link } from "react-router"
+import { ChannelsCard } from "@/components/alerts/channels-card"
 import { EmptyState } from "@/components/empty-state"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUrlParam } from "@/hooks/use-url-param"
@@ -383,10 +383,10 @@ export function SettingsPage() {
         <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
         {canWrite ? (
           <p>
-            The enrichment API keys and the users can be edited below. Everything else lives in{" "}
-            <code className="font-mono text-fg">.env</code>: change it there and restart with{" "}
-            <code className="font-mono text-fg">docker compose up -d</code>. Every option is
-            documented in <code className="font-mono">.env.example</code>.
+            The enrichment API keys, the users and the alert channels can be edited below.
+            Everything else lives in <code className="font-mono text-fg">.env</code>: change it
+            there and restart with <code className="font-mono text-fg">docker compose up -d</code>.
+            Every option is documented in <code className="font-mono">.env.example</code>.
           </p>
         ) : (
           <p>
@@ -430,13 +430,8 @@ export function SettingsPage() {
             </TabsContent>
           </>
         ) : null}
-        <TabsContent value="alerts">
-          <EmptyState
-            icon={Bell}
-            badge="Coming soon"
-            title="Alert channels are on their way"
-            description="Connect Discord, Teams or email, and choose which events send you a message."
-          />
+        <TabsContent value="alerts" className="grid grid-cols-1 gap-4">
+          <ChannelsCard />
         </TabsContent>
         {canWrite ? (
           <TabsContent value="feeds">
