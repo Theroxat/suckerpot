@@ -106,3 +106,26 @@ def test_select_top_drops_noise_orders_by_score_and_caps() -> None:
     ]
     top = select_top(items, 3)
     assert [c.value for c in top] == ["203.0.113.4", "203.0.113.3", "203.0.113.2"]
+
+
+def test_one_source_typing_a_download_five_times_stays_below_the_feed_threshold() -> None:
+    planted = IndicatorFacts(
+        kind="url", role="download_host", sessions=1, sources=1, sightings=5, trusted=False,
+        known=False, family=None, in_campaign=False,
+    )  # fmt: skip
+    assert score_indicator(planted).score < 50
+    spread = IndicatorFacts(
+        kind="url", role="download_host", sessions=3, sources=3, sightings=3, trusted=False,
+        known=False, family=None, in_campaign=False,
+    )  # fmt: skip
+    assert score_indicator(spread).score >= 50
+    confirmed = IndicatorFacts(
+        kind="url", role="download_host", sessions=1, sources=1, sightings=1, trusted=False,
+        known=True, family="mirai", in_campaign=False,
+    )  # fmt: skip
+    assert score_indicator(confirmed).score >= 50
+    typed_hash = IndicatorFacts(
+        kind="hash", role="hash", sessions=1, sources=1, sightings=1, trusted=False,
+        known=False, family=None, in_campaign=False,
+    )  # fmt: skip
+    assert score_indicator(typed_hash).score < 50

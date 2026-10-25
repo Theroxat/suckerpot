@@ -23,9 +23,8 @@ import logging
 import time
 from collections import deque
 from datetime import UTC, datetime
-from typing import Annotated
 
-from fastapi import APIRouter, Header, Request, Response
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
@@ -110,7 +109,7 @@ def _parse_name(name: str) -> tuple[str, str] | None:
     return kind, ext
 
 
-async def _serve(request: Request, db: DbSession, token: str, name: str) -> Response:
+async def _serve_checked(request: Request, db: DbSession, token: str, name: str) -> Response:
     limits = _limits(request)
     now = time.monotonic()
     client = request.app.state.auth.client_ip(request)[:64] or "unknown"
@@ -135,7 +134,7 @@ async def _serve(request: Request, db: DbSession, token: str, name: str) -> Resp
             ).scalar_one_or_none()
         except SQLAlchemyError:
             log.warning("feed lookup failed: database unavailable")
-            return JSONResponse({"detail": "Service unavailable"}, status_code=503)
+            return _not_found()
     if row is None:
         limits.failures.add(client, now)
         return _not_found()
@@ -177,17 +176,22 @@ async def _serve(request: Request, db: DbSession, token: str, name: str) -> Resp
     return Response(body, media_type=media, headers={**headers, "X-Entry-Count": str(len(rows))})
 
 
+async def _serve(request: Request, db: DbSession, token: str, name: str) -> Response:
+    """Whatever goes wrong, the caller sees the same plain 404 (and the cause is logged)."""
+    try:
+        return await _serve_checked(request, db, token, name[:64])
+    except Exception:
+        log.warning("feed request failed", exc_info=True)
+        return _not_found()
+
+
 @router.get("/{token}/{name}", include_in_schema=False)
 async def feed_by_path(token: str, name: str, request: Request, db: DbSession) -> Response:
     return await _serve(request, db, token, name)
 
 
 @router.get("/{name}", include_in_schema=False)
-async def feed_by_header(
-    name: str,
-    request: Request,
-    db: DbSession,
-    authorization: Annotated[str | None, Header(max_length=200)] = None,
-) -> Response:
-    scheme, _, token = (authorization or "").partition(" ")
+async def feed_by_header(name: str, request: Request, db: DbSession) -> Response:
+    # Read by hand and cut short: a declared Header(max_length) would answer 422, not 404.
+    scheme, _, token = request.headers.get("authorization", "")[:200].partition(" ")
     return await _serve(request, db, token.strip() if scheme.lower() == "bearer" else "", name)

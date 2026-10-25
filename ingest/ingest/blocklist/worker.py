@@ -183,7 +183,8 @@ async def _indicator_candidates(db: AsyncSession, cutoff: datetime) -> list[Cand
                     SELECT i.type, i.value, i.role, i.first_seen, i.last_seen, i.sightings,
                            i.trusted, i.demo,
                            count(DISTINCT l.session_id) AS sessions,
-                           count(DISTINCT l.src_ip) AS sources,
+                           count(DISTINCT network(set_masklen(l.src_ip,
+                               CASE WHEN family(l.src_ip) = 4 THEN 24 ELSE 48 END))) AS sources,
                            EXISTS (SELECT 1 FROM indicator_intel k
                                    WHERE k.indicator_id = i.id AND k.known) AS known,
                            (SELECT max(k.family) FROM indicator_intel k

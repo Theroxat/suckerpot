@@ -52,6 +52,8 @@ def render_csv(rows: Iterable[Mapping[str, Any]]) -> str:
     writer = csv.writer(out, lineterminator="\r\n", quoting=csv.QUOTE_MINIMAL)
     writer.writerow(CSV_COLUMNS)
     for row in rows:
+        if normalize_value(str(row.get("kind", "")), str(row.get("value", ""))) is None:
+            continue  # re-checked at the last moment, like the plain lists
         writer.writerow([csv_cell(row.get(c, "")) for c in CSV_COLUMNS])
     return out.getvalue()
 

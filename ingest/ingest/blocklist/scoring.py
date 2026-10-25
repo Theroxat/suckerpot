@@ -49,6 +49,7 @@ BRUTE_TAGS = frozenset(
 )
 KNOWN_SCANNER_CAP = 35
 MIN_LISTED_SCORE = 10
+UNCONFIRMED_CAP = 45
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,8 +133,8 @@ class IndicatorFacts:
     kind: str  # url | domain | ip | hash
     role: str  # download_host | contacted_host | hash
     sessions: int
-    sources: int
-    sightings: int
+    sources: int  # distinct source networks (/24 for IPv4, /48 for IPv6), not sightings
+    sightings: int  # kept for the record; one noisy source can inflate it, so it scores nothing
     trusted: bool
     known: bool  # a threat-intel service lists it
     family: str | None
@@ -160,7 +161,7 @@ def score_indicator(f: IndicatorFacts) -> Scored:
     if f.family:
         points += 10
         reasons.append("malware-family")
-    if f.sources >= 3 or f.sightings >= 5:
+    if f.sources >= 3:
         points += 10
         reasons.append("seen-from-many-sources")
     elif f.sources >= 2:
@@ -168,4 +169,11 @@ def score_indicator(f: IndicatorFacts) -> Scored:
     if f.in_campaign:
         points += 10
         reasons.append("campaign")
-    return Scored(_clamp(points), reasons[:16])
+    score = _clamp(points)
+    # Anything typed in a command can be planted by one attacker (``wget http://8.8.8.8/x``), so
+    # an indicator reaches the default feed threshold only with outside confirmation: a threat
+    # intel match, a hash a sensor computed, or three independent source networks.
+    confirmed = f.known or f.sources >= 3 or (f.kind == "hash" and f.trusted)
+    if not confirmed:
+        score = min(score, UNCONFIRMED_CAP)
+    return Scored(score, reasons[:16])

@@ -8,15 +8,19 @@ Ingest scores every source address, host name, download URL and file hash seen i
 
 A score runs from 0 to 100. Each point has a reason, shown in plain English on the page: brute-forcing, a login that worked, commands run, malware dropped, an exploit attempt, a bad AbuseIPDB score, several sensors hit, part of a campaign, and so on. Mass scanners that did no harm are capped at 35. Entries below 10 are not listed. At most `BLOCKLIST_MAX_ROWS` entries are kept (default 20,000), best score first.
 
+An indicator typed into a command can be planted by a single attacker, so indicators are scored by distinct source networks (/24 for IPv4, /48 for IPv6), never by how often they appear. Without a threat-intel match, a hash recorded by a sensor, or three independent source networks, an indicator scores at most 45, below the default feed threshold of 50.
+
 Never listed, whatever the score:
 
+- public DNS resolvers (such as 8.8.8.8 and 1.1.1.1) and large SaaS, cloud and CDN domains;
+- anything in your own never-list: `BLOCKLIST_NEVER` (addresses, networks, names, comma separated), plus `AUTH_TRUSTED_PROXIES`, `API_ALLOWED_HOSTS` and `INDICATORS_IGNORE`, which are read automatically;
 - private, loopback, link-local, multicast and other reserved addresses (so your own network cannot end up on a list);
 - shared hosting names such as `github.com` or `pastebin.com` (attackers download tools from them, and so do you);
 - research scanners, unless you ask for them.
 
 ### Overrides
 
-An administrator can always allow or always block a value, with a note and an optional expiry. Allowed values leave every list at once; blocked values join at score 100. Overrides are audited.
+An administrator can always allow or always block a value, with a note and an optional expiry. While feeds are enabled this asks for the account password again, because it changes what firewalls receive. Allowed values leave every list at once; blocked values join at score 100. Overrides are audited.
 
 ### Exports
 
@@ -37,7 +41,8 @@ A firewall cannot sign in to the dashboard, so there is an optional feed. It is 
 - Create a token in Settings, Feeds (administrators, password asked again). The token has 256 random bits and is shown once; only its hash is stored. It can carry limits (kinds, minimum score, research scanners or not) and an expiry, and it can be revoked at any time.
 - Fetch `https://<dashboard>/feeds/<token>/ip.txt` (also `domain`, `url`, `hash`, and `.csv`). This form exists for tools that can only fetch a URL, so treat the URL like a password. Tools that can send a header should use `GET /feeds/ip.txt` with `Authorization: Bearer <token>`.
 - Requests are rate limited per client address and per token. Wrong tokens count against the client address. Every refusal is a plain `404`, so a probe learns nothing. The API keeps no access log.
-- If the dashboard is behind Cloudflare Access, add a bypass policy for `/feeds/*`, or the firewall will be turned away.
+- Set `AUTH_TRUSTED_PROXIES` when the dashboard is behind a tunnel or proxy. Without it every client looks like the proxy, so the rate limits and the failure lockout are shared by everyone (the API logs a warning at start-up).
+- If the dashboard is behind Cloudflare Access, the firewall will be turned away. Prefer a Cloudflare Access service-token policy for `/feeds/*` (the header form), or a bypass limited to your firewall's source address. An open bypass leaves only the token between the internet and the list. Cloudflare and any proxy in between can log the request path, so a path token ends up in their logs: use the header form where the tool allows it.
 
 ## Detections
 
@@ -82,3 +87,4 @@ The inventory is free text that is stored and shown. It is only compared with ou
 | `BLOCKLIST_WINDOW_DAYS` | `30` | How far back to look |
 | `BLOCKLIST_MAX_ROWS` | `20000` | Most entries kept |
 | `FEEDS_ENABLED` | `false` | Serve the token-protected feed (API) |
+| `BLOCKLIST_NEVER` | empty | Extra addresses, networks and names that are never listed |

@@ -410,6 +410,7 @@ Details in [Defend](defend.md). Ingest scores indicators into blocklists when `B
 | `BLOCKLIST_ENABLED` | `false` | Score addresses, hosts, URLs and hashes into the blocklists (ingest, every 15 minutes) |
 | `BLOCKLIST_WINDOW_DAYS` | `30` | How many days of sessions and indicators to score (1 to 365) |
 | `BLOCKLIST_MAX_ROWS` | `20000` | Most entries kept, best score first (100 to 1,000,000) |
+| `BLOCKLIST_NEVER` | empty | Addresses, networks and names never listed (also read: `AUTH_TRUSTED_PROXIES`, `API_ALLOWED_HOSTS`, `INDICATORS_IGNORE`) |
 | `FEEDS_ENABLED` | `false` | Serve `/feeds/*` with bearer tokens made in Settings. The only part of the API outside the dashboard login |
 
 ## In `.env.example` but not used yet

@@ -76,11 +76,15 @@ def row(kind: str, value: str, score: int = 80) -> dict[str, Any]:
 
 
 def test_csv_has_a_header_crlf_lines_and_defused_values() -> None:
-    body = exports.render_csv([row("ip", "203.0.113.5"), row("url", "=1+1")])
+    odd = {**row("url", "http://dl.bad.example/x"), "reasons": ["=1+1"]}
+    body = exports.render_csv(
+        [row("ip", "203.0.113.5"), odd, row("url", "=1+1"), row("ip", "203.0.113.6\nx")]
+    )
     lines = body.split("\r\n")
+    assert len(lines) == 4  # header, two valid rows, trailing empty: bad values are dropped
     assert lines[0] == ",".join(exports.CSV_COLUMNS)
     assert lines[1].startswith("ip,203.0.113.5,80,brute-force,2026-10-01T00:00:00+00:00")
-    assert lines[2].startswith("url,'=1+1,")
+    assert lines[2].startswith("url,http://dl.bad.example/x,80,'=1+1,")
 
 
 def test_plain_lists_hold_only_valid_unique_values() -> None:
@@ -236,3 +240,26 @@ def test_a_wrong_token_is_a_plain_404_and_repeated_guesses_are_throttled(
     c2 = TestClient(feed_app(), base_url="https://testserver")
     assert c2.get("/feeds/ip.txt").status_code == 404
     assert c2.get("/feeds/ip.txt", headers={"Authorization": "Basic abc"}).status_code == 404
+
+
+def test_sigma_wildcards_in_captured_text_are_made_literal() -> None:
+    assert rulegen.sigma_escape("a*b?c\\d") == "a\\*b\\?c\\\\d"
+    g = rulegen.sigma_web_paths("php2shell", ["/a/*/b?x=1/long"], "severe", 3, 2, TODAY)
+    assert g is not None and "'/a/\\*/b\\?x=1/long'" in g.text
+
+
+def test_domain_rules_match_the_name_itself_and_its_subdomains_only() -> None:
+    g = rulegen.sigma_domains(["evil.example"], 1, 1, TODAY)
+    assert g is not None
+    assert "'.evil.example'" in g.text and "exact:" in g.text and "'evil.example'" in g.text
+    assert "condition: selection or exact" in g.text
+    rules = rulegen.suricata_domain("evil.example", 90, 1, 1, TODAY, set())
+    assert all("dotprefix" in r.text for r in rules)
+
+
+def test_every_feed_refusal_is_the_same_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FEEDS_ENABLED", "true")
+    c = TestClient(feed_app(), base_url="https://testserver")
+    long = {"Authorization": "Bearer " + "x" * 5000}
+    for r in (c.get("/feeds/ip.txt", headers=long), c.get("/feeds/" + "z" * 3000 + "/ip.txt")):
+        assert r.status_code == 404 and r.json() == {"detail": "Not Found"}
