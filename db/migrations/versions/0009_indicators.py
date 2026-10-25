@@ -27,10 +27,28 @@ LANGUAGE plpgsql AS $$
 DECLARE
     days integer := COALESCE((config ->> 'retention_days')::integer, 90);
     cutoff timestamptz := now() - make_interval(days => days);
+    max_rows bigint := COALESCE((config ->> 'max_rows')::bigint, 500000);
+    guard_active boolean := COALESCE(
+        (SELECT (value ->> 'active')::boolean FROM system_status WHERE key = 'disk_guard'), false);
+    total bigint;
 BEGIN
     DELETE FROM indicator_sessions WHERE seen_at < cutoff;
     -- Links and intel rows go with the indicator (ON DELETE CASCADE).
     DELETE FROM indicators WHERE last_seen < cutoff;
+    -- A hard ceiling on the table, halved while the database disk guard is trimming: the least
+    -- sighted and oldest single-source indicators go first.
+    IF guard_active THEN
+        max_rows := max_rows / 2;
+    END IF;
+    SELECT count(*) INTO total FROM indicators;
+    IF total > max_rows THEN
+        DELETE FROM indicators WHERE id IN (
+            SELECT i.id FROM indicators i
+            ORDER BY ((SELECT count(DISTINCT s.src_ip) FROM indicator_sessions s
+                       WHERE s.indicator_id = i.id) >= 2),
+                     i.sightings, i.last_seen, i.id
+            LIMIT total - max_rows);
+    END IF;
 END
 $$
 """
@@ -59,6 +77,8 @@ def upgrade() -> None:
             last_seen timestamptz NOT NULL,
             sightings bigint NOT NULL DEFAULT 1,
             sensors text[] NOT NULL DEFAULT '{}',
+            trusted boolean NOT NULL DEFAULT false,
+            demo boolean NOT NULL DEFAULT false,
             CHECK ((type = 'hash') = (role = 'hash')),
             UNIQUE (type, value)
         )

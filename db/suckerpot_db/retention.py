@@ -27,6 +27,7 @@ DEFAULT_RETENTION_DAYS = 90
 MIN_RETENTION_DAYS = 7
 MAX_RETENTION_DAYS = 3650
 COMPRESS_AFTER_DAYS = 7
+DEFAULT_INDICATOR_MAX_ROWS = 500_000
 REFRESH_WINDOW_DAYS = 3
 MAINTENANCE_PROC = "suckerpot_maintenance"
 INDICATOR_PRUNE_PROC = "suckerpot_indicator_prune"  # created by migration 0009
@@ -61,7 +62,22 @@ def retention_days(env: Mapping[str, str] | None = None) -> int:
     return days
 
 
-def apply_policies(conn: Connection, days: int) -> None:
+def indicator_max_rows(env: Mapping[str, str] | None = None) -> int:
+    """Parse ``INDICATORS_MAX_ROWS`` (default 500000, range 1000 to 50 million)."""
+    e = os.environ if env is None else env
+    raw = (e.get("INDICATORS_MAX_ROWS") or "").strip()
+    if not raw:
+        return DEFAULT_INDICATOR_MAX_ROWS
+    try:
+        rows = int(raw)
+    except ValueError:
+        raise RetentionError("INDICATORS_MAX_ROWS must be an integer") from None
+    if not 1000 <= rows <= 50_000_000:
+        raise RetentionError("INDICATORS_MAX_ROWS must be between 1000 and 50000000")
+    return rows
+
+
+def apply_policies(conn: Connection, days: int, indicator_rows: int | None = None) -> None:
     """(Re)create every background job with the configured retention. Idempotent."""
     # The compression window is fixed; retention is validated to be at least as long.
     conn.execute(
@@ -115,9 +131,10 @@ def apply_policies(conn: Connection, days: int) -> None:
         conn.execute(
             text(
                 f"SELECT add_job('{INDICATOR_PRUNE_PROC}', INTERVAL '1 hour', "
-                "config => jsonb_build_object('retention_days', CAST(:d AS integer)))"
+                "config => jsonb_build_object('retention_days', CAST(:d AS integer), "
+                "'max_rows', CAST(:r AS bigint)))"
             ),
-            {"d": days},
+            {"d": days, "r": indicator_rows or DEFAULT_INDICATOR_MAX_ROWS},
         )
 
 
@@ -148,7 +165,7 @@ def apply_retention(conn: Connection, env: Mapping[str, str] | None = None) -> i
     """Apply policies and backfill for ``RETENTION_DAYS``. ``conn`` must be autocommit."""
     days = retention_days(env)
     try:
-        apply_policies(conn, days)
+        apply_policies(conn, days, indicator_max_rows(env))
         backfill(conn, days)
     except DBAPIError as exc:
         code = getattr(exc.orig, "sqlstate", None)
