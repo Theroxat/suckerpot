@@ -207,10 +207,31 @@ def test_rdp_content(events: list[Event]) -> None:
     rdp = [e for e in events if e.sensor is SensorName.rdp]
     logins = [e for e in rdp if e.type is EventType.login_attempt]
     assert logins
-    assert all("password" not in e.data for e in logins)
+    assert all("password" not in e.data for e in logins if e.data["method"] == "rdp-cookie")
     scans = [e for e in rdp if e.type is EventType.scan]
     assert scans
     assert any(bytes.fromhex(e.data["payload_preview"]).startswith(b"\x03\x00") for e in scans)
+
+
+def test_rdp_ntlm_sessions(events: list[Event]) -> None:
+    rdp = [e for e in events if e.sensor is SensorName.rdp]
+    ntlm = [e for e in rdp if e.type is EventType.login_attempt and e.data["method"] == "rdp-ntlm"]
+    assert len(ntlm) > 20
+    assert all(e.data["client_tool"] for e in ntlm)
+    assert len({e.data["client_tool"] for e in ntlm}) >= 3
+    assert all(e.data["domain"] is not None and "ntlm_version" in e.data for e in ntlm)
+    # A password only ever appears together with a decoy match.
+    matched = [e for e in ntlm if e.data["password"] is not None]
+    assert matched
+    assert all(e.data["success"] is True for e in matched)
+    assert all(e.data["success"] is False for e in ntlm if e.data["password"] is None)
+    disconnects = [e for e in rdp if e.type is EventType.disconnect]
+    flags = {f for e in disconnects for f in e.data.get("flags", [])}
+    assert {"rdp_ntlm", "weak_password_match", "bluekeep_probe", "rdp_nla_off"} <= flags
+    nla_off = [
+        e for e in rdp if e.type is EventType.login_attempt and e.data["method"] == "rdp-nla-off"
+    ]
+    assert nla_off and all(e.data["password"] for e in nla_off)
 
 
 def test_burst_days_exist(events: list[Event]) -> None:

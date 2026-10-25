@@ -578,12 +578,76 @@ def _other_probe(rng: random.Random) -> bytes:
     )
 
 
+RDP_TOOLS = [("FreeRDP", 50), ("unknown", 20), ("rdesktop", 10), ("mstsc", 10), ("nmap", 10)]
+RDP_DOMAINS = ["WORKGROUP", "OFFICE", "CORP", "SRV-WIN01", ""]
+RDP_DECOY = [("administrator", "P@ssw0rd"), ("admin", "Password1"), ("user", "123456")]
+
+
+def _ntlm_login(
+    b: Builder, tool: str, user: str, domain: str, weak: str | None = None, anonymous: bool = False
+) -> None:
+    rng = b.rng
+    data: dict[str, Any] = {
+        "username": "" if anonymous else user,
+        "password": weak,
+        "success": weak is not None,
+        "method": "rdp-ntlm",
+        "client_tool": tool,
+        "domain": domain,
+        "workstation": rng.choice(["WIN-" + rng.randbytes(3).hex().upper(), "DESKTOP-1A2B3C"]),
+        "ntlm_version": rng.choice(["v2", "v2", "v1"]),
+        "nt_response_len": 0 if anonymous else rng.choice([24, 142]),
+        "nt_response_preview": "" if anonymous else rng.randbytes(8).hex(),
+        "anonymous": anonymous,
+    }
+    b.add(EventType.login_attempt, data, (0.4, 2.5))
+
+
+def _rdp_ntlm(rng: random.Random, b: Builder, kind: str) -> tuple[str, dict[str, Any]]:
+    tool = pick(rng, RDP_TOOLS)
+    domain = rng.choice(RDP_DOMAINS)
+    flags = ["rdp_ntlm"]
+    b.add(EventType.scan, {"payload_preview": _x224_request(None).hex()}, (0.05, 0.5))
+    if kind == "ntlm_brute":
+        for u in rng.sample(D.RDP_USERS, rng.randint(6, 12)):
+            _ntlm_login(b, tool, u, domain)
+    elif kind == "ntlm_weak":
+        for u in rng.sample(D.RDP_USERS, rng.randint(1, 3)):
+            _ntlm_login(b, tool, u, domain)
+        user, pw = rng.choice(RDP_DECOY)
+        _ntlm_login(b, tool, user, domain, weak=pw)
+        flags.append("weak_password_match")
+    elif kind == "ntlm_null":
+        _ntlm_login(b, tool, "", domain, anonymous=True)
+        flags.append("null_session")
+    else:
+        _ntlm_login(b, tool, rng.choice(D.RDP_USERS), domain)
+        if kind == "bluekeep":
+            flags.append("bluekeep_probe")
+    return tool, {"flags": flags, "client_tool": tool, "stage": "credssp"}
+
+
 def build_rdp(rng: random.Random, ip: str) -> Plan:
     plan = _new_plan(rng, SensorName.rdp, ip, 3389)
     b = Builder(rng, plan)
     b.connect()
-    kind = pick(rng, [("scan", 30), ("cookie", 42), ("brute", 18), ("other", 10)])
+    kind = pick(
+        rng,
+        [
+            ("scan", 24),
+            ("cookie", 28),
+            ("brute", 10),
+            ("other", 8),
+            ("ntlm", 8),
+            ("ntlm_brute", 9),
+            ("ntlm_weak", 4),
+            ("ntlm_null", 2),
+            ("bluekeep", 3),
+            ("nla_off", 4),
+        ],
+    )
     reason = "client disconnected"
+    extra: dict[str, Any] | None = None
     if kind == "scan":
         b.add(EventType.scan, {"payload_preview": _x224_request(None).hex()}, (0.05, 0.5))
         b.t += rng.uniform(0.1, 2.0)
@@ -606,7 +670,28 @@ def build_rdp(rng: random.Random, ip: str) -> Plan:
                 (0.8, 4.0),
             )
         reason = "too many authentication failures"
+    elif kind == "nla_off":
+        tool = rng.choice(["rdesktop", "unknown"])
+        b.add(EventType.scan, {"payload_preview": _x224_request(None).hex()}, (0.05, 0.5))
+        user = rng.choice(D.RDP_USERS)
+        b.add(
+            EventType.login_attempt,
+            {
+                "username": user,
+                "password": rng.choice(D.SSH_EXTRA_PASSWORDS),
+                "success": False,
+                "method": "rdp-nla-off",
+                "client_tool": tool,
+                "domain": "",
+            },
+            (0.4, 2.0),
+        )
+        extra = {"flags": ["rdp_nla_off"], "client_tool": tool, "stage": "client_info"}
+        reason = "client_info_captured"
+    elif kind.startswith("ntlm") or kind == "bluekeep":
+        _, extra = _rdp_ntlm(rng, b, kind)
+        reason = "credssp_logon_failure"
     else:
         b.add(EventType.scan, {"payload_preview": _other_probe(rng).hex()[:128]}, (0.05, 0.5))
         reason = "protocol mismatch"
-    return b.finish(reason)
+    return b.finish(reason, extra=extra)
