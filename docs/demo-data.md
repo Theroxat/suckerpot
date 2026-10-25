@@ -24,6 +24,10 @@ Arguments after `just demo` go to the generator:
 just demo --days 3 --sessions 200 --seed 7
 ```
 
+## Indicators in the demo
+
+Some demo droppers use a few shared hosts (documentation addresses and example domains) and carry made-up payload hashes, so the Infrastructure page has shared infrastructure to show. A real stack drops those values while extracting indicators. To see them, set `INDICATORS_KEEP_DOCUMENTATION=true` in `.env` and restart ingest. They are never sent to an intel service.
+
 ## What it generates
 
 The generator first creates a **backfill**: sessions spread over the last `--days` days. Then, with `--live`, it keeps sending new sessions. Each session is a short story made of events. The four sensors are covered:

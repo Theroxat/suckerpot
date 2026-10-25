@@ -190,11 +190,20 @@ The geolocation data has a licence that requires credit. See [Data sources and a
 | `CVE_GITHUB_DAILY_QUOTA` | `100` | Maximum GitHub advisory requests per day |
 | `REPUTATION_MIN_EVENTS` | `10` | An address is looked up only after this many events |
 | `REPUTATION_INTERVAL_S` | `30` | Seconds between reputation cycles (at least 5) |
+| `ABUSECH_AUTH_KEY` | empty | abuse.ch Auth-Key (free) for URLhaus and ThreatFox. Without it, no indicator lookups there. |
+| `ABUSECH_DAILY_QUOTA` | `1000` | Maximum abuse.ch requests per day (URLhaus and ThreatFox share it). Enforced, and persisted. |
+| `VIRUSTOTAL_API_KEY` | empty | VirusTotal key. Used for file hashes only. |
+| `VIRUSTOTAL_DAILY_QUOTA` | `400` | Maximum VirusTotal requests per day (the free tier allows 500). Requests are also spaced 16 s apart. |
+| `INTEL_INTERVAL_S` | `30` | Seconds between threat-intel cycles (at least 5) |
+| `INDICATORS_ENABLED` | `true` | Extract indicators from recorded events |
+| `INDICATORS_IGNORE` | empty | Comma-separated host names and addresses never recorded as indicators (your own domains and public IP). A name also covers its subdomains. |
+| `INDICATORS_KEEP_DOCUMENTATION` | `false` | Keep documentation addresses and example domains as indicators. Only for the demo data. |
+| `INDICATORS_LINK_CAP` | `500` | Most sessions linked to one indicator. Its counters stay exact beyond that. |
 | `RULES_DIR` | `ingest/rules` (`/app/rules` in the image) | Folder with the tagging rules (`*.yaml`) |
 
 ### Enrichment keys in Settings
 
-You can enter, replace and remove the AbuseIPDB, GreyNoise and MaxMind keys on the Settings page, with no restart.
+You can enter, replace and remove the AbuseIPDB, GreyNoise, MaxMind, abuse.ch and VirusTotal keys on the Settings page, with no restart.
 
 1. Generate an encryption key and add it to `.env`: `SETTINGS_ENCRYPTION_KEY=$(openssl rand -base64 32)`. Then run `docker compose up -d` so `api` and `ingest` see it. Without it, the Settings page shows the keys as read-only and says why.
 2. On the Settings page, choose **Set key** (or **Replace**) for a provider, paste the key and type the admin password to confirm. The key is encrypted before it is stored and is never shown again, only its last four characters.

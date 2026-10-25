@@ -141,6 +141,19 @@ The CVE watch job adds three outbound destinations, all fixed in code and all re
 - **Least privilege.** The ingest role may read, insert, update and delete rows of `cve` (retention), and write `cve_sync_state`. The API role may only read them. The tables hold public data, no captured data.
 - **No automation.** The CVE page can copy a trap-sheet template for the owner to review. Nothing is built, configured or deployed from it.
 
+### Indicators and threat intelligence (passive by design)
+
+Ingest extracts URLs, hosts and file hashes from events it already stored, and asks public intel services about them. The design rules:
+
+- **Nothing is contacted.** An indicator host is never fetched, resolved, pinged or scanned. The only outbound requests go to three fixed API hosts: `urlhaus-api.abuse.ch`, `threatfox-api.abuse.ch` and `www.virustotal.com`. The code refuses any other host, never follows a redirect, reads at most 256 KiB of an answer and times out after 8 s. VirusTotal is asked about file hashes only.
+- **Only the indicator value is sent**, with the API key. No session, source address, sensor name or other event data. Private, loopback, documentation and example values are never sent (they are cached as "not checked").
+- **Bounded parsing.** Indicators are found with `find`, slicing and `ipaddress`, with no regular expressions. Every string, token and result count is capped, so hostile input cannot make extraction slow or large. URLs lose their credentials and fragment and are capped at 512 characters.
+- **Quotas and cache.** Each provider has a persisted daily quota. Answers, including "unknown", are cached for 24 hours. A rejected key disables the provider, and a rate limit pauses it.
+- **Text, never links.** The API returns values raw and defanged (`hxxp://host[.]tld/x`). The dashboard shows only the defanged form and never renders an indicator as a link. Reference links come from a fixed allow-list of the intel services, built by the server and checked again in the browser.
+- **Export is manual.** CSV and STIX 2.1 downloads happen only when the owner clicks them (up to 5,000 indicators, CSV cells defused against spreadsheet formulas). Nothing is shared or reported automatically.
+- **Egress allow-list.** For firewalls: ingest needs HTTPS to the three hosts above, on top of the GeoIP and reputation hosts.
+- **Retention.** Indicators, links and cached answers expire with the raw events (`RETENTION_DAYS`).
+
 ### Provider keys set in Settings
 
 The admin can enter the AbuseIPDB, GreyNoise, MaxMind, NVD and GitHub keys on the Settings page instead of in `.env`.

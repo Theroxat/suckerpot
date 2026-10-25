@@ -562,6 +562,17 @@ Sessions per tag over time, for the "tags over time" chart.
 
 Returns `series` (the eight most frequent tags, plus `other` when there are more), and `points`, one per bucket, each with a `ts` and a count per series entry. Empty buckets are zero.
 
+## Indicators and infrastructure (M13)
+
+Read-only and passive: nothing is fetched from an indicator. Values come both raw (`value`) and defanged (`defanged`, such as `hxxp://files[.]host[.]tld/a.sh`).
+
+| Endpoint | What it returns |
+| --- | --- |
+| `GET /api/v1/indicators` | Keyset-paginated list (`cursor`, `limit` 1 to 200). Filters: `type` (`url`, `domain`, `ip`, `hash`), `role` (`download_host`, `contacted_host`, `hash`), `known` (true or false), `family`, `since`, `q` (literal substring). Each item has sightings, sessions, distinct source addresses, sensors and the intel verdict (`checked`, `known`, `family`). |
+| `GET /api/v1/indicators/{id}` | One indicator with the intel answers (source, family, threat type, tags, first reported, reference link), recent sessions, source addresses and indicators seen in the same sessions. |
+| `GET /api/v1/infrastructure/graph` | Nodes and edges linking source addresses, indicators (hosts and hashes) and malware families for the last `hours` (1 to 2160, default 168), with a `summary` and `truncated`. At most 300 nodes. |
+| `GET /api/v1/indicators/export` | A download of up to 5,000 indicators matching the same filters, as `format=csv` or `format=stix` (a STIX 2.1 bundle of `indicator` objects). |
+
 ### `GET /api/v1/malware`
 
 Download URLs recorded from `download_attempt` events, one row per URL, most recently seen first. **Nothing is fetched.**
