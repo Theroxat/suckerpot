@@ -1,0 +1,99 @@
+# Plain-English explanations of shell commands, matched on the NORMALISED command line
+# (see ingest/normalize.py) or on the real command when a sample is available.
+#
+# Fields
+#   id        unique name
+#   commands  command names (the first word, path stripped, lower case)
+#   prefixes  alternative to commands: the first word starts with one of these
+#   args_any  optional: the arguments contain at least one of these substrings
+#   args_all  optional: the arguments contain all of these substrings
+#   explain   one sentence for a non-expert (max 220 characters)
+#   phrase    a short verb phrase used to write the script summary (max 60 characters)
+#   risk      info | notice | warning | severe
+#   technique optional MITRE ATT&CK id (T1234 or T1234.001)
+# The first matching entry wins, so put specific entries before general ones. Files are read in
+# alphabetical order (hence the numeric prefixes), so a general entry in one file can shadow a
+# specific one in a later file: keep the specific ones in the same file or an earlier one.
+annotations:
+  - id: read-system-files
+    commands: [cat, head, tail, less, more, grep]
+    args_any: [/proc/cpuinfo, /proc/meminfo, /proc/version, /etc/os-release, /etc/issue, /proc/mounts, /proc/uptime]
+    explain: Reads hardware or operating-system details. Attackers do this to see what kind of machine they are on.
+    phrase: reads system details
+    risk: info
+    technique: T1082
+  - id: read-passwd
+    commands: [cat, head, tail, less, more, grep, getent]
+    args_any: [/etc/passwd, /etc/group, passwd]
+    explain: Lists the user accounts on the machine.
+    phrase: lists user accounts
+    risk: notice
+    technique: T1087.001
+  - id: read-shadow
+    commands: [cat, head, tail, less, more, grep]
+    args_any: [/etc/shadow]
+    explain: Tries to read the file that holds password hashes. Only the administrator account can open it.
+    phrase: tries to read password hashes
+    risk: warning
+    technique: T1003.008
+  - id: read-ssh-keys
+    commands: [cat, ls, find, grep, tar]
+    args_any: [id_rsa, id_ed25519, .ssh, known_hosts]
+    explain: Looks for SSH keys and known hosts, which could give access to other machines.
+    phrase: looks for SSH keys
+    risk: warning
+    technique: T1552.004
+  - id: uname
+    commands: [uname, arch, hostnamectl, lsb_release, getconf]
+    explain: Shows the operating system, kernel and CPU architecture. Attackers use it to pick a download that fits the machine.
+    phrase: identifies the system
+    risk: info
+    technique: T1082
+  - id: hostname
+    commands: [hostname, uptime, w, who, last, lastlog]
+    explain: Shows the machine name, how long it has been running or who is logged in.
+    phrase: checks who is logged in
+    risk: info
+    technique: T1033
+  - id: whoami
+    commands: [whoami, id, groups]
+    explain: Asks which user the attacker is, and with which privileges.
+    phrase: checks its privileges
+    risk: info
+    technique: T1033
+  - id: cpu-memory
+    commands: [lscpu, nproc, free, dmidecode, lspci, nvidia-smi, df, lsblk, mount]
+    explain: Counts processors, memory or disks. Cryptocurrency miners check this to decide whether the machine is worth using.
+    phrase: measures CPU, memory and disks
+    risk: info
+    technique: T1082
+  - id: processes
+    commands: [ps, top, htop, pgrep, pstree]
+    explain: Lists the running programs, often to find security tools or competing malware.
+    phrase: lists running programs
+    risk: info
+    technique: T1057
+  - id: network-config
+    commands: [ifconfig, ip, netstat, ss, route, arp]
+    explain: Shows the network interfaces, addresses and open connections.
+    phrase: inspects the network setup
+    risk: info
+    technique: T1016
+  - id: history-clear
+    commands: [history, unset, export, set]
+    args_any: [histfile, histsize, histfilesize, -c, +o]
+    explain: Wipes or switches off the shell history so the attacker's commands leave no trace.
+    phrase: erases its tracks
+    risk: warning
+    technique: T1070.003
+  - id: list-files
+    commands: [ls, dir, find, locate, tree, stat, file, du, wc]
+    explain: Lists or searches files and folders.
+    phrase: browses files
+    risk: info
+    technique: T1083
+  - id: print-text
+    commands: [cat, head, tail, less, more, grep, awk, sed, cut, sort, uniq, tr]
+    explain: Reads or filters text. Which file it reads is shown on the line.
+    phrase: reads files
+    risk: info

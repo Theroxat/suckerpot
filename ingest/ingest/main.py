@@ -35,7 +35,7 @@ from ingest.indicators import IndicatorExtractor, IndicatorSettings
 from ingest.llm import ExplainerWorker
 from ingest.reports import ReportWorker
 from ingest.scanners import load_scanners
-from ingest.scripts import ScriptWorker
+from ingest.scripts import ScriptWorker, load_annotations
 from ingest.tagging import load_rules
 
 log = logging.getLogger(__name__)
@@ -140,8 +140,12 @@ async def run() -> None:
         await cve_status(await cve_watch.status())
         await rep_status(await intel.status())
         await publish_status(factory, "maxmind", sync.status("maxmind"))
+        await publish_status(factory, "anthropic", await explainer.provider_status())
 
     # M15 to M19 feature workers: off by default, no-op until their phase lands.
+    annotations = load_annotations(enrich.rules_dir)  # fail fast on a broken annotation file
+    log.info("loaded %d script annotations", len(annotations.entries))
+    explainer = ExplainerWorker(features, factory, enrich.anthropic_api_key)
     try:
         alert_settings = AlertSettings.from_env()
     except ValueError as exc:
@@ -151,8 +155,8 @@ async def run() -> None:
         AttackCatalogWorker(features, factory, attack),
         CampaignWorker(features, factory, attack),
         BlocklistWorker(features, factory),
-        ScriptWorker(features),
-        ExplainerWorker(features),
+        ScriptWorker(features, factory, annotations),
+        explainer,
         AlertWorker(
             features,
             factory,
@@ -170,9 +174,12 @@ async def run() -> None:
             await publish_status(factory, name, value)
 
     async def run_test(provider: str) -> None:
-        if provider in ("anthropic", "smtp"):
-            return  # the LLM test arrives with M17; alert channels have their own test button
-        if provider in ("abusech", "virustotal"):
+        if provider == "anthropic":
+            await explainer.run_key_test(provider)
+            await publish_status(factory, "anthropic", await explainer.provider_status())
+        elif provider == "smtp":
+            return  # alert channels have their own test button
+        elif provider in ("abusech", "virustotal"):
             await intel.run_key_test(provider)
         elif provider == "maxmind":
             await sync.test_maxmind()

@@ -1,0 +1,90 @@
+annotations:
+  - id: pipe-to-shell
+    commands: [sh, bash, dash, ash, zsh, ksh]
+    args_any: ["-c", "-s"]
+    explain: Starts a shell and runs the text it is given, which may be downloaded or piped in by an earlier command.
+    phrase: runs a shell command
+    risk: warning
+    technique: T1059.004
+  - id: shell-script
+    commands: [sh, bash, dash, ash, zsh, ksh]
+    explain: Runs a script, or starts a shell. Whatever was downloaded before is usually what runs here.
+    phrase: runs a script
+    risk: warning
+    technique: T1059.004
+  - id: run-dropped-binary
+    prefixes: ["./", "/tmp/", "/var/tmp/", "/dev/shm/", "/run/", "/root/", "/home/"]
+    explain: Runs a program from a writable folder. This is usually the file that was just downloaded.
+    phrase: runs the file it just fetched
+    risk: severe
+    technique: T1059.004
+  - id: nohup
+    commands: [nohup, setsid, disown, screen, tmux]
+    explain: Keeps the next program running after the attacker disconnects.
+    phrase: keeps it running in the background
+    risk: warning
+    technique: T1059.004
+  - id: script-interpreter
+    commands: [python, python2, python3, perl, ruby, php, node, lua]
+    explain: Runs code with a scripting language. The code is often a reverse shell or a downloader.
+    phrase: runs a script with an interpreter
+    risk: warning
+    technique: T1059
+  - id: base64-decode
+    commands: [base64]
+    explain: Decodes hidden text. Attackers encode commands this way to slip past simple filters.
+    phrase: decodes a hidden payload
+    risk: warning
+    technique: T1027
+  - id: eval
+    commands: [eval, exec, source, ".", xargs]
+    explain: Runs the text it is given as commands.
+    phrase: runs generated commands
+    risk: warning
+    technique: T1059.004
+  - id: compile
+    commands: [gcc, cc, make, g++, cmake, go]
+    explain: Builds a program from source code on the machine.
+    phrase: compiles a program
+    risk: warning
+    technique: T1587.001
+  - id: sudo
+    commands: [sudo, su, doas]
+    explain: Tries to act as the administrator.
+    phrase: tries to become administrator
+    risk: warning
+    technique: T1548.003
+  - id: telnet-loader-words
+    commands: [enable, system, shell, linuxshell]
+    explain: A word sent to a router login to leave its restricted menu and reach a real shell. Typical of automated Telnet bots.
+    phrase: tries to reach a shell on a router
+    risk: warning
+    technique: T1059
+  - id: busybox
+    commands: [busybox]
+    explain: Calls BusyBox, the small toolbox found on routers and cameras. Bots use it to check which tools exist.
+    phrase: probes the device toolbox
+    risk: warning
+    technique: T1059.004
+  - id: echo-file-write
+    commands: [echo, printf]
+    args_any: [">", ">>"]
+    explain: Writes text into a file. Attackers build small files this way when they cannot download them.
+    phrase: writes a file
+    risk: warning
+    technique: T1105
+  - id: echo
+    commands: [echo, printf]
+    explain: Prints text. Bots use it as a marker to check that the command ran.
+    phrase: prints a test marker
+    risk: info
+  - id: sleep
+    commands: [sleep, wait, timeout]
+    explain: Waits before the next step.
+    phrase: waits
+    risk: info
+  - id: exit
+    commands: [exit, logout, quit]
+    explain: Closes the session.
+    phrase: logs out
+    risk: info

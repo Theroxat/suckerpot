@@ -1,8 +1,6 @@
-"""M17: script library: fingerprints and built-in annotations.
+"""M17: script library: fingerprints and built-in annotations."""
 
-Phase 0 ships a no-op worker, disabled by default.
-"""
-
+from ingest.scripts.annotations import AnnotationBase, AnnotationError, load_annotations
 from ingest.scripts.worker import ScriptWorker
 
-__all__ = ["ScriptWorker"]
+__all__ = ["AnnotationBase", "AnnotationError", "ScriptWorker", "load_annotations"]

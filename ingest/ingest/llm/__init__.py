@@ -1,7 +1,4 @@
-"""M17: optional LLM explanation of scripts (needs the anthropic key).
-
-Phase 0 ships a no-op worker, disabled by default.
-"""
+"""M17: optional LLM explanation of scripts (needs the anthropic key). Off by default."""
 
 from ingest.llm.worker import ExplainerWorker
 
