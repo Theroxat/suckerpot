@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { TodayItem } from "./today"
-import { isCodeLike, itemLabel, MAX_ITEMS, visibleItems } from "./today-view"
+import { countUnit, isCodeLike, itemLabel, MAX_ITEMS, newField, visibleItems } from "./today-view"
 
 const item = (over: Partial<TodayItem>): TodayItem => ({
   kind: "sensor",
@@ -40,5 +40,23 @@ describe("card items", () => {
   it("sets indicators in the monospace face", () => {
     expect(isCodeLike(item({ kind: "host" }))).toBe(true)
     expect(isCodeLike(item({ kind: "campaign" }))).toBe(false)
+  })
+})
+
+describe("item numbers", () => {
+  it("say what they count", () => {
+    expect(countUnit(item({ kind: "sensor", count: 82 }))).toBe("sessions")
+    expect(countUnit(item({ kind: "host", count: 1 }))).toBe("sighting")
+    expect(countUnit(item({ kind: "new", count: 41 }))).toBe("times")
+  })
+
+  it("hide a number the detail line already gives", () => {
+    expect(countUnit(item({ kind: "campaign", count: 37 }))).toBeNull()
+    expect(countUnit(item({ kind: "sensor", count: null }))).toBeNull()
+  })
+
+  it("read the field of a first-seen item", () => {
+    expect(newField(item({ kind: "new", value: "url:/cgi-bin/luci" }))).toBe("url")
+    expect(newField(item({ kind: "sensor", value: "ssh" }))).toBeNull()
   })
 })

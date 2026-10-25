@@ -261,10 +261,15 @@
   }
 }
 
-/* Cards enter one after another: set --motion-i (0, 1, 2…) on each card. */
+/*
+ * Cards enter one after another: set --motion-i (0, 1, 2…) on each card. The delay stops growing
+ * after the sixth card, so a long grid never keeps anyone waiting (at most 300 ms of delay).
+ */
 @layer utilities {
   .motion-stagger {
-    animation-delay: calc(var(--motion-i, 0) * var(--motion-stagger));
+    animation-delay: calc(
+      min(var(--motion-i, 0), var(--motion-stagger-max)) * var(--motion-stagger)
+    );
   }
 }
 

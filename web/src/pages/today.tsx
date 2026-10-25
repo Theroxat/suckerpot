@@ -6,8 +6,18 @@ import { PageHeader } from "@/components/page-header"
 import { Term } from "@/components/term"
 import { TodayCard, TodayCardSkeleton } from "@/components/today/today-card"
 import { Button } from "@/components/ui/button"
-import { formatClock, plural } from "@/lib/format"
+import { plural } from "@/lib/format"
 import { todayApi, todayKeys } from "@/lib/today"
+
+/** "17:22": the page refreshes every two minutes, so seconds would be false precision. */
+const time = new Intl.DateTimeFormat("en-US", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+})
+function formatTime(iso: string): string {
+  return time.format(new Date(iso))
+}
 
 /**
  * Today: the home page. Three to five cards, each one sentence, up to three items and one
@@ -27,27 +37,29 @@ export function TodayPage() {
       <PageHeader
         title="Today"
         description="What happened in the last 24 hours, what is new, and what to do about it."
-        actions={
-          data ? (
-            <span className="text-xs text-fg-muted">
-              Updated <time dateTime={data.generated_at}>{formatClock(data.generated_at)}</time>
-            </span>
-          ) : null
-        }
       />
 
-      {data && hide && data.hidden_benign > 0 ? (
-        <p className="-mt-2 mb-5 text-xs text-fg-muted">
-          {plural(data.hidden_benign, "session")} from{" "}
-          <Term id="research-scanner">research scanners</Term>{" "}
-          {data.hidden_benign === 1 ? "is" : "are"} left out.{" "}
-          <button
-            type="button"
-            onClick={() => setHide(false)}
-            className="rounded-xs text-fg underline underline-offset-4 hover:text-fg-muted"
-          >
-            Show them
-          </button>
+      {/* One quiet meta line: freshness, and what the scanner switch leaves out. */}
+      {data ? (
+        <p className="-mt-3 mb-5 text-xs text-fg-muted">
+          Updated <time dateTime={data.generated_at}>{formatTime(data.generated_at)}</time>
+          {hide && data.hidden_benign > 0 ? (
+            <>
+              <span aria-hidden className="px-1.5 text-fg-subtle">
+                ·
+              </span>
+              {plural(data.hidden_benign, "session")} from{" "}
+              <Term id="research-scanner">research scanners</Term>{" "}
+              {data.hidden_benign === 1 ? "is" : "are"} left out.{" "}
+              <button
+                type="button"
+                onClick={() => setHide(false)}
+                className="rounded-xs text-fg underline underline-offset-4 hover:text-fg-muted"
+              >
+                Show them
+              </button>
+            </>
+          ) : null}
         </p>
       ) : null}
 

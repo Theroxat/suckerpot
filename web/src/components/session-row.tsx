@@ -88,9 +88,12 @@ export function SessionRow({ session, masked, showSource = true, className }: Se
 
       <div className="hidden items-center justify-end gap-1.5 md:flex">
         {session.benign ? <ScannerBadge name={session.scanner_name} className="z-10" /> : null}
-        {session.tags.slice(0, 2).map((t) => (
-          <TagBadge key={t} tag={t} className="z-10" />
-        ))}
+        {/* The scanner badge already says it: the rules engine's "scanner" tag would repeat it. */}
+        {(session.benign ? session.tags.filter((t) => t !== "scanner") : session.tags)
+          .slice(0, 2)
+          .map((t) => (
+            <TagBadge key={t} tag={t} className="z-10" />
+          ))}
         {flagged ? <SeverityBadge severity={severity} iconOnly className="z-10" /> : null}
       </div>
       <div className="hidden justify-self-end md:block">

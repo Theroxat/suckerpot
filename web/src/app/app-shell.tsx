@@ -23,21 +23,11 @@ import { useLiveStatus } from "./use-live-status"
 
 const MOCK = import.meta.env.VITE_MOCK === "1"
 
-/** `main` = the three spaces, `footer` = Settings and Styleguide (pinned under the scroll area). */
-function NavList({
-  onNavigate,
-  part = "all",
-}: {
-  onNavigate?: () => void
-  part?: "all" | "main" | "footer"
-}) {
-  const groups = NAV.filter((g) => part === "all" || (part === "footer") === (g.space === "footer"))
+/** The three spaces, then System (Settings and Styleguide). */
+function NavList({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <nav
-      aria-label={part === "footer" ? "System" : "Main"}
-      className={cn("flex flex-col", part === "footer" ? "gap-0.5 px-3 pb-3" : "gap-5 lg:gap-4")}
-    >
-      {groups.map((group) => (
+    <nav aria-label="Main" className="flex flex-col gap-5 lg:gap-4">
+      {NAV.map((group) => (
         <div
           key={group.space}
           role="group"
@@ -92,23 +82,33 @@ function NavList({
   )
 }
 
-function StatusFooter() {
+function MockBadge() {
+  return MOCK ? (
+    <span className="rounded-sm border px-1.5 py-0.5 text-2xs font-medium text-fg-muted">
+      Mock data
+    </span>
+  ) : null
+}
+
+/**
+ * Desktop: theme, masking and the account (live status and the scanner switch sit in the header,
+ * so the navigation keeps its height). The phone drawer carries everything.
+ */
+function StatusFooter({ drawer = false }: { drawer?: boolean }) {
   const { status, detail } = useLiveStatus()
   return (
     <div className="flex flex-col gap-3 border-t px-3 pt-4">
-      <div className="flex items-center justify-between gap-2 px-1">
-        <LiveIndicator status={status} detail={detail} />
-        {MOCK ? (
-          <span className="rounded-sm border px-1.5 py-0.5 text-2xs font-medium text-fg-muted">
-            Mock data
-          </span>
-        ) : null}
-      </div>
+      {drawer ? (
+        <div className="flex items-center justify-between gap-2 px-1">
+          <LiveIndicator status={status} detail={detail} />
+          <MockBadge />
+        </div>
+      ) : null}
       <div className="flex items-center justify-between gap-2 px-1">
         <span className="text-xs text-fg-muted">Theme</span>
         <ThemeToggle />
       </div>
-      <ScannerToggle className="px-1" />
+      {drawer ? <ScannerToggle className="px-1" /> : null}
       <MaskToggle className="px-1" />
       <div className="flex flex-col gap-2 border-t pt-3">
         <ReadOnlyBadge className="mx-1 self-start" />
@@ -129,7 +129,7 @@ function currentLabel(pathname: string): string {
 export function AppShell() {
   const [open, setOpen] = useState(false)
   const { pathname } = useLocation()
-  const { status } = useLiveStatus()
+  const { status, detail: liveDetail } = useLiveStatus()
 
   return (
     <SearchPaletteProvider>
@@ -148,11 +148,9 @@ export function AppShell() {
           <div className="px-5 pt-1 pb-5">
             <Logo />
           </div>
-          <div className="flex-1 px-3">
-            <NavList part="main" />
-          </div>
-          <div className="pt-2">
-            <NavList part="footer" />
+          {/* One scroll area, System last: on a 900 px laptop screen Defend stays in view. */}
+          <div className="flex-1 px-3 pb-3">
+            <NavList />
           </div>
           <StatusFooter />
         </aside>
@@ -173,7 +171,7 @@ export function AppShell() {
               <div className="flex-1 overflow-y-auto px-3">
                 <NavList onNavigate={() => setOpen(false)} />
               </div>
-              <StatusFooter />
+              <StatusFooter drawer />
             </SheetContent>
           </Sheet>
           <Logo />
@@ -186,9 +184,20 @@ export function AppShell() {
         </header>
 
         <main id="main" className="lg:pl-60">
-          {/* Desktop header: the search box. Phones get the icon in the top bar above. */}
-          <div className="sticky top-0 z-20 hidden h-14 items-center border-b bg-bg/85 px-10 backdrop-blur-md lg:flex">
-            <SearchTrigger className="max-w-md" />
+          {/*
+           * Desktop header: search on the left; on the right what applies to every page (the
+           * scanner filter) and whether the feed is live. Phones get these in the top bar and drawer.
+           */}
+          <div className="sticky top-0 z-20 hidden h-14 items-center gap-6 border-b bg-bg/85 px-10 backdrop-blur-md lg:flex">
+            <SearchTrigger className="max-w-md min-w-0 flex-1" />
+            <div className="ml-auto flex shrink-0 items-center gap-5">
+              <ScannerToggle inline />
+              <span aria-hidden className="h-4 w-px bg-border" />
+              <div className="flex items-center gap-2">
+                <LiveIndicator status={status} detail={liveDetail} />
+                <MockBadge />
+              </div>
+            </div>
           </div>
           <div
             className={cn(

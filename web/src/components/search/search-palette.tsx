@@ -21,6 +21,7 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
+import { ScannerBadge } from "@/components/scanner-badge"
 import { formatNumber, maskIpsInText, plural } from "@/lib/format"
 import {
   GROUP_LABEL,
@@ -47,6 +48,12 @@ const PaletteContext = createContext<PaletteValue>({ open: false, setOpen: () =>
 export function useSearchPalette(): PaletteValue {
   return use(PaletteContext)
 }
+
+/** Short enough to fit a 390 px phone; the help text under it names every kind. */
+const PLACEHOLDER = "Search addresses, CVEs, hashes, domains"
+
+/** One example per kind; a click fills the box. Documentation addresses only. */
+const EXAMPLES = ["203.0.113.", "CVE-2026-109618", "mirai"] as const
 
 const KIND_ICON: Record<SearchKind, LucideIcon> = {
   ip: Crosshair,
@@ -119,11 +126,7 @@ function Hit({ hit, masked, onSelect }: { hit: SearchHit; masked: boolean; onSel
           </span>
         ) : null}
       </span>
-      {hit.benign ? (
-        <span className="rounded-sm border px-1.5 text-2xs font-medium text-fg-muted">
-          Research scanner
-        </span>
-      ) : null}
+      {hit.benign ? <ScannerBadge short /> : null}
       {hit.count != null ? (
         <span className="text-xs text-fg-muted tabular-nums">
           {hit.kind === "ip" || hit.kind === "campaign"
@@ -176,7 +179,7 @@ function SearchPalette({
     <Dialog open={open} onOpenChange={close}>
       <DialogContent
         showCloseButton={false}
-        className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl"
+        className="top-[4.5rem] translate-y-0 gap-0 overflow-hidden p-0 sm:top-[12vh] sm:max-w-xl"
       >
         <DialogTitle className="sr-only">Search</DialogTitle>
         <DialogDescription className="sr-only">
@@ -187,7 +190,7 @@ function SearchPalette({
             value={input}
             onValueChange={setInput}
             maxLength={128}
-            placeholder="Search an address, hash, domain, CVE or campaign"
+            placeholder={PLACEHOLDER}
             aria-label="Search"
           />
           <CommandList className="max-h-[min(24rem,60dvh)]">
@@ -208,11 +211,25 @@ function SearchPalette({
                     ))}
                   </CommandGroup>
                 ) : null}
-                <p className="px-4 py-5 text-sm text-pretty text-fg-muted">
-                  Type at least two characters. Try an address such as 203.0.113.7 (or a start like
-                  203.0.113.), a CVE such as CVE-2026-109618, a file hash, a domain, or part of a
-                  campaign name.
-                </p>
+                <div className="px-4 py-4">
+                  <p className="text-sm text-fg-muted">
+                    Type at least two characters: an address or its start, a CVE, a file hash, a
+                    domain, or part of a campaign name.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-fg-subtle">Try</span>
+                    {EXAMPLES.map((ex) => (
+                      <button
+                        key={ex}
+                        type="button"
+                        onClick={() => setInput(ex)}
+                        className="inline-flex h-7 items-center rounded-sm border px-2 font-mono text-2xs text-fg-muted transition-colors duration-150 hover:border-border-strong hover:text-fg"
+                      >
+                        {ex}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </>
             ) : searching && groups.length === 0 ? (
               <p role="status" className="px-4 py-6 text-center text-sm text-fg-muted">
@@ -307,7 +324,7 @@ export function SearchTrigger({
       )}
     >
       <Search aria-hidden className="size-4 shrink-0 text-fg-subtle" />
-      <span className="min-w-0 flex-1 truncate">Search address, hash, domain, CVE, campaign</span>
+      <span className="min-w-0 flex-1 truncate">{PLACEHOLDER}</span>
       <kbd className="shrink-0 rounded-xs border px-1.5 font-sans text-2xs text-fg-subtle">
         {shortcut}
       </kbd>

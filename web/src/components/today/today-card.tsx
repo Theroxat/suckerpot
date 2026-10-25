@@ -4,25 +4,29 @@ import {
   ChevronRight,
   Crosshair,
   Flag,
+  Link2,
+  Network,
   Radar,
   ServerCrash,
   ShieldAlert,
   Sparkles,
+  SquareTerminal,
   Tag,
+  UserRound,
   type LucideIcon,
 } from "lucide-react"
 import type { CSSProperties } from "react"
 import { Link } from "react-router"
 import { useIpMask } from "@/app/ip-mask"
 import { CountryFlag } from "@/components/country-flag"
-import { Term, TermText } from "@/components/term"
+import { TermText } from "@/components/term"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatNumber } from "@/lib/format"
 import { sensorMeta } from "@/lib/sensors"
 import { CARD_TITLE, type TodayCardData, type TodayCardId, type TodayItem } from "@/lib/today"
-import { isCodeLike, itemLabel, visibleItems } from "@/lib/today-view"
+import { countUnit, isCodeLike, itemLabel, newField, visibleItems } from "@/lib/today-view"
 import { cn } from "@/lib/utils"
 
 const CARD_ICON: Record<TodayCardId, LucideIcon> = {
@@ -42,14 +46,28 @@ const KIND_ICON: Partial<Record<TodayItem["kind"], LucideIcon>> = {
   new: Sparkles,
 }
 
+/** First-seen items get the icon of what they are, so three rows never repeat one glyph. */
+const NEW_ICON: Record<string, LucideIcon> = {
+  asn: Network,
+  url: Link2,
+  command: SquareTerminal,
+  username: UserRound,
+}
+
 function ItemMark({ item }: { item: TodayItem }) {
   if (item.kind === "country") return <CountryFlag code={item.value} decorative />
-  const Icon = (item.kind === "sensor" ? sensorMeta(item.value)?.icon : KIND_ICON[item.kind]) ?? Tag
+  const Icon =
+    (item.kind === "sensor"
+      ? sensorMeta(item.value)?.icon
+      : item.kind === "new"
+        ? NEW_ICON[newField(item) ?? ""]
+        : KIND_ICON[item.kind]) ?? Tag
   return <Icon aria-hidden className="size-4 shrink-0 text-fg-subtle" strokeWidth={1.85} />
 }
 
 function ItemRow({ item }: { item: TodayItem }) {
   const { masked } = useIpMask()
+  const unit = countUnit(item)
   return (
     <li>
       <Link
@@ -70,8 +88,10 @@ function ItemRow({ item }: { item: TodayItem }) {
             <span className="block truncate text-xs text-fg-muted">{item.detail}</span>
           ) : null}
         </span>
-        {item.count != null ? (
-          <span className="text-sm text-fg-muted tabular-nums">{formatNumber(item.count)}</span>
+        {unit ? (
+          <span className="shrink-0 text-right text-sm text-fg tabular-nums">
+            {formatNumber(item.count ?? 0)} <span className="text-xs text-fg-subtle">{unit}</span>
+          </span>
         ) : null}
         <ChevronRight
           aria-hidden
@@ -97,6 +117,8 @@ export function TodayCard({ card, index = 0, className }: TodayCardProps) {
   const Icon = CARD_ICON[card.id]
   const items = visibleItems(card.items)
   const title = CARD_TITLE[card.id]
+  // Servers that hand out malware are the one severe thing on this page: the only red here.
+  const urgent = card.id === "act" && items.length > 0
   return (
     <Card
       data-card={card.id}
@@ -110,8 +132,12 @@ export function TodayCard({ card, index = 0, className }: TodayCardProps) {
     >
       <header className="px-4 pt-4 sm:px-5 sm:pt-5">
         <p className="flex items-center gap-2 text-xs font-medium text-fg-muted">
-          <Icon aria-hidden className="size-3.5" strokeWidth={1.85} />
-          {card.id === "campaigns" ? <Term id="campaign">{title}</Term> : title}
+          <Icon
+            aria-hidden
+            className={cn("size-3.5", urgent && "text-sev-severe")}
+            strokeWidth={1.85}
+          />
+          {title}
         </p>
         <h2
           id={`today-${card.id}`}

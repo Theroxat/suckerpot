@@ -117,7 +117,8 @@ function TodayStyleguide() {
           <ScannerBadge short />
         </Specimen>
 
-        <Specimen label="ScannerToggle (sidebar footer)">
+        <Specimen label="ScannerToggle · inline (desktop header) and stacked (phone drawer)">
+          <ScannerToggle inline />
           <ScannerToggle className="w-60" />
         </Specimen>
 
