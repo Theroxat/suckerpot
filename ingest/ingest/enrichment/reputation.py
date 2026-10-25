@@ -31,6 +31,7 @@ CACHE_TTL = timedelta(hours=24)
 PER_CYCLE = 5
 RATE_LIMIT_PAUSE_S = 3600.0
 HTTP_TIMEOUT = httpx.Timeout(8.0, connect=4.0)
+TEST_IP = "8.8.8.8"  # a well-known public resolver: any routable address would do
 
 
 class ProviderError(Exception):
@@ -114,6 +115,48 @@ class ReputationWorker:
         self._disabled: dict[str, str] = {}
         self._retry_after: dict[tuple[str, str], float] = {}
         self.last_error: dict[str, str] = {}
+        self.test_result: dict[str, dict[str, Any]] = {}
+
+    def apply_settings(self, settings: EnrichmentSettings, changed: set[str]) -> None:
+        """Hot-swap credentials. A changed key gets a clean slate (no stale auth failure)."""
+        self.s = settings
+        for provider in changed:
+            self._disabled.pop(provider, None)
+            self._paused_until.pop(provider, None)
+            self.last_error.pop(provider, None)
+            self.test_result.pop(provider, None)
+            for pair in [k for k in self._retry_after if k[0] == provider]:
+                del self._retry_after[pair]
+
+    def _key(self, provider: str) -> str:
+        return self.s.abuseipdb_api_key if provider == "abuseipdb" else self.s.greynoise_api_key
+
+    async def run_key_test(self, provider: str) -> dict[str, Any]:
+        """One real, quota-counted lookup to prove the key works. Never raises."""
+        error: str | None = None
+        if not self._key(provider):
+            error = "no_key"
+        elif not await reserve_quota(self.factory, provider, self.quota(provider)):
+            error = "quota_exhausted"
+        else:
+            try:
+                if provider == "abuseipdb":
+                    await self.check_abuseipdb(TEST_IP)
+                else:
+                    await self.check_greynoise(TEST_IP)
+                self._disabled.pop(provider, None)
+                self.last_error.pop(provider, None)
+            except ProviderError as exc:
+                error = exc.kind
+                if exc.kind == "auth":
+                    self._disabled[provider] = "auth"
+        result = {
+            "ok": error is None,
+            "error": error,
+            "checked_at": datetime.now(UTC).isoformat(),
+        }
+        self.test_result[provider] = result
+        return result
 
     # ---- provider calls (read-only endpoints) ---------------------------------------------
     async def check_abuseipdb(self, ip: str) -> AbuseResult:
@@ -272,6 +315,7 @@ class ReputationWorker:
                 "disabled": self._disabled.get(provider),
                 "paused": self._paused(provider),
                 "last_error": self.last_error.get(provider),
+                "test": self.test_result.get(provider),
             }
         return out
 

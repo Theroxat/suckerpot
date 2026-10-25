@@ -8,6 +8,7 @@ provider publishes one, and the file must open as an MMDB) and moved into place 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import gzip
 import hashlib
 import logging
@@ -134,6 +135,15 @@ class GeoManager:
         )
         self.on_status = on_status
         self.last_error: str | None = None
+        self._force = False
+        self._wake = asyncio.Event()
+
+    def apply_settings(self, settings: EnrichmentSettings, *, refresh: bool) -> None:
+        """Hot-swap the settings. ``refresh`` asks for an immediate (re)download."""
+        self.s = settings
+        if refresh:
+            self._force = True
+            self._wake.set()
 
     def status(self) -> dict[str, Any]:
         files: dict[str, Any] = {}
@@ -166,7 +176,8 @@ class GeoManager:
         """Download whatever is missing or older than the refresh period. Never raises."""
         if self.s.effective_geoip_provider == "off":
             return False
-        todo = [p for p in _plan(self.s) if self._stale(p[2])]
+        force, self._force = self._force, False
+        todo = [p for p in _plan(self.s) if force or self._stale(p[2])]
         if not todo:
             return False
         changed = False
@@ -228,13 +239,15 @@ class GeoManager:
         """Background loop: refresh at startup and then once a day if due."""
         await asyncio.sleep(3)
         while True:
+            self._wake.clear()
             await self.refresh_if_needed()
             if self.on_status is not None:
                 try:
                     await self.on_status(self.status())
                 except Exception:
                     log.warning("could not publish GeoIP status", exc_info=True)
-            await asyncio.sleep(CHECK_INTERVAL_S)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._wake.wait(), CHECK_INTERVAL_S)
 
 
 def _verify_and_install_into(candidate: Path, target: Path) -> None:
