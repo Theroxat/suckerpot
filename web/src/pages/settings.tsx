@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import {
+  Bell,
+  Rss,
   CircleCheck,
   CircleDashed,
   Info,
@@ -8,6 +10,9 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { Link } from "react-router"
+import { EmptyState } from "@/components/empty-state"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useUrlParam } from "@/hooks/use-url-param"
 import { FindingCard } from "@/components/finding-card"
 import { Meter } from "@/components/meter"
 import { PageHeader } from "@/components/page-header"
@@ -331,8 +336,22 @@ function RetentionCard({ data, loading }: { data?: SystemSettings; loading: bool
 
 /* --- Page --------------------------------------------------------------- */
 
+const TABS = [
+  { id: "general", label: "General", adminOnly: false },
+  { id: "keys", label: "Keys", adminOnly: false },
+  { id: "users", label: "Users", adminOnly: true },
+  { id: "audit", label: "Audit", adminOnly: true },
+  { id: "alerts", label: "Alert channels", adminOnly: false },
+  { id: "feeds", label: "Feeds", adminOnly: false },
+] as const
+
 export function SettingsPage() {
   const { canWrite } = useAuth()
+  const tabs = TABS.filter((t) => canWrite || !t.adminOnly)
+  const [tabParam, setTabParam] = useUrlParam("tab")
+  const tab = tabs.find((t) => t.id === tabParam)?.id ?? "general"
+  // The tab lives in the URL, so a section can be linked; "general" is the default and stays bare.
+  const setTab = (next: string) => setTabParam(next === "general" ? null : next)
   const q = useQuery({
     queryKey: queryKeys.systemSettings,
     queryFn: api.systemSettings,
@@ -344,7 +363,7 @@ export function SettingsPage() {
         title="Settings"
         description={
           canWrite
-            ? "Sensor health, enrichment keys, users, retention and storage."
+            ? "Sensor health, enrichment keys, users, retention and storage, one tab each."
             : "Sensor health, enrichment, retention and storage."
         }
       />
@@ -366,22 +385,56 @@ export function SettingsPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
-        <SensorsCard data={q.data} loading={q.isPending} />
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <EnrichmentCard />
-          <div className="grid grid-cols-1 content-start gap-4">
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList
+          variant="line"
+          aria-label="Settings sections"
+          className="mb-2 max-w-full overflow-x-auto"
+        >
+          {tabs.map((t) => (
+            <TabsTrigger key={t.id} value={t.id} className="flex-none px-3">
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        <TabsContent value="general" className="grid grid-cols-1 gap-4">
+          <SensorsCard data={q.data} loading={q.isPending} />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <StorageCard data={q.data} loading={q.isPending} />
             <RetentionCard data={q.data} loading={q.isPending} />
           </div>
-        </div>
+        </TabsContent>
+        <TabsContent value="keys" className="grid grid-cols-1 gap-4">
+          <EnrichmentCard />
+        </TabsContent>
         {canWrite ? (
           <>
-            <UsersCard />
-            <AuditCard />
+            <TabsContent value="users" className="grid grid-cols-1 gap-4">
+              <UsersCard />
+            </TabsContent>
+            <TabsContent value="audit" className="grid grid-cols-1 gap-4">
+              <AuditCard />
+            </TabsContent>
           </>
         ) : null}
-      </div>
+        <TabsContent value="alerts">
+          <EmptyState
+            icon={Bell}
+            badge="Coming soon"
+            title="Alert channels are on their way"
+            description="Connect Discord, Teams or email, and choose which events send you a message."
+          />
+        </TabsContent>
+        <TabsContent value="feeds">
+          <EmptyState
+            icon={Rss}
+            badge="Coming soon"
+            title="Feeds are on their way"
+            description="Create access tokens so your firewall or proxy can pull the blocklists."
+          />
+        </TabsContent>
+      </Tabs>
     </>
   )
 }
