@@ -252,8 +252,14 @@ def legacy_confirm() -> bytes:
     return _connection_confirm()
 
 
-def negotiate(cr: ConnectionRequest) -> Negotiation:
-    """Behave like Windows Server 2022 with Network Level Authentication required."""
+def negotiate(cr: ConnectionRequest, *, allow_ssl: bool = False) -> Negotiation:
+    """Behave like Windows Server 2022 with Network Level Authentication required.
+
+    With ``allow_ssl`` (the "NLA disabled" mode) a client that offers only ``PROTOCOL_SSL`` is
+    accepted with SSL selected, so the MCS connect sequence can run to the Client Info PDU.
+    CredSSP is still preferred when the client offers it, exactly as a real host that also
+    advertises NLA does. A client offering only standard RDP security is always refused.
+    """
     if not cr.neg_present:
         # No RDP_NEG_REQ: a pre-RDP-5.2 client. Windows confirms without negotiation data and
         # drops the connection once the client sends its MCS Connect Initial.
@@ -262,6 +268,8 @@ def negotiate(cr: ConnectionRequest) -> Negotiation:
         return Negotiation(negotiation_response(PROTOCOL_HYBRID_EX), "selected", PROTOCOL_HYBRID_EX)
     if cr.requested_protocols & PROTOCOL_HYBRID:
         return Negotiation(negotiation_response(PROTOCOL_HYBRID), "selected", PROTOCOL_HYBRID)
+    if allow_ssl and cr.requested_protocols & PROTOCOL_SSL:
+        return Negotiation(negotiation_response(PROTOCOL_SSL), "selected", PROTOCOL_SSL)
     return Negotiation(
         negotiation_failure(HYBRID_REQUIRED_BY_SERVER),
         "failure",

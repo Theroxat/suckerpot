@@ -52,14 +52,18 @@ async def run() -> None:
         global_burst=cfg.global_sessions_per_sec * 2,
         events_rate=cfg.global_events_per_sec,
         events_burst=cfg.global_events_per_sec * 2,
-        disconnect_rate=cfg.disconnect_events_per_sec,
-        disconnect_burst=cfg.disconnect_events_per_sec * 2,
+        priority_rate=cfg.priority_events_per_sec,
+        priority_burst=cfg.priority_events_per_sec * 2,
+        per_ip_events_rate=cfg.per_ip_events_per_sec,
+        per_ip_events_burst=cfg.per_ip_events_burst,
+        per_ip_priority_rate=cfg.per_ip_priority_per_sec,
+        per_ip_priority_burst=cfg.per_ip_priority_burst,
         queue_size=cfg.event_queue_size,
     )
     sink.start()
     watchdog = LoopWatchdog(limit=10.0)
     watchdog.start()
-    sensor = Sensor(cfg, sink, make_tls_context(identity), identity.hostname)
+    sensor = Sensor(cfg, sink, make_tls_context(identity), identity)
     server = RDPServer(cfg, sensor)
     port = await server.start()
     log.info("listening on %s:%d", cfg.host, port)

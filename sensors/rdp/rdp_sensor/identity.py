@@ -34,6 +34,8 @@ RENEW_BEFORE = timedelta(days=7)
 _ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 _ROLES = ("APP", "RDS", "WEB", "FS", "SQL", "TS", "ERP", "VM")
 _PREFIXES = ("SRV", "SVR", "WS", "HOST")
+_DOMAINS = ("CORP", "AD", "OFFICE", "GROUP", "INTRA", "HQ", "ADMIN", "NET")
+_TLDS = ("local", "lan", "internal", "intra")
 
 
 def write_private(path: Path, data: bytes) -> None:
@@ -83,12 +85,38 @@ def derive_hostname(secret: str) -> str:
     return f"{prefix}-{role}{1 + raw[3] % 9:02d}"
 
 
+def derive_domain_name(secret: str) -> str:
+    """A plausible NetBIOS domain / workgroup name, stable for one deployment."""
+    raw = _derive(secret, "rdp-domain")
+    return _DOMAINS[raw[0] % len(_DOMAINS)]
+
+
+def derive_dns_domain(secret: str, domain_name: str) -> str:
+    """The AD DNS domain: the NetBIOS domain plus a private suffix (never a real domain)."""
+    raw = _derive(secret, "rdp-dns-domain")
+    label = domain_name.lower()
+    tlds = [t for t in _TLDS if t != label]
+    return f"{label}.{tlds[raw[0] % len(tlds)]}"
+
+
 @dataclass(frozen=True)
 class Identity:
     hostname: str
     cert_path: Path
     key_path: Path
     not_after: datetime
+    netbios_domain: str = "WORKGROUP"
+    dns_domain: str = "workgroup.local"
+
+    @property
+    def netbios_computer(self) -> str:
+        """The NetBIOS computer name: the host name, capped at 15 characters."""
+        return self.hostname[:15]
+
+    @property
+    def dns_computer(self) -> str:
+        """The host FQDN, e.g. ``srv-rds03.corp.local``."""
+        return f"{self.hostname.lower()}.{self.dns_domain}"
 
 
 def _generate_cert(hostname: str, now: datetime, backdate: bool) -> tuple[bytes, bytes, datetime]:
@@ -144,6 +172,8 @@ def load_or_create_identity(
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     secret = load_or_create_secret(root)
     name = hostname or derive_hostname(secret)
+    netbios_domain = derive_domain_name(secret)
+    dns_domain = derive_dns_domain(secret, netbios_domain)
     cert_path, key_path = root / CERT_FILE, root / KEY_FILE
     current = now or datetime.now(UTC)
     try:
@@ -158,11 +188,13 @@ def load_or_create_identity(
             with contextlib.suppress(OSError):
                 key_path.chmod(0o600)
                 cert_path.chmod(0o600)
-            return Identity(name, cert_path, key_path, cert.not_valid_after_utc)
+            return Identity(
+                name, cert_path, key_path, cert.not_valid_after_utc, netbios_domain, dns_domain
+            )
     except (OSError, ValueError):
         pass
     cert_pem, key_pem, not_after = _generate_cert(name, current, backdate=not cert_path.exists())
     write_private(key_path, key_pem)
     write_private(cert_path, cert_pem)
     log.warning("generated new RDP certificate in %s", root)
-    return Identity(name, cert_path, key_path, not_after)
+    return Identity(name, cert_path, key_path, not_after, netbios_domain, dns_domain)

@@ -105,7 +105,20 @@ def test_summary_top_n_and_aggregate() -> None:
 
 async def test_parallel_flood(make_harness: HarnessFactory) -> None:
     """150 parallel clients mixing valid, malformed and garbage traffic: all served, state freed."""
-    sink_kw = {"global_rate": 1000.0, "global_burst": 1000.0}
+    # All from one loopback IP, so the per-IP event budgets are made generous here; the
+    # per-IP fairness itself is exercised across distinct source IPs in test_fairness.py.
+    sink_kw = {
+        "global_rate": 1000.0,
+        "global_burst": 1000.0,
+        "events_rate": 1000.0,
+        "events_burst": 1000.0,
+        "priority_rate": 1000.0,
+        "priority_burst": 1000.0,
+        "per_ip_events_rate": 1000.0,
+        "per_ip_events_burst": 1000.0,
+        "per_ip_priority_rate": 1000.0,
+        "per_ip_priority_burst": 1000.0,
+    }
     async with make_harness(sink_kw=sink_kw, max_per_ip=200, handshake_timeout=1.0) as h:
 
         async def client(i: int) -> None:
@@ -138,8 +151,22 @@ async def test_parallel_flood(make_harness: HarnessFactory) -> None:
 
 
 async def test_global_admission_caps_recorded_sessions(make_harness: HarnessFactory) -> None:
-    """With the default global budget (burst 100), a 150-connection burst records ~100."""
-    async with make_harness(max_per_ip=200) as h:
+    """With the default global budget (burst 100), a 150-connection burst records ~100.
+
+    Per-IP event budgets are made generous so the quantity measured is the *global admission*
+    cap, not the per-IP event fairness (which test_fairness.py covers across many IPs).
+    """
+    generous = {
+        "events_rate": 1000.0,
+        "events_burst": 1000.0,
+        "priority_rate": 1000.0,
+        "priority_burst": 1000.0,
+        "per_ip_events_rate": 1000.0,
+        "per_ip_events_burst": 1000.0,
+        "per_ip_priority_rate": 1000.0,
+        "per_ip_priority_burst": 1000.0,
+    }
+    async with make_harness(sink_kw=generous, max_per_ip=200) as h:
 
         async def client() -> None:
             reader, writer = await asyncio.open_connection("127.0.0.1", h.port)
@@ -155,3 +182,44 @@ async def test_global_admission_caps_recorded_sessions(make_harness: HarnessFact
         h.sink.flush_suppressed(60.0)
         summary = [e for e in await h.events("scan") if e.data.get("kind") == "rate_limited"]
         assert summary[0].data["suppressed_connections"] == 150 - recorded
+
+
+async def test_per_ip_tls_slot_cap(make_harness: HarnessFactory) -> None:
+    """Regression (review MEDIUM): one source cannot hold more than its share of TLS slots."""
+    import ssl
+
+    def ctx() -> ssl.SSLContext:
+        c = ssl.create_default_context()
+        c.check_hostname = False
+        c.verify_mode = ssl.CERT_NONE
+        return c
+
+    async with make_harness(max_tls_per_ip=2, credssp_timeout=5.0, max_tls_handshakes=32) as h:
+        held = []
+        for _ in range(2):  # two concurrent TLS handshakes from this IP: both get a slot
+            r, w = await asyncio.open_connection("127.0.0.1", h.port)
+            w.write(build_connection_request(cookie=b"Cookie: mstshash=a", protocols=0x0B))
+            await w.drain()
+            await r.readexactly(19)
+            await w.start_tls(ctx())  # parks in the CredSSP read, holding its per-IP slot
+            held.append((r, w))
+        # The third from the same IP is refused a TLS slot right after the confirm.
+        r3, w3 = await asyncio.open_connection("127.0.0.1", h.port)
+        w3.write(build_connection_request(protocols=0x0B))
+        async with asyncio.timeout(3):
+            assert len(await reader_all(r3)) == 19  # confirm, then closed before TLS
+        w3.close()
+        for _, w in held:
+            w.close()
+        disc = await h.wait_disconnects(3)
+        assert "tls_busy" in [d.data["reason"] for d in disc]
+        assert h.sensor.tls_limited >= 1
+
+
+async def reader_all(reader: asyncio.StreamReader, timeout: float = 3.0) -> bytes:
+    out = b""
+    with __import__("contextlib").suppress(Exception):
+        async with asyncio.timeout(timeout):
+            while chunk := await reader.read(4096):
+                out += chunk
+    return out

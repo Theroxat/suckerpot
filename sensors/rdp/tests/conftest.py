@@ -12,6 +12,7 @@ from suckerpot_common import Event
 from rdp_sensor.config import Config
 from rdp_sensor.events import EventSink
 from rdp_sensor.identity import Identity, load_or_create_identity
+from rdp_sensor.memguard import MemoryGuard
 from rdp_sensor.server import RDPServer, Sensor, make_tls_context
 
 
@@ -62,7 +63,9 @@ HarnessFactory = Callable[..., contextlib.AbstractAsyncContextManager[Harness]]
 def make_harness(identity: Identity) -> HarnessFactory:
     @contextlib.asynccontextmanager
     async def factory(
-        sink_kw: dict[str, float] | None = None, **overrides: object
+        sink_kw: dict[str, float] | None = None,
+        guard: MemoryGuard | None = None,
+        **overrides: object,
     ) -> AsyncIterator[Harness]:
         params: dict[str, object] = {
             "host": "127.0.0.1",
@@ -76,7 +79,11 @@ def make_harness(identity: Identity) -> HarnessFactory:
         kw.update(sink_kw or {})
         sink = EventSink(pub, dst_port=3389, **kw)  # type: ignore[arg-type]
         sink.start()
-        sensor = Sensor(cfg, sink, make_tls_context(identity), identity.hostname)
+        # A roomy guard by default so unit tests never trip the process memory backstop (which
+        # reflects the whole shared test container); the Docker load test uses the real limit.
+        sensor = Sensor(
+            cfg, sink, make_tls_context(identity), identity, guard=guard or MemoryGuard(8 << 30)
+        )
         server = RDPServer(cfg, sensor)
         port = await server.start()
         try:

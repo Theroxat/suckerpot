@@ -65,23 +65,26 @@ async def test_cookie_login_attempt_and_hybrid_tls(make_harness: HarnessFactory)
         cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         assert cn == h.identity.hostname
         assert cert.issuer == cert.subject
-        writer.write(_ntlm_tsrequest())
+        writer.write(_ntlm_tsrequest())  # NTLM NEGOTIATE wrapped in a TSRequest
         await writer.drain()
-        assert await _read_all(reader) == b""  # close_notify, then EOF
+        challenge = await reader.read(4096)  # the server's TSRequest carrying an NTLM CHALLENGE
+        idx = challenge.index(b"NTLMSSP\x00")
+        assert challenge[idx + 8] == 2  # NTLM message type 2 (CHALLENGE)
         writer.close()
         disc = (await h.wait_disconnects(1))[0]
         logins = await h.events("login_attempt")
-        assert len(logins) == 1
+        assert len(logins) == 1  # the cookie login attempt (no AUTHENTICATE was sent)
         data = logins[0].data
         assert data["username"] == "administrator"
         assert data["password"] is None and data["method"] == "rdp-cookie"
         assert data["requested_protocols"] == ["SSL", "HYBRID", "HYBRID_EX"]
         assert data["negotiation"] == "HYBRID_EX"
         assert data["raw_preview"].startswith("0300")
-        assert disc.data["reason"] == "credssp_not_supported"
+        assert disc.data["reason"] == "credssp_no_authenticate"
         assert disc.data["tls"]["version"] in ("TLSv1.2", "TLSv1.3")
         assert disc.data["credssp"]["version"] == 6
         assert disc.data["credssp"]["ntlm_negotiate"]["os_version"] == "10.0.22621"
+        assert "rdp_ntlm" in disc.data["flags"]
         assert disc.data["client_hello"]["ja3_hash"]
         types = [e.type for e in h.publisher.events]
         assert types == ["connect", "login_attempt", "disconnect"]
