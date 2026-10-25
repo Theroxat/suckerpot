@@ -150,3 +150,16 @@ async def test_a_login_attempt_demotes(
         enricher,
     )
     assert await flags(engine, "s1") == (False, [False, False])
+
+
+async def test_retract_benign_refuses_a_huge_list(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    from sqlalchemy.exc import DBAPIError
+
+    async with factory() as session:
+        with pytest.raises(DBAPIError):
+            await session.execute(
+                text("SELECT retract_benign(CAST(:ids AS text[]))"),
+                {"ids": [f"s{i}" for i in range(1001)]},
+            )

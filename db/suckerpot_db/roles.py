@@ -96,9 +96,11 @@ DECLARE
 BEGIN
     EXECUTE format('REVOKE ALL ON %s FROM %I', _tables, r);
     EXECUTE format('GRANT SELECT, INSERT ON events TO %I', r);
-    -- A scanner that turns out to do more loses the benign flag on its earlier events (M19).
-    -- (A column grant would be tighter, but PostgreSQL cannot propagate it to compressed chunks.)
-    EXECUTE format('GRANT UPDATE ON events TO %I', r);
+    -- Ingest cannot UPDATE events. The one change it needs (a scanner that turns out to do more
+    -- loses the benign flag on its earlier events) goes through a SECURITY DEFINER function.
+    IF to_regprocedure('public.retract_benign(text[])') IS NOT NULL THEN
+        EXECUTE format('GRANT EXECUTE ON FUNCTION public.retract_benign(text[]) TO %I', r);
+    END IF;
     EXECUTE format('GRANT SELECT, INSERT, UPDATE ON sessions TO %I', r);
     IF to_regclass('public.ip_reputation') IS NOT NULL THEN
         EXECUTE format(
