@@ -159,9 +159,9 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M13 — Indicators and threat intelligence
 
-- [ ] Extract indicators (URLs, domains, IPs, hashes) from recorded events.
-- [ ] Enrich them with public threat-intelligence sources (quotas, caching, keys from Settings).
-- [ ] An Infrastructure view linking sources, indicators and malware families; export on demand.
+- [x] Extract indicators (URLs, domains, IPs, hashes) from recorded events.
+- [x] Enrich them with public threat-intelligence sources (quotas, caching, keys from Settings).
+- [x] An Infrastructure view linking sources, indicators and malware families; export on demand.
 
 **Acceptance:** passive only — nothing is executed, contacted beyond the intel APIs, or reported without the owner.
 
