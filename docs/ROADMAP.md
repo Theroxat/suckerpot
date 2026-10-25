@@ -7,6 +7,9 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - [x] Docker Engine + compose plugin installed on the VM (needs `sudo`).
 - [x] Push access to GitHub (fine-grained token scoped to this repo only, Contents: read/write).
 - [ ] Enable secret scanning and push protection in the GitHub repo settings.
+- [ ] Enable GitHub Pages (Source: GitHub Actions) and import the project on Read the Docs.
+- [ ] Grow the VM disk (≥ 64 GB).
+- [ ] Apply the host firewall (scripts/host/firewall.nft + suckerpot-firewall.service).
 
 ## Host / owner actions before go-live (from the M1 security review)
 
@@ -44,17 +47,17 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M2 — SSH sensor
 
-- [ ] asyncssh on container port 2222, mapped from host 22.
-- [ ] Accepts logins on a configurable set of weak credentials; records every attempt.
-- [ ] Fake shell with a fake filesystem and common commands (`uname`, `cat /proc/cpuinfo`, `ls`, `cd`, `pwd`, `whoami`, `id`, `ps`, `w`, `free`, `history`, …).
-- [ ] `wget` / `curl` / `tftp` recorded as `download_attempt`, never executed or fetched.
-- [ ] Full session recording (timed I/O) for replay.
-- [ ] Realistic banner and hostname; connection caps, timeouts, field size limits.
-- [ ] Events land end to end in the DB.
-- [ ] Sensor networking (from the M1 security review): an `ingress` bridge with a fixed name, `enable_ip_masquerade: "false"`, `enable_icc: "false"`; `dns: ["127.0.0.1"]` on every sensor; ports published on explicit IPv4 (no docker-proxy on `[::]`); one internal network, one Redis stream and one ACL user per sensor, with ingest checking the `sensor` field against the stream.
-- [ ] Sensors drop and count events when Redis is unavailable, with bounded queues; per-IP event rate limit.
-- [ ] M1 review follow-ups (before go-live): stable ingest consumer name + trim never past the oldest pending entry; role passwords re-applied on every `migrate` run (rotation); dead-letter only on data errors; strict WebSocket Origin comparison; strip Unicode format characters in summaries; `connect-src 'self'`; NUL-safe SPA paths; per-row error isolation in the live poller; per-IP WebSocket cap; explicit per-table grants.
-- [ ] Ingest idempotency: no double counting when a batch is replayed after a crash between commit and ACK.
+- [x] asyncssh on container port 2222, mapped from host 22.
+- [x] Accepts logins on a configurable set of weak credentials; records every attempt.
+- [x] Fake shell with a fake filesystem and common commands (`uname`, `cat /proc/cpuinfo`, `ls`, `cd`, `pwd`, `whoami`, `id`, `ps`, `w`, `free`, `history`, …).
+- [x] `wget` / `curl` / `tftp` recorded as `download_attempt`, never executed or fetched.
+- [x] Full session recording (timed I/O) for replay.
+- [x] Realistic banner and hostname; connection caps, timeouts, field size limits.
+- [x] Events land end to end in the DB.
+- [x] Sensor networking (from the M1 security review): an `ingress` bridge with a fixed name, `enable_ip_masquerade: "false"`, `enable_icc: "false"`; `dns: ["127.0.0.1"]` on every sensor; ports published on explicit IPv4 (no docker-proxy on `[::]`); one internal network, one Redis stream and one ACL user per sensor, with ingest checking the `sensor` field against the stream.
+- [x] Sensors drop and count events when Redis is unavailable, with bounded queues; per-IP event rate limit.
+- [x] M1 review follow-ups (before go-live): stable ingest consumer name + trim never past the oldest pending entry; role passwords re-applied on every `migrate` run (rotation); dead-letter only on data errors; strict WebSocket Origin comparison; strip Unicode format characters in summaries; `connect-src 'self'`; NUL-safe SPA paths; per-row error isolation in the live poller; per-IP WebSocket cap; explicit per-table grants.
+- [x] Ingest idempotency: no double counting when a batch is replayed after a crash between commit and ACK.
 
 **Acceptance:** tests use a real SSH client against the container; no `subprocess`/`eval`/`exec` in sensor code; security review PASS.
 
@@ -62,59 +65,59 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M3 — Design system + web shell
 
-- [ ] Design tokens (dark default + light), type scale, spacing, radius, sensor colours, severity scale.
-- [ ] Base components: Card, StatTile, TagBadge, EventRow, SessionStory, IPChip, CountryFlag, EmptyState, Skeleton.
-- [ ] App layout and navigation for all pages from §4.
-- [ ] Live event feed over WebSocket on demo data.
-- [ ] `just screenshots`: Playwright at 1440 and 390, dark and light.
+- [x] Design tokens (dark default + light), type scale, spacing, radius, sensor colours, severity scale.
+- [x] Base components: Card, StatTile, TagBadge, EventRow, SessionStory, IPChip, CountryFlag, EmptyState, Skeleton.
+- [x] App layout and navigation for all pages from §4.
+- [x] Live event feed over WebSocket on demo data.
+- [x] `just screenshots`: Playwright at 1440 and 390, dark and light.
 
 **Acceptance:** `ui-designer` approves the screenshots; WCAG AA contrast; web lint, typecheck and tests green.
 
 ## M4 — Enrichment and tagging
 
-- [ ] GeoLite2 (needs a MaxMind licence key from the owner; degrade gracefully without it).
-- [ ] ASN / org.
-- [ ] AbuseIPDB and GreyNoise Community with a 24 h per-IP cache and enforced daily quotas.
-- [ ] YAML rules engine in `ingest/rules/*.yaml` with first rules (`recon`, `mirai`, `crypto-miner`, `malware-drop`, `php2shell`).
+- [x] GeoLite2 (needs a MaxMind licence key from the owner; degrade gracefully without it).
+- [x] ASN / org.
+- [x] AbuseIPDB and GreyNoise Community with a 24 h per-IP cache and enforced daily quotas.
+- [x] YAML rules engine in `ingest/rules/*.yaml` with first rules (`recon`, `mirai`, `crypto-miner`, `malware-drop`, `php2shell`).
 
 **Acceptance:** enrichment works with and without API keys; quotas cannot be exceeded (tested); rules have unit tests.
 
 ## M5 — Core pages
 
-- [ ] Overview: 4 KPIs, activity per sensor over time, top countries, insights.
-- [ ] Attacks: filterable session list, one-line story per row, filters in the URL.
-- [ ] Session detail: timeline, xterm.js terminal replay at real speed, IP panel.
-- [ ] Replay safety contract (from the M2 review): no Clipboard addon (OSC 52), a `linkHandler` that never opens links (OSC 8), `onData`/`onBinary` never wired to anything (query replies), no image/sixel addons, attacker strings rendered as text only.
-- [ ] Attackers: profiles by IP and ASN.
+- [x] Overview: 4 KPIs, activity per sensor over time, top countries, insights.
+- [x] Attacks: filterable session list, one-line story per row, filters in the URL.
+- [x] Session detail: timeline, xterm.js terminal replay at real speed, IP panel.
+- [x] Replay safety contract (from the M2 review): no Clipboard addon (OSC 52), a `linkHandler` that never opens links (OSC 8), `onData`/`onBinary` never wired to anything (query replies), no image/sixel addons, attacker strings rendered as text only.
+- [x] Attackers: profiles by IP and ASN.
 
 **Acceptance:** pages load in under 1 s on demo data; lists virtualized and paginated server-side; `ui-designer` approval.
 
 ## M6 — More sensors
 
-- [ ] Telnet with Mirai-style flows.
-- [ ] Web: fake Apache + PHP 8.3.x (mod_php, unpatched), fake WordPress `wp-login.php` / `xmlrpc.php`, fake phpMyAdmin; `php2shell` tag on upload-progress abuse.
-- [ ] RDP: low interaction, handshake + username capture.
-- [ ] Optional: catch-all listener recording the first bytes on other ports.
+- [x] Telnet with Mirai-style flows.
+- [x] Web: fake Apache + PHP 8.3.x (mod_php, unpatched), fake WordPress `wp-login.php` / `xmlrpc.php`, fake phpMyAdmin; `php2shell` tag on upload-progress abuse.
+- [x] RDP: low interaction, handshake + username capture.
+- [x] Optional: catch-all listener recording the first bytes on other ports.
 
 **Acceptance:** each sensor tested with a real client; events end to end; security review PASS.
 
 ## M7 — Showcase
 
-- [ ] Live page: 3D globe with attack arcs + live feed.
-- [ ] Trends page: top usernames/passwords/commands/URLs, tags over time, day × hour heatmap, "new this week".
-- [ ] Auto-written insights.
-- [ ] Malware page: download URLs, hashes and VirusTotal links when payload fetching is enabled.
+- [x] Live page: 3D globe with attack arcs + live feed.
+- [x] Trends page: top usernames/passwords/commands/URLs, tags over time, day × hour heatmap, "new this week".
+- [x] Auto-written insights.
+- [x] Malware page: download URLs, hashes and VirusTotal links when payload fetching is enabled.
 
 **Acceptance:** `ui-designer` approval on all pages; insights are correct on demo data (tested).
 
 ## M8 — Hardening and v0.1.0
 
-- [ ] Dashboard auth: argon2 hash from `.env`, secure session cookie, CSRF, rate-limited login.
-- [ ] Rate limits on the API.
-- [ ] Retention job: raw events 90 days, aggregates forever.
-- [ ] DB volume backup script.
-- [ ] Full security review.
-- [ ] README with demo-data screenshots.
+- [x] Dashboard auth: argon2 hash from `.env`, secure session cookie, CSRF, rate-limited login.
+- [x] Rate limits on the API.
+- [x] Retention job: raw events 90 days, aggregates forever.
+- [x] DB volume backup script.
+- [x] Full security review.
+- [x] README with demo-data screenshots.
 - [ ] GitHub release `v0.1.0`.
 - [ ] Remind the owner of the go-live checklist (dashboard firewall rule, `/logout`, token revocation, snapshot, then DMZ).
 

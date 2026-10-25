@@ -18,3 +18,12 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - Documentation site (Sphinx + MyST, Read the Docs config).
 - Security review: first pass FAIL (unbounded stream, egress, poison messages, defaults), all fixed; second pass PASS. Remaining low/medium follow-ups are listed under M2.
 - Verified: all services healthy, demo data end to end, WebSocket live feed, only the dashboard port published (loopback by default).
+
+## 2026-10-25 — M2 to M7, most of M8
+
+- Sensors: SSH (OpenSSH 9.6 fingerprint, emulated shell with fake filesystem, terminal replay), Telnet (BusyBox telnetd, Mirai flows), Web (Apache 2.4.58 + PHP 8.3 byte-identical error pages, WordPress/phpMyAdmin, PHP2Shell detection), RDP (Windows NLA, username capture). Each has its own ingress network without NAT, internal network to Redis, Redis user limited to XADD on its stream, watchdog, cgroup memory guard and per-connection/IP/global budgets.
+- Security reviews: SSH 4 passes, Web 4 passes, Telnet 2, RDP 2, auth 1 — all PASS. No path executes attacker input.
+- Pipeline: per-sensor streams, multi-stream ingest with never-trim-past-pending, enrichment (DB-IP Lite or MaxMind, AbuseIPDB/GreyNoise with quotas), regex-free YAML tagging, publisher byte backstop, retention (90 d raw, compression, continuous aggregates) and disk guard.
+- API and UI: analytics, insights, trends, malware, settings, single-admin auth (argon2, CSRF, rate limits); pages Live (3D globe), Overview, Attacks, Session detail with safe terminal replay, Attackers, Trends, Malware, Settings, login; screenshot mode.
+- Ops: backups, host firewall template, port guard, CI overlay, Sphinx docs, project page and offline demo for GitHub Pages.
+- Left for v0.1.0: owner actions (firewall, disk, GitHub Pages/RTD/secret scanning), then the release.
