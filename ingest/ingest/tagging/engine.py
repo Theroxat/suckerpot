@@ -43,6 +43,7 @@ EVENT_FIELDS = {"type", "sensor"}
 DATA_FIELDS = {
     "input", "path", "query", "user_agent", "method", "url", "username", "password",
     "body_preview", "tool", "command", "kind", "host", "port", "status", "flags", "reason",
+    "smb1_command_name",
 }  # fmt: skip
 SESSION_FIELDS = {
     "session.sensor", "session.event_count", "session.login_attempts", "session.login_success",

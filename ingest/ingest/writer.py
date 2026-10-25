@@ -28,6 +28,7 @@ from suckerpot_common import Event
 from suckerpot_db.models import EventRow, IpReputationRow, SessionRow
 
 from ingest.aggregate import SessionDelta, compute_session_deltas
+from ingest.bruteforce import TAG as BRUTE_TAG
 from ingest.diskguard import DiskGuard
 from ingest.enrichment.enricher import Enricher
 
@@ -111,6 +112,8 @@ def _enrich_rows(
         geo = enricher.geo.lookup(ip)
         score, noise = reputation.get(ip, (None, None))
         tags = enricher.rules.tag_event(str(ev.type), str(ev.sensor), row["data"])
+        if str(ev.type) == "login_attempt" and enricher.brute.record(ip, str(ev.sensor), ev.ts):
+            tags = sorted({*tags, BRUTE_TAG})
         row.update(
             country=geo.country, city=geo.city, asn=geo.asn, org=geo.org,
             abuse_score=score, known_scanner=noise, tags=tags,

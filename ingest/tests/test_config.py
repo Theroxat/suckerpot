@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from suckerpot_common import SensorName
 
 from ingest.config import Settings
 
@@ -13,7 +14,8 @@ def test_defaults() -> None:
     s = Settings.from_env({"INGEST_CONSUMER": "c1"})
     assert (s.redis_host, s.redis_port, s.redis_user) == ("redis", 6379, "ingest")
     assert (s.group, s.consumer) == ("ingest", "c1")
-    assert s.streams == ("events:ssh", "events:telnet", "events:web", "events:rdp")
+    assert s.streams == tuple(f"events:{n}" for n in SensorName)
+    assert len(s.streams) == 11
     assert (s.batch_size, s.block_ms) == (100, 1000)
     assert s.heartbeat_path == Path("/tmp/ingest-heartbeat")
 

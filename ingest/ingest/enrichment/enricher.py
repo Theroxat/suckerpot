@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from ingest.bruteforce import BruteForceTracker
 from ingest.enrichment.geo import GeoResolver
 from ingest.tagging import RuleSet
 
@@ -12,3 +13,4 @@ from ingest.tagging import RuleSet
 class Enricher:
     geo: GeoResolver
     rules: RuleSet
+    brute: BruteForceTracker = field(default_factory=BruteForceTracker)
