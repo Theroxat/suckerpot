@@ -135,3 +135,46 @@ def test_an_admin_is_never_refused_by_the_role_check(client_as: Any) -> None:
             continue
         r = c.request(method, fill(path) if method in UNSAFE else concrete(path), json=None)
         assert not is_refused(r), (method, path)
+
+
+def walk(routes: Any, prefix: str = "", deps: tuple[Any, ...] = ()) -> Iterator[Any]:
+    """Every leaf route with its full path and the dependencies inherited from its includes.
+
+    This FastAPI keeps included routers nested (``_IncludedRouter``), so the walk descends
+    into them and into Starlette mounts, collecting the include-time dependencies on the way.
+    """
+    for r in routes:
+        context = getattr(r, "include_context", None)
+        inner = getattr(r, "original_router", None)
+        if inner is not None and context is not None:
+            yield from walk(
+                inner.routes,
+                prefix + context.prefix,
+                deps + tuple(d.dependency for d in context.dependencies),
+            )
+        elif hasattr(r, "routes") and not hasattr(r, "dependant"):  # a Mount or a router
+            yield ("mount", prefix + getattr(r, "path", ""), r)
+            yield from walk(r.routes, prefix + getattr(r, "path", ""), deps)
+        else:
+            own = tuple(d.dependency for d in getattr(r, "dependencies", []))
+            yield ("route", prefix + getattr(r, "path", ""), (r, deps + own))
+
+
+def test_every_api_route_is_behind_the_role_check_structurally() -> None:
+    from fastapi.routing import APIRoute, APIWebSocketRoute
+
+    from api.authz import authorize
+
+    app = build()
+    leaves = list(walk(app.routes))
+    api_http = [(p, x) for kind, p, x in leaves if kind == "route" and p.startswith("/api/v1")]
+    assert len(api_http) > 40
+    websockets = []
+    for path, (route, deps) in api_http:
+        if isinstance(route, APIWebSocketRoute):
+            websockets.append(path)
+        elif isinstance(route, APIRoute):
+            assert authorize in deps, path
+    assert websockets == ["/api/v1/live"]
+    # Nothing is mounted under /api: a mounted app would bypass the route-level checks.
+    assert [p for kind, p, _ in leaves if kind == "mount" and p.startswith("/api")] == []

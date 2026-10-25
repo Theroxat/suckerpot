@@ -387,3 +387,33 @@ def test_trusted_host_rejects_unknown_hosts(monkeypatch: pytest.MonkeyPatch) -> 
 def test_cve_routes_need_a_session(client: TestClient) -> None:
     for path in ("/api/v1/cves", "/api/v1/cves/sync", "/api/v1/cves/CVE-2099-0001"):
         assert client.get(path).status_code == 401
+
+
+def test_the_owner_is_never_limited_by_name_and_successes_are_free() -> None:
+    with TestClient(make_app(rate_per_ip=50, rate_per_user=2), base_url="https://testserver") as c:
+        for _ in range(6):
+            assert login(c, "wrong password").status_code == 401  # the owner's name: no name window
+        assert login(c).status_code == 204
+
+
+def test_other_names_are_limited_by_failures_only() -> None:
+    with TestClient(make_app(rate_per_ip=50, rate_per_user=2), base_url="https://testserver") as c:
+        assert login(c, "wrong", "someone").status_code == 401
+        assert login(c, "wrong", "someone").status_code == 401
+        assert login(c, "wrong", "someone").status_code == 429
+        assert login(c, "wrong", "somebody").status_code == 401  # another name is unaffected
+
+
+def test_a_database_failure_is_a_plain_401_for_other_names_and_does_not_block_the_owner() -> None:
+    class Broken(NoUsers):
+        async def execute(self, *a: object, **k: object) -> Any:
+            from sqlalchemy.exc import OperationalError
+
+            raise OperationalError("select", {}, Exception("down"))
+
+    s = AuthSettings(password_hash=HASH, secret=b"k" * 40)
+    app = create_app(Broken, enable_live=False, auth_settings=s)  # type: ignore[arg-type]
+    with TestClient(app, base_url="https://testserver") as c:
+        r = login(c, PASSWORD, "colleague")
+        assert r.status_code == 401 and r.json() == {"detail": "Invalid credentials"}
+        assert login(c).status_code == 204  # the owner still gets in

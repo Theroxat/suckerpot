@@ -43,9 +43,12 @@ WaitFor = Callable[[], Awaitable[Any]]
 class Stack:
     app: FastAPI
 
-    def client(self) -> httpx.AsyncClient:
+    def client(self, ip: str = "127.0.0.1") -> httpx.AsyncClient:
+        """A browser at ``ip`` (the address the API sees as the client)."""
         return httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=self.app), base_url=ORIGIN, headers={"Origin": ORIGIN}
+            transport=httpx.ASGITransport(app=self.app, client=(ip, 50000)),
+            base_url=ORIGIN,
+            headers={"Origin": ORIGIN},
         )
 
 
@@ -399,56 +402,143 @@ async def test_unknown_and_known_users_fail_the_same_way(stack: Stack) -> None:
     assert "set-cookie" not in a.headers and "set-cookie" not in b.headers
 
 
-async def test_ten_failures_lock_the_account_for_fifteen_minutes(stack: Stack) -> None:
+HOME = "192.0.2.10"  # where the real user signs in from
+ATTACKER = "203.0.113.9"
+
+
+async def test_repeated_failures_lock_only_the_source_they_came_from(stack: Stack) -> None:
+    admin = await signed_in(stack, OWNER, PASSWORD)
+    await ready_user(stack, admin)
+    home = stack.client(HOME)
+    assert (await sign_in(home, "colleague", GOOD)).status_code == 204  # a known source now
+    attacker = stack.client(ATTACKER)
+    for _ in range(5):
+        assert (await sign_in(attacker, "colleague", "wrong password here")).status_code == 401
+    # The attacker's source is locked, even for the right password, with the same message...
+    refused = await sign_in(attacker, "colleague", GOOD)
+    assert refused.status_code == 401 and refused.json() == {"detail": "Invalid credentials"}
+    # ...but the real user, and any other address, are not affected.
+    assert (await sign_in(stack.client(HOME), "colleague", GOOD)).status_code == 204
+    assert (await sign_in(stack.client("198.51.100.7"), "colleague", GOOD)).status_code == 204
+    (row,) = await query("SELECT locked_until FROM users")
+    assert row.locked_until is None  # the account itself is not locked
+
+
+async def test_the_source_lock_grows_and_expires(stack: Stack) -> None:
+    admin = await signed_in(stack, OWNER, PASSWORD)
+    await ready_user(stack, admin)
+    clock = [stack.app.state.auth.clock()]
+    stack.app.state.auth.clock = lambda: clock[0]
+    attacker = stack.client(ATTACKER)
+
+    async def burst() -> None:
+        for _ in range(5):
+            await sign_in(attacker, "colleague", "wrong password here")
+
+    await burst()
+    clock[0] += 61  # the first lock lasts a minute
+    assert (await sign_in(attacker, "colleague", GOOD)).status_code == 204
+    await burst()  # a success cleared the history, so this is a first lock again
+    assert (await sign_in(attacker, "colleague", GOOD)).status_code == 401
+    clock[0] += 61
+    await burst()  # a repeat: the lock is two minutes now
+    clock[0] += 61
+    assert (await sign_in(attacker, "colleague", GOOD)).status_code == 401  # still locked
+    clock[0] += 70
+    assert (await sign_in(attacker, "colleague", GOOD)).status_code == 204
+
+
+async def test_distributed_guessing_hits_the_ceiling_but_not_known_sources(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from api import accounts
+
+    monkeypatch.setattr(accounts, "LOCK_AFTER_FAILURES", 6)
     admin = await signed_in(stack, OWNER, PASSWORD)
     user, _ = await ready_user(stack, admin)
-    client = stack.client()
-    for _ in range(9):
-        assert (await sign_in(client, "colleague", "wrong password here")).status_code == 401
-    (row,) = await query("SELECT failed_logins, locked_until FROM users")
-    assert row.failed_logins == 9 and row.locked_until is None
-    assert (
-        await sign_in(client, "colleague", "wrong password here")
-    ).status_code == 401  # the 10th
-    (row,) = await query("SELECT locked_until, locked_until - now() AS left FROM users")
-    assert row.locked_until is not None
-    assert 14 * 60 < row.left.total_seconds() <= 15 * 60
-    # The right password does not help while locked, and says the same thing.
-    refused = await sign_in(client, "colleague", GOOD)
-    assert refused.status_code == 401 and refused.json() == {"detail": "Invalid credentials"}
-    # The admin sees the lock and removes it.
+    assert (await sign_in(stack.client(HOME), "colleague", GOOD)).status_code == 204
+    for i in range(6):  # six different sources, one wrong guess each
+        assert (
+            await sign_in(stack.client(f"203.0.113.{20 + i}"), "colleague", "wrong password!")
+        ).status_code == 401
+    (row,) = await query("SELECT locked_until, failed_logins FROM users")
+    assert row.locked_until is not None and row.failed_logins == 0
+    # A new source is shut out, a source that signed in before is not.
+    assert (await sign_in(stack.client("198.51.100.77"), "colleague", GOOD)).status_code == 401
+    assert (await sign_in(stack.client(HOME), "colleague", GOOD)).status_code == 204
+    # The lock is recorded by "system", with the account as target.
+    page = (await call(admin, "GET", "/audit?action=user.locked")).json()["items"]
+    assert len(page) == 1
+    entry = page[0]
+    assert entry["actor"] == "system" and entry["target"] == "colleague"
+    assert entry["details"]["actor_id"] == "system" and entry["details"]["target_id"] == user["id"]
+    # An admin unlocks it at once (a successful sign-in from a known source did already clear it).
+    async with owner_engine() as owner, owner.begin() as conn:
+        await conn.execute(text("UPDATE users SET locked_until = now() + interval '10 minutes'"))
     listing = (await call(admin, "GET", "/users")).json()["items"]
     assert listing[0]["locked_until"] is not None
     r = await call(admin, "POST", f"/users/{user['id']}/unlock", {"password": PASSWORD})
     assert r.status_code == 200 and r.json()["locked_until"] is None
-    assert (await sign_in(client, "colleague", GOOD)).status_code == 204
+    assert (await sign_in(stack.client("198.51.100.77"), "colleague", GOOD)).status_code == 204
 
 
-async def test_the_lock_expires_by_itself_and_failures_restart_from_zero(stack: Stack) -> None:
+async def test_the_account_lock_expires_by_itself(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from api import accounts
+
+    monkeypatch.setattr(accounts, "LOCK_AFTER_FAILURES", 3)
     admin = await signed_in(stack, OWNER, PASSWORD)
     await ready_user(stack, admin)
-    client = stack.client()
-    for _ in range(10):
-        await sign_in(client, "colleague", "wrong password here")
-    assert (await sign_in(client, "colleague", GOOD)).status_code == 401
-    await query("SELECT 1")
+    for i in range(3):
+        await sign_in(stack.client(f"203.0.113.{30 + i}"), "colleague", "wrong password!")
+    other = stack.client("198.51.100.5")
+    assert (await sign_in(other, "colleague", GOOD)).status_code == 401
     async with owner_engine() as owner, owner.begin() as conn:
         await conn.execute(text("UPDATE users SET locked_until = now() - interval '1 second'"))
-    assert (await sign_in(client, "colleague", GOOD)).status_code == 204
+    assert (await sign_in(other, "colleague", GOOD)).status_code == 204
     (row,) = await query("SELECT failed_logins, locked_until FROM users")
     assert row.failed_logins == 0 and row.locked_until is None
 
 
-async def test_a_good_login_resets_the_failure_count(stack: Stack) -> None:
+async def test_a_good_login_resets_the_failure_counts(stack: Stack) -> None:
     admin = await signed_in(stack, OWNER, PASSWORD)
     await ready_user(stack, admin)
-    client = stack.client()
-    for _ in range(9):
+    client = stack.client(HOME)
+    for _ in range(4):
         await sign_in(client, "colleague", "wrong password here")
     assert (await sign_in(client, "colleague", GOOD)).status_code == 204
-    for _ in range(9):
+    for _ in range(4):
         await sign_in(client, "colleague", "wrong password here")
-    assert (await sign_in(client, "colleague", GOOD)).status_code == 204  # never reached ten
+    assert (await sign_in(client, "colleague", GOOD)).status_code == 204  # never reached five
+
+
+async def test_known_sources_are_bounded_and_recent_first(stack: Stack) -> None:
+    admin = await signed_in(stack, OWNER, PASSWORD)
+    await ready_user(stack, admin)
+    for i in range(10):
+        assert (
+            await sign_in(stack.client(f"192.0.2.{50 + i}"), "colleague", GOOD)
+        ).status_code == 204
+    (row,) = await query("SELECT known_sources FROM users")
+    assert len(row.known_sources) == 8 and row.known_sources[0] == "192.0.2.59"
+    assert "192.0.2.50" not in row.known_sources
+
+
+async def test_the_database_down_is_a_plain_401_for_users(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    from api import accounts
+
+    async def boom(*_: Any) -> None:
+        raise OperationalError("select", {}, Exception("down"))
+
+    monkeypatch.setattr(accounts, "find_by_username", boom)
+    r = await sign_in(stack.client(), "colleague", GOOD)
+    assert r.status_code == 401 and r.json() == {"detail": "Invalid credentials"}
+    assert (await sign_in(stack.client(), OWNER, PASSWORD)).status_code == 204
 
 
 async def test_the_owner_is_never_locked_out_by_failures(stack: Stack) -> None:
@@ -527,11 +617,15 @@ async def test_every_admin_action_is_audited_without_secrets(stack: Stack) -> No
         "user.delete",
     ):
         assert expected in actions, expected
+    for entry in page["items"]:
+        assert "actor_id" in entry["details"], entry["action"]
     created_entry = next(e for e in page["items"] if e["action"] == "user.create")
+    assert created_entry["details"]["actor_id"] == "owner"
+    assert created_entry["details"]["target_id"] == uid
     assert created_entry["actor"] == OWNER and created_entry["target"] == "colleague"
-    assert created_entry["details"] == {"role": "viewer"}
+    assert created_entry["details"]["role"] == "viewer"
     role_entry = next(e for e in page["items"] if e["action"] == "user.role")
-    assert role_entry["details"] == {"from": "viewer", "to": "admin"}
+    assert (role_entry["details"]["from"], role_entry["details"]["to"]) == ("viewer", "admin")
     # Newest first, and nothing sensitive anywhere in the table.
     ids = [e["id"] for e in page["items"]]
     assert ids == sorted(ids, reverse=True)

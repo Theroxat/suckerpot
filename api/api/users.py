@@ -27,6 +27,7 @@ from suckerpot_db import UserRow
 
 from api import accounts, audit, passwords
 from api import auth as auth_mod
+from api.audit import actor_id_of
 from api.auth import LoginBusy, Principal
 from api.authz import require_admin
 from api.cursor import InvalidCursorError, decode_cursor, encode_cursor
@@ -204,6 +205,7 @@ async def create_user(body: CreateBody, request: Request, db: DbSession) -> Resp
     await audit.record(
         db, actor=admin.username, action="user.create", target=row.username,
         ip=service.client_ip(request), details={"role": row.role},
+        actor_id=actor_id_of(admin), target_id=row.id,
     )  # fmt: skip
     await db.commit()
     await db.refresh(row)
@@ -242,8 +244,9 @@ async def update_user(
         row.session_version += 1
     for action, details in changes:
         await audit.record(
-            db, actor=admin.username, action=action, target=row.username, ip=ip, details=details
-        )
+            db, actor=admin.username, action=action, target=row.username, ip=ip, details=details,
+            actor_id=actor_id_of(admin), target_id=row.id,
+        )  # fmt: skip
     await db.commit()
     await db.refresh(row)
     return JSONResponse(_out(row).model_dump(mode="json"))
@@ -272,8 +275,9 @@ async def reset_password(
     row.locked_until = None
     await audit.record(
         db, actor=admin.username, action="user.reset_password", target=row.username,
-        ip=service.client_ip(request),
+        ip=service.client_ip(request), actor_id=actor_id_of(admin), target_id=row.id,
     )  # fmt: skip
+    service.clear_sources(row.id)
     await db.commit()
     return _no_store(JSONResponse({"temporary_password": temporary}))
 
@@ -290,9 +294,11 @@ async def unlock_user(
         return problem or error(404, "That user does not exist.", "not_found")
     row.failed_logins = 0
     row.locked_until = None
+    _service(request).clear_sources(row.id)
     await audit.record(
         db, actor=admin.username, action="user.unlock", target=row.username,
         ip=_service(request).client_ip(request),
+        actor_id=actor_id_of(admin), target_id=row.id,
     )  # fmt: skip
     await db.commit()
     await db.refresh(row)
@@ -313,6 +319,7 @@ async def revoke_sessions(
     await audit.record(
         db, actor=admin.username, action="user.revoke_sessions", target=row.username,
         ip=_service(request).client_ip(request),
+        actor_id=actor_id_of(admin), target_id=row.id,
     )  # fmt: skip
     await db.commit()
     return Response(status_code=204)
@@ -328,11 +335,12 @@ async def delete_user(
     row, problem = await _locate(db, user_id, admin)
     if problem is not None or row is None:
         return problem or error(404, "That user does not exist.", "not_found")
-    name, role = row.username, row.role
+    name, role, uid = row.username, row.role, row.id
     await db.delete(row)
     await audit.record(
         db, actor=admin.username, action="user.delete", target=name,
         ip=_service(request).client_ip(request), details={"role": role},
+        actor_id=actor_id_of(admin), target_id=uid,
     )  # fmt: skip
     await db.commit()
     return Response(status_code=204)

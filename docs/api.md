@@ -691,7 +691,7 @@ Example `event` message:
 | `1001` | The server is shutting down |
 | `1008` | The origin is not allowed, there is no valid session, or the session ended |
 | `1011` | Internal error on the server |
-| `1013` | Too many clients connected (in total or from one address) |
+| `1013` | Too many clients connected (in total or from one address), or the session cannot be checked (database unavailable) |
 
 ## Not built yet
 

@@ -129,9 +129,9 @@ The owner account lives in `.env`: it is always an administrator and works even 
 | `SESSION_SECRET` | none, **required** | Signs the session and CSRF cookies. At least 32 bytes. Generate it with `openssl rand -base64 48`. Different from every other secret. |
 | `SESSION_TTL_HOURS` | `12` | How long a login lasts |
 | `COOKIE_SECURE` | `true` | Cookies are `Secure` and named `__Host-sp_session` and `__Host-sp_csrf`. Keep `true`, also behind a TLS-terminating tunnel (the browser talks HTTPS to the tunnel). `false` gives the plain names `sp_session` and `sp_csrf` without `Secure`: local development over HTTP only. |
-| `LOGIN_RATE` | `5` | Login attempts per client address per minute |
-| `LOGIN_RATE_GLOBAL` | `30` | Login attempts per minute for the whole server |
-| `LOGIN_RATE_USER` | `10` | Login attempts per minute for one username (any letter case), from any address. Together with the lock after 10 wrong passwords in a row, this stops a slow guess spread over many addresses. |
+| `LOGIN_RATE` | `5` | Login attempts per client address per minute (every attempt counts) |
+| `LOGIN_RATE_GLOBAL` | `30` | **Wrong passwords** per minute for the whole server; successful sign-ins do not count |
+| `LOGIN_RATE_USER` | `10` | Wrong passwords per minute for one username (any letter case), from any address. Not applied to the owner's name. |
 | `AUTH_TRUSTED_PROXIES` | empty | Comma-separated CIDR list of proxy addresses (such as `203.0.113.0/24`). Only from those peers does the API read `CF-Connecting-IP`, or the rightmost non-proxy `X-Forwarded-For` entry, as the client address. Empty means the headers are never trusted. Replaces the old `AUTH_TRUST_PROXY_HEADERS`. |
 | `API_ALLOWED_HOSTS` | empty | Comma-separated host names the API answers to. If empty, the hosts of `API_ALLOWED_ORIGINS` are used. `localhost` and `127.0.0.1` are always allowed. If both are empty, any host is allowed and the API logs a warning: set one in production, for example the tunnel's host name. |
 | `API_AUTH_DISABLED` | `false` | Turns authentication **off**. It takes effect only together with `SUCKERPOT_DEMO=1`, and Compose sets both only through `docker-compose.ci.yml` (`just up-test`). The base `docker-compose.yml` never does. Never use it in production. |
@@ -154,7 +154,7 @@ Added in M14. There is nothing to configure in `.env` for it (apart from `LOGIN_
 
 - A new account gets a strong temporary password that the administrator sees **once**. The person must choose their own password at the first sign-in; until then nothing else works.
 - Passwords have 12 to 256 characters, are not one of about a thousand very common passwords (the list is `api/api/data/common-passwords.txt`) and must not contain the username.
-- Ten wrong passwords in a row lock the account for 15 minutes. An administrator can unlock it at once.
+- Five wrong passwords from one address lock that address for that account for a minute (longer on repeats, up to 15 minutes); 50 in total lock the account for 15 minutes, but only for addresses the user never signed in from. An administrator can unlock at once.
 - Every change to a user asks the administrator for their own password again, and is written to the audit log (kept for one year).
 - Changing a password, disabling an account, changing its role, deleting it or choosing "Sign out everywhere" ends all of that user's sessions immediately.
 - Optional two-factor sign-in is not built yet.

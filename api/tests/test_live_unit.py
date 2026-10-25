@@ -486,3 +486,43 @@ def test_rdp_summary_sanitises_attacker_strings() -> None:
     )
     assert "\x1b" not in s and "‮" not in s and "\n" not in s and "\x07" not in s
     assert len(s) <= 200
+
+
+async def test_session_watch_gives_up_after_repeated_database_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    import api.live as live
+
+    monkeypatch.setattr(live, "SESSION_RECHECK_S", 0.001)
+    calls = 0
+
+    class Auth:
+        async def resolve(self, *_: object) -> object:
+            nonlocal calls
+            calls += 1
+            raise OperationalError("select", {}, Exception("down"))
+
+    assert await live._session_watch(Auth(), "t", None) is False  # close with 1013
+    assert calls == live.MAX_SESSION_CHECK_FAILURES
+
+
+async def test_session_watch_survives_a_short_hiccup_then_reports_revocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    import api.live as live
+
+    monkeypatch.setattr(live, "SESSION_RECHECK_S", 0.001)
+    answers: list[object] = [OperationalError("s", {}, Exception("x"))] * 5 + [object(), None]
+
+    class Auth:
+        async def resolve(self, *_: object) -> object:
+            a = answers.pop(0)
+            if isinstance(a, Exception):
+                raise a
+            return a
+
+    assert await live._session_watch(Auth(), "t", None) is True  # revoked, not unavailable

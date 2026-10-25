@@ -44,8 +44,11 @@ class FakeSession:
         self.added.append(obj)
 
     async def execute(self, stmt: Any) -> MagicMock:
-        self.executed.append(stmt)
         result = MagicMock()
+        if " users" in str(stmt):  # the owner's sign-in touches the users table: not under test
+            result.scalar_one_or_none.return_value = None
+            return result
+        self.executed.append(stmt)
         if self.deny_upsert and "provider_test_requests" in str(stmt):
             result.first.return_value = None
         return result
@@ -163,20 +166,20 @@ def test_reauth_is_rate_limited_per_address(
         assert c.get("/api/v1/auth/me").status_code == 200
 
 
-def test_reauth_attempts_are_charged_to_the_login_global_window(
+def test_reauth_failures_have_their_own_global_window_not_the_login_one(
     monkeypatch: pytest.MonkeyPatch, db: FakeSession
 ) -> None:
     monkeypatch.setenv(ENV_VAR, MASTER_B64)
-    with build(db, rate_global=4) as c:
-        hdr = login(c)  # 1
-        assert [put(c, hdr, password="x").status_code for _ in range(3)] == [403] * 3  # 2-4
-        assert put(c, hdr).status_code == 429
+    with build(db, rate_global=3, rate_per_ip=50) as c:
+        hdr = login(c)
+        assert [put(c, hdr, password="x").status_code for _ in range(3)] == [403] * 3
+        assert put(c, hdr).status_code == 429  # the re-authentication window is spent
         r = c.post(
             "/api/v1/auth/login",
             json={"username": "admin", "password": PASSWORD},
             headers={"Origin": ORIGIN},
         )
-        assert r.status_code == 429  # the shared window is spent for login too
+        assert r.status_code == 204  # sign-in is not affected
 
 
 def test_five_wrong_passwords_revoke_the_session(

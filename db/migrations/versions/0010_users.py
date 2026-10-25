@@ -4,7 +4,8 @@ Revision ID: 0010
 Revises: 0009
 
 * ``users``: additional dashboard accounts (the owner account stays in ``.env`` and has no row).
-  The password is an argon2id hash; ``session_version`` is bumped to end every session of the
+  ``known_sources`` holds the few most recent source networks that signed in as the user, so a
+  distributed guessing lock never shuts out the places the real user comes from. The password is an argon2id hash; ``session_version`` is bumped to end every session of the
   user at once (password change or reset, disable, role change, deletion, "revoke sessions").
 * ``audit_log``: who did what to whom, with a bounded ``details`` document that never holds a
   secret. ``suckerpot_audit_prune`` deletes entries older than a year; the job is created by
@@ -55,7 +56,8 @@ def upgrade() -> None:
             password_changed_at timestamptz,
             failed_logins integer NOT NULL DEFAULT 0,
             locked_until timestamptz,
-            session_version integer NOT NULL DEFAULT 0
+            session_version integer NOT NULL DEFAULT 0,
+            known_sources text[] NOT NULL DEFAULT '{}'
         )
         """
     )
