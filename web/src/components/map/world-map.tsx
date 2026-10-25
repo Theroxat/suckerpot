@@ -112,9 +112,10 @@ const PRESET_KEY = "suckerpot.map.preset"
 
 function storedPreset(): MapPreset {
   try {
-    return localStorage.getItem(PRESET_KEY) === "world" ? "world" : "europe"
+    // World is the default: Europe only when this browser chose it.
+    return localStorage.getItem(PRESET_KEY) === "europe" ? "europe" : "world"
   } catch {
-    return "europe"
+    return "world"
   }
 }
 
@@ -599,7 +600,11 @@ export function WorldMap({
         )
       })}
 
-      {/* Labels: home first, then the busiest visible sources, skipped where they would collide. */}
+      {/*
+        Labels: home first, then the busiest visible sources. Each label tries the right of its
+        dot, then the left, above, below and the diagonals; it is skipped only when all collide (around
+        home at World scale), so the busiest neighbours keep theirs.
+      */}
       {(() => {
         const placed: Box[] = [
           {
@@ -615,11 +620,29 @@ export function WorldMap({
           const text = `${s.country} ${formatNumber(s.events)}`
           const w = 10 + text.length * 6.6
           const r = dotRadius(s.events)
-          const box = { x0: p.x + r + 4, y0: p.y - 9, x1: p.x + r + 4 + w, y1: p.y + 9 }
-          if (box.x0 < 0 || box.y0 < pad.top || box.x1 > size.w - 4 || box.y1 > size.h - 4)
-            return []
-          if (placed.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1))
-            return []
+          // Busiest first: a label may cover a quieter dot (still clickable under it), never a
+          // busier one, so the leading sources get their labels first.
+          placed.push({ x0: p.x - r - 1, y0: p.y - r - 1, x1: p.x + r + 1, y1: p.y + r + 1 })
+          const candidates: Box[] = [
+            { x0: p.x + r + 4, y0: p.y - 9, x1: p.x + r + 4 + w, y1: p.y + 9 },
+            { x0: p.x - r - 4 - w, y0: p.y - 9, x1: p.x - r - 4, y1: p.y + 9 },
+            { x0: p.x - w / 2, y0: p.y - r - 22, x1: p.x + w / 2, y1: p.y - r - 4 },
+            { x0: p.x - w / 2, y0: p.y + r + 4, x1: p.x + w / 2, y1: p.y + r + 22 },
+            // Diagonals, for the tight cluster around home at World scale.
+            { x0: p.x + r, y0: p.y - r - 20, x1: p.x + r + w, y1: p.y - r - 2 },
+            { x0: p.x - r - w, y0: p.y - r - 20, x1: p.x - r, y1: p.y - r - 2 },
+            { x0: p.x + r, y0: p.y + r + 2, x1: p.x + r + w, y1: p.y + r + 20 },
+            { x0: p.x - r - w, y0: p.y + r + 2, x1: p.x - r, y1: p.y + r + 20 },
+          ]
+          const box = candidates.find(
+            (c) =>
+              c.x0 >= 0 &&
+              c.y0 >= pad.top &&
+              c.x1 <= size.w - 4 &&
+              c.y1 <= size.h - 4 &&
+              !placed.some((b) => b.x0 < c.x1 && c.x0 < b.x1 && b.y0 < c.y1 && c.y0 < b.y1),
+          )
+          if (!box) return []
           placed.push(box)
           return [
             <span
