@@ -41,6 +41,7 @@ openssl rand -base64 32
 | `REDIS_DEMO_PASSWORD` | `redis`, `demo` | Redis `demo` user. It can only `XADD` to `events:*`. |
 | `SESSION_SECRET` | `api` | Signs the dashboard session cookie (at least 32 bytes). See [Dashboard authentication](#dashboard-authentication). |
 | `ADMIN_PASSWORD_HASH` | `api` | Argon2 hash of the dashboard password. A hash, not a password, but treat it as a secret. |
+| `SETTINGS_ENCRYPTION_KEY` | `api`, `ingest` | Optional. Encrypts the enrichment API keys you enter on the Settings page. Make it with `openssl rand -base64 32` (at least 32 random bytes). See [Enrichment keys in Settings](#enrichment-keys-in-settings). |
 
 Each of the eleven sensors has its own Redis secret, `REDIS_SENSOR_<NAME>_PASSWORD`, for SSH, Telnet, RDP, web, Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP. To rotate secrets, see [Deployment](deployment.md#rotating-secrets).
 
@@ -175,6 +176,7 @@ The geolocation data has a licence that requires credit. See [Data sources and a
 | `GEOIP_DIR` | `/data/geoip` | Folder for the downloaded MMDB files |
 | `GEOIP_REFRESH_DAYS` | `30` | Re-download a database when it is older than this (at least 1) |
 | `GEOIP_FAKE_FOR_PRIVATE` | `false` | Give private and documentation addresses a fake country. For demo screenshots only. |
+| `SETTINGS_ENCRYPTION_KEY` | empty | Enables entering the keys below on the Settings page. See [Enrichment keys in Settings](#enrichment-keys-in-settings). |
 | `MAXMIND_ACCOUNT_ID` | empty | MaxMind account ID for GeoLite2 downloads |
 | `MAXMIND_LICENSE_KEY` | empty | MaxMind licence key. Optional. |
 | `ABUSEIPDB_API_KEY` | empty | AbuseIPDB key. Without it, no lookups. |
@@ -184,6 +186,17 @@ The geolocation data has a licence that requires credit. See [Data sources and a
 | `REPUTATION_MIN_EVENTS` | `10` | An address is looked up only after this many events |
 | `REPUTATION_INTERVAL_S` | `30` | Seconds between reputation cycles (at least 5) |
 | `RULES_DIR` | `ingest/rules` (`/app/rules` in the image) | Folder with the tagging rules (`*.yaml`) |
+
+### Enrichment keys in Settings
+
+You can enter, replace and remove the AbuseIPDB, GreyNoise and MaxMind keys on the Settings page, with no restart.
+
+1. Generate an encryption key and add it to `.env`: `SETTINGS_ENCRYPTION_KEY=$(openssl rand -base64 32)`. Then run `docker compose up -d` so `api` and `ingest` see it. Without it, the Settings page shows the keys as read-only and says why.
+2. On the Settings page, choose **Set key** (or **Replace**) for a provider, paste the key and type the admin password to confirm. The key is encrypted before it is stored and is never shown again, only its last four characters.
+3. Ingest checks for changes every 30 seconds, so a new key is used within a minute. A new MaxMind key also starts a database download.
+4. **Test key** makes one real call to the provider and counts it against the daily quota. The result appears on the page.
+
+A key set in Settings overrides the same key in `.env`. Remove it and the `.env` key is used again. The page shows where each key comes from. If you change or lose `SETTINGS_ENCRYPTION_KEY`, the saved keys cannot be decrypted: the page says so, and the `.env` keys keep working until you enter the keys again. See [Security](SECURITY.md) for the threat model.
 
 ## SSH sensor
 

@@ -170,6 +170,8 @@ services:
       MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
       ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
       GREYNOISE_API_KEY: ${GREYNOISE_API_KEY:-}
+      # Decrypts the keys saved from the Settings page (empty = only the .env keys are used).
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
       ABUSEIPDB_DAILY_QUOTA: ${ABUSEIPDB_DAILY_QUOTA:-1000}
       GREYNOISE_DAILY_QUOTA: ${GREYNOISE_DAILY_QUOTA:-50}
       REPUTATION_MIN_EVENTS: ${REPUTATION_MIN_EVENTS:-10}
@@ -222,6 +224,8 @@ services:
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?ADMIN_PASSWORD_HASH must be set in .env (docker compose run --rm api python -m api.hashpw)}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env (openssl rand -base64 48)}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      # Encrypts the enrichment keys entered in Settings (empty = editing them there is disabled).
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       LOGIN_RATE: ${LOGIN_RATE:-5}
       LOGIN_RATE_GLOBAL: ${LOGIN_RATE_GLOBAL:-30}

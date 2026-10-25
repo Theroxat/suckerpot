@@ -36,12 +36,13 @@ Keep the dashboard port private anyway. Login is one layer, not the only one.
 | An attacker escapes a container | Non-root users, dropped capabilities, read-only file systems, no new privileges |
 | An attacker reaches the database or the internet from a sensor | Sensors reach Redis only. Redis accepts only `XADD` from the sensor user. |
 | An attacker uses a stolen queue credential | Each service has its own Redis user with the fewest commands it needs. A sensor can write only to its own stream, and ingest checks the `sensor` field against the stream. |
-| An attacker uses the API to change data | The API connects as a read-only database role |
+| An attacker uses the API to change data | The API connects as a database role that is read-only, except for the encrypted provider keys it manages (see [Provider keys set in Settings](#provider-keys-set-in-settings)) |
 | An attacker reaches the internet from the API | Masquerading is off and the API resolves no external names. This is not a full block: host or hypervisor egress filtering is also required. See below. |
 | An attacker floods the sensors or fills the disk | Connection caps, timeouts, memory budgets and event rate limits in every sensor. Stream length cap and Redis memory limit. Size limits on events. Retention and a database size guard. |
 | A sensor hangs and Docker does not restart it | A watchdog thread in each sensor exits the process when the event loop stalls |
 | An attacker abuses the dashboard | Login with an argon2 hash, signed `HttpOnly` `Secure` `SameSite=Strict` cookies, CSRF protection, rate-limited login. Keep the port private as well. |
 | The project is used to attack others | No offensive behaviour (see below) |
+| Someone gets a copy of the database (backup, dump, stolen volume) | Provider keys in it are encrypted with AES-256-GCM. The encryption key lives only in `.env` (`SETTINGS_ENCRYPTION_KEY`). A dump alone reveals nothing. |
 | Secrets leak into the public repo | Repo hygiene rules, `.gitignore`, secret scanning (see below) |
 
 ## Controls
@@ -111,9 +112,22 @@ A compromised sensor has no route to the internet (masquerading is off), but wit
 
 - The owner role is used only by the database container and by the migration step.
 - `suckerpot_ingest` can insert events and write sessions. It cannot read other tables, change the schema, or create roles.
-- `suckerpot_api` can only read `events` and `sessions`.
+- `suckerpot_api` can only read the event, session and enrichment tables. It can also read and write the encrypted provider keys (`provider_secrets`) and queue key tests (`provider_test_requests`), and nothing else.
+- `suckerpot_ingest` can read `provider_secrets` (to use the keys) but never write it.
 - Both application roles have a statement timeout (30 s for ingest, 5 s for the API), so a slow query cannot hold the database.
 - The role passwords come from `.env`. The `migrate` service sets them on every run as SCRAM-SHA-256 verifiers, so a rotation is one `docker compose run --rm migrate`, and the clear text never reaches the database logs.
+
+### Provider keys set in Settings
+
+The admin can enter the AbuseIPDB, GreyNoise and MaxMind keys on the Settings page instead of in `.env`.
+
+- **Write-only.** A key is never sent back to the browser. The page and the API show only where the key comes from (`.env` or Settings), its last four characters and when it changed.
+- **Encrypted at rest.** The key is encrypted with AES-256-GCM before it reaches the database. The data key is derived with HKDF-SHA256 from `SETTINGS_ENCRYPTION_KEY` (at least 32 random bytes, base64). The provider name is bound to the ciphertext, so a row cannot be moved to another provider, and any change to the stored bytes is detected when ingest decrypts them.
+- **What an attacker needs.** A database dump alone does not reveal the keys. Someone who has both the database and `.env` does, and so does anyone who can run code in the `api` or `ingest` containers. Treat `SETTINGS_ENCRYPTION_KEY` like the other secrets in `.env`. If you lose or change it, the saved keys cannot be read again and you enter them again. Without it, editing is disabled and the keys in `.env` keep working.
+- **Who can change them.** Setting, replacing or removing a key needs the session cookie, the CSRF token, a same-origin request and the admin password again (checked with argon2, and rate limited with its own budget so it cannot be used to guess the password around the login limit).
+- **Audit.** Every change writes a line to the API log with the provider, the action, the time and the account. It never contains the key or the password.
+- **No key in an error.** Validation errors do not echo the submitted values. Keys are checked for length and printable ASCII, and are never written to a log line, an exception message or a status row.
+- **Least privilege.** The API role may write `provider_secrets`. The ingest role may only read it. The API still has no internet access: "Test key" leaves a request in the database, and ingest makes the one real call and spends one unit of the provider's daily quota.
 
 ### Secrets policy
 
