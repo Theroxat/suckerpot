@@ -131,7 +131,7 @@ async def run() -> None:
     feature_workers: list[FeatureWorker] = [
         AttackCatalogWorker(features),
         CampaignWorker(features),
-        BlocklistWorker(features),
+        BlocklistWorker(features, factory),
         ScriptWorker(features),
         ExplainerWorker(features),
         AlertWorker(features),
