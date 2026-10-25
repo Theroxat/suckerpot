@@ -34,6 +34,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_db.models import EventRow, SessionRow
 
+from api.benign import visible_events, visible_sessions
 from api.schemas import LiveEvent, LiveStats, SensorCounts
 from api.sensors import SENSOR_LABELS, SENSORS
 
@@ -337,6 +338,7 @@ _LIVE_COLUMNS = (
     EventRow.abuse_score,
     EventRow.known_scanner,
     EventRow.tags,
+    EventRow.benign,
 )
 
 
@@ -358,6 +360,7 @@ def row_to_live(row: Any) -> LiveEvent:
         abuse_score=row.abuse_score,
         known_scanner=row.known_scanner,
         tags=list(row.tags or []),
+        benign=bool(getattr(row, "benign", None)),
     )
 
 
@@ -372,9 +375,16 @@ def rows_to_live(rows: Sequence[Any]) -> list[LiveEvent]:
     return out
 
 
-async def fetch_recent(session: AsyncSession, limit: int = BACKFILL_SIZE) -> list[LiveEvent]:
-    """Newest events first."""
-    stmt = select(*_LIVE_COLUMNS).order_by(EventRow.id.desc()).limit(limit)
+async def fetch_recent(
+    session: AsyncSession, limit: int = BACKFILL_SIZE, *, include_benign: bool = True
+) -> list[LiveEvent]:
+    """Newest events first (research-scanner events only when ``include_benign``)."""
+    stmt = (
+        select(*_LIVE_COLUMNS)
+        .where(*visible_events(include_benign))
+        .order_by(EventRow.id.desc())
+        .limit(limit)
+    )
     return rows_to_live((await session.execute(stmt)).all())
 
 
@@ -384,19 +394,19 @@ async def fetch_after(session: AsyncSession, last_id: int, limit: int = POLL_LIM
     return list((await session.execute(stmt.limit(limit))).all())
 
 
-async def fetch_stats(session: AsyncSession) -> LiveStats:
+async def fetch_stats(session: AsyncSession, *, include_benign: bool = True) -> LiveStats:
     since = datetime.now(UTC) - timedelta(seconds=60)
     ev = (
         await session.execute(
             select(EventRow.sensor, func.count())
-            .where(EventRow.ts >= since)
+            .where(EventRow.ts >= since, *visible_events(include_benign))
             .group_by(EventRow.sensor)
         )
     ).all()
     ses = (
         await session.execute(
             select(SessionRow.sensor, func.count())
-            .where(SessionRow.started_at >= since)
+            .where(SessionRow.started_at >= since, *visible_sessions(include_benign))
             .group_by(SessionRow.sensor)
         )
     ).all()
@@ -425,6 +435,7 @@ class ClientQueue:
         self.dropped = 0
         self.closed = False
         self.ip = ""
+        self.include_benign = True
         self._wake = asyncio.Event()
 
     def put(self, item: Item) -> None:
@@ -465,14 +476,16 @@ class LiveHub:
         self.queue_size = queue_size
         self.clients: set[ClientQueue] = set()
         self.per_ip: dict[str, int] = {}
-        self.latest_stats: str | None = None
+        self.latest_stats: str | None = None  # with research scanners
+        self.latest_stats_visible: str | None = None  # without them
         self.backfill_sem = asyncio.Semaphore(BACKFILL_CONCURRENCY)
 
-    def add(self, ip: str = "") -> ClientQueue | None:
+    def add(self, ip: str = "", *, include_benign: bool = True) -> ClientQueue | None:
         if len(self.clients) >= self.max_clients or self.per_ip.get(ip, 0) >= self.max_per_ip:
             return None
         q = ClientQueue(self.queue_size)
         q.ip = ip
+        q.include_benign = include_benign
         self.clients.add(q)
         self.per_ip[ip] = self.per_ip.get(ip, 0) + 1
         return q
@@ -489,13 +502,25 @@ class LiveHub:
     def broadcast_event(self, event: LiveEvent) -> None:
         payload = json.dumps({"kind": "event", "event": event.model_dump(mode="json")})
         for q in self.clients:
-            q.put((event.id, payload))
+            if q.include_benign or not event.benign:
+                q.put((event.id, payload))
 
-    def broadcast_stats(self, stats: LiveStats) -> None:
-        payload = json.dumps({"kind": "stats", "stats": stats.model_dump(mode="json")})
-        self.latest_stats = payload
+    def stats_payload(self, include_benign: bool) -> str | None:
+        """The latest stats frame for a client that does (or does not) want research scanners."""
+        return self.latest_stats if include_benign else self.latest_stats_visible
+
+    def broadcast_stats(self, stats: LiveStats, visible: LiveStats | None = None) -> None:
+        """``stats`` counts everything; ``visible`` (default: the same) leaves scanners out."""
+
+        def frame(value: LiveStats) -> str:
+            return json.dumps({"kind": "stats", "stats": value.model_dump(mode="json")})
+
+        self.latest_stats = frame(stats)
+        self.latest_stats_visible = frame(visible) if visible is not None else self.latest_stats
         for q in self.clients:
-            q.put((None, payload))
+            payload = self.stats_payload(q.include_benign)
+            if payload is not None:
+                q.put((None, payload))
 
     def close_all(self) -> None:
         for q in list(self.clients):
@@ -535,7 +560,9 @@ class LivePoller:
 
     async def stats_once(self) -> None:
         async with self.factory() as session:
-            self.hub.broadcast_stats(await fetch_stats(session))
+            everything = await fetch_stats(session)
+            visible = await fetch_stats(session, include_benign=False)
+            self.hub.broadcast_stats(everything, visible)
 
     def _log_error(self, what: str) -> None:
         now = time.monotonic()
@@ -683,7 +710,8 @@ async def live(ws: WebSocket) -> None:
         return
     await ws.accept()
     # Register first so nothing is missed between the backfill query and the first tick.
-    q = hub.add(ws.client.host if ws.client else "")
+    include_benign = ws.query_params.get("include_benign", "").lower() in ("1", "true")
+    q = hub.add(ws.client.host if ws.client else "", include_benign=include_benign)
     if q is None:
         await ws.close(code=1013)
         return
@@ -691,15 +719,16 @@ async def live(ws: WebSocket) -> None:
     tasks: set[asyncio.Task[Any]] = set()
     try:
         async with hub.backfill_sem, ws.app.state.session_factory() as session:
-            backfill = await fetch_recent(session)
+            backfill = await fetch_recent(session, include_benign=include_benign)
         max_id = max((e.id for e in backfill), default=0)
         await ws.send_text(
             json.dumps(
                 {"kind": "backfill", "events": [e.model_dump(mode="json") for e in backfill]}
             )
         )
-        if hub.latest_stats:
-            await ws.send_text(hub.latest_stats)
+        latest = hub.stats_payload(include_benign)
+        if latest:
+            await ws.send_text(latest)
         tasks = {
             asyncio.create_task(_sender(ws, q, max_id)),
             asyncio.create_task(_receiver(ws, q)),

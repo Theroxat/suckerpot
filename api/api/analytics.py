@@ -21,6 +21,7 @@ from api.analytics_schemas import (
     TopField,
     TopStats,
 )
+from api.benign import IncludeBenign
 from api.cursor import InvalidCursorError
 from api.deps import DbSession
 from api.schemas import SessionOut
@@ -62,13 +63,14 @@ async def stats_timeseries(
     since: AwareDatetime | None = None,
     until: AwareDatetime | None = None,
     sensor: SensorFilter = None,
+    include_benign: IncludeBenign = False,
 ) -> Timeseries:
     window = _window(since, until)
     try:
         q.check_point_count(window, bucket)
     except WindowError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    points = await q.timeseries(db, bucket, window, sensor)
+    points = await q.timeseries(db, bucket, window, sensor, include_benign)
     return Timeseries(bucket=bucket, since=window.since, until=window.until, points=points)
 
 
@@ -80,9 +82,10 @@ async def stats_top(
     until: AwareDatetime | None = None,
     sensor: SensorFilter = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
+    include_benign: IncludeBenign = False,
 ) -> TopStats:
     window = _window(since, until)
-    total, items = await q.top(db, field, window, sensor, limit)
+    total, items = await q.top(db, field, window, sensor, limit, include_benign=include_benign)
     return TopStats(field=field, total=total, items=items)
 
 
@@ -92,9 +95,10 @@ async def stats_heatmap(
     since: AwareDatetime | None = None,
     until: AwareDatetime | None = None,
     sensor: SensorFilter = None,
+    include_benign: IncludeBenign = False,
 ) -> Heatmap:
     window = _window(since, until, default_days=7)
-    cells = await q.heatmap(db, window, sensor)
+    cells = await q.heatmap(db, window, sensor, include_benign)
     return Heatmap(since=window.since, until=window.until, cells=cells)
 
 
@@ -110,6 +114,7 @@ async def list_attackers(
     sensor: SensorFilter = None,
     tag: TagFilter | None = None,
     prefix: Annotated[IpPrefix | None, Query(alias="q")] = None,
+    include_benign: IncludeBenign = False,
 ) -> AttackerPage:
     try:
         items, next_cursor = await q.list_attackers(
@@ -123,6 +128,7 @@ async def list_attackers(
             sensor=sensor,
             tag=tag,
             q=prefix,
+            include_benign=include_benign,
         )
     except InvalidCursorError as exc:
         raise HTTPException(status_code=400, detail="invalid cursor") from exc
@@ -150,10 +156,11 @@ async def list_asns(
     sort: Literal["sessions", "ips", "events"] = "sessions",
     limit: Limit = 50,
     since: AwareDatetime | None = None,
+    include_benign: IncludeBenign = False,
 ) -> AsnList:
     if since is not None:
         try:
             since = since.astimezone(UTC)
         except (OverflowError, ValueError) as exc:
             raise HTTPException(status_code=422, detail="timestamp out of range") from exc
-    return AsnList(items=await q.list_asns(db, sort, limit, since))
+    return AsnList(items=await q.list_asns(db, sort, limit, since, include_benign))

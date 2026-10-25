@@ -39,6 +39,7 @@ from api.analytics_schemas import (
     TopItem,
     ValueCount,
 )
+from api.benign import visible_events, visible_sessions
 from api.cursor import InvalidCursorError, decode_cursor, encode_cursor
 from api.sensors import SENSORS
 
@@ -122,6 +123,7 @@ def _bucket_stmt(
     bucket: str,
     window: Window,
     sensor: Sequence[str] | None,
+    visible: Sequence[ColumnElement[bool]] = (),
 ) -> Select[Any]:
     interval, step = BUCKET_SQL[bucket]
     b = func.time_bucket(literal_column(interval), ts_col)
@@ -132,26 +134,43 @@ def _bucket_stmt(
     )
     if sensor is not None:
         stmt = stmt.where(sensor_col.in_(sensor))
-    return stmt
+    return stmt.where(*visible)
 
 
-def events_bucket_stmt(bucket: str, window: Window, sensor: Sequence[str] | None) -> Select[Any]:
-    return _bucket_stmt(EventRow.ts, EventRow.sensor, bucket, window, sensor)
+def events_bucket_stmt(
+    bucket: str, window: Window, sensor: Sequence[str] | None, include_benign: bool = True
+) -> Select[Any]:
+    return _bucket_stmt(
+        EventRow.ts, EventRow.sensor, bucket, window, sensor, visible_events(include_benign)
+    )
 
 
-def sessions_bucket_stmt(bucket: str, window: Window, sensor: Sequence[str] | None) -> Select[Any]:
-    return _bucket_stmt(SessionRow.started_at, SessionRow.sensor, bucket, window, sensor)
+def sessions_bucket_stmt(
+    bucket: str, window: Window, sensor: Sequence[str] | None, include_benign: bool = True
+) -> Select[Any]:
+    return _bucket_stmt(
+        SessionRow.started_at,
+        SessionRow.sensor,
+        bucket,
+        window,
+        sensor,
+        visible_sessions(include_benign),
+    )
 
 
 async def timeseries(
-    db: AsyncSession, bucket: str, window: Window, sensor: Sequence[str] | None
+    db: AsyncSession,
+    bucket: str,
+    window: Window,
+    sensor: Sequence[str] | None,
+    include_benign: bool = True,
 ) -> list[TimeseriesPoint]:
     starts = bucket_starts(window, BUCKET_SQL[bucket][1])
     ev: dict[datetime, dict[str, int]] = {s: {} for s in starts}
     se: dict[datetime, dict[str, int]] = {s: {} for s in starts}
     for stmt, acc in (
-        (events_bucket_stmt(bucket, window, sensor), ev),
-        (sessions_bucket_stmt(bucket, window, sensor), se),
+        (events_bucket_stmt(bucket, window, sensor, include_benign), ev),
+        (sessions_bucket_stmt(bucket, window, sensor, include_benign), se),
     ):
         for b, name, n in (await db.execute(stmt)).all():
             slot = acc.get(b.astimezone(UTC))
@@ -209,6 +228,7 @@ def top_stmt(
     limit: int,
     *,
     src_ip: str | None = None,
+    include_benign: bool = True,
 ) -> Select[Any]:
     """Top values of ``field``.
 
@@ -219,7 +239,11 @@ def top_stmt(
     if field in SESSION_FIELDS:
         inner = select(
             _session_value(field).label("value"), SessionRow.started_at.label("ts")
-        ).where(SessionRow.started_at >= window.since, SessionRow.started_at < window.until)
+        ).where(
+            SessionRow.started_at >= window.since,
+            SessionRow.started_at < window.until,
+            *visible_sessions(include_benign),
+        )
         if sensor is not None:
             inner = inner.where(SessionRow.sensor.in_(sensor))
         if src_ip is not None:
@@ -230,6 +254,7 @@ def top_stmt(
             EventRow.ts >= window.since,
             EventRow.ts < window.until,
             EventRow.type.in_(types),
+            *visible_events(include_benign),
         )
         if sensor is not None:
             inner = inner.where(EventRow.sensor.in_(sensor))
@@ -260,9 +285,11 @@ async def top(
     limit: int,
     *,
     src_ip: str | None = None,
+    include_benign: bool = True,
 ) -> tuple[int, list[TopItem]]:
     """Return ``(total, items)``; ``total`` covers all values, not just the page."""
-    rows = (await db.execute(top_stmt(field, window, sensor, limit, src_ip=src_ip))).all()
+    stmt = top_stmt(field, window, sensor, limit, src_ip=src_ip, include_benign=include_benign)
+    rows = (await db.execute(stmt)).all()
     total = int(rows[0].total) if rows else 0
     items = [
         TopItem(
@@ -288,13 +315,16 @@ async def top_values(db: AsyncSession, field: str, ip: str, limit: int = 10) -> 
 # --------------------------------------------------------------------------- heatmap
 
 
-def heatmap_stmt(window: Window, sensor: Sequence[str] | None) -> Select[Any]:
+def heatmap_stmt(
+    window: Window, sensor: Sequence[str] | None, include_benign: bool = True
+) -> Select[Any]:
     local = func.timezone(literal_column("'UTC'"), EventRow.ts)
     dow = (extract("isodow", local) - 1).label("dow")
     hour = extract("hour", local).label("hour")
     stmt = (
         select(dow, hour, func.count().label("n"))
         .where(EventRow.ts >= window.since, EventRow.ts < window.until)
+        .where(*visible_events(include_benign))
         .group_by(dow, hour)
     )
     if sensor is not None:
@@ -303,9 +333,9 @@ def heatmap_stmt(window: Window, sensor: Sequence[str] | None) -> Select[Any]:
 
 
 async def heatmap(
-    db: AsyncSession, window: Window, sensor: Sequence[str] | None
+    db: AsyncSession, window: Window, sensor: Sequence[str] | None, include_benign: bool = True
 ) -> list[HeatmapCell]:
-    result = await db.execute(heatmap_stmt(window, sensor))
+    result = await db.execute(heatmap_stmt(window, sensor, include_benign))
     counts = {(int(r.dow), int(r.hour)): r.n for r in result}
     return [
         HeatmapCell(dow=d, hour=h, events=counts.get((d, h), 0))
@@ -341,6 +371,7 @@ def attackers_stmt(
     q: str | None = None,
     after: tuple[datetime | int, str] | None = None,
     ip: str | None = None,
+    include_benign: bool = True,
 ) -> Select[Any]:
     s = SessionRow
     keys = _sort_keys()
@@ -362,6 +393,7 @@ def attackers_stmt(
         func.max(s.abuse_score).label("abuse_score"),
         func.bool_or(s.known_scanner).label("known_scanner"),
     ).group_by(s.src_ip)
+    stmt = stmt.where(*visible_sessions(include_benign))
     if ip is not None:
         stmt = stmt.where(s.src_ip == ip)
     if country is not None:
@@ -466,6 +498,7 @@ async def list_attackers(
     sensor: Sequence[str] | None,
     tag: str | None,
     q: str | None,
+    include_benign: bool = True,
 ) -> tuple[list[Attacker], str | None]:
     after = parse_attacker_cursor(cursor, sort, order) if cursor is not None else None
     stmt = attackers_stmt(
@@ -478,6 +511,7 @@ async def list_attackers(
         tag=tag,
         q=q,
         after=after,
+        include_benign=include_benign,
     )
     rows = list((await db.execute(stmt)).all())
     page, more = rows[:limit], len(rows) > limit
@@ -522,7 +556,9 @@ async def ip_timeline(db: AsyncSession, ip: str, days: int = 30) -> list[DayCoun
 ASN_SORTS = ("sessions", "ips", "events")
 
 
-def asns_stmt(sort: str, limit: int, since: datetime | None) -> Select[Any]:
+def asns_stmt(
+    sort: str, limit: int, since: datetime | None, include_benign: bool = True
+) -> Select[Any]:
     s = SessionRow
     cols: dict[str, ColumnElement[Any]] = {
         "sessions": func.count(),
@@ -539,7 +575,7 @@ def asns_stmt(sort: str, limit: int, since: datetime | None) -> Select[Any]:
             cols["events"].label("events"),
             func.max(s.last_event_at).label("last_seen"),
         )
-        .where(s.asn.is_not(None))
+        .where(s.asn.is_not(None), *visible_sessions(include_benign))
         .group_by(s.asn)
         .order_by(cols[sort].desc(), s.asn)
         .limit(limit)
@@ -550,9 +586,9 @@ def asns_stmt(sort: str, limit: int, since: datetime | None) -> Select[Any]:
 
 
 async def list_asns(
-    db: AsyncSession, sort: str, limit: int, since: datetime | None
+    db: AsyncSession, sort: str, limit: int, since: datetime | None, include_benign: bool = True
 ) -> list[AsnItem]:
-    rows = (await db.execute(asns_stmt(sort, limit, since))).all()
+    rows = (await db.execute(asns_stmt(sort, limit, since, include_benign))).all()
     return [
         AsnItem(
             asn=r.asn,

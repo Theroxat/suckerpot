@@ -9,6 +9,7 @@ from sqlalchemy import Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db.models import EventRow, SessionRow
 
+from api.benign import visible_events, visible_sessions
 from api.insights_rules import EXPLOIT_TAGS, Counts, Facts, NewValue
 from api.trends import LOOKBACK, new_values
 
@@ -23,11 +24,16 @@ async def _counts(
     prev_since: datetime,
     since: datetime,
     until: datetime,
+    include_benign: bool = True,
 ) -> Counts:
     """Sessions per key in the current and the previous window (one pass)."""
     inner = (
         select(expr.label("k"), SessionRow.started_at.label("ts"))
-        .where(SessionRow.started_at >= prev_since, SessionRow.started_at < until)
+        .where(
+            SessionRow.started_at >= prev_since,
+            SessionRow.started_at < until,
+            *visible_sessions(include_benign),
+        )
         .subquery("c")
     )
     cur = func.count().filter(inner.c.ts >= since)
@@ -40,15 +46,25 @@ async def _counts(
     return {str(r.k): (r.cur, r.prev) for r in (await db.execute(stmt)).all()}
 
 
-async def gather_facts(db: AsyncSession, since: datetime, until: datetime) -> Facts:
+async def gather_facts(
+    db: AsyncSession, since: datetime, until: datetime, include_benign: bool = True
+) -> Facts:
     span = until - since
     prev_since = since - span
     facts = Facts(since=since, until=until)
+    ses_ok = visible_sessions(include_benign)
+    ev_ok = visible_events(include_benign)
 
-    facts.tags = await _counts(db, func.unnest(SessionRow.tags), prev_since, since, until)
-    facts.sensors = await _counts(db, SessionRow.sensor, prev_since, since, until)
-    facts.countries = await _counts(db, SessionRow.country, prev_since, since, until)
-    facts.asns = await _counts(db, SessionRow.asn.cast(Text), prev_since, since, until)
+    facts.tags = await _counts(
+        db, func.unnest(SessionRow.tags), prev_since, since, until, include_benign
+    )
+    facts.sensors = await _counts(db, SessionRow.sensor, prev_since, since, until, include_benign)
+    facts.countries = await _counts(
+        db, SessionRow.country, prev_since, since, until, include_benign
+    )
+    facts.asns = await _counts(
+        db, SessionRow.asn.cast(Text), prev_since, since, until, include_benign
+    )
     facts.total = (
         sum(c for c, _ in facts.sensors.values()),
         sum(p for _, p in facts.sensors.values()),
@@ -64,6 +80,7 @@ async def gather_facts(db: AsyncSession, since: datetime, until: datetime) -> Fa
                 SessionRow.login_success.is_(True),
                 SessionRow.started_at >= prev_since,
                 SessionRow.started_at < until,
+                *ses_ok,
             )
         )
     ).one()
@@ -72,7 +89,7 @@ async def gather_facts(db: AsyncSession, since: datetime, until: datetime) -> Fa
     top_ip = (
         await db.execute(
             select(func.host(SessionRow.src_ip).label("ip"), func.count().label("n"))
-            .where(SessionRow.started_at >= since, SessionRow.started_at < until)
+            .where(SessionRow.started_at >= since, SessionRow.started_at < until, *ses_ok)
             .group_by(SessionRow.src_ip)
             .order_by(func.count().desc(), func.host(SessionRow.src_ip))
             .limit(1)
@@ -87,6 +104,7 @@ async def gather_facts(db: AsyncSession, since: datetime, until: datetime) -> Fa
             EventRow.type == "login_attempt",
             EventRow.ts >= since,
             EventRow.ts < until,
+            *ev_ok,
         )
         .group_by(EventRow.src_ip, EventRow.sensor)
         .order_by(func.count().desc(), func.host(EventRow.src_ip), EventRow.sensor)
@@ -96,7 +114,7 @@ async def gather_facts(db: AsyncSession, since: datetime, until: datetime) -> Fa
     facts.brute_total = int(
         await db.scalar(
             select(func.count()).where(
-                EventRow.type == "login_attempt", EventRow.ts >= since, EventRow.ts < until
+                EventRow.type == "login_attempt", EventRow.ts >= since, EventRow.ts < until, *ev_ok
             )
         )
         or 0
@@ -113,6 +131,7 @@ async def gather_facts(db: AsyncSession, since: datetime, until: datetime) -> Fa
                 SessionRow.started_at >= since - LOOKBACK,
                 SessionRow.started_at < since,
                 SessionRow.tags.overlap(exploit_tags),
+                *ses_ok,
             )
             .subquery("s")
         )
@@ -120,7 +139,9 @@ async def gather_facts(db: AsyncSession, since: datetime, until: datetime) -> Fa
         facts.exploit_seen_before = {str(t) for (t,) in seen}
 
     for name in NEW_VALUE_FIELDS:
-        items = await new_values(db, name, since, until, NEW_VALUE_FETCH)
+        items = await new_values(
+            db, name, since, until, NEW_VALUE_FETCH, include_benign=include_benign
+        )
         facts.new_values[name] = [NewValue(i.value, i.count) for i in items]
     asn_new = facts.new_values.get("asn", [])
     if asn_new:

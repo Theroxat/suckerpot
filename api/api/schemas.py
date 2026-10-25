@@ -38,6 +38,9 @@ class SessionOut(BaseModel):
     client_tool: str | None = None
     techniques: list[str] = []
     campaign_id: int | None = None
+    #: A known research scanner (M19); ``scanner_name`` says which one.
+    benign: bool = False
+    scanner_name: str | None = None
 
 
 class EventOut(BaseModel):
@@ -110,6 +113,8 @@ class LiveEvent(BaseModel):
     abuse_score: int | None
     known_scanner: bool | None
     tags: list[str]
+    #: A known research scanner (M19). The feed hides these unless the client asked for them.
+    benign: bool = False
 
 
 class LiveStats(BaseModel):
