@@ -149,6 +149,7 @@
   --motion-card-duration: 320ms;
   --motion-card-distance: 8px;
   --motion-stagger: 60ms;
+  --motion-stagger-max: 5;
   --motion-page-duration: 200ms;
   --motion-page-distance: 4px;
 }

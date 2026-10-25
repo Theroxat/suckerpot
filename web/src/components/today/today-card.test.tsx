@@ -46,11 +46,23 @@ describe("TodayCard", () => {
     )
     const link = within(group).getByRole("link", { name: /Mirai loader over Telnet #41/ })
     expect(link).toHaveAttribute("href", "/campaigns/41")
-    expect(link).toHaveTextContent("1,204") // thousands separator
+    // A campaign's detail line already gives its sessions: no second, bare number.
+    expect(link).not.toHaveTextContent("1,204")
     expect(within(group).getByRole("link", { name: /See all campaigns/ })).toHaveAttribute(
       "href",
       "/campaigns",
     )
+  })
+
+  it("says what a number counts, with a thousands separator", () => {
+    mount(
+      card({
+        id: "happened",
+        items: [item({ kind: "sensor", value: "ssh", label: "Most targeted: SSH", detail: null })],
+      }),
+    )
+    const link = screen.getByRole("link", { name: /Most targeted: SSH/ })
+    expect(link).toHaveTextContent("1,204 sessions")
   })
 
   it("shows at most three items", () => {

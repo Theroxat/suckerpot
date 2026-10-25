@@ -35,12 +35,16 @@ function happened(includeBenign: boolean): TodayCardData {
   const withCommands = cur.filter((s) => s.commands > 0).length
   const change =
     prev.length >= 10 ? Math.round(((cur.length - prev.length) / prev.length) * 100) : 0
+  // Past a doubling, "15 times as many" reads faster than "1,415% more".
+  const ratio = prev.length >= 10 ? cur.length / prev.length : 0
   const trend =
-    change >= 25
-      ? `, ${change}% more than the day before`
-      : change <= -25
-        ? `, ${-change}% fewer than the day before`
-        : ""
+    ratio >= 2
+      ? `, ${Math.round(ratio)} times as many as the day before`
+      : change >= 25
+        ? `, ${change}% more than the day before`
+        : change <= -25
+          ? `, ${-change}% fewer than the day before`
+          : ""
   const tally = (pick: (s: (typeof cur)[number]) => string | string[] | null) => {
     const m = new Map<string, number>()
     for (const s of cur) {
