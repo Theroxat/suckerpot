@@ -82,7 +82,9 @@ async def run() -> None:
     geo = GeoManager(enrich, resolver, on_status=geo_status)
     reputation = ReputationWorker(factory, enrich)
     appliers.append(
-        lambda settings, changed: geo.apply_settings(settings, refresh="maxmind" in changed)
+        lambda settings, changed: geo.apply_settings(
+            settings, credentials_changed="maxmind" in changed
+        )
     )
     appliers.append(reputation.apply_settings)
 

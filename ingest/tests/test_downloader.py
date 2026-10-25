@@ -144,3 +144,38 @@ async def test_off_provider_never_connects(tmp_path: Path) -> None:
     s = settings(tmp_path, GEOIP_PROVIDER="off")
     mgr, _, seen = manager(s, lambda r: httpx.Response(500))
     assert await mgr.refresh_if_needed() is False and not seen
+
+
+async def test_key_change_does_not_redownload_fresh_files(tmp_path: Path) -> None:
+    city = gz_bytes(city_db(tmp_path / "c.mmdb"))
+    asn = gz_bytes(asn_db(tmp_path / "a.mmdb"))
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=city if "city" in req.url.path else asn)
+
+    s = settings(tmp_path)
+    mgr, _, seen = manager(s, handler)
+    assert await mgr.refresh_if_needed() is True
+    seen.clear()
+    mgr.apply_settings(s, credentials_changed=True)  # healthy, fresh files: nothing forced
+    assert await mgr.refresh_if_needed() is False and not seen
+
+
+async def test_key_change_retries_after_a_failed_download(tmp_path: Path) -> None:
+    city = gz_bytes(city_db(tmp_path / "c.mmdb"))
+    asn = gz_bytes(asn_db(tmp_path / "a.mmdb"))
+    state = {"fail": False}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if state["fail"]:
+            return httpx.Response(401)
+        return httpx.Response(200, content=city if "city" in req.url.path else asn)
+
+    s = settings(tmp_path)
+    mgr, _, seen = manager(s, handler)
+    assert await mgr.refresh_if_needed() is True
+    mgr.last_error = "city: HTTP 401"  # the last download failed for auth reasons
+    seen.clear()
+    mgr.apply_settings(s, credentials_changed=True)
+    assert await mgr.refresh_if_needed() is True and seen  # retried although files are fresh
+    assert mgr.last_error is None

@@ -138,11 +138,17 @@ class GeoManager:
         self._force = False
         self._wake = asyncio.Event()
 
-    def apply_settings(self, settings: EnrichmentSettings, *, refresh: bool) -> None:
-        """Hot-swap the settings. ``refresh`` asks for an immediate (re)download."""
+    def apply_settings(self, settings: EnrichmentSettings, *, credentials_changed: bool) -> None:
+        """Hot-swap the settings and look at the databases right away when a key changed.
+
+        Files that are missing (for example after switching provider) are downloaded, fresh
+        files are left alone. Only a previous failed download is retried even though the files
+        are fresh, so a key change can never force a full re-download of healthy databases.
+        """
         self.s = settings
-        if refresh:
-            self._force = True
+        if credentials_changed:
+            if self.last_error is not None:
+                self._force = True
             self._wake.set()
 
     def status(self) -> dict[str, Any]:
