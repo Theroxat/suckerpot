@@ -61,7 +61,7 @@ function CveSearch() {
         maxLength={100}
         placeholder="Search, e.g. redis or CVE-2026"
         aria-label="Search CVEs"
-        className="h-8 pl-8 text-xs md:text-xs"
+        className="h-8 pl-8 text-xs normal-nums md:text-xs"
       />
     </div>
   )
@@ -98,11 +98,11 @@ function SyncCard() {
           {s.sources.map((src) => (
             <li
               key={src.source}
-              className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5 first:pt-0 last:pb-0"
+              className="grid grid-cols-1 items-baseline gap-x-4 gap-y-1 py-2.5 first:pt-0 last:pb-0 sm:grid-cols-[10rem_minmax(0,1fr)_auto]"
             >
               <span className="text-sm font-medium text-fg">{SOURCE_LABELS[src.source]}</span>
               <span className="text-xs text-fg-muted">{describeSource(src)}</span>
-              <span className="w-full text-xs text-fg-subtle sm:w-auto">
+              <span className="text-xs text-fg-subtle sm:text-right">
                 {src.last_success_at ? (
                   <>
                     Updated <RelativeTime iso={src.last_success_at} className="text-xs" />

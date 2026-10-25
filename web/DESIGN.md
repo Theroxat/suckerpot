@@ -143,7 +143,7 @@ Read-only by design: a dashed note says settings live in `.env`. Four cards, eac
 
 ## CVE watch
 
-A ranked list of vulnerabilities under one plain-English finding ("3 new critical CVEs this week affect services we emulate"). Severity is a word plus a number, with an orange triangle for critical and high (never red: red is for severe events). KEV is a small outlined badge with a tooltip, relevance is three dots plus a word, and matched services are neutral chips. The detail panel shows the description, the CISA entry, the sessions of ours that match (links to the filtered Attacks view) and a "Propose a trap" button that copies a plain-text sheet: nothing is built from it. Feed status and the optional NVD and GitHub keys sit under the list. Everything fetched from the feeds is rendered as text.
+A ranked list of vulnerabilities under one plain-English finding ("3 new critical CVEs this week affect services we emulate"). Severity is a word plus a number: a filled orange triangle and a stronger word for critical, an outlined orange triangle for high, a neutral dot for medium and low (never red: red is for severe events). Feed prose (titles, descriptions, dates) uses `normal-nums`, because Inter's tabular figures also widen the hyphen ("pre - auth"). KEV is a small outlined badge with a tooltip, relevance is three dots plus a word, and matched services are neutral chips. The detail panel shows the description, the CISA entry, the sessions of ours that match (links to the filtered Attacks view) and a "Propose a trap" button that copies a plain-text sheet: nothing is built from it. Feed status and the optional NVD and GitHub keys sit under the list. Everything fetched from the feeds is rendered as text.
 
 ## Loading
 

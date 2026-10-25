@@ -150,17 +150,31 @@ export interface CveFindingInput {
   seen: number
 }
 
-/** The sentence at the top of the page. */
+/**
+ * The sentence at the top of the page. Every count in it is about the same set (new CVEs this
+ * week that match our services), so "3 critical" and "2 exploited" never read as overlapping.
+ */
 export function describeCves(f: CveFindingInput): string {
   if (f.relevant === 0) return "No new CVE this week affects the services we emulate."
-  const head =
-    f.critical > 0
-      ? `${plural(f.critical, "new critical CVE")} this week ${f.critical === 1 ? "affects" : "affect"} services we emulate`
-      : `${plural(f.relevant, "new CVE")} this week ${f.relevant === 1 ? "affects" : "affect"} services we emulate`
+  const verb = f.relevant === 1 ? "affects" : "affect"
+  let head: string
+  if (f.critical > 0 && f.critical === f.relevant) {
+    head = `${plural(f.critical, "new critical CVE")} this week ${verb} services we emulate`
+  } else {
+    head = `${plural(f.relevant, "new CVE")} this week ${verb} services we emulate`
+    if (f.critical > 0) head += `, ${f.critical} of them critical`
+  }
   const tail: string[] = []
-  if (f.kevRelevant > 0) tail.push(`${f.kevRelevant} already exploited in the wild (CISA KEV)`)
-  if (f.seen > 0) tail.push(`${f.seen} seen in our traffic`)
-  return tail.length > 0 ? `${head}: ${tail.join(", ")}.` : `${head}.`
+  if (f.kevRelevant > 0)
+    tail.push(
+      `${f.kevRelevant} ${f.kevRelevant === 1 ? "is" : "are"} already exploited in the wild (CISA KEV)`,
+    )
+  if (f.seen > 0) tail.push(`${f.seen} ${f.seen === 1 ? "was" : "were"} seen in our traffic`)
+  return tail.length > 0 ? `${head}. ${capitalize(tail.join(" and "))}.` : `${head}.`
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 const SENSOR_PORT: Record<string, string> = {

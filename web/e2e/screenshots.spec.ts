@@ -322,16 +322,26 @@ test("cve watch", async ({ page }, info) => {
   await page.goto("/cves")
   await expect(h1(page, "CVE watch")).toBeVisible()
   await expect(page.getByRole("list", { name: "CVEs" })).toBeVisible()
-  await expect(page.getByText(/new critical CVEs? this week/)).toBeVisible()
+  await expect(page.getByText(/new (critical )?CVEs? this week/)).toBeVisible()
   await settle(page)
   await shoot(page, "cves", info.project.name)
+
+  // The feed status card sits under the list.
+  await page.getByText("Feed status").scrollIntoViewIfNeeded()
+  await expect(page.getByRole("list", { name: "Feed sources" })).toBeVisible()
+  await settle(page)
+  await shoot(page, "cves-feeds", info.project.name)
 
   await page.goto("/cves?cve=CVE-2099-10001")
   await expect(page.getByRole("dialog")).toBeVisible()
   await expect(page.getByRole("dialog").getByRole("status", { name: "Loading" })).toHaveCount(0)
   await page.getByRole("button", { name: "Copy trap sheet" }).click()
   await expect(page.getByLabel("Trap sheet")).toBeVisible()
+  // Copying may scroll the panel; shoot it from its header.
+  await page.getByRole("dialog").evaluate((el) => el.scrollTo(0, 0))
   await shoot(page, "cves-detail", info.project.name)
+  await page.getByLabel("Trap sheet").scrollIntoViewIfNeeded()
+  await shoot(page, "cves-trap", info.project.name)
 })
 
 // Login (M8): the mock build treats everyone as signed in, the form itself is always reachable.
