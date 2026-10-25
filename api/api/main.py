@@ -16,20 +16,31 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from suckerpot_db import create_engine, create_session_factory
 
 from api import authz
+from api.alerts import router as alerts_router
 from api.analytics import router as analytics_router
+from api.attack import router as attack_router
 from api.audit_routes import router as audit_router
 from api.auth import AuthMiddleware, AuthService, AuthSettings, allowed_hosts_from_env
 from api.auth import router as auth_router
+from api.campaigns import router as campaigns_router
 from api.cves import router as cves_router
+from api.defend import router as defend_router
+from api.detections import router as detections_router
+from api.exposure import router as exposure_router
+from api.feeds import router as feeds_router
 from api.indicators import router as indicators_router
 from api.insights import router as insights_router
 from api.live import LiveHub, LivePoller, live_router
 from api.malware import router as malware_router
 from api.provider_keys import install as install_provider_keys
 from api.provider_keys import router as provider_keys_router
+from api.reports import router as reports_router
 from api.routes import health_router, router
+from api.scripts import router as scripts_router
+from api.search import router as search_router
 from api.settings import router as settings_router
 from api.spa import install_security_headers, install_spa
+from api.today import router as today_router
 from api.trends import router as trends_router
 from api.users import router as users_router
 
@@ -107,8 +118,22 @@ def create_app(
         provider_keys_router,
         users_router,
         audit_router,
+        campaigns_router,
+        attack_router,
+        defend_router,
+        detections_router,
+        exposure_router,
+        scripts_router,
+        alerts_router,
+        reports_router,
+        search_router,
+        today_router,
     ):
         include(api_router)
+    if os.environ.get("FEEDS_ENABLED", "false").strip().lower() in TRUE_VALUES:
+        # Machine-readable feeds authenticate with their own bearer token, not the dashboard
+        # session, so they live outside /api/v1 and outside the role check.
+        app.include_router(feeds_router, prefix="/feeds")
     install_provider_keys(app)
     app.state.hub = LiveHub()
 
