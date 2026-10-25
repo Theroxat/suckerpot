@@ -23,7 +23,7 @@ export function Section({
         <h2 id={`${id}-title`} className="text-lg font-semibold tracking-tight text-fg">
           {title}
         </h2>
-        <p className="text-sm text-fg-muted">{description}</p>
+        <p className="text-sm text-fg-muted normal-nums">{description}</p>
       </div>
       {children}
     </section>

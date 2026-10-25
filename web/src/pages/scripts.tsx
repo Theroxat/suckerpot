@@ -126,9 +126,11 @@ export function ScriptsPage() {
       <PageHeader
         title="Scripts"
         description={
-          summary.data
-            ? describeScripts(summary.data)
-            : "Every distinct command sequence attackers ran, explained."
+          <span className="normal-nums">
+            {summary.data
+              ? describeScripts(summary.data)
+              : "Every distinct command sequence attackers ran, explained."}
+          </span>
         }
       />
 
