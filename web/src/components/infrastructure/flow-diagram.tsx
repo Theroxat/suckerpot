@@ -6,6 +6,7 @@ import {
   buildFlow,
   maskDefanged,
   type FlowNode,
+  type GraphEdge,
   type InfrastructureGraph,
 } from "@/lib/infrastructure"
 
@@ -13,9 +14,10 @@ const W = 900
 const ROW = 30
 const PAD = 14
 const SRC_X = 170 // source dots; labels end just left of it
-const PILL_X = 480 // centre of the indicator pills
+const PILL_X = 462 // centre of the indicator pills
 const PILL_W = 250
-const FAM_X = 782 // family dots; labels start just right of it
+const FAM_X = 712 // family dots; labels start just right of it
+const FAM_CHARS = 26
 
 interface Placed<T> {
   node: T
@@ -26,6 +28,68 @@ function place(nodes: readonly FlowNode[], height: number): Placed<FlowNode>[] {
   const used = nodes.length * ROW
   const top = PAD + Math.max(0, (height - 2 * PAD - used) / 2)
   return nodes.map((node, i) => ({ node, y: top + i * ROW + ROW / 2 }))
+}
+
+/**
+ * Each family sits level with the indicators that point to it (weighted mean), pushed apart just
+ * enough to keep one row between labels. Lines to families then run nearly flat.
+ */
+function placeFamilies(
+  fams: readonly FlowNode[],
+  edges: readonly GraphEdge[],
+  indicatorY: ReadonlyMap<string, number>,
+  height: number,
+): Placed<FlowNode>[] {
+  const lo = PAD + ROW / 2
+  const hi = height - PAD - ROW / 2
+  const ys = fams.map((f, i) => {
+    let sum = 0
+    let total = 0
+    for (const e of edges) {
+      const y = e.target === f.id ? indicatorY.get(e.source) : undefined
+      if (y === undefined) continue
+      sum += y * e.weight
+      total += e.weight
+    }
+    return total > 0 ? sum / total : lo + i * ROW
+  })
+  for (let i = 0; i < ys.length; i++)
+    ys[i] = Math.max(ys[i] ?? lo, i > 0 ? (ys[i - 1] ?? lo) + ROW : lo)
+  for (let i = ys.length - 1; i >= 0; i--)
+    ys[i] = Math.min(ys[i] ?? hi, i < ys.length - 1 ? (ys[i + 1] ?? hi) - ROW : hi)
+  return fams.map((node, i) => ({ node, y: ys[i] ?? lo }))
+}
+
+/** Everything on the paths through `id`: upstream and downstream, never sideways. */
+function traced(id: string, edges: readonly GraphEdge[]): Set<string> {
+  const out = new Set([id])
+  const kind = id.slice(0, 2)
+  const next = (from: string, dir: "down" | "up") =>
+    edges.flatMap((e) =>
+      dir === "down" ? (e.source === from ? [e.target] : []) : e.target === from ? [e.source] : [],
+    )
+  if (kind === "s:") {
+    for (const i of next(id, "down")) {
+      out.add(i)
+      for (const f of next(i, "down")) out.add(f)
+    }
+  } else if (kind === "f:") {
+    for (const i of next(id, "up")) {
+      out.add(i)
+      for (const s of next(i, "up")) out.add(s)
+    }
+  } else {
+    for (const n of [...next(id, "up"), ...next(id, "down")]) out.add(n)
+  }
+  return out
+}
+
+/** The "severe" octagon, as in the threat-intelligence badge. */
+function octagon(cx: number, cy: number, r: number): string {
+  return Array.from({ length: 8 }, (_, i) => {
+    const a = (Math.PI / 4) * i + Math.PI / 8
+    return `${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`
+  }).join(" ")
 }
 
 function curve(x1: number, y1: number, x2: number, y2: number): string {
@@ -55,22 +119,25 @@ export function FlowDiagram({ graph, onOpenIndicator }: FlowDiagramProps) {
   const height = rows * ROW + 2 * PAD
   const src = place(flow.sources, height)
   const ind = place(flow.indicators, height)
-  const fam = place(flow.families, height)
+  const fam = placeFamilies(
+    flow.families,
+    flow.edges,
+    new Map(ind.map((p) => [p.node.id, p.y])),
+    height,
+  )
   const pos = new Map<string, { x: number; y: number }>()
   for (const { node, y } of src) pos.set(node.id, { x: SRC_X, y })
   for (const { node, y } of ind) pos.set(node.id, { x: PILL_X, y })
   for (const { node, y } of fam) pos.set(node.id, { x: FAM_X, y })
 
   const maxWeight = Math.max(1, ...flow.edges.map((e) => e.weight))
-  const connected = new Set<string>()
-  if (active) {
-    connected.add(active)
-    for (const e of flow.edges) {
-      if (e.source === active) connected.add(e.target)
-      if (e.target === active) connected.add(e.source)
-    }
-  }
-  const edgeOn = (s: string, t: string) => active !== null && (s === active || t === active)
+  const connected = active ? traced(active, flow.edges) : new Set<string>()
+  const edgeOn = (s: string, t: string) => connected.has(s) && connected.has(t)
+  const hover = (id: string) => ({
+    onMouseEnter: () => setActive(id),
+    onFocus: () => setActive(id),
+    onBlur: () => setActive(null),
+  })
 
   const hiddenBits = [
     flow.hidden.indicators > 0 ? plural(flow.hidden.indicators, "more indicator") : null,
@@ -100,7 +167,7 @@ export function FlowDiagram({ graph, onOpenIndicator }: FlowDiagramProps) {
                 key={`${e.source}>${e.target}`}
                 d={curve(x1, a.y, x2, b.y)}
                 stroke={on ? "var(--fg-muted)" : "var(--border-strong)"}
-                strokeOpacity={active && !on ? 0.25 : on ? 0.9 : 0.7}
+                strokeOpacity={active && !on ? 0.2 : on ? 1 : 0.7}
                 strokeWidth={0.8 + 2.4 * (e.weight / maxWeight)}
                 style={{ transition: "stroke-opacity 150ms, stroke 150ms" }}
               />
@@ -115,6 +182,7 @@ export function FlowDiagram({ graph, onOpenIndicator }: FlowDiagramProps) {
             y={y}
             masked={masked}
             dim={active !== null && !connected.has(node.id)}
+            hover={hover(node.id)}
             onOpen={() => void navigate(`/attackers/${encodeURIComponent(node.label)}`)}
           />
         ))}
@@ -136,13 +204,12 @@ export function FlowDiagram({ graph, onOpenIndicator }: FlowDiagramProps) {
                   onOpenIndicator(node.indicator_id)
                 }
               }}
-              onMouseEnter={() => setActive(node.id)}
-              onFocus={() => setActive(node.id)}
-              onBlur={() => setActive(null)}
+              {...hover(node.id)}
               className="cursor-pointer outline-none [&:focus-visible>rect]:stroke-[var(--ring)] [&:focus-visible>rect]:stroke-2"
-              opacity={dim ? 0.45 : 1}
+              opacity={dim ? 0.35 : 1}
               style={{ transition: "opacity 150ms" }}
             >
+              <title>{`${label}: open details`}</title>
               <rect
                 x={PILL_X - PILL_W / 2}
                 y={y - 12}
@@ -155,7 +222,7 @@ export function FlowDiagram({ graph, onOpenIndicator }: FlowDiagramProps) {
               />
               {known ? (
                 <polygon
-                  points={`${PILL_X - PILL_W / 2 + 12},${y - 5} ${PILL_X - PILL_W / 2 + 18},${y} ${PILL_X - PILL_W / 2 + 12},${y + 5} ${PILL_X - PILL_W / 2 + 6},${y}`}
+                  points={octagon(PILL_X - PILL_W / 2 + 12, y, 5)}
                   fill="var(--sev-severe)"
                 />
               ) : (
@@ -204,13 +271,16 @@ export function FlowDiagram({ graph, onOpenIndicator }: FlowDiagramProps) {
               if (ev.key === "Enter")
                 void navigate(`/infrastructure?family=${encodeURIComponent(node.label)}`)
             }}
-            className="cursor-pointer outline-none [&:focus-visible>text]:underline"
-            opacity={active !== null && !connected.has(node.id) ? 0.45 : 1}
+            {...hover(node.id)}
+            className="cursor-pointer outline-none [&:focus-visible>text]:underline [&:hover>text]:underline"
+            opacity={active !== null && !connected.has(node.id) ? 0.35 : 1}
             style={{ transition: "opacity 150ms" }}
           >
+            <title>{`${node.label}: show its indicators`}</title>
+            <rect x={FAM_X - 8} y={y - 12} width={W - FAM_X + 8} height={24} fill="transparent" />
             <circle cx={FAM_X} cy={y} r={4} fill="var(--fg-muted)" />
             <text x={FAM_X + 12} y={y + 4} fontSize={12} fill="var(--fg)">
-              {shorten(node.label, 16)}
+              {shorten(node.label, FAM_CHARS)}
             </text>
           </g>
         ))}
@@ -228,8 +298,8 @@ export function FlowDiagram({ graph, onOpenIndicator }: FlowDiagramProps) {
         </g>
       </svg>
       <figcaption className="mt-3 text-xs text-fg-muted">
-        Line width is the number of sessions. A diamond marks an indicator that threat intelligence
-        knows as malicious.
+        Line width is the number of sessions. A red octagon marks an indicator that threat
+        intelligence knows as malicious. Point at any node to trace its paths.
         {flow.hidden.sources > 0
           ? ` ${plural(flow.hidden.sources, "address", "addresses")} are folded into one node.`
           : ""}
@@ -247,20 +317,23 @@ function SourceNode({
   y,
   masked,
   dim,
+  hover,
   onOpen,
 }: {
   node: FlowNode
   y: number
   masked: boolean
   dim: boolean
+  hover: Pick<React.SVGProps<SVGGElement>, "onMouseEnter" | "onFocus" | "onBlur">
   onOpen: () => void
 }) {
   const folded = node.folded !== undefined
   const label = folded ? node.label : masked ? maskIp(node.label) : node.label
   return (
     <g
-      opacity={dim ? 0.45 : 1}
+      opacity={dim ? 0.35 : 1}
       style={{ transition: "opacity 150ms" }}
+      {...hover}
       {...(folded
         ? {}
         : {
@@ -275,6 +348,7 @@ function SourceNode({
               "cursor-pointer outline-none [&:focus-visible>rect]:stroke-[var(--ring)] [&:focus-visible>rect]:stroke-2",
           })}
     >
+      <title>{folded ? label : `${label}: open its profile`}</title>
       <rect x={0} y={y - 12} width={SRC_X + 12} height={24} fill="transparent" rx={4} />
       <circle
         cx={SRC_X}

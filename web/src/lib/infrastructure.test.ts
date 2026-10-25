@@ -173,3 +173,47 @@ describe("buildFlow", () => {
     expect(empty.indicators).toEqual([])
   })
 })
+
+describe("buildFlow ordering", () => {
+  const node = (id: string, kind: GraphNode["kind"], weight = 1): GraphNode => ({
+    id,
+    kind,
+    label: id.slice(2),
+    weight,
+  })
+  const g: InfrastructureGraph = {
+    window_hours: 168,
+    truncated: false,
+    summary: summary(),
+    nodes: [
+      node("i:a", "indicator", 3),
+      node("i:b", "indicator", 2),
+      node("f:late", "family", 9),
+      node("f:early", "family", 1),
+      node("s:1", "source"),
+      node("s:2", "source"),
+      node("s:3", "source"),
+    ],
+    edges: [
+      // s:1 and s:2 (the busiest) only use the second indicator, s:3 the first.
+      { source: "s:1", target: "i:b", weight: 5 },
+      { source: "s:1", target: "i:a", weight: 1 },
+      { source: "s:2", target: "i:b", weight: 4 },
+      { source: "s:3", target: "i:a", weight: 1 },
+      { source: "i:a", target: "f:early", weight: 1 },
+      { source: "i:b", target: "f:late", weight: 1 },
+    ],
+  }
+
+  it("places addresses and families next to the indicators they use", () => {
+    const flow = buildFlow(g)
+    expect(flow.indicators.map((n) => n.id)).toEqual(["i:a", "i:b"])
+    expect(flow.sources.map((n) => n.id)).toEqual(["s:3", "s:1", "s:2"])
+    expect(flow.families.map((n) => n.id)).toEqual(["f:early", "f:late"])
+  })
+
+  it("keeps the folded node last", () => {
+    const flow = buildFlow(bigGraph(200, 40))
+    expect(flow.sources.at(-1)?.folded).toBeGreaterThan(0)
+  })
+})
