@@ -267,6 +267,13 @@ def _join(phrases: list[str]) -> str:
     return ", ".join(shown[:-1]) + " and " + shown[-1]
 
 
+def _sequence(items: list[str]) -> str:
+    """ "a, b, then c": commas, and one final "then"."""
+    if len(items) <= 1:
+        return "".join(items)
+    return ", ".join(items[:-1]) + ", then " + items[-1] if len(items) > 2 else " then ".join(items)
+
+
 def _line(text: Any) -> str:
     return _ESCAPE.sub(" ", str(text))[:LINE_CHARS]
 
@@ -385,7 +392,7 @@ async def campaign_story(db: DbSession, campaign_id: CampaignId) -> CampaignStor
         )
     ).all()
     hosts = [_defang("payload_host", h) for h in host_rows]
-    labels = " then ".join(s.label.lower() for s in stages)
+    labels = _sequence([s.label.lower() for s in stages])
     headline = (
         f"{row.sessions:,} sessions from {row.sources:,} "
         f"{'address' if row.sources == 1 else 'addresses'} followed the same playbook"

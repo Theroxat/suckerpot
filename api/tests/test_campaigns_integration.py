@@ -217,7 +217,10 @@ async def test_detail_story_timeline_sessions_and_indicators(client: httpx.Async
     execution = story["stages"][1]
     assert [t["id"] for t in execution["techniques"]] == ["T1059.004"]  # the parent is folded away
     assert execution["summary"] == "They typed shell commands."
-    assert story["headline"].startswith("5 sessions from 4 addresses followed the same playbook")
+    assert story["headline"] == (
+        "5 sessions from 4 addresses followed the same playbook: "
+        "looking around, running code, then bringing tools."
+    )
     assert story["counts"]["countries"] == 1
     assert any("192[.]0[.]2[.]66" in tip for tip in story["what_to_do"])
     assert story["excerpt"]["session_id"] == "s0"

@@ -3,6 +3,7 @@ import { useWindowVirtualizer } from "@tanstack/react-virtual"
 import { Crosshair, SearchX } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useSearchParams } from "react-router"
+import { CampaignName } from "@/components/campaigns/campaign-name"
 import { CountryFlag } from "@/components/country-flag"
 import { EmptyState } from "@/components/empty-state"
 import { FilterBar, SensorFilter } from "@/components/filter-bar"
@@ -142,7 +143,7 @@ export function AttacksPage() {
           {
             param: "campaign_id",
             label: "Campaign",
-            render: (v) => <span className="font-mono">#{v}</span>,
+            render: (v) => <CampaignName id={v} />,
           },
         ]}
       >
