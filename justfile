@@ -153,7 +153,12 @@ test-integration:
     set -euo pipefail
     # Use a throwaway compose project: the ingest tests reset the database roles'
     # passwords, which must never touch the real stack and its data volume.
-    it="{{project}}-it"
+    # One run at a time on this host (parallel worktrees share the Docker daemon), and a name that
+    # is unique per run and per checkout, so one run's cleanup can never tear down another's.
+    # It always carries a suffix: it can never be the live project name.
+    exec 9>/tmp/suckerpot-it.lock
+    flock 9
+    it="{{project}}-it-$(printf %s "$PWD" | sha256sum | cut -c1-6)-$$"
     trap 'docker compose -p "$it" down -v >/dev/null 2>&1' EXIT
     docker compose -p "$it" up -d --build --wait db redis
     {{just_executable()}} _cache
