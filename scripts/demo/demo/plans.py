@@ -125,14 +125,15 @@ def campaign_sha256(url: str) -> str | None:
 
 
 def synthetic_host(rng: random.Random) -> str:
-    """A throwaway malware host: a shared campaign host, a random-syllable domain or a public IP."""
+    """A throwaway malware host that can never be real: a shared campaign host, a documentation
+    address or a made-up name under a reserved TLD (``.example``, ``.test``)."""
     if rng.random() < CAMPAIGN_SHARE:
         return rng.choice(CAMPAIGN_HOSTS)
     if rng.random() < 0.3:
-        return random_public_ip(rng)
+        return f"{rng.choice(('192.0.2.', '198.51.100.', '203.0.113.'))}{rng.randint(1, 254)}"
     name = "".join(rng.choice(D.SYLLABLES) for _ in range(rng.randint(3, 5)))
     prefix = rng.choice(["", "", "cdn.", "dl.", "files."])
-    return f"{prefix}{name}.{rng.choice(D.TLDS)}"
+    return f"{prefix}{name}.{rng.choice(('example', 'test'))}"
 
 
 def _rand_alnum(rng: random.Random, n: int, alphabet: str) -> str:
