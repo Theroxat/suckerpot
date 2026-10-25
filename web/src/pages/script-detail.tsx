@@ -151,7 +151,11 @@ export function ScriptDetailPage() {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-fg-muted">
           {item.risk ? <SeverityBadge severity={item.risk} /> : null}
           {item.sensors.map((s) => (
-            <Link key={s} to={`/scripts?sensor=${s}`} className="rounded-sm hover:opacity-80">
+            <Link
+              key={s}
+              to={`/scripts?sensor=${encodeURIComponent(s)}`}
+              className="rounded-sm hover:opacity-80"
+            >
               <SensorBadge sensor={s} />
             </Link>
           ))}
