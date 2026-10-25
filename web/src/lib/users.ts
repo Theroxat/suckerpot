@@ -5,6 +5,8 @@
  */
 import { ApiError, API_BASE, sendJson, type Page } from "@/lib/api"
 import type { Role } from "@/lib/auth-api"
+import { PROVIDER_NAMES } from "@/lib/provider-keys"
+import type { ProviderId } from "@/lib/settings"
 
 export interface UserItem {
   /** Null for the owner account, which lives in `.env` and has no row. */
@@ -91,6 +93,12 @@ export function usersFinding(list: UserList, now: number = Date.now()): string {
 
 const text = (value: unknown) => (typeof value === "string" ? value : "?")
 
+/** "admin" reads as "administrator" in a sentence, like the role badges. */
+const roleWord = (value: unknown) => (value === "admin" ? "administrator" : text(value))
+
+/** "abuseipdb" reads as "AbuseIPDB", as on the Settings page. */
+const providerName = (id: string) => (id in PROVIDER_NAMES ? PROVIDER_NAMES[id as ProviderId] : id)
+
 /** What the actor did, to follow their name: "created the user colleague (viewer)". */
 export function describeAudit(e: AuditEntry): string {
   const who = e.target ?? "an account"
@@ -101,9 +109,9 @@ export function describeAudit(e: AuditEntry): string {
     case "password.change":
       return "changed their own password"
     case "user.create":
-      return `created the user ${who}${typeof d.role === "string" ? ` (${d.role})` : ""}`
+      return `created the user ${who}${typeof d.role === "string" ? ` (${roleWord(d.role)})` : ""}`
     case "user.role":
-      return `changed the role of ${who} from ${text(d.from)} to ${text(d.to)}`
+      return `changed the role of ${who} from ${roleWord(d.from)} to ${roleWord(d.to)}`
     case "user.disable":
       return `disabled ${who}`
     case "user.enable":
@@ -121,11 +129,11 @@ export function describeAudit(e: AuditEntry): string {
     case "user.delete":
       return `deleted the user ${who}`
     case "provider_key.set":
-      return `saved the ${who} key`
+      return `saved the ${providerName(who)} key`
     case "provider_key.remove":
-      return `removed the ${who} key`
+      return `removed the ${providerName(who)} key`
     case "provider_key.test":
-      return `tested the ${who} key`
+      return `tested the ${providerName(who)} key`
     default:
       return e.target ? `${e.action} on ${e.target}` : e.action
   }

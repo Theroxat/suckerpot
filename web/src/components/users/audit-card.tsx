@@ -74,7 +74,7 @@ export function AuditCard() {
           onChange={(e) => setTyped(e.target.value)}
           autoComplete="off"
           spellCheck={false}
-          className="h-8 w-44 font-mono text-xs"
+          className="h-8 w-44 font-mono text-xs placeholder:font-sans"
         />
       </div>
       {q.isPending ? (
@@ -105,7 +105,16 @@ export function AuditCard() {
                   className="row-start-2 text-xs lg:col-start-1 lg:row-start-1"
                 />
                 <span className="row-start-2 justify-self-end lg:col-start-3 lg:row-start-1">
-                  {e.ip ? <IPChip ip={e.ip} href={null} copyable={false} variant="ghost" /> : null}
+                  {e.ip ? (
+                    // Right-aligned: the ghost chip's left pull would make it truncate here.
+                    <IPChip
+                      ip={e.ip}
+                      href={null}
+                      copyable={false}
+                      variant="ghost"
+                      className="-mr-1.5 ml-0 max-w-none"
+                    />
+                  ) : null}
                 </span>
               </li>
             ))}

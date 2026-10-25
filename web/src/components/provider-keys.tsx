@@ -299,7 +299,7 @@ export function ProviderKeys({ e }: { e: EnrichmentSettings }) {
           envName="GITHUB_ADVISORY_TOKEN"
         />
       </ul>
-      <div className="space-y-1">
+      <div className="space-y-1 border-t pt-4">
         <h4 className="text-sm font-medium text-fg">Threat intelligence</h4>
         <p className="text-xs text-fg-muted">
           For the Infrastructure page. Only the indicator itself (a URL, host or file hash) is sent

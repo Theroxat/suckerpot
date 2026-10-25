@@ -12,14 +12,17 @@ let passwordChosen = false
 
 function me(): AuthUser {
   const mode = demoMode()
-  const viewer = mode === "viewer"
+  const who =
+    mode === "viewer"
+      ? { username: "colleague", display_name: "A Colleague", role: "viewer" as const }
+      : mode === "first-login"
+        ? { username: "jordan", display_name: "Jordan Lee", role: "viewer" as const }
+        : { username: "admin", display_name: "Admin", role: "admin" as const }
   return {
-    username: viewer ? "colleague" : "admin",
-    display_name: viewer ? "A Colleague" : "Admin",
-    role: viewer ? "viewer" : "admin",
+    ...who,
     is_owner: mode === "admin",
     must_change_password: mode === "first-login" && !passwordChosen,
-    read_only: viewer,
+    read_only: who.role === "viewer",
     last_login_at: daysAgo(1),
   }
 }

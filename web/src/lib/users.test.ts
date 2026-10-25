@@ -88,11 +88,11 @@ describe("describeAudit", () => {
       "created the user colleague (viewer)",
     )
     expect(describeAudit(entry("user.role", { details: { from: "viewer", to: "admin" } }))).toBe(
-      "changed the role of colleague from viewer to admin",
+      "changed the role of colleague from viewer to administrator",
     )
     expect(describeAudit(entry("user.revoke_sessions"))).toBe("signed colleague out everywhere")
     expect(describeAudit(entry("provider_key.set", { target: "abuseipdb" }))).toBe(
-      "saved the abuseipdb key",
+      "saved the AbuseIPDB key",
     )
     expect(describeAudit(entry("auth.login"))).toBe("signed in")
     expect(describeAudit(entry("user.locked"))).toBe("was locked after too many wrong passwords")

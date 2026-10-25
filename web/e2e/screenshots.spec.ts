@@ -518,6 +518,8 @@ test("settings audit", async ({ page }, info) => {
   await shoot(page, "settings-audit", info.project.name)
   await page.getByRole("radio", { name: "Users" }).click()
   await expect(page).toHaveURL(/audit_action=user\./)
+  // Wait for the filtered page itself, not the list that was there before the click.
+  await expect(page.getByText(/matching entries, the latest by/)).toBeVisible()
   await expect(audit.getByRole("listitem").first()).toBeVisible()
   await settle(page)
   await shoot(page, "settings-audit-filtered", info.project.name)
@@ -552,7 +554,7 @@ test("viewer shell", async ({ page }, info) => {
 })
 
 test("account menu", async ({ page }, info) => {
-  test.skip(!info.project.name.startsWith("desktop"), "the menu is part of the sidebar footer")
+  // Desktop: the sidebar footer row. Mobile: the avatar at the end of the top bar.
   await page.goto("/settings?as=viewer")
   await expect(h1(page, "Settings")).toBeVisible()
   await settle(page)
