@@ -14,9 +14,9 @@ const LIMIT = 5
 const sessions = [...buildFixtures(), ...buildBenignFixtures()].map((f) => f.session)
 
 const CAMPAIGNS = [
-  { id: 41, name: "Mirai loader over Telnet #41", sessions: 37, sources: 9, ageH: 3 },
-  { id: 17, name: "Crypto-miner dropper over SSH #17", sessions: 12, sources: 4, ageH: 9 },
-  { id: 8, name: "PHP2Shell sweep over Web #8", sessions: 58, sources: 21, ageH: 30 },
+  { id: 3, name: "Mirai-style loader over Telnet #3", sessions: 37, sources: 9, ageH: 3 },
+  { id: 2, name: "Xmrig miner drop over SSH #2", sessions: 12, sources: 4, ageH: 9 },
+  { id: 1, name: "PHP2Shell exploitation over HTTP #1", sessions: 58, sources: 21, ageH: 30 },
 ]
 
 const INDICATORS = [
