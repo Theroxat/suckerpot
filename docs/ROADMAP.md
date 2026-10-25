@@ -123,12 +123,12 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M9 — Seven more sensors
 
-- [ ] Redis (6379), Docker Engine API (2375), MySQL (3306), MSSQL (1433), Android ADB (5555), SMB (445), SIP (5060/udp + tcp).
-- [ ] Contract lessons 16–18 on every sensor: wall-clock CPU budget per loop turn, pending output charged to the memory budget, per-IP event fairness.
-- [ ] SIP: no UDP amplification (every reply ≤ its request, per-source and global reply caps).
-- [ ] Ingest rules and tag severities for the new flags; per-IP brute-force tagging (`credential-stuffing`) and the `brute_force` insight.
-- [ ] UI for 11 sensors (sensor families and colours); flat world map as the default Live view, with the 3D globe as an option.
-- [ ] Compose integration, demo data for the new sensors, docs.
+- [x] Redis (6379), Docker Engine API (2375), MySQL (3306), MSSQL (1433), Android ADB (5555), SMB (445), SIP (5060/udp + tcp).
+- [x] Contract lessons 16–18 on every sensor: wall-clock CPU budget per loop turn, pending output charged to the memory budget, per-IP event fairness.
+- [x] SIP: no UDP amplification (every reply ≤ its request, per-source and global reply caps).
+- [x] Ingest rules and tag severities for the new flags; per-IP brute-force tagging (`credential-stuffing`) and the `brute_force` insight.
+- [x] UI for 11 sensors (sensor families and colours); flat world map as the default Live view, with the 3D globe as an option.
+- [x] Compose integration, demo data for the new sensors, docs.
 
 **Acceptance:** each sensor tested with real clients and nmap; security review PASS for each; all services healthy.
 

@@ -27,3 +27,11 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - API and UI: analytics, insights, trends, malware, settings, single-admin auth (argon2, CSRF, rate limits); pages Live (3D globe), Overview, Attacks, Session detail with safe terminal replay, Attackers, Trends, Malware, Settings, login; screenshot mode.
 - Ops: backups, host firewall template, port guard, CI overlay, Sphinx docs, project page and offline demo for GitHub Pages.
 - Left for v0.1.0: owner actions (firewall, disk, GitHub Pages/RTD/secret scanning), then the release.
+
+## 2026-10-25 — M9 Seven more sensors
+
+- Sensors: Redis 7.2 (6379), Docker Engine API 27.3 (2375), MySQL 8.0 (3306), SQL Server 2019/2022 with TLS inside PRELOGIN (1433), Android ADB TV box (5555), SMB2/3 with NTLM capture and SMB1 disabled (445), SIP/Asterisk over UDP and TCP (5060). Each tested with real clients (redis-cli, docker CLI, mysql/PyMySQL/hydra, impacket/sqlcmd, adb, smbclient, sipsak/SIPVicious) and nmap.
+- New sensor contract lessons 16–18: wall-clock CPU budgets with per-IP buckets, pending output charged to the memory budget, per-IP event fairness with a priority path and a disconnect reserve. SIP never sends a reply larger than its request (measured amplification under 0.001 during a flood).
+- Security reviews: Redis 2 passes, MySQL 2, MSSQL 3, ADB 2, Docker 2, SMB 2, SIP 2, compose and Redis ACLs 1 — all PASS. Every first-pass failure was a denial of service; no path executes attacker input, writes outside its data directory or opens outbound connections.
+- Pipeline and UI: tags and severities for the new flags, per-IP brute-force tagging and insight, multi-sensor filters, readable scan summaries, demo data for eleven sensors; sensors grouped into four colour families; a flat world map is now the default Live view, with the globe as an option.
+- Ops: memory limits sized from measured peaks, OOM and CPU priorities that protect db/redis/ingest, a shorter stream cap for the new sensors, port guard extended, conntrack sysctl and optional sensor slice templates.
