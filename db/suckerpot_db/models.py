@@ -252,3 +252,53 @@ class CveSyncStateRow(Base):
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
     items_last_run: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+
+
+class IndicatorRow(Base):
+    """A URL, domain, IP address or file hash seen in recorded events (never contacted)."""
+
+    __tablename__ = "indicators"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    type: Mapped[str] = mapped_column(Text)  # url | domain | ip | hash
+    value: Mapped[str] = mapped_column(Text)
+    role: Mapped[str] = mapped_column(Text)  # download_host | contacted_host | hash
+    host: Mapped[str | None] = mapped_column(Text)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sightings: Mapped[int] = mapped_column(BigInteger, server_default=text("1"), nullable=False)
+    sensors: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+
+
+class IndicatorSessionRow(Base):
+    """A bounded link from an indicator to a session that showed it."""
+
+    __tablename__ = "indicator_sessions"
+
+    indicator_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    session_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    src_ip: Mapped[str] = mapped_column(INET)
+    sensor: Mapped[str] = mapped_column(Text)
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class IndicatorIntelRow(Base):
+    """One threat-intel answer per indicator and source (24 h cache)."""
+
+    __tablename__ = "indicator_intel"
+
+    indicator_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    source: Mapped[str] = mapped_column(Text, primary_key=True)  # urlhaus | threatfox | virustotal
+    known: Mapped[bool] = mapped_column(Boolean)
+    family: Mapped[str | None] = mapped_column(Text)
+    threat_type: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    first_seen_ext: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reference: Mapped[str | None] = mapped_column(Text)
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )

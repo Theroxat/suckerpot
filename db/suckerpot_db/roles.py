@@ -82,7 +82,8 @@ DECLARE
             ARRAY['events', 'sessions', 'ip_reputation', 'enrichment_quota', 'enrichment_status',
                   'sessions_daily', 'events_hourly', 'events_daily_tags', 'events_daily_country',
                   'events_daily_ip', 'system_status', 'maintenance_log', 'provider_secrets',
-                  'provider_test_requests', 'cve', 'cve_sync_state']
+                  'provider_test_requests', 'cve', 'cve_sync_state', 'indicators',
+                  'indicator_sessions', 'indicator_intel']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -107,6 +108,14 @@ BEGIN
         EXECUTE format('GRANT SELECT, INSERT, UPDATE ON cve, cve_sync_state TO %I', r);
         EXECUTE format('GRANT DELETE ON cve TO %I', r);
     END IF;
+    IF to_regclass('public.indicators') IS NOT NULL THEN
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE ON indicators, indicator_sessions, indicator_intel '
+            'TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.indicators', 'id'),
+            r);
+    END IF;
     EXECUTE format(
         'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.events', 'id'), r);
 END
@@ -122,7 +131,8 @@ DECLARE
             ARRAY['events', 'sessions', 'ip_reputation', 'enrichment_quota', 'enrichment_status',
                   'sessions_daily', 'events_hourly', 'events_daily_tags', 'events_daily_country',
                   'events_daily_ip', 'system_status', 'maintenance_log', 'provider_secrets',
-                  'provider_test_requests', 'cve', 'cve_sync_state']
+                  'provider_test_requests', 'cve', 'cve_sync_state', 'indicators',
+                  'indicator_sessions', 'indicator_intel']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -147,6 +157,9 @@ BEGIN
     END IF;
     IF to_regclass('public.cve') IS NOT NULL THEN
         EXECUTE format('GRANT SELECT ON cve, cve_sync_state TO %I', r);
+    END IF;
+    IF to_regclass('public.indicators') IS NOT NULL THEN
+        EXECUTE format('GRANT SELECT ON indicators, indicator_sessions, indicator_intel TO %I', r);
     END IF;
 END
 $$

@@ -25,7 +25,9 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-Provider = Literal["abuseipdb", "greynoise", "maxmind", "nvd", "github"]
+Provider = Literal[
+    "abuseipdb", "greynoise", "maxmind", "nvd", "github", "abusech", "virustotal"
+]
 PROVIDERS: tuple[str, ...] = get_args(Provider)
 
 ENV_VAR = "SETTINGS_ENCRYPTION_KEY"
