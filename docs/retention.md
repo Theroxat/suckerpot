@@ -62,6 +62,12 @@ these queries (in `api/api/analytics_queries.py`, `trends.py`, `insights_queries
 A practical rule for the API: when `since` is older than `now() - RETENTION_DAYS`, serve the part
 before the cutoff from the aggregate and the rest from the raw tables, and never mix units.
 
+## CVE data
+
+The `cve` table holds public vulnerability data, not captured data. The CVE watch job in ingest
+deletes rows that are neither in the CISA KEV catalogue nor relevant to an emulated service once
+their publication date is older than 180 days. KEV and relevant CVEs are kept.
+
 ## Operating notes
 
 * A chunk is dropped only when it is entirely older than `RETENTION_DAYS`, so raw data can stay up

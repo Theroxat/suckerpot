@@ -48,3 +48,11 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - Optional "NLA disabled" mode (off by default) runs the MCS/GCC sequence up to the Client Info PDU and records the cleartext credentials TLS-only clients send.
 - Client tool identification (nmap, FreeRDP and the tools built on it, rdesktop, mstsc) from JA3, cookie, NTLM and GCC data, stored on the session and shown on the session page; new tags `bluekeep`, `weak-credentials` and `rdp-cleartext`.
 - Security review: first pass FAIL (a busy loop in the optional MCS path, TLS slots without a per-IP cap), both fixed; second pass PASS in both modes. Contract lessons 16–18 now apply to RDP too.
+
+## 2026-10-25 — M12 CVE watch
+
+- Ingest: a daily job mirrors the CISA KEV catalogue, recent NVD CVEs (API 2.0, paced to the rate limit) and GitHub security advisories into a new `cve` table. Downloads are capped in size and time, never follow redirects and are validated item by item; every request spends a persisted daily quota, and a failing feed is retried after an hour without stopping the others. NVD and GitHub keys are optional and set from Settings like the other provider keys.
+- Relevance: `ingest/rules/cve/relevance.yaml` maps the emulated services (Apache + PHP, WordPress, phpMyAdmin, OpenSSH, BusyBox telnetd, RDP, Redis, Docker, MySQL, SQL Server, ADB, SMB, Asterisk/SIP) to CPE vendors and keywords and gives each CVE a relevance (high, medium, none) and matched services. The same file links CVE ids to our tags so "seen in our traffic" counts real sessions. Non-KEV, non-relevant CVEs are pruned after 180 days.
+- API: `GET /api/v1/cves` (keyset pagination, filters for relevance, KEV, severity, period and text, rank or date order), `GET /api/v1/cves/{id}` (with traffic counts) and `GET /api/v1/cves/sync` (feed status). The enrichment settings now report the NVD and GitHub keys.
+- UI: a "CVE watch" page that opens with a plain-English finding, a ranked list with severity, KEV, relevance, matched services and traffic counts, a detail panel, a feed status card and a "Propose a trap" button that only copies a trap-sheet template. Settings gets NVD and GitHub key rows. Demo data (fictional `CVE-2099-*` ids) lives in the MSW mocks.
+- Left open: the owner reviews trap proposals before anything is built; security and UI reviews.
