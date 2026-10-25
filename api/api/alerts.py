@@ -214,12 +214,18 @@ def _channel(row: AlertChannelRow, tests: dict[int, LastTest]) -> Channel:
 
 # ---- channels ---------------------------------------------------------------------------------
 @router.get("/alerts/channels", response_model=list[Channel])
-async def list_channels(session: DbSession) -> list[Channel]:
+async def list_channels(request: Request, session: DbSession) -> list[Channel]:
     rows = (
         await session.scalars(select(AlertChannelRow).order_by(AlertChannelRow.id).limit(100))
     ).all()
     tests = await _last_tests(session)
-    return [_channel(r, tests) for r in rows]
+    principal = await auth_mod.current_principal(request)
+    admin = principal is not None and principal.is_admin
+    out = [_channel(r, tests) for r in rows]
+    if not admin:  # where a channel goes is for administrators only
+        for c in out:
+            c.target_hint = ""
+    return out
 
 
 @router.post("/alerts/channels", status_code=201, response_model=Channel)
@@ -424,6 +430,8 @@ async def update_rule(
     principal, refused = await reauth.guard(request, None, "alert rule change")
     if refused is not None:
         return refused
+    if body.enabled and not rule.enabled:
+        rule.enabled_at = datetime.now(UTC)  # ingest restarts its cursor: no replay of history
     rule.enabled = body.enabled
     rule.channel_ids = ids
     rule.min_severity = body.min_severity

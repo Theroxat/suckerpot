@@ -147,6 +147,13 @@ async def test_rules_need_an_enabled_channel(client: httpx.AsyncClient) -> None:
         json={"enabled": True, "channel_ids": [ch["id"]], "min_severity": "severe"},
     )
     assert r.status_code == 200 and r.json()["enabled"] is True
+    async with owner_engine() as owner, owner.connect() as conn:
+        stamp = (
+            await conn.execute(
+                text("SELECT enabled_at FROM alert_rules WHERE kind = 'malware_drop'")
+            )
+        ).scalar_one()
+    assert stamp is not None  # ingest restarts its cursor from here
     # disabling the channel switches the rule off
     r = await client.patch(f"/api/v1/alerts/channels/{ch['id']}", json={"enabled": False})
     assert r.status_code == 200
