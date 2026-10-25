@@ -72,7 +72,9 @@ test("search palette", async ({ page }, info) => {
 
   await page.keyboard.type("mirai")
   await expect(dialog.getByText("Campaigns")).toBeVisible()
-  await expect(dialog.getByRole("option", { name: /Mirai loader over Telnet #41/ })).toBeVisible()
+  await expect(
+    dialog.getByRole("option", { name: /Mirai-style loader over Telnet #3/ }),
+  ).toBeVisible()
   await shoot(page, "search-campaign", info.project.name)
 
   await page.keyboard.press("Control+a")
@@ -86,9 +88,9 @@ test("search palette", async ({ page }, info) => {
 
   await page.keyboard.press("Control+a")
   await page.keyboard.type("mirai")
-  await expect(dialog.getByRole("option", { name: /Mirai loader/ })).toBeVisible()
+  await expect(dialog.getByRole("option", { name: /Mirai-style loader/ })).toBeVisible()
   await page.keyboard.press("Enter")
-  await expect(page).toHaveURL(/\/campaigns\/41/)
+  await expect(page).toHaveURL(/\/campaigns\/3/)
 })
 
 test("glossary term", async ({ page }, info) => {
