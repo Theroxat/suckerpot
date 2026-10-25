@@ -34,6 +34,7 @@ from ingest.features import FeatureSettings, FeatureWorker
 from ingest.indicators import IndicatorExtractor, IndicatorSettings
 from ingest.llm import ExplainerWorker
 from ingest.reports import ReportWorker
+from ingest.scanners import load_scanners
 from ingest.scripts import ScriptWorker
 from ingest.tagging import load_rules
 
@@ -67,6 +68,8 @@ async def run() -> None:
 
     rules = load_rules(enrich.rules_dir)  # fail fast on a broken rule file
     log.info("loaded %d tagging rules", len(rules.rules))
+    scanners = load_scanners(enrich.rules_dir)  # fail fast here too
+    log.info("loaded %d research scanner definitions", len(scanners.scanners))
     resolver = GeoResolver(enrich.geoip_dir, fake_for_private=enrich.geoip_fake_for_private)
 
     async def disk_status(detail: dict[str, Any]) -> None:
@@ -89,6 +92,7 @@ async def run() -> None:
         indicators=IndicatorExtractor(indicator_settings) if indicator_settings.enabled else None,
         link_cap=indicator_settings.link_cap,
         attack=attack,
+        scanners=scanners,
     )
     consumer = Consumer(settings, redis, factory, enricher, guard)
 

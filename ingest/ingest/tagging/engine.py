@@ -36,6 +36,8 @@ import yaml
 
 MAX_TEXT = 4096
 MAX_RULES = 500
+# YAML files in the rules directory that are not tagging rules (loaded by their own module).
+NON_TAG_FILES = frozenset({"scanners.yaml"})
 MAX_DEPTH = 8
 TAG_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789-")
 
@@ -312,7 +314,7 @@ def _parse_rule(raw: Any, source: str) -> Rule:
 def load_rules(directory: Path) -> RuleSet:
     """Load every ``*.yaml`` in ``directory`` (sorted); raises RuleError on any problem."""
     rules: list[Rule] = []
-    files = sorted(directory.glob("*.yaml"))
+    files = [p for p in sorted(directory.glob("*.yaml")) if p.name not in NON_TAG_FILES]
     for path in files:
         try:
             doc = yaml.safe_load(path.read_text(encoding="utf-8"))

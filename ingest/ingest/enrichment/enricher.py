@@ -8,6 +8,7 @@ from ingest.attack.mapping import AttackMap
 from ingest.bruteforce import BruteForceTracker
 from ingest.enrichment.geo import GeoResolver
 from ingest.indicators import IndicatorExtractor
+from ingest.scanners import ScannerSet
 from ingest.tagging import RuleSet
 
 
@@ -19,3 +20,4 @@ class Enricher:
     indicators: IndicatorExtractor | None = None
     link_cap: int = 500
     attack: AttackMap | None = None
+    scanners: ScannerSet = field(default_factory=ScannerSet)
