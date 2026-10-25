@@ -28,7 +28,7 @@ import {
   type Campaign,
   type CampaignTimeline,
 } from "@/lib/campaigns"
-import { formatNumber, plural } from "@/lib/format"
+import { formatNumber, maskDefangedText, plural } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 const TIMELINE_DAYS = 7
@@ -71,11 +71,13 @@ function WhatToDo({
   tips: readonly string[] | undefined
   className?: string
 }) {
+  const { masked } = useIpMask()
+  const shown = (tip: string) => (masked ? maskDefangedText(tip) : tip)
   return (
     <FindingCard
       className={className}
       eyebrow="What to do"
-      finding={tips?.[0] ?? "Working out what to do…"}
+      finding={tips?.[0] ? shown(tips[0]) : "Working out what to do…"}
       detail={tips && tips.length > 1 ? "Then, in this order:" : undefined}
     >
       {tips && tips.length > 1 ? (
@@ -87,7 +89,7 @@ function WhatToDo({
                 className="mt-0.5 size-4 shrink-0 text-fg-subtle"
                 strokeWidth={1.75}
               />
-              <span className="text-pretty">{tip}</span>
+              <span className="text-pretty">{shown(tip)}</span>
             </li>
           ))}
         </ol>

@@ -115,6 +115,11 @@ export function maskIpsInText(text: string): string {
   return text.replace(IPV4_IN_TEXT, "$1.x.x")
 }
 
+/** Mask addresses in text that may carry defanged ones ("203[.]0[.]113[.]66"). */
+export function maskDefangedText(text: string): string {
+  return maskIpsInText(text.replaceAll("[.]", "."))
+}
+
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const
 
 /** Decimal units, one decimal above KB: "3.2 GB", "512 MB", "820 B". */

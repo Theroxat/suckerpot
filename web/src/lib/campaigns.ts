@@ -119,6 +119,8 @@ export interface CampaignIndicator {
   value: string
   defanged: string
   sources: number
+  /** "low": seen from fewer sources than the clustering rule needs, do not block on it alone. */
+  confidence: "normal" | "low"
   first_seen: string
   last_seen: string
 }

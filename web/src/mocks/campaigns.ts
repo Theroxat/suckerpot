@@ -382,7 +382,7 @@ const DEFS: Def[] = [
     match: has("redis-rogue-master"),
     families: [],
     severity: "warning",
-    keys: [["payload_host", "203.0.113.141", 5]],
+    keys: [["payload_host", "203.0.113.141", 1]],
   },
   {
     id: 7,
@@ -819,6 +819,7 @@ export function campaignsHandlers(fixtures: Fixture[], now = Date.now()): Reques
         value,
         defanged: kind === "payload_host" ? defang(value) : value,
         sources,
+        confidence: sources < 2 ? "low" : "normal",
         first_seen: c.first_seen,
         last_seen: c.last_seen,
       }))
