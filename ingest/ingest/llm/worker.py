@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ingest.enrichment.config import EnrichmentSettings
 from ingest.enrichment.reputation import reserve_quota
 from ingest.features import FeatureSettings, FeatureWorker
+from ingest.scripts.library import bounded_lines
 
 log = logging.getLogger(__name__)
 
@@ -323,7 +324,7 @@ class ExplainerWorker(FeatureWorker):
                         "i": script_id,
                         "v": PROMPT_VERSION,
                         "m": self.settings.llm_model[:64],
-                        "lines": json.dumps(answer["lines"]),
+                        "lines": json.dumps(bounded_lines(answer["lines"])),
                         "summary": answer["summary"],
                     },
                 )
