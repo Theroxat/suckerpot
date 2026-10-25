@@ -35,3 +35,9 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - Security reviews: Redis 2 passes, MySQL 2, MSSQL 3, ADB 2, Docker 2, SMB 2, SIP 2, compose and Redis ACLs 1 — all PASS. Every first-pass failure was a denial of service; no path executes attacker input, writes outside its data directory or opens outbound connections.
 - Pipeline and UI: tags and severities for the new flags, per-IP brute-force tagging and insight, multi-sensor filters, readable scan summaries, demo data for eleven sensors; sensors grouped into four colour families; a flat world map is now the default Live view, with the globe as an option.
 - Ops: memory limits sized from measured peaks, OOM and CPU priorities that protect db/redis/ingest, a shorter stream cap for the new sensors, port guard extended, conntrack sysctl and optional sensor slice templates.
+
+## 2026-10-25 — M11 Settings you can edit
+
+- AbuseIPDB, GreyNoise and MaxMind keys can be set, replaced and removed from Settings. Keys are stored with AES-256-GCM (key derived from `SETTINGS_ENCRYPTION_KEY`, provider bound as associated data), shown only by their last four characters, and every change needs the admin password again; five wrong passwords end the session.
+- Ingest reloads keys every 30 s without a restart; Settings shows where each key comes from (`.env` or Settings). "Test key" asks ingest for one quota-counted check, at most 10 per provider per day.
+- Security review PASS; follow-ups fixed (MaxMind redirect, shared re-auth budget, test cap, no forced GeoIP re-download, weak or reused master keys refused). A sealed-box scheme so the API can only encrypt is listed for later.
