@@ -156,7 +156,13 @@ export function AppShell() {
       </header>
 
       <main id="main" className="lg:pl-60">
-        <div className="mx-auto w-full max-w-[1200px] px-4 pt-6 pb-16 sm:px-6 lg:px-10 lg:pt-10">
+        <div
+          className={cn(
+            "mx-auto w-full px-4 pt-6 pb-16 sm:px-6 lg:px-10 lg:pt-10",
+            // Live is the wall screen: its map uses the whole width. Other pages stay readable.
+            pathname.startsWith("/live") ? "max-w-[2400px]" : "max-w-[1200px]",
+          )}
+        >
           <Outlet />
         </div>
       </main>

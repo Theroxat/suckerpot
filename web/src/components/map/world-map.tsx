@@ -1,4 +1,4 @@
-import { Minus, Plus } from "lucide-react"
+import { House, Minus, Plus } from "lucide-react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
@@ -6,9 +6,15 @@ import type { LiveEvent } from "@/lib/api"
 import { countryName, formatNumber, plural } from "@/lib/format"
 import { FAMILY_META, SENSOR_META } from "@/lib/sensors"
 import { cn } from "@/lib/utils"
-import { globeFrozen } from "@/components/globe/palette"
-import type { GeoPoint } from "@/components/globe/geo"
-import { ACTIVE_MS, ageOpacity, countWeight, type Activity, type Source } from "./activity"
+import {
+  ACTIVE_MS,
+  ageOpacity,
+  countWeight,
+  motionFrozen,
+  type Activity,
+  type GeoPoint,
+  type Source,
+} from "./activity"
 import { BORDERS_PATH, LAND_PATH } from "./data/world-paths"
 import { MAP_WIDTH, project } from "./projection"
 
@@ -28,6 +34,12 @@ interface Box {
   y1: number
 }
 
+/** Screen-space room kept clear of the fitted presets (the overlay band at the top). */
+interface Pad {
+  top: number
+  left: number
+}
+
 function boxOf(corners: readonly (readonly [number, number])[]): Box {
   const pts = corners.map(([lat, lon]) => project(lat, lon))
   return {
@@ -38,8 +50,24 @@ function boxOf(corners: readonly (readonly [number, number])[]): Box {
   }
 }
 
-/** The inhabited world: no polar caps, no Antarctica. */
-const WORLD: Box = { x0: 0, x1: MAP_WIDTH, y0: project(78, 0)[1], y1: project(-56, 0)[1] }
+/** Everything that can be shown: the whole width, Greenland's tip to Tierra del Fuego. */
+const WORLD: Box = { x0: 0, x1: MAP_WIDTH, y0: project(84, 0)[1], y1: project(-56, 0)[1] }
+/**
+ * The "World" preset: the full inhabited band, cropped east and west to what attacks come from
+ * (Alaska and the US west coast to Japan, Australia and New Zealand). On a usual dashboard card
+ * (aspect 1.6 to 2.2) this fills the card edge to edge instead of floating in empty ocean.
+ */
+const WORLD_FIT: Box = { x0: 180, x1: 910, y0: WORLD.y0, y1: WORLD.y1 }
+/**
+ * The same on near-square cards (phones): the whole band would leave empty ocean under it, so
+ * keep the Americas to South-East Asia and let Japan and Australia fall off the edges.
+ */
+const WORLD_NARROW: Box = { x0: 228, x1: 812, y0: WORLD.y0, y1: WORLD.y1 }
+
+function presetBox(p: MapPreset, aspect: number): Box {
+  if (p === "europe") return EUROPE
+  return aspect < 1.5 ? WORLD_NARROW : WORLD_FIT
+}
 /** Europe and its rim, where most real attackers sit relative to a Swiss home. */
 const EUROPE: Box = boxOf([
   [63, -14],
@@ -50,18 +78,24 @@ const EUROPE: Box = boxOf([
 ])
 
 export type MapPreset = "world" | "europe"
-const PRESETS: Record<MapPreset, Box> = { world: WORLD, europe: EUROPE }
 
-function fit(box: Box, aspect: number, margin = 0.04): View {
-  const bw = (box.x1 - box.x0) * (1 + margin)
-  const bh = (box.y1 - box.y0) * (1 + margin)
-  return { cx: (box.x0 + box.x1) / 2, cy: (box.y0 + box.y1) / 2, vw: Math.max(bw, bh * aspect) }
+/** Fit `box` into the screen area left after `pad`, so nothing important hides under overlays. */
+function fit(box: Box, size: { w: number; h: number }, pad: Pad = { top: 0, left: 0 }): View {
+  const availW = Math.max(1, size.w - pad.left)
+  const availH = Math.max(1, size.h - pad.top)
+  const upp = Math.max((box.x1 - box.x0) / availW, (box.y1 - box.y0) / availH)
+  return {
+    cx: (box.x0 + box.x1) / 2 - (pad.left / 2) * upp,
+    cy: (box.y0 + box.y1) / 2 - (pad.top / 2) * upp,
+    vw: upp * size.w,
+  }
 }
 
 const MIN_VW = 70
 
 function clampView(v: View, aspect: number): View {
-  const maxVw = fit(WORLD, aspect, 0.06).vw
+  // Zoomed all the way out, the whole map fits with a small margin.
+  const maxVw = Math.max(WORLD.x1 - WORLD.x0, (WORLD.y1 - WORLD.y0) * aspect) * 1.06
   const vw = Math.min(maxVw, Math.max(MIN_VW, v.vw))
   const vh = vw / aspect
   const cx = Math.min(
@@ -106,6 +140,9 @@ function arcPath(from: [number, number], to: [number, number]): string | null {
   return `M${f(from[0])} ${f(from[1])}Q${f(mx)} ${f(my)} ${f(to[0])} ${f(to[1])}`
 }
 
+/** Screen radius (px) of a source dot. */
+const dotRadius = (events: number) => 3 + 5 * countWeight(events)
+
 interface Dash {
   key: number
   country: string
@@ -114,6 +151,8 @@ interface Dash {
 
 const MAX_DASHES = 14
 const DASH_MS = 1_700
+/** Height of the overlay band at the top of the map (stats strip, presets, zoom). */
+export const MAP_TOP_BAND = 48
 
 // --- Component -------------------------------------------------------------------
 
@@ -125,6 +164,12 @@ interface WorldMapProps {
   homeLabel?: string | undefined
   paused: boolean
   now: number
+  /** Country (ISO code) highlighted from outside: its arc stands out, the others step back. */
+  focus?: string | null
+  /** Hover or keyboard focus on a source dot. */
+  onFocusChange?: (country: string | null) => void
+  /** Content for the top-left corner of the overlay band (the stats strip). */
+  topLeft?: React.ReactNode
   className?: string
 }
 
@@ -140,11 +185,13 @@ export function WorldMap({
   homeLabel,
   paused,
   now,
+  focus = null,
+  onFocusChange,
+  topLeft,
   className,
 }: WorldMapProps) {
   const reduced = useReducedMotion()
-  const frozen = globeFrozen()
-  const still = reduced || frozen
+  const still = reduced || motionFrozen()
   const navigate = useNavigate()
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 800, h: 450 })
@@ -152,6 +199,7 @@ export function WorldMap({
   const [preset, setPreset] = useState<MapPreset>(storedPreset)
   const [view, setView] = useState<View | null>(null)
   const anim = useRef<number | null>(null)
+  const pad = useMemo<Pad>(() => ({ top: size.w < 480 ? 36 : MAP_TOP_BAND, left: 0 }), [size.w])
 
   // Measure, and fit the preset on first layout and whenever the shape changes.
   useLayoutEffect(() => {
@@ -163,6 +211,7 @@ export function WorldMap({
       if (w > 0 && h > 0) setSize((s) => (s.w === w && s.h === h ? s : { w, h }))
     }
     measure()
+    if (typeof ResizeObserver === "undefined") return
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
@@ -171,9 +220,9 @@ export function WorldMap({
   const fitKey = `${size.w}x${size.h}`
   if (fittedFor !== fitKey) {
     setFittedFor(fitKey)
-    setView(clampView(fit(PRESETS[preset], aspect), aspect))
+    setView(clampView(fit(presetBox(preset, aspect), size, pad), aspect))
   }
-  const v = view ?? fit(PRESETS[preset], aspect)
+  const v = view ?? fit(presetBox(preset, aspect), size, pad)
 
   const stopAnim = () => {
     if (anim.current !== null) cancelAnimationFrame(anim.current)
@@ -212,7 +261,7 @@ export function WorldMap({
     } catch {
       // Private mode: the choice just isn't remembered.
     }
-    animateTo(fit(PRESETS[p], aspect))
+    animateTo(fit(presetBox(p, aspect), size, pad))
   }
   const zoomBy = (factor: number, at?: { x: number; y: number }) => {
     stopAnim()
@@ -285,7 +334,7 @@ export function WorldMap({
         const before = Math.hypot(prev.x - other.x, prev.y - other.y)
         const after = Math.hypot(next.x - other.x, next.y - other.y)
         const r = hostRef.current?.getBoundingClientRect()
-        if (before > 0 && r) {
+        if (before > 0 && after > 0 && r) {
           moved.current += 10
           zoomBy(before / after, {
             x: (next.x + other.x) / 2 - r.left,
@@ -347,8 +396,17 @@ export function WorldMap({
     return () => clearTimeout(t)
   }, [events, still, paused, activity.sources])
 
-  // Tooltip for a hovered or focused source.
+  // Hovered or keyboard-focused dot (local), else the highlight asked for from outside.
   const [hover, setHover] = useState<string | null>(null)
+  const enter = (country: string) => {
+    setHover(country)
+    onFocusChange?.(country)
+  }
+  const leave = (country: string) => {
+    setHover((h) => (h === country ? null : h))
+    onFocusChange?.(null)
+  }
+  const lit = hover ?? focus
 
   const homeXY = useMemo(() => project(home.lat, home.lon), [home.lat, home.lon])
   const upp = v.vw / size.w
@@ -358,20 +416,27 @@ export function WorldMap({
     y: (p[1] - (v.cy - vh / 2)) / upp,
   })
 
-  const drawn = useMemo(
-    () =>
-      activity.sources
-        .map((s) => {
-          const xy = project(s.point.lat, s.point.lon)
-          return { s, xy, d: arcPath(xy, homeXY) }
-        })
-        // Quietest first, so the busiest arcs and dots sit on top.
-        .reverse(),
-    [activity.sources, homeXY],
-  )
-  const hovered = drawn.find((x) => x.s.country === hover)
+  const drawn = useMemo(() => {
+    const all = activity.sources.map((s) => {
+      const xy = project(s.point.lat, s.point.lon)
+      return { s, xy, d: arcPath(xy, homeXY) }
+    })
+    // Quietest first, so the busiest arcs and dots sit on top; the highlighted one last of all.
+    all.reverse()
+    if (lit) {
+      const i = all.findIndex((x) => x.s.country === lit)
+      const [hit] = i >= 0 ? all.splice(i, 1) : []
+      if (hit) all.push(hit)
+    }
+    return all
+  }, [activity.sources, homeXY, lit])
+  const tipped = lit ? drawn.find((x) => x.s.country === lit) : undefined
+  const dim = (country: string) => (lit && lit !== country ? 0.28 : 1)
 
   const open = (s: Source) => void navigate(`/attacks?country=${s.country}`)
+  const homeScreen = toScreen(homeXY)
+  const homeName = homeLabel ?? "Home"
+  const homeLabelW = 26 + homeName.length * 6.6
 
   return (
     <div
@@ -413,10 +478,11 @@ export function WorldMap({
               d={d}
               fill="none"
               stroke={FAMILY_META[s.family].cssVar}
-              strokeOpacity={0.75 * ageOpacity(s.last, now)}
-              strokeWidth={1 + 2.2 * countWeight(s.events)}
+              strokeOpacity={lit === s.country ? 1 : 0.8 * ageOpacity(s.last, now) * dim(s.country)}
+              strokeWidth={1.2 + 2.6 * countWeight(s.events) + (lit === s.country ? 1 : 0)}
               strokeLinecap="round"
               vectorEffect="non-scaling-stroke"
+              className="transition-[stroke-opacity] duration-200"
             />
           ) : null,
         )}
@@ -431,7 +497,7 @@ export function WorldMap({
               pathLength={1}
               fill="none"
               stroke={FAMILY_META[hit.s.family].cssVar}
-              strokeWidth={2.6}
+              strokeWidth={2.8}
               strokeLinecap="round"
               strokeDasharray="0.14 2"
               vectorEffect="non-scaling-stroke"
@@ -441,11 +507,15 @@ export function WorldMap({
         })}
 
         {drawn.map(({ s, xy }) => {
-          const r = (2.6 + 4.4 * countWeight(s.events)) * upp
+          const r = dotRadius(s.events) * upp
           const active = !still && now - s.last < ACTIVE_MS
           const color = FAMILY_META[s.family].cssVar
           return (
-            <g key={`src-${s.country}`}>
+            <g
+              key={`src-${s.country}`}
+              opacity={dim(s.country)}
+              className="transition-opacity duration-200"
+            >
               {active ? (
                 <circle
                   cx={xy[0]}
@@ -463,21 +533,21 @@ export function WorldMap({
                 cy={xy[1]}
                 r={r}
                 fill={color}
-                fillOpacity={0.35 + 0.6 * ageOpacity(s.last, now)}
-                stroke="var(--surface)"
-                strokeWidth={1}
+                fillOpacity={0.4 + 0.6 * ageOpacity(s.last, now)}
+                stroke={lit === s.country ? "var(--fg)" : "var(--surface)"}
+                strokeWidth={lit === s.country ? 1.5 : 1}
                 vectorEffect="non-scaling-stroke"
               />
             </g>
           )
         })}
 
-        {/* Home: a solid dot and a slow ring. */}
+        {/* Home: a ring, a slow pulse and a solid dot, always on top. */}
         {!still ? (
           <circle
             cx={homeXY[0]}
             cy={homeXY[1]}
-            r={4 * upp}
+            r={5 * upp}
             fill="none"
             stroke="var(--fg)"
             strokeWidth={1}
@@ -488,7 +558,17 @@ export function WorldMap({
         <circle
           cx={homeXY[0]}
           cy={homeXY[1]}
-          r={3.5 * upp}
+          r={8 * upp}
+          fill="none"
+          stroke="var(--fg)"
+          strokeOpacity={0.5}
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+        />
+        <circle
+          cx={homeXY[0]}
+          cy={homeXY[1]}
+          r={4 * upp}
           fill="var(--fg)"
           stroke="var(--surface)"
           strokeWidth={1.5}
@@ -505,13 +585,13 @@ export function WorldMap({
           <button
             key={`hit-${s.country}`}
             type="button"
-            className="absolute size-6 -translate-x-1/2 -translate-y-1/2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="absolute size-7 -translate-x-1/2 -translate-y-1/2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
             style={{ left: p.x, top: p.y }}
             aria-label={`${name}: ${plural(s.events, "event")} from ${plural(s.ips, "address", "addresses")}. Open these attacks.`}
-            onPointerEnter={() => setHover(s.country)}
-            onPointerLeave={() => setHover((h) => (h === s.country ? null : h))}
-            onFocus={() => setHover(s.country)}
-            onBlur={() => setHover((h) => (h === s.country ? null : h))}
+            onPointerEnter={() => enter(s.country)}
+            onPointerLeave={() => leave(s.country)}
+            onFocus={() => enter(s.country)}
+            onBlur={() => leave(s.country)}
             onClick={() => {
               if (moved.current <= 4) open(s)
             }}
@@ -519,19 +599,25 @@ export function WorldMap({
         )
       })}
 
-      {/* Labels for the busiest visible sources, skipped where they would collide. */}
+      {/* Labels: home first, then the busiest visible sources, skipped where they would collide. */}
       {(() => {
-        const placed: { x0: number; y0: number; x1: number; y1: number }[] = []
-        const home = toScreen(homeXY)
-        placed.push({ x0: home.x - 8, y0: home.y - 8, x1: home.x + 8, y1: home.y + 8 })
-        return activity.sources.slice(0, 10).flatMap((s) => {
+        const placed: Box[] = [
+          {
+            x0: homeScreen.x - 10,
+            y0: homeScreen.y - 10,
+            x1: homeScreen.x + 12 + homeLabelW,
+            y1: homeScreen.y + 10,
+          },
+        ]
+        return activity.sources.slice(0, 12).flatMap((s) => {
           const xy = project(s.point.lat, s.point.lon)
           const p = toScreen(xy)
           const text = `${s.country} ${formatNumber(s.events)}`
-          const w = 8 + text.length * 6.2
-          const r = 2.6 + 4.4 * countWeight(s.events)
-          const box = { x0: p.x + r + 3, y0: p.y - 8, x1: p.x + r + 3 + w, y1: p.y + 8 }
-          if (box.x0 < 0 || box.y0 < 44 || box.x1 > size.w - 4 || box.y1 > size.h - 4) return []
+          const w = 10 + text.length * 6.6
+          const r = dotRadius(s.events)
+          const box = { x0: p.x + r + 4, y0: p.y - 9, x1: p.x + r + 4 + w, y1: p.y + 9 }
+          if (box.x0 < 0 || box.y0 < pad.top || box.x1 > size.w - 4 || box.y1 > size.h - 4)
+            return []
           if (placed.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1))
             return []
           placed.push(box)
@@ -539,53 +625,77 @@ export function WorldMap({
             <span
               key={`label-${s.country}`}
               aria-hidden
-              className="pointer-events-none absolute flex h-4 items-center rounded-xs bg-surface/80 px-1 font-mono text-2xs text-fg-muted"
+              className={cn(
+                "pointer-events-none absolute flex h-[18px] items-center rounded-xs bg-surface/85 px-1 font-mono text-2xs text-fg-muted transition-opacity duration-200",
+                lit && lit !== s.country && "opacity-30",
+              )}
               style={{ left: box.x0, top: box.y0 }}
             >
-              <span className="text-fg">{s.country}</span>&nbsp;{formatNumber(s.events)}
+              <span className="font-medium text-fg">{s.country}</span>&nbsp;
+              {formatNumber(s.events)}
             </span>,
           ]
         })
       })()}
 
-      {hovered ? (
-        <SourceTooltip source={hovered.s} at={toScreen(hovered.xy)} width={size.w} />
+      <span
+        className="pointer-events-none absolute flex h-5 items-center gap-1 rounded-sm border border-border-strong bg-surface-raised/90 px-1.5 text-2xs font-medium text-fg shadow-sm"
+        style={{ left: homeScreen.x + 12, top: homeScreen.y - 10 }}
+      >
+        <House aria-hidden className="size-3 text-fg-muted" strokeWidth={2} />
+        {homeName}
+      </span>
+
+      {tipped ? (
+        <SourceTooltip
+          source={tipped.s}
+          at={toScreen(tipped.xy)}
+          homeX={homeScreen.x}
+          size={size}
+          minTop={pad.top}
+        />
       ) : null}
 
-      <div className="absolute top-3 right-3 flex items-center gap-1">
-        <div className="flex rounded-md border bg-surface-raised/90 p-0.5 shadow-sm backdrop-blur-sm">
-          {(["europe", "world"] as const).map((p) => (
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-2.5 sm:p-3"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <div className="pointer-events-auto min-w-0">{topLeft}</div>
+        <div className="pointer-events-auto flex shrink-0 items-center gap-1">
+          <div className="flex rounded-md border bg-surface-raised/90 p-0.5 shadow-sm backdrop-blur-sm">
+            {(["europe", "world"] as const).map((p) => (
+              <button
+                key={p}
+                type="button"
+                aria-pressed={preset === p}
+                onClick={() => choosePreset(p)}
+                className={cn(
+                  "h-6 rounded-sm px-2 text-xs font-medium transition-colors",
+                  preset === p ? "bg-surface-hover text-fg" : "text-fg-muted hover:text-fg",
+                )}
+              >
+                {p === "europe" ? "Europe" : "World"}
+              </button>
+            ))}
+          </div>
+          <div className="flex rounded-md border bg-surface-raised/90 p-0.5 shadow-sm backdrop-blur-sm">
             <button
-              key={p}
               type="button"
-              aria-pressed={preset === p}
-              onClick={() => choosePreset(p)}
-              className={cn(
-                "h-6 rounded-sm px-2 text-xs font-medium transition-colors",
-                preset === p ? "bg-surface-hover text-fg" : "text-fg-muted hover:text-fg",
-              )}
+              aria-label="Zoom in"
+              onClick={() => zoomBy(0.7)}
+              className="flex size-6 items-center justify-center rounded-sm text-fg-muted hover:text-fg"
             >
-              {p === "europe" ? "Europe" : "World"}
+              <Plus aria-hidden className="size-3.5" />
             </button>
-          ))}
-        </div>
-        <div className="flex rounded-md border bg-surface-raised/90 p-0.5 shadow-sm backdrop-blur-sm">
-          <button
-            type="button"
-            aria-label="Zoom in"
-            onClick={() => zoomBy(0.7)}
-            className="flex size-6 items-center justify-center rounded-sm text-fg-muted hover:text-fg"
-          >
-            <Plus aria-hidden className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Zoom out"
-            onClick={() => zoomBy(1 / 0.7)}
-            className="flex size-6 items-center justify-center rounded-sm text-fg-muted hover:text-fg"
-          >
-            <Minus aria-hidden className="size-3.5" />
-          </button>
+            <button
+              type="button"
+              aria-label="Zoom out"
+              onClick={() => zoomBy(1 / 0.7)}
+              className="flex size-6 items-center justify-center rounded-sm text-fg-muted hover:text-fg"
+            >
+              <Minus aria-hidden className="size-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -595,21 +705,33 @@ export function WorldMap({
 function SourceTooltip({
   source,
   at,
-  width,
+  homeX,
+  size,
+  minTop,
 }: {
   source: Source
   at: { x: number; y: number }
-  width: number
+  homeX: number
+  size: { w: number; h: number }
+  minTop: number
 }) {
   const name = countryName(source.country) ?? source.country
-  const left = Math.min(Math.max(8, at.x + 12), width - 228)
+  const W = 232
+  // On the side away from home, so the lit arc stays in view; never under the top band.
+  const roomRight = at.x + 16 + W < size.w
+  const roomLeft = at.x - 16 - W > 0
+  const left = (at.x < homeX && roomLeft) || !roomRight ? Math.max(8, at.x - 16 - W) : at.x + 16
+  const top = Math.min(Math.max(minTop, at.y - 16), Math.max(minTop, size.h - 132))
   return (
     <div
       role="tooltip"
-      className="pointer-events-none absolute z-10 w-55 animate-fade-in rounded-md border bg-surface-raised p-3 text-xs shadow-md"
-      style={{ left, top: Math.max(8, at.y - 12) }}
+      className="pointer-events-none absolute z-10 w-58 animate-fade-in rounded-md border bg-surface-raised p-3 text-xs shadow-md"
+      style={{ left, top }}
     >
-      <p className="font-medium text-fg">{name}</p>
+      <p className="font-medium text-fg">
+        {name}
+        <span className="font-normal text-fg-subtle"> · last 15 min</span>
+      </p>
       <p className="mt-1 text-fg-muted">
         <span className="font-medium text-fg tabular-nums">{formatNumber(source.events)}</span>{" "}
         {source.events === 1 ? "event" : "events"} from{" "}

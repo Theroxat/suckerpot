@@ -18,10 +18,17 @@ interface CountryFlagProps {
   code: string | null | undefined
   /** Also print the country name next to the flag. */
   showName?: boolean
+  /** Just the flag, no tooltip and not focusable: for use inside a link that names the country. */
+  decorative?: boolean
   className?: string
 }
 
-export function CountryFlag({ code, showName = false, className }: CountryFlagProps) {
+export function CountryFlag({
+  code,
+  showName = false,
+  decorative = false,
+  className,
+}: CountryFlagProps) {
   const name = countryName(code)
   const url = code ? flagUrl(code) : null
   const label = name ?? (code ? code.toUpperCase() : "Unknown country")
@@ -43,6 +50,14 @@ export function CountryFlag({ code, showName = false, className }: CountryFlagPr
       ?
     </span>
   )
+
+  if (decorative) {
+    return (
+      <span aria-hidden className={cn("inline-flex items-center", className)}>
+        {flag}
+      </span>
+    )
+  }
 
   if (showName) {
     return (

@@ -19,15 +19,6 @@ export default defineConfig({
     reducedMotion: "reduce",
     timezoneId: "Europe/Zurich",
     locale: "en-US",
-    // The Live page draws a WebGL globe: use the software renderer in headless runs.
-    launchOptions: {
-      args: [
-        "--use-gl=angle",
-        "--use-angle=swiftshader",
-        "--enable-unsafe-swiftshader",
-        "--ignore-gpu-blocklist",
-      ],
-    },
   },
   projects: [
     {

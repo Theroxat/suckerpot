@@ -1,50 +1,63 @@
-import { useVirtualizer } from "@tanstack/react-virtual"
-import { ArrowUp, Pause, Play, Radio, SearchX, WifiOff } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { Pause, Play, Radio, SearchX, WifiOff } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router"
+import { useIpMask } from "@/app/ip-mask"
 import { useLiveFeed } from "@/app/use-live-feed"
-import { EmptyState } from "@/components/empty-state"
 import { SensorFilter } from "@/components/filter-bar"
-import { LiveMap } from "@/components/globe/live-globe"
-import { LiveEventRow } from "@/components/live-event-row"
-import { FamilyTile } from "@/components/family-tile"
+import { LiveLeaders } from "@/components/live-leaders"
+import { LiveTicker } from "@/components/live-ticker"
+import { aggregateSources, rankLeaders } from "@/components/map/activity"
+import { LiveMap } from "@/components/map/live-map"
 import { PageHeader } from "@/components/page-header"
-import { SkeletonList } from "@/components/skeletons"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { useSensorFilter } from "@/hooks/use-sensor-filter"
-import { formatNumber, plural } from "@/lib/format"
-import { deriveStats, liveFinding } from "@/lib/live-stats"
-import { SENSOR_FAMILIES, sensorSetPhrase } from "@/lib/sensors"
-import { cn } from "@/lib/utils"
+import { maskIpsInText } from "@/lib/format"
+import { deriveStats, liveHeadline } from "@/lib/live-stats"
+import { sensorSetPhrase } from "@/lib/sensors"
 
-/** How long a freshly arrived row keeps its slide-in marker. */
+/** How long a freshly arrived event keeps its fade-in marker. */
 const FRESH_MS = 1_000
-/** Scroll offset (px) under which the user counts as "at the top". */
-const TOP_SLACK = 8
 
+/** A clock for fading and windows: ticks every few seconds, not every frame. */
+function useTick(ms: number) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), ms)
+    return () => clearInterval(t)
+  }, [ms])
+  return now
+}
+
+/**
+ * Live: the screen to leave running. A full-width map of the last 15 minutes
+ * is the hero, with the events-per-minute strip on it; the newest events run
+ * as a ticker under the map, and the busiest addresses, countries and
+ * networks follow below. Pause freezes the whole picture.
+ */
 export function LivePage() {
   const feed = useLiveFeed()
   const [sensors] = useSensorFilter()
+  const { masked } = useIpMask()
 
   const stats = useMemo(
     () => feed.stats ?? (feed.events.length ? deriveStats(feed.events) : null),
     [feed.stats, feed.events],
   )
 
-  // --- Hold the view while the user reads: paused, scrolled away or hovering.
+  // --- Hold: Pause freezes everything; hovering the ticker holds only the ticker.
   const [paused, setPaused] = useState(false)
-  const [scrolledAway, setScrolledAway] = useState(false)
-  const [hovered, setHovered] = useState(false)
-  // After "jump to latest" the pointer may still rest on the list: follow anyway.
-  const [following, setFollowing] = useState(false)
-  const held = paused || scrolledAway || (hovered && !following)
+  const [hovering, setHovering] = useState(false)
   const newest = feed.events[0]?.id ?? 0
-  const [cutoff, setCutoff] = useState<number | null>(null)
-  if (held && cutoff === null) setCutoff(newest)
-  if (!held && cutoff !== null) setCutoff(null)
-  const limit = held ? (cutoff ?? newest) : null
+  const [pauseAt, setPauseAt] = useState<number | null>(null)
+  if (paused && pauseAt === null) setPauseAt(newest)
+  if (!paused && pauseAt !== null) setPauseAt(null)
+  const tickerHeld = paused || hovering
+  const [holdAt, setHoldAt] = useState<number | null>(null)
+  if (tickerHeld && holdAt === null) setHoldAt(newest)
+  if (!tickerHeld && holdAt !== null) setHoldAt(null)
 
-  // --- Mark rows that just arrived, for a calm slide-in.
+  // --- Mark events that just arrived, for a calm fade-in.
   const [prevNewest, setPrevNewest] = useState<number | null>(null)
   const [freshAbove, setFreshAbove] = useState<number | null>(null)
   if (newest !== prevNewest) {
@@ -62,193 +75,141 @@ export function LivePage() {
     const wanted = new Set<string>(sensors)
     return feed.events.filter((e) => wanted.has(e.sensor))
   }, [feed.events, sensors])
-  const visible = useMemo(
-    () => (limit === null ? matching : matching.filter((e) => e.id <= limit)),
-    [matching, limit],
+  const shown = useMemo(
+    () => (pauseAt === null ? matching : matching.filter((e) => e.id <= pauseAt)),
+    [matching, pauseAt],
   )
-  const pending = matching.length - visible.length
+  const ticker = useMemo(
+    () => (holdAt === null ? shown : matching.filter((e) => e.id <= holdAt)),
+    [shown, matching, holdAt],
+  )
+  const pending = matching.length - ticker.length
 
-  // --- Virtualised list in its own scroll area.
-  const scrollRef = useRef<HTMLDivElement>(null)
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual, used as documented
-  const virtualizer = useVirtualizer({
-    count: visible.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => 52,
-    overscan: 8,
-    getItemKey: (i) => visible[i]?.id ?? i,
-  })
+  // --- The last 15 minutes: map sources and rankings, recomputed on new events and on the tick.
+  const tick = useTick(5_000)
+  const now = Math.max(tick, Date.parse(shown[0]?.ts ?? "") || 0)
+  const activity = useMemo(() => aggregateSources(shown, now), [shown, now])
+  const leaders = useMemo(() => rankLeaders(shown, now), [shown, now])
 
-  const jumpToLatest = () => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0
-    setScrolledAway(false)
-    setFollowing(true)
-    setPaused(false)
-  }
+  // Hovering a row, a chip or a dot lights that country everywhere.
+  const [focus, setFocus] = useState<string | null>(null)
 
   const waiting = feed.events.length === 0
   const connecting = waiting && (feed.status === "connecting" || feed.status === "reconnecting")
   const down = waiting && feed.status === "offline"
+  // The headline speaks about the selected sensors only.
+  const selectedStats = useMemo(() => {
+    if (!stats || !sensors.length) return stats
+    const wanted = new Set<string>(sensors)
+    const by_sensor = Object.fromEntries(
+      Object.entries(stats.by_sensor).filter(([s]) => wanted.has(s)),
+    )
+    return { ...stats, by_sensor }
+  }, [stats, sensors])
+  const headline = liveHeadline(selectedStats, activity.sources[0], activity.events)
+
+  const placeholder = connecting ? (
+    <div role="status" aria-label="Loading" className="flex gap-2 max-sm:flex-col max-sm:p-4">
+      {Array.from({ length: 4 }, (_, i) => (
+        <Skeleton key={i} className="h-9 w-[300px] max-w-full shrink-0 rounded-md" />
+      ))}
+    </div>
+  ) : down ? (
+    <TickerNote icon={WifiOff}>
+      The live feed is unreachable. The dashboard keeps trying in the background.
+    </TickerNote>
+  ) : waiting ? (
+    <TickerNote icon={Radio}>
+      Nothing has arrived yet. New events appear here the moment a sensor records them.
+    </TickerNote>
+  ) : ticker.length === 0 ? (
+    <TickerNote icon={SearchX}>
+      {sensors.length === 1
+        ? "No events from this sensor yet."
+        : "No events from these sensors yet."}{" "}
+      <span className="max-sm:hidden">
+        Nothing from {sensorSetPhrase(sensors)} is in the live buffer.
+      </span>{" "}
+      <Link to="/live" className="font-medium text-fg underline-offset-4 hover:underline">
+        Show all sensors
+      </Link>
+    </TickerNote>
+  ) : undefined
 
   return (
     <>
       <PageHeader
         title="Live"
-        description={liveFinding(stats)}
+        description={masked ? maskIpsInText(headline) : headline}
+        className="pb-5"
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            aria-pressed={paused}
-            onClick={() => setPaused((p) => !p)}
-          >
-            {paused ? <Play aria-hidden /> : <Pause aria-hidden />}
-            {paused ? "Resume" : "Pause"}
-          </Button>
+          <>
+            <SensorFilter align="end" />
+            <Button
+              variant="outline"
+              size="sm"
+              aria-pressed={paused}
+              onClick={() => setPaused((p) => !p)}
+            >
+              {paused ? <Play aria-hidden /> : <Pause aria-hidden />}
+              {paused ? "Resume" : "Pause"}
+            </Button>
+          </>
         }
       />
 
-      <section
-        aria-label="Events in the last minute"
-        className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
-      >
-        {SENSOR_FAMILIES.map((f) => (
-          <FamilyTile
-            key={f}
-            family={f}
-            bySensor={stats?.by_sensor ?? {}}
-            unit="events / min"
-            unitShort="/ min"
+      <LiveMap
+        events={shown}
+        activity={activity}
+        now={now}
+        paused={paused}
+        bySensor={stats?.by_sensor}
+        focus={focus}
+        onFocusChange={setFocus}
+        mapClassName="h-[19rem] sm:h-[26rem] lg:h-[clamp(26rem,calc(100dvh-17rem),72rem)]"
+        footer={
+          <LiveTicker
+            events={ticker}
+            pending={pending}
+            held={tickerHeld}
+            freshAbove={freshAbove}
+            focus={focus}
+            onFocusChange={setFocus}
+            onHoverChange={setHovering}
+            onResume={() => {
+              setPaused(false)
+              setHovering(false)
+            }}
+            polling={feed.transport === "polling"}
+            placeholder={placeholder}
           />
-        ))}
-      </section>
+        }
+      />
 
-      <div className="mt-6 mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <SensorFilter />
-        <p className="text-xs text-fg-subtle" aria-live="off">
-          {paused
-            ? `Paused. ${plural(pending, "new event")} waiting.`
-            : feed.transport === "polling"
-              ? "Live updates are unavailable, refreshing every 10 seconds."
-              : "Newest first. Scroll or hover to hold the view."}
-        </p>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_25rem] xl:grid-cols-[minmax(0,1fr)_27rem]">
-        <LiveMap
-          events={matching}
-          paused={paused}
-          className="h-[26rem] sm:h-[30rem] lg:h-auto lg:min-h-[32rem]"
-        />
-        <div
-          className="relative overflow-hidden rounded-lg border bg-surface shadow-sm"
-          onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(true)}
-          onPointerLeave={() => {
-            setHovered(false)
-            setFollowing(false)
-          }}
-        >
-          {pending > 0 ? (
-            <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
-              <Button
-                size="sm"
-                className="pointer-events-auto animate-fade-in rounded-full shadow-md"
-                onClick={jumpToLatest}
-              >
-                <ArrowUp aria-hidden />
-                {plural(pending, "new event")} — jump to latest
-              </Button>
-            </div>
-          ) : null}
-
-          {connecting ? (
-            <SkeletonList rows={10} className="h-[calc(100dvh-27rem)] min-h-96 overflow-hidden" />
-          ) : down ? (
-            <EmptyState
-              variant="bare"
-              icon={WifiOff}
-              title="The live feed is unreachable"
-              description="The dashboard keeps trying in the background. Events will appear here as soon as the connection is back."
-              className="h-[calc(100dvh-27rem)] min-h-96"
-            />
-          ) : waiting ? (
-            <EmptyState
-              variant="bare"
-              icon={Radio}
-              title="Nothing has arrived yet"
-              description="New events slide in here the moment a sensor records them."
-              className="h-[calc(100dvh-27rem)] min-h-96"
-            />
-          ) : visible.length === 0 ? (
-            <EmptyState
-              variant="bare"
-              icon={SearchX}
-              title={
-                sensors.length === 1
-                  ? "No events from this sensor yet"
-                  : "No events from these sensors yet"
-              }
-              description={`Nothing from ${sensorSetPhrase(sensors)} is in the live buffer. Show all sensors to see the rest.`}
-              className="h-[calc(100dvh-27rem)] min-h-96"
-              action={
-                <Button asChild variant="outline" size="sm">
-                  <Link to="/live">Show all sensors</Link>
-                </Button>
-              }
-            />
-          ) : (
-            <div
-              ref={scrollRef}
-              onScroll={(e) => {
-                const away = e.currentTarget.scrollTop > TOP_SLACK
-                setScrolledAway(away)
-                if (away) setFollowing(false)
-              }}
-              className="h-[calc(100dvh-27rem)] min-h-96 overflow-y-auto overscroll-contain lg:h-[calc(100dvh-25rem)]"
-              tabIndex={-1}
-            >
-              <div
-                role="list"
-                aria-label="Live events"
-                className="relative w-full"
-                style={{ height: virtualizer.getTotalSize() }}
-              >
-                {virtualizer.getVirtualItems().map((v) => {
-                  const e = visible[v.index]
-                  if (!e) return null
-                  return (
-                    <div
-                      key={v.key}
-                      role="listitem"
-                      data-index={v.index}
-                      ref={virtualizer.measureElement}
-                      className="absolute inset-x-0 top-0 border-b"
-                      style={{ transform: `translateY(${v.start}px)` }}
-                    >
-                      <LiveEventRow
-                        event={e}
-                        stacked
-                        isNew={freshAbove !== null && e.id > freshAbove}
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          <div
-            className={cn(
-              "flex items-center justify-between gap-3 border-t px-4 py-2.5 text-xs text-fg-subtle sm:px-5",
-            )}
-          >
-            <span>{formatNumber(visible.length)} events in this tab</span>
-            <Link to="/attacks" className="text-fg-muted hover:text-fg hover:underline">
-              Browse all attacks
-            </Link>
-          </div>
-        </div>
-      </div>
+      <LiveLeaders
+        leaders={leaders}
+        sources={activity.sources}
+        windowEvents={activity.events}
+        unlocated={activity.unlocated}
+        focus={focus}
+        onFocusChange={setFocus}
+        className="mt-4"
+      />
     </>
+  )
+}
+
+function TickerNote({
+  icon: Icon,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>
+  children: React.ReactNode
+}) {
+  return (
+    <p className="flex min-w-0 items-center gap-2 text-xs text-fg-muted max-sm:px-4 max-sm:pt-1 max-sm:pb-4">
+      <Icon aria-hidden className="size-3.5 shrink-0 text-fg-subtle" />
+      <span className="min-w-0">{children}</span>
+    </p>
   )
 }
