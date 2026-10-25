@@ -15,9 +15,9 @@ from api import passwords
         ("Q1W2E3R4T5Y6", "", passwords.COMMON),  # case does not help
         ("password12345678", "", passwords.COMMON),  # a common root plus digits
         ("Password!!2026", "", passwords.COMMON),
-        ("Mathieu-is-the-best", "mathieu", passwords.CONTAINS_USERNAME),
-        ("xxMATHIEUxx9f3kq", "mathieu", passwords.CONTAINS_USERNAME),
-        ("correct horse battery staple", "mathieu", None),
+        ("Jordan-is-the-best", "jordan", passwords.CONTAINS_USERNAME),
+        ("xxJORDANxx9f3kq", "jordan", passwords.CONTAINS_USERNAME),
+        ("correct horse battery staple", "jordan", None),
         ("x" * 12 + "7Kd", "", None),
         ("é" * 12, "", None),  # characters, not bytes
         ("x" * 256, "", None),
