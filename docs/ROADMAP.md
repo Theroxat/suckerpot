@@ -149,6 +149,14 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 **Acceptance:** a key added in Settings turns the provider on without a restart; keys never leave the server in clear text; security review PASS.
 
+## M12 — CVE watch
+
+- [x] Ingest pulls new CVEs daily (CISA KEV, NVD, GitHub advisories) and ranks them by relevance to the services SuckerPot emulates.
+- [x] A CVE page: recent relevant CVEs, and whether matching activity was already seen in our traffic.
+- [ ] Trap proposals reviewed with the owner before anything is built. (The page only copies a trap-sheet template; the review itself is a conversation with the owner.)
+
+**Acceptance:** the feed updates daily within its quotas; nothing is deployed automatically.
+
 ## Later (not part of the loop)
 
 - Discord alerts on malware drops.

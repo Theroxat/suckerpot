@@ -141,6 +141,10 @@ Live is the screen left running on a wall or a second monitor, so the map is the
 
 Read-only by design: a dashed note says settings live in `.env`. Four cards, each with a finding sentence: Sensors (Active / Quiet / Silent with icon and label; silent is a warning, never red), Enrichment (GeoIP provider, age, the required attribution text, quota meters), Data retention, Storage (database against its ceiling; red only when the disk guard is critical).
 
+## CVE watch
+
+A ranked list of vulnerabilities under one plain-English finding ("3 new critical CVEs this week affect services we emulate"). Severity is a word plus a number, with an orange triangle for critical and high (never red: red is for severe events). KEV is a small outlined badge with a tooltip, relevance is three dots plus a word, and matched services are neutral chips. The detail panel shows the description, the CISA entry, the sessions of ours that match (links to the filtered Attacks view) and a "Propose a trap" button that copies a plain-text sheet: nothing is built from it. Feed status and the optional NVD and GitHub keys sit under the list. Everything fetched from the feeds is rendered as text.
+
 ## Loading
 
 Heavy pages (Overview, Live, Attackers, attacker profile, session detail, styleguide) load on demand behind a `PageSkeleton` in the final layout. Recharts and xterm get their own chunks, so the first load stays small.

@@ -97,7 +97,7 @@ These rules apply to every service in `docker-compose.yml`.
 | `sensors-ssh`, `sensors-web`, ... | None (`internal: true`) | `redis` and one sensor each | A sensor reaches Redis and nothing else |
 | `tools` | None (`internal: true`) | `redis`, the demo generator | The generator reaches Redis only |
 | `backend` | None (`internal: true`) | `redis`, `db`, `migrate`, `ingest`, `api` | Storage and processing stay private |
-| `egress` | Outbound | `ingest` only | GeoIP downloads and reputation lookups |
+| `egress` | Outbound | `ingest` only | GeoIP downloads, reputation lookups and the CVE feeds |
 | `dashboard` (`sp-dashboard`) | Intended inbound only | `api` only | Masquerading is off. This does not block egress on its own. |
 
 The design is explained in [Architecture](ARCHITECTURE.md#networks).
@@ -128,9 +128,20 @@ A compromised sensor has no route to the internet (masquerading is off), but wit
 - Both application roles have a statement timeout (30 s for ingest, 5 s for the API), so a slow query cannot hold the database.
 - The role passwords come from `.env`. The `migrate` service sets them on every run as SCRAM-SHA-256 verifiers, so a rotation is one `docker compose run --rm migrate`, and the clear text never reaches the database logs.
 
+### CVE feeds (ingest egress)
+
+The CVE watch job adds three outbound destinations, all fixed in code and all reached by `ingest` only: `www.cisa.gov` (KEV catalogue), `services.nvd.nist.gov` (NVD API 2.0) and `api.github.com` (security advisories). They are read-only `GET` requests that send nothing but the query itself.
+
+- **Bounded.** Redirects are not followed, every response is streamed with a hard byte cap (8 MB for KEV and NVD, 4 MB for GitHub) and a 60 s deadline, and the number of pages per run is capped.
+- **Untrusted input.** Feeds are validated item by item. An invalid item is skipped, text fields are length-capped and stripped of control characters, only `http` and `https` links are kept, and the UI renders everything as text.
+- **Quotas.** Each request spends a persisted daily quota, so a bug or a restart loop cannot hammer a public API. A feed that fails is retried after an hour.
+- **Optional keys.** `NVD_API_KEY` and `GITHUB_TOKEN` only raise rate limits. They follow the rules of the next section, travel in a request header (never in a URL) and are never logged.
+- **Least privilege.** The ingest role may read, insert, update and delete rows of `cve` (retention), and write `cve_sync_state`. The API role may only read them. The tables hold public data, no captured data.
+- **No automation.** The CVE page can copy a trap-sheet template for the owner to review. Nothing is built, configured or deployed from it.
+
 ### Provider keys set in Settings
 
-The admin can enter the AbuseIPDB, GreyNoise and MaxMind keys on the Settings page instead of in `.env`.
+The admin can enter the AbuseIPDB, GreyNoise, MaxMind, NVD and GitHub keys on the Settings page instead of in `.env`.
 
 - **Write-only.** A key is never sent back to the browser. The page and the API show only where the key comes from (`.env` or Settings), its last four characters and when it changed.
 - **Encrypted at rest.** The key is encrypted with AES-256-GCM before it reaches the database. The data key is derived with HKDF-SHA256 from `SETTINGS_ENCRYPTION_KEY` (at least 32 random bytes, base64). The provider name is bound to the ciphertext, so a row cannot be moved to another provider, and any change to the stored bytes is detected when ingest decrypts them.
