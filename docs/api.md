@@ -622,6 +622,23 @@ The home point of the Live map, where the attack arcs land, as a country-level p
 
 It comes from `SITE_HOME_LAT`, `SITE_HOME_LON` and `SITE_HOME_LABEL`. The values are rounded to one decimal place (about 11 km) on purpose, so the public page never shows an exact location. Do not put the real address of the host in them.
 
+## Campaigns and MITRE ATT&CK (M15)
+
+A campaign is a group of sessions that share a script, a payload host, a file hash, a malware family, an exploit or a credential list. Ingest finds them (`CAMPAIGNS_ENABLED`) and labels what each session did with MITRE ATT&CK techniques (`ATTACK_ENABLED`). Everything here is read-only and open to both roles. Research scanners are never clustered.
+
+| Route | What it returns |
+| --- | --- |
+| `GET /api/v1/campaigns` | Keyset-paginated list, most recently seen first (`cursor`, `limit` 1 to 200). Merged campaigns are hidden unless `status=merged`. Filters: `status` (`active`, `quiet`, `merged`), `sensor`, `technique` (`T1059` or `T1059.004`), `family`, `hours` (1 to 8760) or `days` (1 to 365) since the campaign was last seen, `q` (literal substring of the name), `include_benign` (accepted, no effect). |
+| `GET /api/v1/campaigns/{id}` | One campaign: counters, countries, networks, sensors, techniques, stages, tags, families, severity and the representative session. A merged campaign carries `merged_into`. |
+| `GET /api/v1/campaigns/{id}/story` | The campaign told in stages (looking around, getting in, running code, staying in, bringing tools, the goal), each with a plain-English sentence and its techniques; up to 12 lines from the representative session; counts; and up to four next actions (`what_to_do`). |
+| `GET /api/v1/campaigns/{id}/timeline` | Sessions per hour for the last `days` (1 to 30, default 7), from the campaign's links. Links are capped at `CAMPAIGN_LINK_CAP`; `linked` says how many sessions the points are made of. |
+| `GET /api/v1/campaigns/{id}/sessions` | The campaign's sessions, keyset-paginated like `/sessions`. |
+| `GET /api/v1/campaigns/{id}/indicators` | The keys that tie it together (payload hosts, hashes, families, script and exploit fingerprints). Hosts also come defanged (`dl[.]example[.]net`). |
+| `GET /api/v1/attack/techniques` | The technique catalogue with what was seen in the last `days` (1 to 365, default 30): sessions, events, sources, last day. Keyset-paginated by id (`cursor`, `limit` up to 400); `sensor` filters. |
+| `GET /api/v1/attack/matrix` | Sessions per technique per UTC day for the last `days` (default 30), only techniques seen in the window, in story order. Bounded by the catalogue (400 techniques at most), so it is not paginated. `sensor` filters. |
+
+`GET /api/v1/sessions` also accepts `technique` and `campaign_id`, and every session carries `techniques` and `campaign_id`.
+
 ## Live feed
 
 `/api/v1/live` is a WebSocket. It pushes new events as they are stored, so a page does not need to poll.
