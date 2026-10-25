@@ -103,7 +103,7 @@ function ChannelRow({
   }
 
   return (
-    <li className="grid grid-cols-[auto_1fr_auto] items-start gap-x-3 gap-y-2 px-4 py-3.5 sm:px-5">
+    <li className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-3 px-4 py-3.5 normal-nums sm:grid-cols-[auto_1fr_auto] sm:px-5">
       <span className="mt-0.5 flex size-8 items-center justify-center rounded-md border bg-bg text-fg-muted">
         <Icon aria-hidden className="size-4" strokeWidth={1.75} />
       </span>
@@ -111,7 +111,8 @@ function ChannelRow({
         <p className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-fg">
           <span className="truncate">{channel.name}</span>
           <span className="text-xs font-normal text-fg-muted">
-            {KIND_LABEL[channel.kind]} · {channel.target_hint}
+            {KIND_LABEL[channel.kind]}
+            {channel.target_hint ? ` · ${channel.target_hint}` : ""}
           </span>
         </p>
         <p className="text-xs text-fg-muted">
@@ -121,7 +122,7 @@ function ChannelRow({
         </p>
         <TestLine channel={channel} />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="col-start-2 flex items-center gap-2 sm:col-start-3 sm:row-start-1">
         <Switch
           size="sm"
           checked={channel.enabled}

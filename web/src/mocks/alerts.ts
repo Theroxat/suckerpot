@@ -6,6 +6,7 @@ import type {
   ChannelKind,
   OutboxItem,
   ReportItem,
+  ReportSummary,
   RuleKind,
   WatchedCve,
 } from "@/lib/alerts"
@@ -155,7 +156,7 @@ const outbox: OutboxItem[] = [
     4300,
     "info",
     "Weekly report for the week of 2026-10-12",
-    "2,486 attack sessions from 611 addresses, up 18% on the week before, mostly against ssh.",
+    "2,486 attack sessions from 611 addresses, up 18% on the week before, mostly against SSH.",
   ),
 ]
 
@@ -179,7 +180,7 @@ const reports: ReportItem[] = [
     week_start: "2026-10-19",
     week_end: "2026-10-25",
     headline:
-      "3,104 attack sessions from 702 addresses, up 25% on the week before, mostly against ssh.",
+      "3,104 attack sessions from 702 addresses, up 25% on the week before, mostly against SSH.",
     sessions: 3104,
     sources: 702,
     malware: 41,
@@ -190,7 +191,7 @@ const reports: ReportItem[] = [
     week_start: "2026-10-12",
     week_end: "2026-10-18",
     headline:
-      "2,486 attack sessions from 611 addresses, up 18% on the week before, mostly against ssh.",
+      "2,486 attack sessions from 611 addresses, up 18% on the week before, mostly against SSH.",
     sessions: 2486,
     sources: 611,
     malware: 27,
@@ -216,6 +217,69 @@ const actions = [
   "SSH was the most targeted service: allow it only from a VPN, no password logins.",
 ]
 
+/** A full summary for one mock report, shaped like the one ingest stores. */
+function reportSummary(r: ReportItem): ReportSummary {
+  const k = r.sessions / 3104
+  const n = (v: number) => Math.max(1, Math.round(v * k))
+  return {
+    headline: r.headline ?? undefined,
+    week_end: r.week_end ?? undefined,
+    timezone: "Europe/Zurich",
+    actions,
+    totals: {
+      sessions: r.sessions,
+      sources: r.sources,
+      with_commands: n(312),
+      malware: r.malware,
+      previous_sessions: n(2486),
+      change_pct: r.change_pct,
+    },
+    by_sensor: [
+      { sensor: "ssh", sessions: n(1702) },
+      { sensor: "telnet", sessions: n(702) },
+      { sensor: "web", sessions: n(480) },
+      { sensor: "rdp", sessions: n(131) },
+      { sensor: "redis", sessions: n(89) },
+    ],
+    countries: [
+      { country: "CN", sessions: n(812) },
+      { country: "US", sessions: n(455) },
+      { country: "NL", sessions: n(390) },
+      { country: "RU", sessions: n(244) },
+      { country: "BR", sessions: n(171) },
+    ],
+    tags: [
+      { tag: "recon", sessions: n(1240) },
+      { tag: "mirai", sessions: n(318) },
+      { tag: "crypto-miner", sessions: n(96) },
+      { tag: "php2shell", sessions: n(44) },
+      { tag: "persistence", sessions: n(21) },
+    ],
+    campaigns: [
+      {
+        id: 41,
+        name: "Mirai loader over Telnet #41",
+        severity: "severe",
+        sessions: n(118),
+        sources: 9,
+      },
+      {
+        id: 38,
+        name: "Crypto miner over SSH #38",
+        severity: "severe",
+        sessions: n(64),
+        sources: 4,
+      },
+    ],
+    download_hosts: [
+      { host: "hxxp[://]198[.]51[.]100[.]23/bins", sightings: 18 },
+      { host: "cdn-update[.]example", sightings: 7 },
+      { host: "hxxp[://]203[.]0[.]113[.]77/x86", sightings: 3 },
+    ],
+    watched_cves: [{ cve_id: "CVE-2026-109618", sessions: 12 }],
+  }
+}
+
 function reportHtml(r: ReportItem): string {
   const li = actions.map((a) => `<li>${a}</li>`).join("")
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Weekly report</title><style>
@@ -229,7 +293,7 @@ h1{font-size:22px;margin:0 0 4px}h2{font-size:13px;letter-spacing:.06em;text-tra
 <div class="kpi"><b>${r.sources.toLocaleString("en-US")}</b>Different addresses<br><span>unique sources</span></div>
 <div class="kpi"><b>312</b>Ran commands<br><span>got past the login</span></div><div class="kpi"><b>${r.malware}</b>Dropped malware<br><span>sessions</span></div></div>
 <h2>What to do next</h2><ol>${li}</ol>
-<h2>Services attacked</h2><table><tr><th>Service</th><th class="n">Sessions</th></tr><tr><td>ssh</td><td class="n">1,702</td></tr><tr><td>telnet</td><td class="n">702</td></tr><tr><td>web</td><td class="n">480</td></tr></table>
+<h2>Services attacked</h2><table><tr><th>Service</th><th class="n">Sessions</th></tr><tr><td>SSH</td><td class="n">1,702</td></tr><tr><td>Telnet</td><td class="n">702</td></tr><tr><td>Web</td><td class="n">480</td></tr></table>
 <h2>New malware download hosts (defanged)</h2><table><tr><th>Host</th><th class="n">Times seen</th></tr><tr><td>hxxp[://]198[.]51[.]100[.]23/bins</td><td class="n">18</td></tr><tr><td>cdn-update[.]example</td><td class="n">7</td></tr></table>
 <p style="color:#6b7280;font-size:12px;margin-top:24px">IP addresses are not included in this report. Indicators are defanged.</p></main></body></html>`
 }
@@ -398,7 +462,7 @@ export const alertsHandlers: RequestHandler[] = [
     return HttpResponse.json({
       week_start: r.week_start,
       created_at: r.created_at,
-      summary: { headline: r.headline, week_end: r.week_end, timezone: "Europe/Zurich", actions },
+      summary: reportSummary(r),
     })
   }),
 ]

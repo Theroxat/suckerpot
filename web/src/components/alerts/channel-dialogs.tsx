@@ -180,7 +180,7 @@ export function AddChannelDialog({ trigger, onDone }: { trigger: ReactNode; onDo
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="bg-popover">
+      <DialogContent className="bg-popover normal-nums">
         <AddChannelForm
           onCancel={() => setOpen(false)}
           onDone={() => {
@@ -311,7 +311,7 @@ export function ChangeTargetDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-popover">
+      <DialogContent className="bg-popover normal-nums">
         <ChangeTargetForm
           channel={channel}
           onCancel={() => onOpenChange(false)}

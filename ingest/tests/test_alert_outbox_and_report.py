@@ -62,7 +62,7 @@ def make_summary(**over: object) -> dict[str, Any]:
 def test_summary_has_a_plain_headline_and_next_actions() -> None:
     s = make_summary()
     assert s["headline"].startswith("1,200 attack sessions from 340 addresses, up 100%")
-    assert "mostly against ssh" in s["headline"]
+    assert "mostly against SSH" in s["headline"]
     text = " ".join(s["actions"])
     assert "Block the 1 new malware download host" in text
     assert "CVE-2026-0001" in text and "SSH" in text
@@ -93,6 +93,15 @@ def test_report_html_escapes_everything_and_has_no_script_or_link() -> None:
         assert banned not in page
     assert page.count("<style>") == 1 and "<!doctype html>" in page
     assert "IP addresses are not included" in page
+
+
+def test_report_html_names_sensors_and_folds_long_tables() -> None:
+    hosts = [{"host": f"h{i}[.]example", "sightings": 10} for i in range(10)]
+    page = render_report(make_summary(hosts=hosts))
+    assert "<td>SSH</td>" in page and "<td>ssh</td>" not in page
+    assert "h6[.]example" in page and "h7[.]example" not in page
+    assert '<td class="more">3 more</td><td class="n">30</td>' in page
+    assert "Week of Oct 12 to Oct 18, 2026" in page
 
 
 def test_week_arithmetic_uses_the_site_time_zone() -> None:
