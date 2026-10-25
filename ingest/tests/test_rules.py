@@ -76,6 +76,12 @@ SERVICE_POSITIVE: dict[str, list[Case]] = {
     ],
     "redis-miner": [flagged("redis", ["miner"], "command"), flagged("redis", ["kinsing", "dropper"], "command")],
     "sip-fraud": [flagged("sip", ["invite"]), flagged("sip", ["register"]), flagged("sip", ["toll_fraud"])],
+    "rdp-bluekeep": [flagged("rdp", ["bluekeep_probe"], "disconnect"),
+                     flagged("rdp", ["rdp_ntlm", "bluekeep_probe"], "disconnect")],
+    "rdp-weak-credentials": [flagged("rdp", ["rdp_ntlm", "weak_password_match"], "disconnect"),
+                             flagged("rdp", ["weak_password_match"], "disconnect")],
+    "rdp-cleartext": [flagged("rdp", ["rdp_nla_off"], "disconnect"),
+                      ("login_attempt", "rdp", {"method": "rdp-nla-off", "username": "x"})],
     "sip-options-scan": [flagged("sip", ["options_scan"]), flagged("sip", ["scanner_ua", "response"])],
 }  # fmt: skip
 SERVICE_NEGATIVE: dict[str, list[Case]] = {
@@ -107,6 +113,12 @@ SERVICE_NEGATIVE: dict[str, list[Case]] = {
     ],
     "redis-miner": [flagged("redis", ["download"], "command"), flagged("docker", ["miner"], "command")],
     "sip-fraud": [flagged("sip", ["options_scan"]), flagged("web", ["invite"], "http_request")],
+    "rdp-bluekeep": [flagged("rdp", ["rdp_ntlm"], "disconnect"), flagged("smb", ["bluekeep_probe"]),
+                     flagged("rdp", ["rdp_ntlm", "null_session"], "disconnect")],
+    "rdp-weak-credentials": [flagged("rdp", ["rdp_ntlm"], "disconnect"), flagged("ssh", ["weak_password_match"], "disconnect")],
+    "rdp-cleartext": [flagged("rdp", ["rdp_ntlm"], "disconnect"),
+                      ("login_attempt", "ssh", {"method": "rdp-nla-off", "username": "x"}),
+                      ("login_attempt", "rdp", {"method": "rdp-ntlm", "username": "x"})],
     "sip-options-scan": [flagged("sip", ["invite"]), flagged("smb", ["options_scan"])],
 }  # fmt: skip
 
@@ -230,7 +242,7 @@ def test_required_tags_exist() -> None:
         "recon", "mirai", "crypto-miner", "malware-drop", "persistence", "php2shell",
         "wordpress-bruteforce", "phpmyadmin-bruteforce", "credential-stuffing", "scanner",
         "env-file-probe", "redis-rogue-master", "container-escape", "sql-rce", "db-ransom",
-        "eternalblue", "sip-fraud",
+        "eternalblue", "sip-fraud", "bluekeep", "weak-credentials", "rdp-cleartext",
     } <= set(ALL.tags)  # fmt: skip
 
 
@@ -351,3 +363,15 @@ def test_large_and_pathological_inputs_are_fast() -> None:
         ALL.tag_event("http_request", "web", {"path": "/" + "../" * 50_000})
     assert time.perf_counter() - start < 2.0
     assert glob_match("*a*a*a*a*a*a*a*c", "a" * 4096) is False  # classic backtracking trap
+
+
+def test_rdp_flags_end_to_end() -> None:
+    assert ALL.tag_event(
+        "disconnect", "rdp", {"flags": ["rdp_ntlm", "weak_password_match", "bluekeep_probe"]}
+    ) == ["bluekeep", "weak-credentials"]
+    assert ALL.tag_event("disconnect", "rdp", {"flags": ["rdp_ntlm", "null_session"]}) == []
+    assert ALL.tag_event(
+        "login_attempt", "rdp", {"method": "rdp-nla-off", "username": "evil", "password": "x"}
+    ) == ["rdp-cleartext"]
+    # An attacker-chosen username cannot forge a tag.
+    assert ALL.tag_event("login_attempt", "rdp", {"username": "bluekeep_probe"}) == []

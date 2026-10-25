@@ -80,3 +80,14 @@ def test_writer_tags_event_and_session_across_connections(tmp_path: Path) -> Non
         "credential-stuffing" in rows[24]["tags"] and "credential-stuffing" not in rows[0]["tags"]
     )
     assert "other" not in tagged
+
+
+def test_rdp_ntlm_logins_count_towards_credential_stuffing() -> None:
+    from datetime import UTC, datetime
+
+    from ingest.bruteforce import BruteForceTracker
+
+    t = BruteForceTracker(threshold=3)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    assert [t.record("192.0.2.7", "rdp", now) for _ in range(3)] == [False, False, True]
+    assert not t.record("192.0.2.7", "ssh", now)

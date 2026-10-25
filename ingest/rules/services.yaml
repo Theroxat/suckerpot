@@ -130,3 +130,35 @@ rules:
       all:
         - {field: sensor, equals: sip}
         - {field: data.flags, has: [options_scan, scanner_ua]}
+
+  - id: rdp-bluekeep
+    tag: bluekeep
+    description: >-
+      BlueKeep (CVE-2019-0708) style probe. The RDP sensor flags a session that bound the
+      MS_T120 channel, which is what scanners and exploits do; it never asserts a compromise.
+    when:
+      all:
+        - {field: sensor, equals: rdp}
+        - {field: data.flags, has: bluekeep_probe}
+
+  - id: rdp-weak-credentials
+    tag: weak-credentials
+    description: An RDP login matched one of the sensor's decoy passwords (a guessable credential).
+    when:
+      all:
+        - {field: sensor, equals: rdp}
+        - {field: data.flags, has: weak_password_match}
+
+  - id: rdp-cleartext
+    tag: rdp-cleartext
+    description: >-
+      A client without NLA sent its username and password in the clear (Client Info PDU). Keyed on
+      the login method or the sensor flag, never on attacker text.
+    when:
+      all:
+        - {field: sensor, equals: rdp}
+        - any:
+            - {field: data.flags, has: rdp_nla_off}
+            - all:
+                - {field: type, equals: login_attempt}
+                - {field: data.method, equals: rdp-nla-off}

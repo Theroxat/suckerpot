@@ -34,6 +34,22 @@ class SessionDelta:
     org: str | None = None
     abuse_score: int | None = None
     known_scanner: bool | None = None
+    client_tool: str | None = None
+
+
+_TOOL_MAX = 24
+_TOOL_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._- ")
+
+
+def client_tool_of(sensor: str, data: dict[str, object]) -> str | None:
+    """The sensor's client-tool guess, only from the RDP sensor and only if it looks sane."""
+    tool = data.get("client_tool")
+    if sensor != "rdp" or not isinstance(tool, str):
+        return None
+    tool = tool.strip()
+    if not tool or tool == "unknown" or len(tool) > _TOOL_MAX or not set(tool) <= _TOOL_CHARS:
+        return None
+    return tool
 
 
 def compute_session_deltas(events: Iterable[Event]) -> list[SessionDelta]:
@@ -59,6 +75,9 @@ def compute_session_deltas(events: Iterable[Event]) -> list[SessionDelta]:
         d.started_at = min(d.started_at, ev.ts)
         d.last_event_at = max(d.last_event_at, ev.ts)
         etype = str(ev.type)
+        tool = client_tool_of(d.sensor, ev.data)
+        if tool is not None:
+            d.client_tool = tool
         if etype == "login_attempt":
             d.login_attempts += 1
             if ev.data.get("success") is True:

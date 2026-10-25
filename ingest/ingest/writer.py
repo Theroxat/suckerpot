@@ -86,6 +86,7 @@ def delta_to_row(d: SessionDelta) -> dict[str, Any]:
         "abuse_score": d.abuse_score,
         "known_scanner": d.known_scanner,
         "tags": sorted(d.tags),
+        "client_tool": d.client_tool,
     }
 
 
@@ -169,6 +170,7 @@ async def write_batch(
                 "abuse_score": func.coalesce(ex.abuse_score, t.c.abuse_score),
                 "known_scanner": func.coalesce(ex.known_scanner, t.c.known_scanner),
                 "tags": _UNION_TAGS,
+                "client_tool": func.coalesce(ex.client_tool, t.c.client_tool),
             },
         ).returning(
             t.c.session_id, t.c.sensor, t.c.event_count, t.c.login_attempts, t.c.login_success,
