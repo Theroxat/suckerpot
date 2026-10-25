@@ -36,6 +36,13 @@ services:
       REDIS_SENSOR_RDP_PASSWORD: ${REDIS_SENSOR_RDP_PASSWORD:?REDIS_SENSOR_RDP_PASSWORD must be set in .env}
       REDIS_SENSOR_TELNET_PASSWORD: ${REDIS_SENSOR_TELNET_PASSWORD:?REDIS_SENSOR_TELNET_PASSWORD must be set in .env}
       REDIS_SENSOR_WEB_PASSWORD: ${REDIS_SENSOR_WEB_PASSWORD:?REDIS_SENSOR_WEB_PASSWORD must be set in .env}
+      REDIS_SENSOR_REDIS_PASSWORD: ${REDIS_SENSOR_REDIS_PASSWORD:?REDIS_SENSOR_REDIS_PASSWORD must be set in .env}
+      REDIS_SENSOR_DOCKER_PASSWORD: ${REDIS_SENSOR_DOCKER_PASSWORD:?REDIS_SENSOR_DOCKER_PASSWORD must be set in .env}
+      REDIS_SENSOR_MYSQL_PASSWORD: ${REDIS_SENSOR_MYSQL_PASSWORD:?REDIS_SENSOR_MYSQL_PASSWORD must be set in .env}
+      REDIS_SENSOR_MSSQL_PASSWORD: ${REDIS_SENSOR_MSSQL_PASSWORD:?REDIS_SENSOR_MSSQL_PASSWORD must be set in .env}
+      REDIS_SENSOR_ADB_PASSWORD: ${REDIS_SENSOR_ADB_PASSWORD:?REDIS_SENSOR_ADB_PASSWORD must be set in .env}
+      REDIS_SENSOR_SMB_PASSWORD: ${REDIS_SENSOR_SMB_PASSWORD:?REDIS_SENSOR_SMB_PASSWORD must be set in .env}
+      REDIS_SENSOR_SIP_PASSWORD: ${REDIS_SENSOR_SIP_PASSWORD:?REDIS_SENSOR_SIP_PASSWORD must be set in .env}
       REDIS_DEMO_PASSWORD: ${REDIS_DEMO_PASSWORD:?REDIS_DEMO_PASSWORD must be set in .env}
       REDIS_INGEST_PASSWORD: ${REDIS_INGEST_PASSWORD:?REDIS_INGEST_PASSWORD must be set in .env}
       REDIS_HEALTH_PASSWORD: ${REDIS_HEALTH_PASSWORD:?REDIS_HEALTH_PASSWORD must be set in .env}
@@ -45,8 +52,11 @@ services:
     tmpfs:
       # Generated ACL file (mode 0600, hashed passwords).
       - /run/redis:rw,noexec,nosuid,nodev,size=1m,mode=0700,uid=999,gid=999
-    networks: [sensors-ssh, sensors-rdp, sensors-telnet, sensors-web, tools, backend]
+    networks:
+      [sensors-ssh, sensors-rdp, sensors-telnet, sensors-web, sensors-redis, sensors-docker, sensors-mysql, sensors-mssql, sensors-adb, sensors-smb, sensors-sip, tools, backend]
     mem_limit: 384m
+    memswap_limit: 384m
+    oom_score_adj: -500
     cpus: 0.5
     pids_limit: 64
     restart: unless-stopped
@@ -96,6 +106,8 @@ services:
     networks: [backend]
     shm_size: 256m
     mem_limit: 1g
+    memswap_limit: 1g
+    oom_score_adj: -500
     cpus: 1.0
     pids_limit: 200
     restart: unless-stopped
@@ -149,7 +161,7 @@ services:
       REDIS_PORT: "6379"
       REDIS_USER: ingest
       REDIS_PASSWORD: ${REDIS_INGEST_PASSWORD:?REDIS_INGEST_PASSWORD must be set in .env}
-      INGEST_STREAMS: ${INGEST_STREAMS:-events:ssh,events:telnet,events:web,events:rdp}
+      INGEST_STREAMS: ${INGEST_STREAMS:-events:ssh,events:telnet,events:web,events:rdp,events:redis,events:docker,events:mysql,events:mssql,events:adb,events:smb,events:sip}
       DB_MAX_SIZE_GB: ${DB_MAX_SIZE_GB:-10}
       GEOIP_PROVIDER: ${GEOIP_PROVIDER:-auto}
       GEOIP_REFRESH_DAYS: ${GEOIP_REFRESH_DAYS:-30}
@@ -171,6 +183,8 @@ services:
     # internet access for the enrichment APIs added in M4.
     networks: [backend, egress]
     mem_limit: 384m
+    memswap_limit: 384m
+    oom_score_adj: -200
     cpus: 1.0
     pids_limit: 100
     restart: unless-stopped
@@ -224,6 +238,8 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
     networks: [backend, dashboard]
     mem_limit: 512m
+    memswap_limit: 512m
+    oom_score_adj: 300
     cpus: 1.0
     pids_limit: 100
     restart: unless-stopped
@@ -280,6 +296,8 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
     mem_limit: 256m
     memswap_limit: 256m  # no swap: overload fails fast instead of stalling the host
+    oom_score_adj: 800
+    cpu_shares: 256
     cpus: 0.5
     pids_limit: 128
     restart: unless-stopped
@@ -329,6 +347,8 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
     mem_limit: 128m
     memswap_limit: 128m  # no swap: overload fails fast instead of stalling the host
+    oom_score_adj: 800
+    cpu_shares: 256
     cpus: 0.5
     pids_limit: 128
     restart: unless-stopped
@@ -373,6 +393,8 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
     mem_limit: 256m
     memswap_limit: 256m  # no swap: overload fails fast instead of stalling the host
+    oom_score_adj: 800
+    cpu_shares: 256
     cpus: 0.5
     pids_limit: 128
     restart: unless-stopped
@@ -429,6 +451,8 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
     mem_limit: 256m
     memswap_limit: 256m  # no swap: overload fails fast instead of stalling the host
+    oom_score_adj: 800
+    cpu_shares: 256
     cpus: 0.5
     pids_limit: 128
     restart: unless-stopped
@@ -437,6 +461,383 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-m", "web_sensor.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Redis sensor: a fake unauthenticated Redis server, pure emulation, never executes attacker input.
+  sensor-redis:
+    build:
+      context: .
+      dockerfile: sensors/redis/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor-redis
+      REDIS_PASSWORD: ${REDIS_SENSOR_REDIS_PASSWORD:?REDIS_SENSOR_REDIS_PASSWORD must be set in .env}
+      EVENTS_STREAM: events:redis
+      # Short stream cap: seven more sensors share Redis memory. Ingest drains it continuously.
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN_LOW:-3000}
+      EVENTS_MAX_BYTES_PER_SEC: ${EVENTS_MAX_BYTES_PER_SEC:-200000}
+      EVENTS_MAX_BYTES_BURST: ${EVENTS_MAX_BYTES_BURST:-2000000}
+      SENSOR_PORT: "6379"
+      REDIS_PUBLIC_PORT: ${REDIS_HOST_PORT:-6379}
+      SENSOR_DATA_DIR: /data
+      SENSOR_MAX_CONNECTIONS: ${REDIS_MAX_CONNECTIONS:-200}
+      SENSOR_MAX_PER_IP: ${REDIS_MAX_PER_IP:-8}
+      # Keep equal to mem_limit below: the sensor sheds load as it nears this figure.
+      SENSOR_MEMORY_LIMIT: "201326592"
+    # Explicit IPv4 so Docker does not also publish on [::]. No capability needed.
+    ports:
+      - "0.0.0.0:${REDIS_HOST_PORT:-6379}:6379"
+    # Docker's embedded DNS still resolves service names; external names fail.
+    dns: ["127.0.0.1"]
+    # ingress: inbound only. sensors-redis: internal link to Redis.
+    networks: [ingress, sensors-redis]
+    volumes:
+      # Profile secret, generated on first start. Never committed.
+      - redis-sensor-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 192m
+    memswap_limit: 192m  # no swap: overload fails fast instead of stalling the host
+    oom_score_adj: 800
+    cpu_shares: 256
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "redis_sensor.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Docker API sensor: a fake exposed Docker Engine API, never creates a container or pulls an image.
+  sensor-docker:
+    build:
+      context: .
+      dockerfile: sensors/docker/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor-docker
+      REDIS_PASSWORD: ${REDIS_SENSOR_DOCKER_PASSWORD:?REDIS_SENSOR_DOCKER_PASSWORD must be set in .env}
+      EVENTS_STREAM: events:docker
+      # Short stream cap: seven more sensors share Redis memory. Ingest drains it continuously.
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN_LOW:-3000}
+      EVENTS_MAX_BYTES_PER_SEC: ${EVENTS_MAX_BYTES_PER_SEC:-200000}
+      EVENTS_MAX_BYTES_BURST: ${EVENTS_MAX_BYTES_BURST:-2000000}
+      DOCKER_PORT: "2375"
+      DOCKER_PUBLIC_PORT: ${DOCKER_HOST_PORT:-2375}
+      DOCKER_DATA_DIR: /data
+      DOCKER_MAX_CONNECTIONS: ${DOCKER_MAX_CONNECTIONS:-200}
+      DOCKER_MAX_PER_IP: ${DOCKER_MAX_PER_IP:-8}
+      # Keep equal to mem_limit below (MiB): the sensor sheds load as it nears this figure.
+      DOCKER_MEMORY_LIMIT_MB: "160"
+    # Explicit IPv4 so Docker does not also publish on [::]. No capability needed.
+    ports:
+      - "0.0.0.0:${DOCKER_HOST_PORT:-2375}:2375"
+    # Docker's embedded DNS still resolves service names; external names fail.
+    dns: ["127.0.0.1"]
+    # ingress: inbound only. sensors-docker: internal link to Redis.
+    networks: [ingress, sensors-docker]
+    volumes:
+      # Profile secret, generated on first start. Never committed.
+      - docker-sensor-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 160m
+    memswap_limit: 160m  # no swap: overload fails fast instead of stalling the host
+    oom_score_adj: 800
+    cpu_shares: 256
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "docker_sensor.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # MySQL sensor: a fake MySQL 8.0 server, records logins and queries, never runs any SQL.
+  sensor-mysql:
+    build:
+      context: .
+      dockerfile: sensors/mysql/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor-mysql
+      REDIS_PASSWORD: ${REDIS_SENSOR_MYSQL_PASSWORD:?REDIS_SENSOR_MYSQL_PASSWORD must be set in .env}
+      EVENTS_STREAM: events:mysql
+      # Short stream cap: seven more sensors share Redis memory. Ingest drains it continuously.
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN_LOW:-3000}
+      EVENTS_MAX_BYTES_PER_SEC: ${EVENTS_MAX_BYTES_PER_SEC:-200000}
+      EVENTS_MAX_BYTES_BURST: ${EVENTS_MAX_BYTES_BURST:-2000000}
+      SENSOR_PORT: "3306"
+      MYSQL_PUBLIC_PORT: ${MYSQL_HOST_PORT:-3306}
+      SENSOR_DATA_DIR: /data
+      SENSOR_MYSQL_ACCOUNTS: ${MYSQL_ACCOUNTS:-root:,root:root,admin:admin,mysql:mysql}
+      SENSOR_MAX_CONNECTIONS: ${MYSQL_MAX_CONNECTIONS:-200}
+      SENSOR_MAX_PER_IP: ${MYSQL_MAX_PER_IP:-8}
+      # Keep equal to mem_limit below: the sensor sheds load as it nears this figure.
+      SENSOR_MEMORY_LIMIT: "167772160"
+    # Explicit IPv4 so Docker does not also publish on [::]. No capability needed.
+    ports:
+      - "0.0.0.0:${MYSQL_HOST_PORT:-3306}:3306"
+    # Docker's embedded DNS still resolves service names; external names fail.
+    dns: ["127.0.0.1"]
+    # ingress: inbound only. sensors-mysql: internal link to Redis.
+    networks: [ingress, sensors-mysql]
+    volumes:
+      # Profile secret, RSA keys and TLS certificate, generated on first start. Never committed.
+      - mysql-sensor-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 160m
+    memswap_limit: 160m  # no swap: overload fails fast instead of stalling the host
+    oom_score_adj: 800
+    cpu_shares: 256
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "mysql_sensor.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # MSSQL sensor: a fake SQL Server (TDS), records logins and queries, never runs any SQL.
+  sensor-mssql:
+    build:
+      context: .
+      dockerfile: sensors/mssql/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor-mssql
+      REDIS_PASSWORD: ${REDIS_SENSOR_MSSQL_PASSWORD:?REDIS_SENSOR_MSSQL_PASSWORD must be set in .env}
+      EVENTS_STREAM: events:mssql
+      # Short stream cap: seven more sensors share Redis memory. Ingest drains it continuously.
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN_LOW:-3000}
+      EVENTS_MAX_BYTES_PER_SEC: ${EVENTS_MAX_BYTES_PER_SEC:-200000}
+      EVENTS_MAX_BYTES_BURST: ${EVENTS_MAX_BYTES_BURST:-2000000}
+      SENSOR_PORT: "1433"
+      MSSQL_PUBLIC_PORT: ${MSSQL_HOST_PORT:-1433}
+      SENSOR_DATA_DIR: /data
+      SENSOR_MAX_CONNECTIONS: ${MSSQL_MAX_CONNECTIONS:-200}
+      SENSOR_MAX_PER_IP: ${MSSQL_MAX_PER_IP:-8}
+      # Keep equal to mem_limit below: the sensor sheds load as it nears this figure.
+      SENSOR_MEMORY_LIMIT: "167772160"
+    # Explicit IPv4 so Docker does not also publish on [::]. No capability needed.
+    ports:
+      - "0.0.0.0:${MSSQL_HOST_PORT:-1433}:1433"
+    # Docker's embedded DNS still resolves service names; external names fail.
+    dns: ["127.0.0.1"]
+    # ingress: inbound only. sensors-mssql: internal link to Redis.
+    networks: [ingress, sensors-mssql]
+    volumes:
+      # Profile secret and TLS certificate, generated on first start. Never committed.
+      - mssql-sensor-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 160m
+    memswap_limit: 160m  # no swap: overload fails fast instead of stalling the host
+    oom_score_adj: 800
+    cpu_shares: 256
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "mssql_sensor.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ADB sensor: a fake Android debug bridge, records shell commands, never runs or installs anything.
+  sensor-adb:
+    build:
+      context: .
+      dockerfile: sensors/adb/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor-adb
+      REDIS_PASSWORD: ${REDIS_SENSOR_ADB_PASSWORD:?REDIS_SENSOR_ADB_PASSWORD must be set in .env}
+      EVENTS_STREAM: events:adb
+      # Short stream cap: seven more sensors share Redis memory. Ingest drains it continuously.
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN_LOW:-3000}
+      EVENTS_MAX_BYTES_PER_SEC: ${EVENTS_MAX_BYTES_PER_SEC:-200000}
+      EVENTS_MAX_BYTES_BURST: ${EVENTS_MAX_BYTES_BURST:-2000000}
+      SENSOR_PORT: "5555"
+      SENSOR_PUBLIC_PORT: ${ADB_HOST_PORT:-5555}
+      SENSOR_DATA_DIR: /data
+      SENSOR_MAX_CONNECTIONS: ${ADB_MAX_CONNECTIONS:-200}
+      SENSOR_MAX_PER_IP: ${ADB_MAX_PER_IP:-8}
+    # Explicit IPv4 so Docker does not also publish on [::]. No capability needed.
+    ports:
+      - "0.0.0.0:${ADB_HOST_PORT:-5555}:5555"
+    # Docker's embedded DNS still resolves service names; external names fail.
+    dns: ["127.0.0.1"]
+    # ingress: inbound only. sensors-adb: internal link to Redis.
+    networks: [ingress, sensors-adb]
+    volumes:
+      # Device identity and ADB key, generated on first start. Never committed.
+      - adb-sensor-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 192m
+    memswap_limit: 192m  # no swap: overload fails fast instead of stalling the host
+    oom_score_adj: 800
+    cpu_shares: 256
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "adb_sensor.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # SMB sensor: answers the SMB negotiation and NTLM handshake only, never serves a file.
+  sensor-smb:
+    build:
+      context: .
+      dockerfile: sensors/smb/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor-smb
+      REDIS_PASSWORD: ${REDIS_SENSOR_SMB_PASSWORD:?REDIS_SENSOR_SMB_PASSWORD must be set in .env}
+      EVENTS_STREAM: events:smb
+      # Short stream cap: seven more sensors share Redis memory. Ingest drains it continuously.
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN_LOW:-3000}
+      EVENTS_MAX_BYTES_PER_SEC: ${EVENTS_MAX_BYTES_PER_SEC:-200000}
+      EVENTS_MAX_BYTES_BURST: ${EVENTS_MAX_BYTES_BURST:-2000000}
+      SMB_PORT: "4450"
+      SMB_PUBLIC_PORT: ${SMB_HOST_PORT:-445}
+      SMB_HOSTNAME: ${SMB_HOSTNAME:-}
+      SMB_DOMAIN: ${SMB_DOMAIN:-}
+      SMB_DATA_DIR: /data
+      SMB_SMB1_MODE: ${SMB_SMB1_MODE:-steer}
+      SMB_MAX_CONNECTIONS: ${SMB_MAX_CONNECTIONS:-200}
+      SMB_MAX_PER_IP: ${SMB_MAX_PER_IP:-10}
+      # Keep equal to mem_limit below: the sensor sheds load as it nears this figure.
+      SMB_MEMORY_LIMIT: "167772160"
+    # Explicit IPv4 so Docker does not also publish on [::]. No capability needed.
+    ports:
+      - "0.0.0.0:${SMB_HOST_PORT:-445}:4450"
+    # Docker's embedded DNS still resolves service names; external names fail.
+    dns: ["127.0.0.1"]
+    # ingress: inbound only. sensors-smb: internal link to Redis.
+    networks: [ingress, sensors-smb]
+    volumes:
+      # Profile secret (NetBIOS and DNS names, ServerGuid), generated on first start. Never committed.
+      - smb-sensor-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 160m
+    memswap_limit: 160m  # no swap: overload fails fast instead of stalling the host
+    oom_score_adj: 800
+    cpu_shares: 256
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "smb_sensor.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # SIP sensor: a fake PBX (UDP and TCP), rate-limited so it can never be used as a reflector.
+  sensor-sip:
+    build:
+      context: .
+      dockerfile: sensors/sip/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_USER: sensor-sip
+      REDIS_PASSWORD: ${REDIS_SENSOR_SIP_PASSWORD:?REDIS_SENSOR_SIP_PASSWORD must be set in .env}
+      EVENTS_STREAM: events:sip
+      # Short stream cap: seven more sensors share Redis memory. Ingest drains it continuously.
+      EVENTS_MAXLEN: ${EVENTS_MAXLEN_LOW:-3000}
+      EVENTS_MAX_BYTES_PER_SEC: ${EVENTS_MAX_BYTES_PER_SEC:-200000}
+      EVENTS_MAX_BYTES_BURST: ${EVENTS_MAX_BYTES_BURST:-2000000}
+      SENSOR_PORT: "5060"
+      SIP_PUBLIC_PORT: ${SIP_HOST_PORT:-5060}
+      SENSOR_DATA_DIR: /data
+      # Public addresses of this honeypot (comma-separated). The sensor never answers them,
+      # so it cannot be made to talk to itself.
+      SENSOR_SIP_OWN_IPS: ${SIP_OWN_IPS:-}
+      SENSOR_MAX_CONNECTIONS: ${SIP_MAX_CONNECTIONS:-200}
+      SENSOR_MAX_PER_IP: ${SIP_MAX_PER_IP:-8}
+      # Keep equal to mem_limit below: the sensor sheds load as it nears this figure.
+      SENSOR_MEMORY_LIMIT: "167772160"
+    # Explicit IPv4 so Docker does not also publish on [::]. No capability needed.
+    ports:
+      - "0.0.0.0:${SIP_HOST_PORT:-5060}:5060/udp"
+      - "0.0.0.0:${SIP_HOST_PORT:-5060}:5060/tcp"
+    # Docker's embedded DNS still resolves service names; external names fail.
+    dns: ["127.0.0.1"]
+    # ingress: inbound only. sensors-sip: internal link to Redis.
+    networks: [ingress, sensors-sip]
+    volumes:
+      # Profile secret, generated on first start. Never committed.
+      - sip-sensor-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 160m
+    memswap_limit: 160m  # no swap: overload fails fast instead of stalling the host
+    oom_score_adj: 800
+    cpu_shares: 256
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "sip_sensor.healthcheck"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -496,6 +897,27 @@ networks:
   # Web sensor <-> Redis only.
   sensors-web:
     internal: true
+  # REDIS sensor <-> Redis only.
+  sensors-redis:
+    internal: true
+  # Docker sensor <-> Redis only.
+  sensors-docker:
+    internal: true
+  # MYSQL sensor <-> Redis only.
+  sensors-mysql:
+    internal: true
+  # MSSQL sensor <-> Redis only.
+  sensors-mssql:
+    internal: true
+  # ADB sensor <-> Redis only.
+  sensors-adb:
+    internal: true
+  # SMB sensor <-> Redis only.
+  sensors-smb:
+    internal: true
+  # SIP sensor <-> Redis only.
+  sensors-sip:
+    internal: true
   # Demo generator <-> Redis only.
   tools:
     internal: true
@@ -519,4 +941,11 @@ volumes:
   rdp-data:
   telnet-data:
   web-data:
+  redis-sensor-data:
+  docker-sensor-data:
+  mysql-sensor-data:
+  mssql-sensor-data:
+  adb-sensor-data:
+  smb-sensor-data:
+  sip-sensor-data:
   geoip-data:

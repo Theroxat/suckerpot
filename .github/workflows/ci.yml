@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           found=0
-          for dir in sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet scripts/demo db ingest api; do
+          for dir in sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip scripts/demo db ingest api; do
             if [ -f "$dir/pyproject.toml" ]; then
               found=1
               echo "::group::$dir"
@@ -253,6 +253,13 @@ jobs:
         run: scripts/telnet-test.sh
       - name: RDP connection request against the sensor
         run: scripts/rdp-test.sh
+      - name: Check that the new sensors are healthy
+        run: |
+          for s in redis docker mysql mssql adb smb sip; do
+            status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q "sensor-$s")")
+            echo "sensor-$s: $status"
+            test "$status" = healthy
+          done
       - name: Real SSH login against the sensor
         env:
           SSH_HOST_PORT: "2222"
