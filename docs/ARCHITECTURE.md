@@ -15,7 +15,7 @@ This page describes how SuckerPot is built: the services, the networks, the queu
 
 **Built since:** insights, trends and malware endpoints and pages (M7), and dashboard login (M8).
 
-**Planned:** retention and backups (M8).
+**Built since:** retention, compressed storage, kept-forever aggregates and the database disk guard (see [Data retention](retention.md)), and backups (`just backup`).
 ```
 
 ## Overview
@@ -187,7 +187,7 @@ PostgreSQL 17 with TimescaleDB, managed by Alembic migrations in `db/`.
 | `enrichment_quota` | Regular table | Lookups used per provider and day |
 | `enrichment_status` | Regular table | Status of the GeoIP database and the reputation providers, shown in Settings |
 
-Retention (deleting raw events after 90 days) is planned for M8. Until then, raw events are kept.
+Raw events are dropped after `RETENTION_DAYS` (90), compressed after 7 days, and four continuous aggregates plus `sessions_daily` are kept forever. A disk guard drops the oldest raw chunks when the database grows past `DB_MAX_SIZE_GB`. See [Data retention](retention.md).
 
 ### Database roles
 

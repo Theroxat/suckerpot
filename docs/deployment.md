@@ -331,4 +331,3 @@ docker compose logs --tail=50 ingest
 ## Planned
 
 - API rate limits beyond the login limits (M8).
-- A retention job that deletes raw events after `RETENTION_DAYS` (M8).

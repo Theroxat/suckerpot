@@ -7,7 +7,7 @@ The dashboard is a single-page web app in `web/`. The API serves the built files
 
 **Built:** the app shell, the design system, the login page, **Live** (feed), **Overview** (with insights), **Attacks**, **Session detail**, **Attackers** (list and profile), **Trends** and **Malware**.
 
-**In progress:** the 3D globe on the Live page (it uses `GET /api/v1/settings/site` for the landing point), the terminal replay (M5) and **Settings** (M8).
+**In progress:** the 3D globe on the Live page (it uses `GET /api/v1/settings/site` for the landing point) and the terminal replay (M5).
 
 The pages read the endpoints described in [API](api.md).
 ```
@@ -33,7 +33,7 @@ The pages read the endpoints described in [API](api.md).
 | Attackers | `/attackers`, `/attackers/<ip>` | Built | Profiles by address and by network: first and last seen, sensors targeted, reputation. |
 | Trends | `/trends` | Built | Top usernames, passwords, commands and URLs, tags over time, a day by hour heatmap, and "new this week" (values never seen in the 90 days before). |
 | Malware | `/malware` | Built | Download URLs, defanged, with how often, from how many addresses and with which tool. File hashes and VirusTotal links appear only if payload fetching exists, which it does not yet. |
-| Settings | `/settings` | In progress (M8) | Sensor status, enrichment quotas, retention. The API already exposes `GET /api/v1/settings/enrichment`. |
+| Settings | `/settings` | Built | Sensor status, enrichment quotas, retention, the disk guard and the database size. Read-only. It uses `GET /api/v1/settings/system` and `/settings/enrichment`. |
 | Styleguide | `/styleguide` | Built | Every token and component, in every state. |
 
 ## Sign in

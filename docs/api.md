@@ -7,7 +7,7 @@ The API is a FastAPI application. It reads the database and returns JSON. It als
 
 **Built:** sessions, events, summary, enrichment settings, the analytics endpoints (M5), insights, trends, malware and site settings (M7), the live WebSocket feed, and dashboard authentication (M8, security review passed).
 
-**Planned:** API rate limits beyond the login limits, and the retention settings endpoint.
+**Planned:** API rate limits beyond the login limits.
 ```
 
 ## Base URL
@@ -126,6 +126,7 @@ These pages are generated from the code, so they match the running version. Use 
 | `GET` | `/api/v1/sessions/{session_id}` | One session |
 | `GET` | `/api/v1/sessions/{session_id}/events` | Events of one session, oldest first |
 | `GET` | `/api/v1/stats/summary` | Totals for the last 24 hours |
+| `GET` | `/api/v1/settings/system` | Sensor status, retention policy, disk guard state and database size. See [System settings](#get-apiv1settingssystem). |
 | `GET` | `/api/v1/settings/enrichment` | GeoIP database status and reputation quotas. See [Enrichment status](#get-apiv1settingsenrichment). |
 | `WebSocket` | `/api/v1/live` | Live feed of new events and statistics. See [Live feed](#live-feed). |
 
@@ -391,6 +392,18 @@ Example response (fake values):
 }
 ```
 
+### `GET /api/v1/settings/system`
+
+Read-only data for the Settings page. Every block becomes `null` or empty when its source is not available, so a partly migrated database never breaks the page.
+
+| Field | Content |
+| --- | --- |
+| `sensors` | One entry per sensor: `sensor`, `last_event_at`, `events_last_hour` and `status`: `active` (an event in the last 15 minutes), `quiet` (in the last 24 hours) or `silent` |
+| `retention` | `raw_days` (when raw events are dropped), `compression_after_days`, and the names of the `aggregates` that are kept forever |
+| `disk_guard` | The state written by the disk guard job (see [Data retention](retention.md#disk-guard)), or `null` |
+| `ingest_disk` | The state ingest reports for its own payload trimming, or `null` |
+| `database` | `size_bytes` and `max_bytes` (from `DB_MAX_SIZE_GB`) |
+
 ### `GET /api/v1/settings/enrichment`
 
 The status of the enrichment providers and today's quota use. It never returns an API key. The Settings page will use it.
@@ -623,4 +636,3 @@ Example `event` message:
 | Feature | Milestone |
 | --- | --- |
 | API rate limits beyond the login limits | M8 |
-| Retention settings endpoint | M8 |

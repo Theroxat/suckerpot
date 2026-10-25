@@ -9,7 +9,9 @@ SuckerPot is a honeypot. Its job is to be attacked. This page covers what it doe
 
 **Built:** dashboard login (M8). The security review passed.
 
-**Planned:** retention (M8), payload fetching (not scheduled), and the terminal replay.
+**Built:** retention (90 days raw, aggregates kept) and the database disk guard. See [Data retention](retention.md).
+
+**Planned:** payload fetching (not scheduled), and the terminal replay.
 
 Keep the dashboard port private anyway. Login is one layer, not the only one.
 ```
@@ -34,7 +36,7 @@ Keep the dashboard port private anyway. Login is one layer, not the only one.
 | An attacker uses a stolen queue credential | Each service has its own Redis user with the fewest commands it needs. A sensor can write only to its own stream, and ingest checks the `sensor` field against the stream. |
 | An attacker uses the API to change data | The API connects as a read-only database role |
 | An attacker reaches the internet from the API | Masquerading is off and the API resolves no external names. This is not a full block: host or hypervisor egress filtering is also required. See below. |
-| An attacker floods the sensors or fills the disk | Connection caps, timeouts, memory budgets and event rate limits in every sensor. Stream length cap and Redis memory limit. Size limits on events. Retention job (planned). |
+| An attacker floods the sensors or fills the disk | Connection caps, timeouts, memory budgets and event rate limits in every sensor. Stream length cap and Redis memory limit. Size limits on events. Retention and a database size guard. |
 | A sensor hangs and Docker does not restart it | A watchdog thread in each sensor exits the process when the event loop stalls |
 | An attacker abuses the dashboard | Login with an argon2 hash, signed `HttpOnly` `Secure` `SameSite=Strict` cookies, CSRF protection, rate-limited login. Keep the port private as well. |
 | The project is used to attack others | No offensive behaviour (see below) |
@@ -128,7 +130,7 @@ Generate each secret separately with `openssl rand -base64 32`.
 - Ingest writes in bounded batches. A message that keeps failing is dead-lettered after 5 attempts.
 - The live feed has a bounded queue per client, at most 50 clients in total and 5 per source address.
 - Every sensor caps connections in total and per source address, sets a timeout on every read, bounds every buffer, keeps a memory budget, and rate-limits its own events with bounded in-process queues. See the page of each [sensor](sensors/index.md).
-- Planned: the retention job (raw events kept for 90 days, aggregates kept).
+- Retention: raw events are dropped after `RETENTION_DAYS` (90) and compressed after 7 days. Aggregates are kept. A **disk guard** job runs every 5 minutes: above 90% of `DB_MAX_SIZE_GB` (default 10) it drops the oldest raw chunks until the size is below 80%, never touching the last 4 days or the aggregates. Above 95%, ingest stops storing payload previews. The state is shown on the Settings page. See [Data retention](retention.md).
 
 ### Watchdogs
 
@@ -188,23 +190,33 @@ The player is a read-only display. It must not be possible for a recording to ma
 
 Every change that touches a sensor, networking, authentication, the Compose file or a Dockerfile gets a separate security review before it is merged. The review is read-only and checks the change against the rules on this page and the repo hygiene rules below. The reviewer reports findings and does not edit code. A finding is fixed and re-checked before the change is merged.
 
-What the reviews have found so far, and what changed because of it:
+Review outcomes so far:
 
-| Review | Finding | Decision |
+| Area | Passes | Outcome |
 | --- | --- | --- |
-| Foundations (M1), first pass | Unbounded stream, weak egress control, poison messages that block the queue, default credentials. The first pass failed. | A capped stream, the secrets policy, dead-lettering of bad entries and the egress controls above. The second pass passed. |
-| Foundations (M1), follow-ups | Sensors would share a network, a Redis user and a stream. Containers could reach the host. | A fixed-name `ingress` network with no masquerade, one internal network, one Redis user and one stream per sensor, the sensor/stream check in ingest, and the host firewall table. |
-| Foundations (M1), follow-ups | Ingest trimming and role passwords | A stable consumer name, trimming that never passes an entry still pending, and role passwords re-applied on every `migrate` run so they can be rotated. Idempotent replay after a crash is still open on the [roadmap](ROADMAP.md). |
-| SSH sensor (M2) | A terminal replay could be attacked through escape sequences | The replay safety contract above |
+| Foundations (M1: networks, Redis, database, ingest, API) | 2 | The first pass failed (unbounded stream, weak egress control, poison messages that block the queue, default credentials). All were fixed and the second pass passed. Follow-ups: per-sensor networks, users and streams, the sensor/stream check, the host firewall, stable trimming, rotatable role passwords. Idempotent replay after a crash is still open on the [roadmap](ROADMAP.md). |
+| SSH sensor | 4 | Passed on the fourth pass. The passes found resource problems under hostile load, not code execution: unbounded input, expensive decryption of tiny packets, one address starving the shell CPU, memory growth, and event volume. They led to flow-controlled channels, inbound metering, a fair CPU scheduler, a cgroup memory guard, byte budgets for events and collapsed repeats. |
+| Telnet sensor | 2 | Pass 1 **failed**: pipelined heavy command lines starved the event loop (the watchdog then restarted the container in a loop), the fake `/etc/shadow` used constant hashes (a fingerprint), the memory budget could be used up to make the sensor drop other sessions, and option negotiation was chattier than BusyBox. Fixed with a shared fair CPU budget, per-device generated hashes, sessions kept open with a "Cannot allocate memory" error instead of being dropped when the memory budget is full and the exact BusyBox opener. Pass 2 passed. |
+| RDP sensor | 2 | Pass 1 **failed**: a TLS `close_notify` made the read return empty data, which sent the read loop into a 100% CPU busy loop (a one-packet denial of service), TLS handshakes were not throttled, and slow clients could use up all handshake slots. Fixed with an explicit end-of-stream check, per-source and global handshake limits, short deadlines and eviction of idle connections. Pass 2 passed. |
+| Dashboard authentication | 1 | Passed on the first pass. The medium findings were fixed: argon2 concurrency could exhaust memory (one check at a time now), CSRF bound to the session, `__Host-` cookies, trusted hosts, a per-boot signing key, IPv6 rate limiting per /64, trusted proxy CIDRs, and a stricter redirect target check in the web app. |
+| Web sensor | in progress | Pass 1 found response amplification that could exhaust memory. Pass 2 found lingering transports under reconnect churn. Pass 3 found the per-connection cost of TLS. Fixes are ongoing, and the sensor is not in Compose until it passes. |
+| Terminal replay (planned) | | The [safety contract](#terminal-replay-safety-contract) is a requirement for it. |
 
-Decisions that follow from these reviews:
+Lessons that every new sensor and service must follow:
 
-- **No execution, no fetching, no outbound traffic from a sensor.** Everything a sensor knows about an attack comes from bytes it received.
-- **Every allocation has a bound.** Buffers, queues, event sizes, file system sizes, line lengths and counters all have a fixed maximum, and the maximum is tested.
-- **Per-connection and global limits.** One source cannot use more than its share, and all sources together cannot use more than the sensor's budget.
+- **Bounded allocations.** Every buffer, queue, string, file system and counter has a fixed maximum, and the size of a result is computed or capped before it is built, not cut afterwards.
+- **Yield on every iteration.** A loop that handles attacker input checks its deadline and yields to the event loop on each pass, and stops after a fixed number of passes.
+- **Watchdogs.** Docker does not restart an unhealthy container, so a sensor kills itself when its event loop stalls.
+- **Budgets at three levels.** Per connection, per source address and global, for connections, input bytes, shell CPU, memory and events. Fairness between source addresses, so one address cannot starve the rest.
+- **Abort stuck transports.** A peer that does not read, or does not acknowledge, is cut off (write timeouts, `TCP_USER_TIMEOUT`, small send buffers) instead of keeping buffers alive.
+- **Measure the cost.** Expensive steps (a TLS handshake, a password hash, a decryption) get their own rate limit and concurrency cap, based on measured cost rather than a guess.
+- **Look at the real memory.** A cgroup memory guard compares the container's actual use with its limit and sheds load before the kernel kills the process.
+- **Budget the event bytes, not only the count.** Over budget, an event loses its bulk first and is dropped last. A shared publisher backstop covers every sensor.
+- **Guard the disk.** Retention drops old raw data, a size-based guard drops the oldest chunks when the database nears its ceiling, ingest keeps only previews above 95%, streams are capped, and backups refuse to run without enough free space. Disk use cannot explode.
 - **Drop, never block.** When a queue or Redis is full, the sensor drops the event and counts it. It never waits inside a connection handler.
-- **Fail visibly.** A service that cannot do its job stops its heartbeat or exits, so the problem shows up in `docker compose ps` instead of in missing data.
+- **Fail visibly.** A service that cannot do its job stops its heartbeat or exits, so the problem shows in `docker compose ps` instead of in missing data.
 - **Least privilege everywhere.** One Redis user per sensor, one database role per service, one network per job.
+- **No execution, no fetching, no outbound traffic from a sensor.** Everything a sensor knows about an attack comes from bytes it received.
 
 ## Repo hygiene
 
