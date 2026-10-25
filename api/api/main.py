@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -134,6 +135,13 @@ def create_app(
         # Machine-readable feeds authenticate with their own bearer token, not the dashboard
         # session, so they live outside /api/v1 and outside the role check.
         app.include_router(feeds_router, prefix="/feeds")
+        if not os.environ.get("AUTH_TRUSTED_PROXIES", "").strip():
+            # Behind a tunnel or proxy every client then looks like the proxy: the feed's rate
+            # limits and failure lockout become global instead of per client.
+            logging.getLogger("api.feeds").warning(
+                "FEEDS_ENABLED is on but AUTH_TRUSTED_PROXIES is empty: the feed cannot tell "
+                "its clients apart behind a proxy, so one bad client can lock everyone out."
+            )
     install_provider_keys(app)
     app.state.hub = LiveHub()
 

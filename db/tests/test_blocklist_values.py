@@ -31,7 +31,7 @@ def test_public_and_documentation_addresses_are_kept() -> None:
     assert blockable_ip(" 198.51.100.7 ") == "198.51.100.7"
     assert blockable_ip("::ffff:203.0.113.9") == "203.0.113.9"
     assert blockable_ip("2001:db8::1") is None  # IPv6 documentation range is not whitelisted
-    assert blockable_ip("8.8.4.4") == "8.8.4.4"
+    assert blockable_ip("8.8.5.5") == "8.8.5.5"
 
 
 @pytest.mark.parametrize(
@@ -74,3 +74,28 @@ def test_hashes_must_be_hex_of_a_known_length() -> None:
     assert normalize_value("hash", "a" * 63) is None
     assert normalize_value("hash", "g" * 64) is None
     assert normalize_value("nope", "x") is None
+
+
+def test_public_resolvers_and_saas_apex_domains_are_never_listed() -> None:
+    for ip in ("8.8.8.8", "1.1.1.1", "9.9.9.9", "2001:4860:4860::8888"):
+        assert blockable_ip(ip) is None
+    assert normalize_value("url", "http://8.8.8.8/x") is None
+    for d in ("google.com", "dl.google.com", "cdn.cloudflare.com", "s3.amazonaws.com"):
+        assert normalize_value("domain", d) is None
+
+
+def test_the_owner_never_list_covers_addresses_networks_and_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BLOCKLIST_NEVER", "203.0.113.0/28, partner.example")
+    monkeypatch.setenv("API_ALLOWED_HOSTS", "dash.example:8443")
+    monkeypatch.setenv("AUTH_TRUSTED_PROXIES", "198.51.100.7")
+    monkeypatch.setenv("INDICATORS_IGNORE", "*.corp.example")
+    assert blockable_ip("203.0.113.9") is None
+    assert blockable_ip("203.0.113.99") == "203.0.113.99"
+    assert blockable_ip("198.51.100.7") is None
+    assert normalize_value("domain", "api.partner.example") is None
+    assert normalize_value("domain", "dash.example") is None
+    assert normalize_value("domain", "x.corp.example") is None
+    assert normalize_value("url", "http://partner.example/a.sh") is None
+    assert normalize_value("domain", "other.example") == "other.example"

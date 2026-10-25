@@ -91,6 +91,11 @@ def yaml_scalar(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def sigma_escape(value: str) -> str:
+    """Make ``* ? \\`` literal: in a Sigma ``contains`` or ``endswith`` match they are wildcards."""
+    return value.replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?")
+
+
 def suricata_content(value: str) -> str:
     """The inside of ``content:"..."``: safe characters as they are, the rest as |hex| bytes."""
     out: list[str] = []
@@ -131,6 +136,7 @@ def _sigma(
     tags: Sequence[str],
     falsepositive: str,
     today: date,
+    exact: Sequence[str] = (),
 ) -> str:
     lines = [
         f"title: {yaml_scalar(title)}",
@@ -146,9 +152,14 @@ def _sigma(
     lines.append("logsource:")
     lines += [f"    {k}: {v}" for k, v in logsource]
     lines += ["detection:", "    selection:", f"        {field}:"]
-    lines += [f"            - {yaml_scalar(v)}" for v in values]
+    lines += [f"            - {yaml_scalar(sigma_escape(v))}" for v in values]
+    condition = "selection"
+    if exact:
+        condition = "selection or exact"
+        lines += ["    exact:", "        query:"]
+        lines += [f"            - {yaml_scalar(sigma_escape(v))}" for v in exact]
     lines += [
-        "    condition: selection",
+        f"    condition: {condition}",
         "falsepositives:",
         f"    - {yaml_scalar(falsepositive)}",
         f"level: {level}",
@@ -229,10 +240,10 @@ def sigma_domains(
         "A hit means a machine of yours looked one up."
     )
     text = _sigma(
-        key, title, description, [("category", "dns")], "query|endswith", values, "high",
-        ("attack.command-and-control",),
+        key, title, description, [("category", "dns")], "query|endswith",
+        ["." + v for v in values], "high", ("attack.command-and-control",),
         "A host name may be reused by a legitimate site later. Check its age before acting.",
-        today,
+        today, exact=values,
     )  # fmt: skip
     return Generated(
         key, "sigma", title, "severe", "domains",
@@ -381,8 +392,8 @@ def suricata_domain(
     http_key = f"suricata:host:{value}"
     http = _suricata(
         sid_for(http_key, taken), msg + " (HTTP)", "http $HOME_NET any -> $EXTERNAL_NET any",
-        ["flow:established,to_server", "http.host", f'content:"{suricata_content(value)}"',
-         "nocase", "endswith"],
+        ["flow:established,to_server", "http.host", "dotprefix",
+         f'content:".{suricata_content(value)}"', "nocase", "endswith"],
         "trojan-activity", today,
     )  # fmt: skip
     out.append(

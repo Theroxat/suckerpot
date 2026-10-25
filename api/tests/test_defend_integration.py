@@ -168,8 +168,7 @@ async def test_exports_are_valid_complete_and_safe(client: httpx.AsyncClient) ->
     lines = csv_body.split("\r\n")
     assert lines[0].startswith("kind,value,score")
     assert any(line.startswith("url,http://dl.bad-host.example/x.sh,82") for line in lines)
-    assert any(line.startswith("url,'=cmd") for line in lines)  # defused
-    assert not any(line.startswith("url,=") for line in lines)
+    assert not any("=cmd" in line for line in lines)  # an invalid value is not exported at all
     assert (
         await client.get(f"{API}/export", params={"kind": "domain", "format": "alias"})
     ).status_code == 422
@@ -179,12 +178,19 @@ async def test_exports_are_valid_complete_and_safe(client: httpx.AsyncClient) ->
 
 async def test_overrides_change_exports_at_once_and_are_audited(client: httpx.AsyncClient) -> None:
     ok = await client.post(
-        f"{API}/overrides", json={"kind": "ip", "value": "203.0.113.11", "action": "allow"}
+        f"{API}/overrides",
+        json={"kind": "ip", "value": "203.0.113.11", "action": "allow", "password": "x"},
     )
     assert ok.status_code == 201 and ok.json()["action"] == "allow"
     block = await client.post(
         f"{API}/overrides",
-        json={"kind": "ip", "value": "198.51.100.77", "action": "block", "note": "scanner at HQ"},
+        json={
+            "kind": "ip",
+            "value": "198.51.100.77",
+            "action": "block",
+            "note": "scanner at HQ",
+            "password": "x",
+        },
     )
     assert block.status_code == 201
     txt = (await client.get(f"{API}/export", params={"kind": "ip"})).text.splitlines()
@@ -192,7 +198,8 @@ async def test_overrides_change_exports_at_once_and_are_audited(client: httpx.As
     shown = (await client.get(f"{API}/blocklist", params={"kind": "ip"})).json()["items"]
     assert {i["value"]: i["override"] for i in shown}["203.0.113.11"] == "allow"
     again = await client.post(
-        f"{API}/overrides", json={"kind": "ip", "value": "203.0.113.11", "action": "block"}
+        f"{API}/overrides",
+        json={"kind": "ip", "value": "203.0.113.11", "action": "block", "password": "x"},
     )
     assert again.status_code == 201
     assert "203.0.113.11" in (await client.get(f"{API}/export", params={"kind": "ip"})).text
@@ -224,7 +231,7 @@ async def test_unblockable_values_are_refused(
     client: httpx.AsyncClient, kind: str, value: str
 ) -> None:
     r = await client.post(
-        f"{API}/overrides", json={"kind": kind, "value": value, "action": "block"}
+        f"{API}/overrides", json={"kind": kind, "value": value, "action": "block", "password": "x"}
     )
     assert r.status_code in (422, 400)
 
@@ -385,3 +392,12 @@ async def test_guidance_lists_only_what_was_seen(client: httpx.AsyncClient) -> N
     assert tags == ["php2shell", "malware-drop"]
     item = next(i for i in body["items"] if i["tag"] == "php2shell")
     assert item["seen"]["sessions"] == 3 and item["look"] and item["fix"]
+
+
+async def test_overrides_need_the_password_while_feeds_are_enabled(
+    client: httpx.AsyncClient,
+) -> None:
+    r = await client.post(
+        f"{API}/overrides", json={"kind": "ip", "value": "203.0.113.11", "action": "allow"}
+    )
+    assert r.status_code == 403 and r.json()["code"] == "reauth_required"

@@ -93,5 +93,12 @@ async def version(db: AsyncSession) -> str:
         await db.execute(select(func.max(E.computed_at), func.count()).select_from(E))
     ).one()
     changed = (await db.execute(select(func.max(O.created_at), func.count()).select_from(O))).one()
-    raw = f"{computed}|{count}|{changed[0]}|{changed[1]}"
+    live = (
+        await db.execute(
+            select(func.count())
+            .select_from(O)
+            .where(or_(O.expires_at.is_(None), O.expires_at > func.now()))
+        )
+    ).scalar()
+    raw = f"{computed}|{count}|{changed[0]}|{changed[1]}|{live}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]

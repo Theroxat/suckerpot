@@ -192,6 +192,9 @@ services:
       INTEL_INTERVAL_S: ${INTEL_INTERVAL_S:-30}
       INDICATORS_ENABLED: ${INDICATORS_ENABLED:-true}
       INDICATORS_IGNORE: ${INDICATORS_IGNORE:-}
+      # Never-block list (M16): also reads API_ALLOWED_HOSTS and AUTH_TRUSTED_PROXIES.
+      BLOCKLIST_NEVER: ${BLOCKLIST_NEVER:-}
+      AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
       INDICATORS_KEEP_DOCUMENTATION: ${INDICATORS_KEEP_DOCUMENTATION:-false}
       # This deployment's own names: never recorded as attack infrastructure.
       API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
@@ -273,6 +276,8 @@ services:
       API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
       # Machine-readable blocklist feeds (M16), outside /api/v1 and off by default.
       FEEDS_ENABLED: ${FEEDS_ENABLED:-false}
+      BLOCKLIST_NEVER: ${BLOCKLIST_NEVER:-}
+      INDICATORS_IGNORE: ${INDICATORS_IGNORE:-}
       SITE_TIMEZONE: ${SITE_TIMEZONE:-UTC}
       SUCKERPOT_ALLOW_DEFAULT_SECRETS: ${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}
     # Docker's embedded DNS still answers for service names (it listens on

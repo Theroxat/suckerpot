@@ -9,6 +9,8 @@ spelling. Nothing here resolves a name or opens a connection, and there is no re
 from __future__ import annotations
 
 import ipaddress
+import os
+from functools import lru_cache
 from typing import Literal
 
 Kind = Literal["ip", "domain", "url", "hash"]
@@ -61,8 +63,96 @@ SHARED_HOSTS: frozenset[str] = frozenset(
         "sourceforge.net",
         "telegram.org",
         "api.telegram.org",
+        # Major SaaS, CDN and cloud apex domains: never worth a firewall rule.
+        "google.com",
+        "googleapis.com",
+        "gstatic.com",
+        "googleusercontent.com",
+        "microsoft.com",
+        "windows.net",
+        "windowsupdate.com",
+        "office.com",
+        "live.com",
+        "azure.com",
+        "amazon.com",
+        "amazonaws.com",
+        "cloudflare.com",
+        "cloudflare-dns.com",
+        "akamai.net",
+        "akamaihd.net",
+        "fastly.net",
+        "apple.com",
+        "icloud.com",
+        "github.io",
+        "githubusercontent.com",
+        "ubuntu.com",
+        "debian.org",
+        "docker.com",
+        "docker.io",
+        "npmjs.org",
+        "python.org",
+        "mozilla.org",
+        "cloudflare-ipfs.com",
     }
 )
+
+# Public resolvers and similar infrastructure that attackers type into commands (for example
+# ``wget http://8.8.8.8/x``) and that must never be blocked.
+NEVER_IPS: frozenset[str] = frozenset(
+    {
+        "8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1", "9.9.9.9", "149.112.112.112",
+        "208.67.222.222", "208.67.220.220", "4.2.2.1", "4.2.2.2", "76.76.19.19",
+        "94.140.14.14", "94.140.15.15", "2001:4860:4860::8888", "2001:4860:4860::8844",
+        "2606:4700:4700::1111", "2606:4700:4700::1001", "2620:fe::fe",
+    }
+)  # fmt: skip
+NEVER_ENV = ("BLOCKLIST_NEVER", "AUTH_TRUSTED_PROXIES", "API_ALLOWED_HOSTS", "INDICATORS_IGNORE")
+
+
+Net = ipaddress.IPv4Network | ipaddress.IPv6Network
+NeverList = tuple[tuple[Net, ...], tuple[str, ...]]
+
+
+@lru_cache(maxsize=8)
+def _owner_never(
+    raw: str,
+) -> NeverList:
+    nets: list[Net] = []
+    hosts: list[str] = []
+    for item in raw.replace(",", " ").replace(";", " ").split():
+        item = item.strip().lower()
+        try:
+            nets.append(ipaddress.ip_network(item, strict=False))
+            continue
+        except ValueError:
+            pass
+        host = item.removeprefix("*.").removeprefix(".")
+        host = host.split("/", 1)[0].rsplit(":", 1)[0] if host.count(":") == 1 else host
+        if host:
+            hosts.append(host)
+    return tuple(nets), tuple(hosts)
+
+
+def owner_never() -> tuple[
+    tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...], tuple[str, ...]
+]:
+    """The owner's never-block list, read from the environment (cached per value).
+
+    BLOCKLIST_NEVER plus the trusted proxies, the allowed host names and the ignore list.
+    """
+    return _owner_never("\n".join(os.environ.get(name, "") for name in NEVER_ENV))
+
+
+def is_never_host(host: str) -> bool:
+    h = host.lower().rstrip(".")
+    if h in NEVER_IPS:
+        return True
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return any(h == n or h.endswith("." + n) for n in owner_never()[1])
+    nets = owner_never()[0]
+    return any(ip.version == n.version and ip in n for n in nets)
 
 
 def is_shared_host(host: str) -> bool:
@@ -84,6 +174,8 @@ def blockable_ip(value: str) -> str | None:
         return None
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
+    if is_never_host(str(ip)):
+        return None
     if any(ip.version == net.version and ip in net for net in _DOC_NETS):
         return str(ip)
     return str(ip) if ip.is_global and not ip.is_multicast else None
@@ -123,7 +215,7 @@ def valid_url(value: str) -> str | None:
     if not sep or scheme.lower() not in URL_SCHEMES or not rest:
         return None
     host = _host_of_url(rest)
-    if not host or not (blockable_ip(host) or valid_domain(host)):
+    if not host or is_never_host(host) or not (blockable_ip(host) or valid_domain(host)):
         return None
     return scheme.lower() + "://" + rest
 
@@ -141,7 +233,7 @@ def normalize_value(kind: str, value: str) -> str | None:
         return blockable_ip(value)
     if kind == "domain":
         host = valid_domain(value)
-        return None if host is None or is_shared_host(host) else host
+        return None if host is None or is_shared_host(host) or is_never_host(host) else host
     if kind == "url":
         return valid_url(value)
     if kind == "hash":

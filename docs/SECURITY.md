@@ -274,6 +274,7 @@ The Defend pages turn recorded data into lists and rules (see [Defend](defend.md
 - **Database grants.** Ingest has no access to `feed_tokens`. The API can read, insert and update it, not delete.
 - **Lists never contain your own network.** Private, loopback, link-local, multicast and reserved addresses and shared hosting names are refused when ingest scores them, when an override is set and again when a list is written. Every value is re-validated at export time.
 - **Captured strings are untrusted.** CSV cells are defused against formula injection. Rule generators accept printable ASCII only, cut it to a fixed length, quote it (Sigma) or hex-escape it (Suricata), and never put it in a title or message. Every generated rule and export is marked "review before deploying".
+- **Poisoning.** Text typed by an attacker can name any host (for example a public resolver). Indicators score by distinct source networks and stay below the default feed threshold without confirmation; public resolvers, big SaaS/CDN domains and the owner's never-list (`BLOCKLIST_NEVER`, trusted proxies, allowed hosts, ignore list) are never listed. Sigma wildcards in captured text are escaped.
 - **Nothing is contacted.** The exposure inventory is only compared with our own data. No list is pushed anywhere and nothing is reported to AbuseIPDB or anyone else.
 
 ## Terminal replay safety contract

@@ -128,6 +128,8 @@ class OverrideBody(BaseModel):
     action: Literal["allow", "block"]
     note: str | None = Field(default=None, max_length=256)
     expires_in_days: int | None = Field(default=None, ge=1, le=365)
+    # Required while feeds are enabled: an override changes what firewalls receive.
+    password: str | None = Field(default=None, max_length=1024, repr=False)
 
     @field_validator("value", "note")
     @classmethod
@@ -411,7 +413,9 @@ async def list_overrides(
 @router.post("/defend/overrides", status_code=201, response_model=OverrideOut)
 async def set_override(body: OverrideBody, request: Request, db: DbSession) -> Response:
     """Always allow or always block one value. Setting it again replaces the earlier decision."""
-    principal, refused = await guard(request, None, "blocklist override")
+    if feeds_enabled() and not body.password:
+        return error(403, "Enter your password to change what the feeds serve.", "reauth_required")
+    principal, refused = await guard(request, body.password, "blocklist override")
     if refused is not None or principal is None:
         return refused or error(401, "Not authenticated", "unauthenticated")
     value = normalize_value(body.kind, body.value)
