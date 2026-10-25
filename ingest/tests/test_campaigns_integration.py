@@ -163,6 +163,9 @@ async def test_a_script_seen_from_two_sources_becomes_a_campaign_that_grows_and_
     keys = await rows(engine, "SELECT kind FROM campaign_keys WHERE campaign_id = :c", c=c.id)
     # Only the script was seen from two networks: the single-source hosts are not stored.
     assert {k.kind for k in keys} == {"script"}
+    # Sources are counted as distinct /24 networks, like the rule that needs them.
+    stored = await rows(engine, "SELECT sources FROM campaign_keys WHERE campaign_id = :c", c=c.id)
+    assert [k.sources for k in stored] == [2]
     links = await rows(engine, "SELECT count(*) AS n FROM campaign_sessions")
     assert links[0].n == 2
 
@@ -186,7 +189,10 @@ async def test_a_script_seen_from_two_sources_becomes_a_campaign_that_grows_and_
     await run_cycle(factory, ATTACK, cfg, cache, now=LATER + timedelta(minutes=20))
     assert (await rows(engine, "SELECT count(*) AS n FROM campaigns"))[0].n == 2
 
-    bridge = shell_session("g", "203.0.113.7", script("dl.example.net"))
+    bridge = [
+        *shell_session("g", "203.0.113.7", script("dl.example.net")),
+        *shell_session("h", "192.0.2.8", script("dl.example.net"), offset=10),
+    ]
     await write_batch(factory, bridge, enr)
     stats = await run_cycle(factory, ATTACK, cfg, cache, now=LATER + timedelta(minutes=30))
     assert stats.merged == 1
@@ -195,7 +201,7 @@ async def test_a_script_seen_from_two_sources_becomes_a_campaign_that_grows_and_
     )
     assert [x.status for x in camps] == ["active", "merged"]
     assert camps[1].merged_into == camps[0].id
-    assert camps[0].sessions == 3 + 2 + 1
+    assert camps[0].sessions == 3 + 2 + 2
     assert (
         await rows(
             engine,

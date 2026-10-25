@@ -114,12 +114,20 @@ def order(*ids: int) -> dict[int, tuple[datetime, int]]:
 
 def test_strong_keys_of_two_campaigns_merge_into_the_oldest() -> None:
     sources = {K1: 2, K2: 2}
-    plan = build_plan(
-        [cand("a", ip(0), K1, K2)], {K1: 3, K2: 9}, order(3, 9), 2, key_sources=sources
-    )
-    assert plan.merges == [(9, 3)] or plan.merges == [(3, 9)]
-    winner = min((3, 9), key=lambda cid: order(3, 9)[cid])
-    assert plan.joins == {"a": winner}
+    bridges = [cand("a", ip(0), K1, K2), cand("b", ip(1), K1, K2, minutes=1)]
+    plan = build_plan(bridges, {K1: 3, K2: 9}, order(3, 9), 2, key_sources=sources)
+    assert plan.merges == [(9, 3)]
+    assert plan.joins == {"a": 3, "b": 3}
+
+
+def test_one_network_holding_both_keys_does_not_merge_two_strong_campaigns() -> None:
+    sources = {K1: 2, K2: 2}
+    same_ip = [cand(f"s{i}", "192.0.2.9", K1, K2, minutes=i) for i in range(20)]
+    same_net = [cand(f"n{i}", f"192.0.2.{i + 10}", K1, K2, minutes=i) for i in range(20)]
+    for sessions in (same_ip, same_net):
+        plan = build_plan(sessions, {K1: 3, K2: 9}, order(3, 9), 2, key_sources=sources)
+        assert plan.merges == []
+        assert set(plan.joins.values()) == {3}  # they still join the oldest campaign
 
 
 def test_a_weak_key_never_bridges_two_campaigns() -> None:
@@ -134,20 +142,17 @@ def test_a_weak_key_never_bridges_two_campaigns() -> None:
 def test_one_session_causes_at_most_one_merge() -> None:
     keys = {("payload_host", f"c{i}"): i for i in range(1, 17)}
     sources = dict.fromkeys(keys, 5)
-    plan = build_plan(
-        [cand("evil", ip(0), *keys)], dict(keys), order(*range(1, 17)), 2, key_sources=sources
-    )
-    assert len(plan.merges) == 1
+    evil = [cand("evil1", ip(0), *keys), cand("evil2", ip(1), *keys, minutes=1)]
+    plan = build_plan(evil, dict(keys), order(*range(1, 17)), 2, key_sources=sources)
+    assert len(plan.merges) <= len(evil)  # one merge per bridging session, never more
 
 
 def test_merge_budget_still_lets_the_session_join_without_merging() -> None:
     sources = {K1: 2, K2: 2}
-    plan = build_plan(
-        [cand("a", ip(0), K1, K2)], {K1: 3, K2: 9}, order(3, 9), 2, merge_budget=0,
-        key_sources=sources,
-    )  # fmt: skip
+    bridges = [cand("a", ip(0), K1, K2), cand("b", ip(1), K1, K2, minutes=1)]
+    plan = build_plan(bridges, {K1: 3, K2: 9}, order(3, 9), 2, merge_budget=0, key_sources=sources)
     assert plan.merges == []
-    assert len(plan.joins) == 1
+    assert len(plan.joins) == 2
 
 
 def test_sessions_linked_by_different_strong_keys_share_one_campaign() -> None:

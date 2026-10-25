@@ -25,6 +25,7 @@ from datetime import datetime
 from ingest.campaigns.keys import Key
 
 CREDLIST_MIN_SOURCES = 3
+MAX_BRIDGES = 10_000  # pending bridge pairs tracked per cycle (each holds a few networks)
 
 
 @dataclass(slots=True)
@@ -96,6 +97,7 @@ def build_plan(
         return max(stored.get(key, 0), len(nets.get(key, ()))) >= need
 
     merged_into: dict[int, int] = {}
+    bridge: dict[tuple[int, int], set[str]] = {}  # (loser, target) -> networks that bridge them
 
     def root(cid: int) -> int:
         while cid in merged_into:
@@ -122,8 +124,16 @@ def build_plan(
             losers = strong_mapped - {target}
             if losers:  # at most one merge per session
                 loser = oldest(losers)
-                plan.merges.append((loser, target))
-                merged_into[loser] = target
+                # The bridge itself needs evidence: sessions holding strong keys of both
+                # campaigns, from enough distinct networks. One address that fetches the known
+                # hosts of two campaigns proves nothing about them.
+                pair = (loser, target)
+                if pair in bridge or len(bridge) < MAX_BRIDGES:
+                    seen = bridge.setdefault(pair, set())
+                    seen.add(net_of(c.src_ip))
+                    if len(seen) >= min_sources:
+                        plan.merges.append((loser, target))
+                        merged_into[loser] = target
         joined[c.session_id] = target
         for k in sorted(c.keys):
             if k in mapping:
