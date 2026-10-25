@@ -14,7 +14,7 @@ from suckerpot_db.diskguard import max_db_bytes
 from suckerpot_db.secretbox import SecretBox, SecretError, box_from_env
 
 from ingest.alerts import AlertWorker
-from ingest.attack import AttackCatalogWorker
+from ingest.attack import AttackCatalogWorker, load_attack
 from ingest.blocklist import BlocklistWorker
 from ingest.campaigns import CampaignWorker
 from ingest.config import Settings
@@ -73,11 +73,21 @@ async def run() -> None:
 
     guard = DiskGuard(factory, max_db_bytes(), on_status=disk_status)
     indicator_settings = IndicatorSettings.from_env()
+    features = FeatureSettings.from_env()
+    # ATT&CK mapping: fail fast on a broken file, like the tagging rules.
+    attack = load_attack(enrich.rules_dir) if features.attack_enabled else None
+    if attack is not None:
+        log.info(
+            "loaded %d ATT&CK techniques and %d mapping rules",
+            len(attack.techniques),
+            len(attack.rules),
+        )
     enricher = Enricher(
         resolver,
         rules,
         indicators=IndicatorExtractor(indicator_settings) if indicator_settings.enabled else None,
         link_cap=indicator_settings.link_cap,
+        attack=attack,
     )
     consumer = Consumer(settings, redis, factory, enricher, guard)
 
@@ -127,10 +137,9 @@ async def run() -> None:
         await publish_status(factory, "maxmind", sync.status("maxmind"))
 
     # M15 to M19 feature workers: off by default, no-op until their phase lands.
-    features = FeatureSettings.from_env()
     feature_workers: list[FeatureWorker] = [
-        AttackCatalogWorker(features),
-        CampaignWorker(features),
+        AttackCatalogWorker(features, factory, attack),
+        CampaignWorker(features, factory, attack),
         BlocklistWorker(features, factory),
         ScriptWorker(features),
         ExplainerWorker(features),

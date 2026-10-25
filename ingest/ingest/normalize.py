@@ -111,6 +111,11 @@ def _normalize_token(token: str) -> str:
     return bare
 
 
+def normalize_token(token: str) -> str:
+    """One word, normalised (public for callers that normalise paths or fields)."""
+    return _normalize_token(token)
+
+
 def normalize_command(command: str) -> str | None:
     """One command, normalised; ``None`` for an empty or no-op command."""
     tokens = command.split()[:MAX_TOKENS]
