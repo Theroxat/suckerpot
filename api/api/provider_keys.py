@@ -21,7 +21,7 @@ from fastapi import APIRouter, FastAPI, Path, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete
+from sqlalchemy import case, delete
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db import (
@@ -50,6 +50,7 @@ log = logging.getLogger(__name__)
 
 REAUTH_SCOPE = "reauth"
 TEST_COOLDOWN = timedelta(seconds=20)
+MAX_TESTS_PER_DAY = 10  # per provider: every test spends one unit of the provider's daily quota
 
 ProviderName = Annotated[str, Path(pattern="^(abuseipdb|greynoise|maxmind)$")]
 
@@ -195,13 +196,40 @@ async def request_test(provider: ProviderName, request: Request, session: DbSess
     if not await _configured(session, provider):
         return _error(409, "There is no key to test for this provider.", "no_key")
     now = datetime.now(UTC)
-    previous = await session.get(ProviderTestRequestRow, provider)
-    if previous is not None and now - previous.requested_at < TEST_COOLDOWN:
-        wait = int((TEST_COOLDOWN - (now - previous.requested_at)).total_seconds()) + 1
+    today = now.date()
+    row = ProviderTestRequestRow
+    values: dict[str, Any] = {
+        "requested_at": now,
+        "requested_by": actor,
+        "handled_at": None,
+        "tests_day": today,
+        "tests_today": case((row.tests_day == today, row.tests_today + 1), else_=1),
+    }
+    # One statement checks the cooldown and the daily cap and counts the test: no race.
+    stmt = (
+        insert(row)
+        .values(provider=provider, **{**values, "tests_today": 1})
+        .on_conflict_do_update(
+            index_elements=["provider"],
+            set_=values,
+            where=(row.requested_at < now - TEST_COOLDOWN)
+            & ((row.tests_day != today) | (row.tests_today < MAX_TESTS_PER_DAY)),
+        )
+        .returning(row.tests_today)
+    )
+    if (await session.execute(stmt)).first() is None:
+        await session.rollback()
+        previous = await session.get(row, provider)
+        if (
+            previous is not None
+            and previous.tests_day == today
+            and (previous.tests_today >= MAX_TESTS_PER_DAY)
+        ):
+            return _error(
+                429, "The daily limit of key tests is reached. Try again tomorrow.", "daily_cap"
+            )
+        wait = TEST_COOLDOWN.seconds
         return _error(429, "A test was just requested.", "cooldown", {"Retry-After": str(wait)})
-    values: dict[str, Any] = {"requested_at": now, "requested_by": actor, "handled_at": None}
-    stmt = insert(ProviderTestRequestRow).values(provider=provider, **values)
-    await session.execute(stmt.on_conflict_do_update(index_elements=["provider"], set_=values))
     await session.commit()
     audit.info("provider key test requested provider=%s actor=%s", provider, actor)
     return JSONResponse(

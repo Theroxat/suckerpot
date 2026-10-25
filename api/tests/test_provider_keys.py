@@ -8,7 +8,7 @@ import base64
 import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -37,10 +37,17 @@ class FakeSession:
         self.executed: list[Any] = []
         self.commits = 0
         self.store: dict[tuple[type, str], Any] = {}
+        self.deny_upsert = False  # the guarded test-request upsert matched no row
 
     async def execute(self, stmt: Any) -> MagicMock:
         self.executed.append(stmt)
-        return MagicMock()
+        result = MagicMock()
+        if self.deny_upsert and "provider_test_requests" in str(stmt):
+            result.first.return_value = None
+        return result
+
+    async def rollback(self) -> None:
+        return None
 
     async def commit(self) -> None:
         self.commits += 1
@@ -302,6 +309,22 @@ def test_test_request_is_queued_then_rate_limited(client: TestClient, db: FakeSe
     assert r.status_code == 202 and r.json()["provider"] == "abuseipdb"
     params = db.params()
     assert params["requested_by"] == "admin" and params["handled_at"] is None
-    db.store[(ProviderTestRequestRow, "abuseipdb")] = MagicMock(requested_at=datetime.now(UTC))
+    db.deny_upsert = True
+    db.store[(ProviderTestRequestRow, "abuseipdb")] = MagicMock(
+        requested_at=datetime.now(UTC), tests_day=datetime.now(UTC).date(), tests_today=1
+    )
     again = client.post("/api/v1/settings/providers/abuseipdb/test", headers=hdr)
     assert again.status_code == 429 and again.json()["code"] == "cooldown"
+
+
+def test_test_request_daily_cap(client: TestClient, db: FakeSession) -> None:
+    hdr = login(client)
+    db.store[(ProviderSecretRow, "greynoise")] = object()
+    db.deny_upsert = True
+    db.store[(ProviderTestRequestRow, "greynoise")] = MagicMock(
+        requested_at=datetime.now(UTC) - timedelta(minutes=5),
+        tests_day=datetime.now(UTC).date(),
+        tests_today=10,
+    )
+    r = client.post("/api/v1/settings/providers/greynoise/test", headers=hdr)
+    assert r.status_code == 429 and r.json()["code"] == "daily_cap"

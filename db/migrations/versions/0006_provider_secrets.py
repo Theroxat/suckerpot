@@ -38,7 +38,9 @@ def upgrade() -> None:
                 CHECK (provider IN ('abuseipdb', 'greynoise', 'maxmind')),
             requested_at timestamptz NOT NULL DEFAULT now(),
             requested_by text NOT NULL,
-            handled_at timestamptz
+            handled_at timestamptz,
+            tests_day date NOT NULL DEFAULT current_date,
+            tests_today integer NOT NULL DEFAULT 0
         )
         """
     )
