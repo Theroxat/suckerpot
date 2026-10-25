@@ -5,7 +5,8 @@ Revises: 0013
 
 * ``alert_channels``: where alerts go. ``target_ciphertext`` holds the 12-byte nonce followed by
   the AES-GCM ciphertext of the webhook URL or address (SecretBox, AAD ``alert_channel:<id>``).
-* ``alert_rules``: one row per rule kind, seeded disabled.
+* ``alert_rules``: one row per rule kind, seeded disabled. ``enabled_at`` is when it was last
+  switched on: a cursor older than that is stale and restarts at "now" (no replay of history).
 * ``watched_cves``: CVE ids the owner wants an alert for.
 * ``alert_outbox``: what was queued, sent or suppressed; unique per rule, key and channel so a
   restart never sends twice. Pruned after 30 days.
@@ -73,6 +74,7 @@ def upgrade() -> None:
         CREATE TABLE alert_rules (
             kind text PRIMARY KEY CHECK (kind IN ({kinds})),
             enabled boolean NOT NULL DEFAULT false,
+            enabled_at timestamptz,
             channel_ids bigint[] NOT NULL DEFAULT '{{}}' CHECK (cardinality(channel_ids) <= 32),
             min_severity text NOT NULL DEFAULT 'warning'
                 CHECK (min_severity IN ('info', 'notice', 'warning', 'severe')),

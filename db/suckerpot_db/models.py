@@ -673,6 +673,7 @@ class AlertRuleRow(Base):
 
     kind: Mapped[str] = mapped_column(Text, primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     channel_ids: Mapped[list[int]] = mapped_column(
         ARRAY(BigInteger), server_default=text("'{}'::bigint[]"), nullable=False
     )
