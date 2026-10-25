@@ -301,3 +301,23 @@ export function dailyFromHourly(
     return { day, events: byDay.get(day) ?? 0 }
   })
 }
+
+/** The playbook in a few words, for lists: "3 stages, up to bringing tools". */
+export function stageReach(stages: readonly string[]): string {
+  const seen = STAGES.filter((s) => stages.includes(s))
+  const last = seen.at(-1)
+  if (!last) return "No stages recorded"
+  const name = STAGE_META[last].label.toLowerCase()
+  return seen.length === 1 ? `1 stage: ${name}` : `${seen.length} stages, up to ${name}`
+}
+
+/** Consecutive identical lines become one line with a count ("whoami" four times: "× 4"). */
+export function foldRepeats(lines: readonly ExcerptLine[]): { line: ExcerptLine; times: number }[] {
+  const out: { line: ExcerptLine; times: number }[] = []
+  for (const line of lines) {
+    const prev = out.at(-1)
+    if (prev?.line.kind === line.kind && prev.line.text === line.text) prev.times += 1
+    else out.push({ line, times: 1 })
+  }
+  return out
+}

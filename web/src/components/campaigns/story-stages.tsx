@@ -1,25 +1,8 @@
-import {
-  Anchor,
-  Download,
-  ExternalLink,
-  KeyRound,
-  Search,
-  SquareTerminal,
-  Target,
-} from "lucide-react"
-import type { LucideIcon } from "lucide-react"
+import { ExternalLink } from "lucide-react"
 import { Link } from "react-router"
-import { STAGE_META, type Stage, type StoryStage } from "@/lib/campaigns"
+import { STAGE_ICON } from "@/components/campaigns/stage-icons"
+import { STAGE_META, type StoryStage } from "@/lib/campaigns"
 import { cn } from "@/lib/utils"
-
-const STAGE_ICON: Record<Stage, LucideIcon> = {
-  recon: Search,
-  access: KeyRound,
-  execution: SquareTerminal,
-  persistence: Anchor,
-  tool_transfer: Download,
-  objective: Target,
-}
 
 interface StoryStagesProps {
   stages: readonly StoryStage[]
@@ -67,20 +50,20 @@ export function StoryStages({ stages, campaignId, className }: StoryStagesProps)
               <p className="text-sm text-pretty text-fg">{s.summary}</p>
               <ul className="flex flex-wrap gap-1.5 pt-0.5" aria-label={`Techniques: ${s.label}`}>
                 {s.techniques.map((t) => (
-                  <li key={t.id} className="inline-flex items-center">
+                  <li key={t.id} className="inline-flex max-w-full min-w-0 items-center">
                     <Link
                       to={`/attacks?campaign_id=${campaignId}&technique=${encodeURIComponent(t.id)}`}
                       aria-label={`${t.name}, ${t.id}. Show the sessions of this campaign that used it.`}
-                      className="inline-flex h-6 items-center gap-1.5 rounded-l-sm border border-border-strong px-2 text-2xs text-fg-muted transition-colors duration-150 hover:border-fg-subtle hover:text-fg"
+                      className="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-l-sm border border-border-strong px-2 text-2xs text-fg-muted transition-colors duration-150 hover:border-fg-subtle hover:text-fg"
                     >
-                      <span className="font-mono text-fg">{t.id}</span>
-                      <span className="max-w-48 truncate">{t.name}</span>
+                      <span className="shrink-0 font-mono text-fg">{t.id}</span>
+                      <span className="max-w-48 min-w-0 truncate">{t.name}</span>
                     </Link>
                     <a
                       href={t.url}
                       target="_blank"
                       rel="noreferrer noopener"
-                      className="inline-flex size-6 items-center justify-center rounded-r-sm border border-l-0 border-border-strong text-fg-subtle transition-colors duration-150 hover:text-fg"
+                      className="inline-flex size-6 shrink-0 items-center justify-center rounded-r-sm border border-l-0 border-border-strong text-fg-subtle transition-colors duration-150 hover:text-fg"
                       aria-label={`Read about ${t.id} ${t.name} on attack.mitre.org (opens in a new tab)`}
                     >
                       <ExternalLink aria-hidden className="size-3" />

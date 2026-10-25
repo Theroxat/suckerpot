@@ -4,9 +4,11 @@ import {
   describeCampaigns,
   describeMatrix,
   describeScale,
+  foldRepeats,
   groupByStage,
   heatColour,
   heatStep,
+  stageReach,
   stageTrailText,
   techniqueDays,
   windowDays,
@@ -172,6 +174,32 @@ describe("dailyFromHourly", () => {
       { day: "2026-10-22", events: 1 },
       { day: "2026-10-23", events: 0 },
       { day: "2026-10-24", events: 5 },
+    ])
+  })
+})
+
+describe("stageReach", () => {
+  it("says how far the playbook went, in words", () => {
+    expect(stageReach(["tool_transfer", "access", "execution"])).toBe(
+      "3 stages, up to bringing tools",
+    )
+    expect(stageReach(["access"])).toBe("1 stage: getting in")
+    expect(stageReach([])).toBe("No stages recorded")
+  })
+})
+
+describe("foldRepeats", () => {
+  it("folds back-to-back repeats only", () => {
+    const folded = foldRepeats([
+      { kind: "command", text: "whoami" },
+      { kind: "command", text: "whoami" },
+      { kind: "command", text: "uname -a" },
+      { kind: "command", text: "whoami" },
+    ])
+    expect(folded.map((f) => [f.line.text, f.times])).toEqual([
+      ["whoami", 2],
+      ["uname -a", 1],
+      ["whoami", 1],
     ])
   })
 })
