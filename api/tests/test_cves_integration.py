@@ -73,7 +73,9 @@ async def seed() -> None:
                         "cvss_severity, cvss_score, in_kev, relevance, matched_services, tags, "
                         "published_at, rank_score, sources, cwes, refs, cpes) VALUES "
                         "(:id, :v, :p, :t, :d, :sev, :sc, :kev, :rel, :svc, :tags, :pub, :rank, "
-                        "ARRAY['nvd'], ARRAY['CWE-94'], ARRAY['https://example.com/a', 'javascript:alert(1)', 'https://ex\u00e4mple.com/x'], "
+                        "ARRAY['nvd'], ARRAY['CWE-94'], "
+                        "ARRAY['https://example.com/a', 'javascript:alert(1)', "
+                        "'https://ex\u00e4mple.com/x'], "
                         "ARRAY['php:php'])"
                     ),
                     {
@@ -173,7 +175,13 @@ async def test_pagination_walks_every_row_once(client: httpx.AsyncClient) -> Non
 async def test_validation(client: httpx.AsyncClient) -> None:
     assert (await client.get("/cves", params={"limit": 101})).status_code == 422
     assert (await client.get("/cves", params={"cursor": "garbage"})).status_code == 422
-    for bad in (["abc", "CVE-2099-0001"], [2**40, "CVE-2099-0001"], [5, "CVE-2099-0001\n"], [5, "x"]):
+    bad_cursors: list[list[str | int]] = [
+        ["abc", "CVE-2099-0001"],
+        [2**40, "CVE-2099-0001"],
+        [5, "CVE-2099-0001\n"],
+        [5, "x"],
+    ]
+    for bad in bad_cursors:
         r = await client.get("/cves", params={"cursor": encode_cursor(bad)})
         assert r.status_code == 422, bad
     ok = await client.get("/cves", params={"cursor": encode_cursor([5, "CVE-2099-0001"])})
