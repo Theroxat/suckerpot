@@ -58,13 +58,16 @@ def test_sensor_mix(events: list[Event]) -> None:
     counts = Counter(firsts)
     total = len(firsts)
     target = {
-        SensorName.ssh: 0.50,
-        SensorName.web: 0.25,
-        SensorName.telnet: 0.15,
-        SensorName.rdp: 0.10,
+        SensorName.ssh: 0.375,
+        SensorName.web: 0.19,
+        SensorName.telnet: 0.11,
+        SensorName.rdp: 0.075,
     }
     for sensor, share in target.items():
         assert abs(counts[sensor] / total - share) < 0.08, (sensor, counts)
+    service = sum(counts[s] for s in SensorName) - sum(counts[s] for s in list(SensorName)[:4])
+    assert 0.15 < service / total < 0.35
+    assert all(counts[s] >= 20 for s in list(SensorName)[4:]), counts
 
 
 def test_ports_match_sensor(events: list[Event]) -> None:
@@ -73,6 +76,13 @@ def test_ports_match_sensor(events: list[Event]) -> None:
         SensorName.telnet: {23},
         SensorName.web: {80, 443},
         SensorName.rdp: {3389},
+        SensorName.redis: {6379},
+        SensorName.docker: {2375},
+        SensorName.mysql: {3306},
+        SensorName.adb: {5555},
+        SensorName.mssql: {1433},
+        SensorName.smb: {445},
+        SensorName.sip: {5060},
     }
     assert all(e.dst_port in allowed[e.sensor] for e in events)
 
@@ -144,7 +154,7 @@ def test_downloads_are_synthetic_and_recorded(events: list[Event]) -> None:
     dls = [e for e in events if e.type is EventType.download_attempt]
     assert dls
     for e in dls:
-        assert e.data["tool"] in {"wget", "curl", "tftp"}
+        assert e.data["tool"] in {"wget", "curl", "tftp", "powershell"}
         assert e.data["url"].split("://")[0] in {"http", "tftp"}
         host = e.data["url"].split("://")[1].split("/")[0]
         if host[0].isdigit():
@@ -167,7 +177,7 @@ def test_telnet_mirai_flow(events: list[Event]) -> None:
 
 
 def test_web_content(events: list[Event]) -> None:
-    reqs = [e for e in events if e.type is EventType.http_request]
+    reqs = [e for e in events if e.type is EventType.http_request and e.sensor is SensorName.web]
     paths = {e.data["path"] for e in reqs}
     for p in ("/.env", "/wp-login.php", "/xmlrpc.php", "/phpmyadmin/", "/.git/config", "/cgi-bin/"):
         assert p in paths, p
@@ -182,6 +192,7 @@ def test_php2shell_only_after_disclosure(events: list[Event]) -> None:
         e
         for e in events
         if e.type is EventType.http_request
+        and e.sensor is SensorName.web
         and e.data["method"] == "POST"
         and "PHP_SESSION_UPLOAD_PROGRESS" in e.data["body_preview"]
     ]
@@ -392,5 +403,139 @@ async def test_redis_sink_uses_per_sensor_streams() -> None:
     sink = RedisSink(EventPublisher(host="x", client=r, stream="events"))
     await sink.emit(gen_events(2, 200, 3))
     assert r.log
-    assert {s for _, s in r.log} == {"ssh", "web", "telnet", "rdp"}
+    assert {s for _, s in r.log} == {n.value for n in SensorName}
     assert all(stream == f"events:{sensor}" for stream, sensor in r.log)
+
+
+# ---- the seven service sensors ------------------------------------------------------------
+
+
+def of(events: Sequence[Event], sensor: SensorName, etype: EventType | None = None) -> list[Event]:
+    return [e for e in events if e.sensor is sensor and (etype is None or e.type is etype)]
+
+
+def flags_of(events: Sequence[Event]) -> Counter[str]:
+    c: Counter[str] = Counter()
+    for e in events:
+        c.update(f for f in e.data.get("flags", []) if isinstance(f, str))
+    return c
+
+
+def test_every_sensor_is_present(events: list[Event]) -> None:
+    assert {e.sensor for e in events} == set(SensorName)
+
+
+def test_redis_content(events: list[Event]) -> None:
+    cmds = of(events, SensorName.redis, EventType.command)
+    flags = flags_of(cmds)
+    for f in (
+        "cron_write",
+        "ssh_key_write",
+        "slaveof",
+        "module_load",
+        "miner",
+        "ransom_note",
+        "flushall",
+    ):
+        assert flags[f] > 0, f
+    assert any(e.data["input"] == "CONFIG SET dir /var/spool/cron" for e in cmds)
+    assert all({"input", "command", "argc", "flags"} <= set(e.data) for e in cmds)
+    assert of(events, SensorName.redis, EventType.download_attempt)
+    assert any(
+        e.data["kind"] == "redis_replication"
+        for e in of(events, SensorName.redis, EventType.scan)
+        if "kind" in e.data
+    )
+
+
+def test_docker_content(events: list[Event]) -> None:
+    dk = of(events, SensorName.docker)
+    flags = flags_of(dk)
+    for f in ("container_create", "privileged", "host_mount", "miner", "docker_sock_mount"):
+        assert flags[f] > 0, f
+    assert any(
+        p.data["path"] == "/version" for p in of(events, SensorName.docker, EventType.http_request)
+    )
+    creates = [e for e in dk if e.type is EventType.command]
+    assert creates and all(e.data["kind"] == "container_create" for e in creates)
+
+
+def test_mysql_content(events: list[Event]) -> None:
+    my = of(events, SensorName.mysql)
+    flags = flags_of(my)
+    for f in ("load_file", "into_outfile", "drop_database", "ransom_note", "udf"):
+        assert flags[f] > 0, f
+    logins = of(events, SensorName.mysql, EventType.login_attempt)
+    assert len(logins) > 100 and Counter(e.data["username"] for e in logins)["root"] > 50
+    assert any(e.data["success"] for e in logins)
+
+
+def test_mssql_content(events: list[Event]) -> None:
+    ms = of(events, SensorName.mssql)
+    flags = flags_of(ms)
+    for f in ("xp_cmdshell", "sp_configure", "sp_oacreate", "drop_database", "ransom_note"):
+        assert flags[f] > 0, f
+    assert {e.data["username"] for e in of(events, SensorName.mssql, EventType.login_attempt)} >= {
+        "sa"
+    }
+    assert any(
+        e.data["tool"] == "powershell"
+        for e in of(events, SensorName.mssql, EventType.download_attempt)
+    )
+
+
+def test_adb_content(events: list[Event]) -> None:
+    adb = of(events, SensorName.adb)
+    flags = flags_of(adb)
+    for f in ("adb_shell", "adb_push", "adb_install"):
+        assert flags[f] > 0, f
+    assert not of(events, SensorName.adb, EventType.login_attempt)  # ADB has no login
+    assert any("busybox" in e.data["input"] for e in of(events, SensorName.adb, EventType.command))
+
+
+def test_smb_content(events: list[Event]) -> None:
+    scans = of(events, SensorName.smb, EventType.scan)
+    kinds = Counter(e.data["kind"] for e in scans)
+    assert kinds["smb1_negotiate"] > 0 and kinds["smb1_command"] > 0
+    names = Counter(e.data["smb1_command_name"] for e in scans if e.data["kind"] == "smb1_command")
+    assert names["trans2"] > 0
+    logins = of(events, SensorName.smb, EventType.login_attempt)
+    assert logins and all(e.data["password"] is None and e.data["method"] == "ntlm" for e in logins)
+    assert any(e.data.get("dialect") for e in of(events, SensorName.smb, EventType.disconnect))
+    # plain SMBv1 negotiates far outnumber exploit-looking commands
+    assert kinds["smb1_negotiate"] > kinds["smb1_command"]
+
+
+def test_sip_content(events: list[Event]) -> None:
+    sip = of(events, SensorName.sip)
+    flags = flags_of(sip)
+    for f in ("options_scan", "scanner_ua", "register", "invite", "toll_fraud"):
+        assert flags[f] > 0, f
+    assert all("source_verified" in e.data for e in sip if e.type is not EventType.disconnect)
+    users = {e.data["username"] for e in of(events, SensorName.sip, EventType.login_attempt)}
+    assert {"100", "1000"} <= users
+    dialled = [e.data["dialled"] for e in of(events, SensorName.sip, EventType.command)]
+    assert dialled and all(d.startswith(("+", "00")) for d in dialled)
+    agents = Counter(e.data["user_agent"] for e in sip if e.data.get("user_agent"))
+    assert agents["friendly-scanner"] > 0
+
+
+def test_service_heavy_hitters_persist(events: list[Event]) -> None:
+    for sensor in list(SensorName)[4:]:
+        per_ip = Counter(str(evs[0].src_ip) for evs in by_session(of(events, sensor)).values())
+        assert max(per_ip.values()) >= 5, sensor
+
+
+def test_service_events_stay_small(events: list[Event]) -> None:
+    for e in events:
+        if e.sensor in list(SensorName)[4:]:
+            assert len(e.model_dump_json()) < 8000
+
+
+def test_volume_and_runtime_similar_to_before() -> None:
+    import time
+
+    t0 = time.perf_counter()
+    evs = gen_events(5, 3000, 30)
+    assert time.perf_counter() - t0 < 20
+    assert 8000 < len(evs) < 60000

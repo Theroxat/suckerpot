@@ -9,8 +9,33 @@ from datetime import UTC, datetime, timedelta
 
 from suckerpot_common import SensorName
 
-SENSORS = (SensorName.ssh, SensorName.web, SensorName.telnet, SensorName.rdp)
-BASE_MIX = (0.50, 0.25, 0.15, 0.10)
+SENSORS = (
+    SensorName.ssh,
+    SensorName.web,
+    SensorName.telnet,
+    SensorName.rdp,
+    SensorName.redis,
+    SensorName.docker,
+    SensorName.mysql,
+    SensorName.adb,
+    SensorName.mssql,
+    SensorName.smb,
+    SensorName.sip,
+)
+# Relative weights of the seven service sensors (redis, docker, mysql, adb, mssql, smb, sip).
+SERVICE_WEIGHTS = (0.18, 0.14, 0.14, 0.12, 0.12, 0.18, 0.12)
+SERVICE_SHARE = 0.25  # share of all sessions that hit the service sensors in a normal period
+Mix = tuple[float, float, float, float, float, float, float, float, float, float, float]
+
+
+def expand_mix(core: tuple[float, float, float, float], service_share: float) -> Mix:
+    """Scale the (ssh, web, telnet, rdp) mix down and append the service sensors."""
+    c = [x * (1 - service_share) for x in core]
+    s = [w * service_share for w in SERVICE_WEIGHTS]
+    return (*c, *s)  # type: ignore[return-value]
+
+
+BASE_MIX = expand_mix((0.50, 0.25, 0.15, 0.10), SERVICE_SHARE)
 PHP2SHELL_WINDOW = timedelta(days=3)  # since the CVE disclosure
 _WEEKDAY = (1.00, 1.05, 1.10, 1.00, 0.95, 0.80, 0.75)
 
@@ -18,7 +43,7 @@ _WEEKDAY = (1.00, 1.05, 1.10, 1.00, 0.95, 0.80, 0.75)
 @dataclass(frozen=True)
 class Context:
     weight: float
-    mix: tuple[float, float, float, float]  # ssh, web, telnet, rdp
+    mix: Mix  # ssh, web, telnet, rdp, then the service sensors
     botnet_wave: bool
     ssh_campaign: bool
     php2shell_p: float
@@ -57,13 +82,13 @@ class Schedule:
         php_p = 0.0
         if wave:
             weight *= 4.5
-            mix = (0.10, 0.07, 0.80, 0.03)
+            mix = expand_mix((0.10, 0.07, 0.80, 0.03), 0.05)
         elif camp:
             weight *= 2.5
-            mix = (0.82, 0.08, 0.05, 0.05)
+            mix = expand_mix((0.82, 0.08, 0.05, 0.05), 0.08)
         elif when >= self._php_start:
             weight *= 1.6
-            mix = (0.40, 0.40, 0.12, 0.08)
+            mix = expand_mix((0.40, 0.40, 0.12, 0.08), 0.15)
             php_p = 0.5
         return Context(weight, mix, wave, camp, php_p)
 

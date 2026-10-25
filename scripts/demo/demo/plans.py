@@ -88,13 +88,15 @@ class Builder:
                 (0.01, 0.25),
             )
 
-    def finish(self, reason: str, gap: Gap = (0.1, 1.5)) -> Plan:
+    def finish(
+        self, reason: str, gap: Gap = (0.1, 1.5), extra: dict[str, Any] | None = None
+    ) -> Plan:
         self.t += self.rng.uniform(*gap)
         self.plan.steps.append(
             Step(
                 round(self.t, 3),
                 EventType.disconnect,
-                {"duration_s": round(self.t, 2), "reason": reason},
+                {"duration_s": round(self.t, 2), "reason": reason, **(extra or {})},
             )
         )
         return self.plan
