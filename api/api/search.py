@@ -4,7 +4,9 @@
 domains and URLs, CVE ids and campaigns. It is built from indexed lookups only:
 
 * IPs: an exact match, or a dotted prefix such as ``203.0.113.`` turned into an address range,
-  both on ``ix_sessions_src_ip`` (the range scan reads at most ``IP_SCAN_ROWS`` index entries).
+  both on ``ix_sessions_src_ip``. The range scan reads at most ``IP_SCAN_ROWS`` index entries in
+  address order, so on a very wide prefix (a /8) the hits come from the lowest addresses of the
+  range, then are ordered by recency among those.
 * Hashes and domains/URLs: a left-anchored ``LIKE`` on ``ix_indicators_value_prefix``.
 * CVEs: the primary key, for a complete id (``CVE-2026-109618``).
 * Campaigns: a left-anchored ``LIKE`` on ``ix_campaigns_name_prefix``, or the numeric id.
@@ -19,11 +21,13 @@ known address must find it.
 from __future__ import annotations
 
 import re
+import time
+from collections import deque
 from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import ColumnElement, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +39,8 @@ from api.indicators import defang
 router = APIRouter(tags=["search"])
 
 MAX_QUERY = 128
+RATE_PER_SECOND = 10  # searches per signed-in session (or client address) per second
+RATE_TRACKED = 10_000  # callers remembered at once
 MIN_QUERY = 2
 GROUP_LIMIT = 5
 IP_SCAN_ROWS = 2000
@@ -267,11 +273,34 @@ async def _campaigns(db: AsyncSession, q: str) -> SearchGroup:
     return SearchGroup(kind="campaign", hits=hits, more=len(rows) > GROUP_LIMIT)
 
 
+def _check_rate(request: Request) -> None:
+    """At most ``RATE_PER_SECOND`` searches a second per session: 429 beyond that."""
+    token = request.app.state.auth.session_token(request.scope)
+    key = token or (request.client.host if request.client else "")
+    table: dict[str, deque[float]] | None = getattr(request.app.state, "search_hits", None)
+    if table is None:
+        table = {}
+        request.app.state.search_hits = table
+    now = time.monotonic()
+    if key not in table and len(table) >= RATE_TRACKED:
+        for k in [k for k, v in table.items() if not v or now - v[-1] > 1.0]:
+            del table[k]
+    hits = table.setdefault(key, deque())
+    while hits and now - hits[0] > 1.0:
+        hits.popleft()
+    if len(hits) >= RATE_PER_SECOND:
+        raise HTTPException(
+            status_code=429, detail="Too many searches", headers={"Retry-After": "1"}
+        )
+    hits.append(now)
+
+
 @router.get("/search", response_model=SearchResponse)
 async def search(
-    db: DbSession, q: Annotated[str, Query(min_length=1, max_length=512)]
+    request: Request, db: DbSession, q: Annotated[str, Query(min_length=1, max_length=512)]
 ) -> SearchResponse:
     """Find an IP, hash, domain, CVE or campaign. Up to five hits per group, indexed lookups."""
+    _check_rate(request)
     term = normalise(q)
     if len(term) < MIN_QUERY:
         return SearchResponse(q=term, groups=[])

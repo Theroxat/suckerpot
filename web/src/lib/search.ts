@@ -90,6 +90,14 @@ export function loadRecent(): string[] {
   }
 }
 
+export function clearRecentSearches(): void {
+  try {
+    localStorage.removeItem(RECENT_KEY)
+  } catch {
+    // Storage blocked: nothing was kept.
+  }
+}
+
 export function rememberSearch(q: string): string[] {
   const next = [q, ...loadRecent().filter((x) => x !== q)].slice(0, RECENT_MAX)
   try {

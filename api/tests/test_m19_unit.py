@@ -133,6 +133,9 @@ def test_trend_phrase_stays_quiet_on_small_or_flat_numbers() -> None:
     assert today.trend_phrase(9, 100) == ""
     assert today.trend_phrase(100, 90) == ""
     assert today.trend_phrase(50, 100) == ", 50% fewer than the day before"
+    assert today.trend_phrase(150, 100) == ", 50% more than the day before"
+    assert today.trend_phrase(1415, 100) == ", 14 times as many as the day before"
+    assert today.trend_phrase(200, 100) == ", 2 times as many as the day before"
 
 
 def test_campaign_and_act_sentences() -> None:

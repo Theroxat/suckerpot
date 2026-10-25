@@ -39,6 +39,8 @@ class SessionDelta:
     # A known research scanner (M19), set by the writer's enrichment step.
     benign: bool = False
     scanner_name: str | None = None
+    # Something in this batch was more than looking around: the session is not benign.
+    non_benign: bool = False
 
 
 _TOOL_MAX = 24
