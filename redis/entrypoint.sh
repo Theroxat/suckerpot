@@ -34,7 +34,7 @@ hash() {
   printf '%s' "$1" | sha256sum | cut -d' ' -f1
 }
 
-VARS="REDIS_PASSWORD REDIS_HEALTH_PASSWORD REDIS_INGEST_PASSWORD REDIS_SENSOR_SSH_PASSWORD REDIS_SENSOR_RDP_PASSWORD REDIS_SENSOR_TELNET_PASSWORD REDIS_DEMO_PASSWORD"
+VARS="REDIS_PASSWORD REDIS_HEALTH_PASSWORD REDIS_INGEST_PASSWORD REDIS_SENSOR_SSH_PASSWORD REDIS_SENSOR_RDP_PASSWORD REDIS_SENSOR_TELNET_PASSWORD REDIS_SENSOR_WEB_PASSWORD REDIS_DEMO_PASSWORD"
 for v in $VARS; do
   check "$v"
 done
@@ -56,6 +56,7 @@ user health on #$(h REDIS_HEALTH_PASSWORD) resetkeys -@all +ping +hello +auth
 user sensor-ssh on #$(h REDIS_SENSOR_SSH_PASSWORD) resetkeys ~events:ssh -@all +xadd +hello +auth
 user sensor-rdp on #$(h REDIS_SENSOR_RDP_PASSWORD) resetkeys ~events:rdp -@all +xadd +hello +auth
 user sensor-telnet on #$(h REDIS_SENSOR_TELNET_PASSWORD) resetkeys ~events:telnet -@all +xadd +hello +auth
+user sensor-web on #$(h REDIS_SENSOR_WEB_PASSWORD) resetkeys ~events:web -@all +xadd +hello +auth
 user demo on #$(h REDIS_DEMO_PASSWORD) resetkeys ~events:* -@all +xadd +hello +auth
 user ingest on #$(h REDIS_INGEST_PASSWORD) resetkeys ~events:* -@all +xreadgroup +xack +xgroup|create +xautoclaim +xtrim +hello +auth
 ACL

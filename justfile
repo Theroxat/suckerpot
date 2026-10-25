@@ -114,6 +114,10 @@ backup:
 restore file:
     scripts/restore-db.sh {{file}}
 
+# HTTP requests (WordPress login + PHP upload-progress) against the web sensor, then check the API.
+http-test:
+    scripts/web-test.sh
+
 # Open a psql shell in the database container.
 psql:
     docker compose exec db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'

@@ -237,6 +237,13 @@ jobs:
           status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q sensor-rdp)")
           echo "sensor-rdp: $status"
           test "$status" = healthy
+      - name: Check that the web sensor is healthy
+        run: |
+          status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q sensor-web)")
+          echo "sensor-web: $status"
+          test "$status" = healthy
+      - name: HTTP requests against the web sensor
+        run: scripts/web-test.sh
       - name: Check that the Telnet sensor is healthy
         run: |
           status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q sensor-telnet)")
