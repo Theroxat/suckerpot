@@ -50,6 +50,8 @@ class EventRow(Base):
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
     )
+    techniques: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # ATT&CK ids (M15)
+    benign: Mapped[bool | None] = mapped_column(Boolean)  # research scanner (M19), new rows only
 
     __table_args__ = (
         Index("ix_events_session_id_ts", "session_id", "ts"),
@@ -97,6 +99,13 @@ class SessionRow(Base):
         ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
     )
     client_tool: Mapped[str | None] = mapped_column(Text)
+    techniques: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    campaign_id: Mapped[int | None] = mapped_column(BigInteger)
+    clustered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    benign: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    scanner_name: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
         Index("ix_sessions_started_at", text("started_at DESC")),
@@ -106,6 +115,16 @@ class SessionRow(Base):
         Index("ix_sessions_country", "country"),
         Index("ix_sessions_last_event_at", text("last_event_at DESC")),
         Index("ix_sessions_asn", "asn", postgresql_where=text("asn IS NOT NULL")),
+        Index("ix_sessions_techniques", "techniques", postgresql_using="gin"),
+        Index("ix_sessions_campaign_id", "campaign_id"),
+        Index(
+            "ix_sessions_unclustered",
+            "last_event_at",
+            postgresql_where=text("clustered_at IS NULL"),
+        ),
+        Index(
+            "ix_sessions_not_benign", text("started_at DESC"), postgresql_where=text("NOT benign")
+        ),
     )
 
 
@@ -353,3 +372,383 @@ class AuditLogRow(Base):
     details: Mapped[dict[str, Any]] = mapped_column(
         JSONB, server_default=text("'{}'::jsonb"), nullable=False
     )
+
+
+def _now() -> Any:
+    return text("now()")
+
+
+def _empty_array() -> Any:
+    return text("'{}'::text[]")
+
+
+# ---- M15: campaigns and ATT&CK ---------------------------------------------------------------
+
+
+class AttackTechniqueRow(Base):
+    """The ATT&CK technique catalogue (upserted by ingest from YAML)."""
+
+    __tablename__ = "attack_techniques"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    tactic: Mapped[str] = mapped_column(Text)
+    stage: Mapped[str] = mapped_column(Text)
+    url: Mapped[str] = mapped_column(Text)
+
+
+class TechniqueDailyRow(Base):
+    """Per-day technique counters, kept forever."""
+
+    __tablename__ = "technique_daily"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    technique: Mapped[str] = mapped_column(Text, primary_key=True)
+    sensor: Mapped[str] = mapped_column(Text, primary_key=True)
+    sessions: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    events: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    sources: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+
+
+class CampaignRow(Base):
+    """A group of sessions that share infrastructure, tooling or a script."""
+
+    __tablename__ = "campaigns"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, server_default=text("'active'"), nullable=False)
+    merged_into: Mapped[int | None] = mapped_column(BigInteger)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sessions: Mapped[int] = mapped_column(BigInteger, server_default=text("0"), nullable=False)
+    sources: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    countries: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=_empty_array(), nullable=False
+    )
+    asns: Mapped[list[int]] = mapped_column(
+        ARRAY(Integer), server_default=text("'{}'::integer[]"), nullable=False
+    )
+    sensors: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=_empty_array(), nullable=False
+    )
+    techniques: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=_empty_array(), nullable=False
+    )
+    stages: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=_empty_array(), nullable=False
+    )
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=_empty_array(), nullable=False
+    )
+    families: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=_empty_array(), nullable=False
+    )
+    severity: Mapped[str] = mapped_column(Text, server_default=text("'info'"), nullable=False)
+    rep_session_id: Mapped[str | None] = mapped_column(Text)
+    demo: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class CampaignKeyRow(Base):
+    """A clustering key (script hash, payload host, ...) and the campaign it belongs to."""
+
+    __tablename__ = "campaign_keys"
+
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, primary_key=True)
+    campaign_id: Mapped[int | None] = mapped_column(BigInteger)
+    sources: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CampaignSessionRow(Base):
+    """A bounded link from a campaign to one of its sessions."""
+
+    __tablename__ = "campaign_sessions"
+
+    campaign_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    session_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    src_ip: Mapped[str] = mapped_column(INET)
+    sensor: Mapped[str] = mapped_column(Text)
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+# ---- M16: defend ------------------------------------------------------------------------------
+
+
+class BlocklistEntryRow(Base):
+    """A scored indicator for the blocklists, recomputed by ingest."""
+
+    __tablename__ = "blocklist_entries"
+
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, primary_key=True)
+    score: Mapped[int] = mapped_column(SmallInteger)
+    reasons: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=_empty_array(), nullable=False
+    )
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sessions: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    sources: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    campaign_ids: Mapped[list[int]] = mapped_column(
+        ARRAY(BigInteger), server_default=text("'{}'::bigint[]"), nullable=False
+    )
+    benign: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    demo: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class BlocklistOverrideRow(Base):
+    """An admin decision to always allow or always block an indicator."""
+
+    __tablename__ = "blocklist_overrides"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)
+    value: Mapped[str] = mapped_column(Text)
+    action: Mapped[str] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class FeedTokenRow(Base):
+    """A bearer token for the feeds. Only its sha256 is stored."""
+
+    __tablename__ = "feed_tokens"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary)
+    token_hint: Mapped[str] = mapped_column(Text)
+    kinds: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{ip}'::text[]"), nullable=False
+    )
+    min_score: Mapped[int] = mapped_column(SmallInteger, server_default=text("50"), nullable=False)
+    include_benign: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false"), nullable=False
+    )
+    created_by: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_ip: Mapped[str | None] = mapped_column(Text)
+    use_count: Mapped[int] = mapped_column(BigInteger, server_default=text("0"), nullable=False)
+
+
+class InventoryServiceRow(Base):
+    """A service the owner runs, compared with what attackers target."""
+
+    __tablename__ = "inventory_services"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    service: Mapped[str] = mapped_column(Text)
+    product: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[str | None] = mapped_column(Text)
+    exposure: Mapped[str] = mapped_column(Text, server_default=text("'internal'"), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+# ---- M17: script library ----------------------------------------------------------------------
+
+
+class ScriptRow(Base):
+    """One distinct normalised command sequence."""
+
+    __tablename__ = "scripts"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    fingerprint: Mapped[bytes] = mapped_column(LargeBinary)
+    normalized_text: Mapped[str] = mapped_column(Text)
+    sample_text: Mapped[str] = mapped_column(Text)
+    line_count: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"), nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sessions: Mapped[int] = mapped_column(BigInteger, server_default=text("0"), nullable=False)
+    sources: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    sensors: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=_empty_array(), nullable=False
+    )
+    campaign_id: Mapped[int | None] = mapped_column(BigInteger)
+    techniques: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=_empty_array(), nullable=False
+    )
+    demo: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+
+
+class ScriptSessionRow(Base):
+    """A bounded link from a script to a session that ran it."""
+
+    __tablename__ = "script_sessions"
+
+    script_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    session_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    src_ip: Mapped[str] = mapped_column(INET)
+    sensor: Mapped[str] = mapped_column(Text)
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ScriptExplanationRow(Base):
+    """Per-line explanation of a script, from the annotations or from the LLM."""
+
+    __tablename__ = "script_explanations"
+
+    script_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    source: Mapped[str] = mapped_column(Text, primary_key=True)  # annotations | llm
+    prompt_version: Mapped[int] = mapped_column(
+        SmallInteger, server_default=text("1"), nullable=False
+    )
+    model: Mapped[str | None] = mapped_column(Text)
+    lines: Mapped[Any] = mapped_column(JSONB)
+    summary: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class LlmRequestRow(Base):
+    """A request to explain a script with the LLM (the API inserts, ingest answers)."""
+
+    __tablename__ = "llm_requests"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    script_id: Mapped[int] = mapped_column(BigInteger)
+    requested_by: Mapped[str] = mapped_column(Text)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    state: Mapped[str] = mapped_column(Text, server_default=text("'queued'"), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text)
+
+
+# ---- M18: alerts and reports ------------------------------------------------------------------
+
+
+class AlertChannelRow(Base):
+    """Where alerts are sent. The target is encrypted (nonce followed by ciphertext)."""
+
+    __tablename__ = "alert_channels"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)
+    name: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
+    target_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    target_hint: Mapped[str] = mapped_column(Text, server_default=text("''"), nullable=False)
+    mask_ips: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
+    created_by: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class AlertRuleRow(Base):
+    """One row per alert rule kind (seeded, all disabled)."""
+
+    __tablename__ = "alert_rules"
+
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    channel_ids: Mapped[list[int]] = mapped_column(
+        ARRAY(BigInteger), server_default=text("'{}'::bigint[]"), nullable=False
+    )
+    min_severity: Mapped[str] = mapped_column(
+        Text, server_default=text("'warning'"), nullable=False
+    )
+    settings: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )
+
+
+class WatchedCveRow(Base):
+    """A CVE the owner wants an alert for."""
+
+    __tablename__ = "watched_cves"
+
+    cve_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    added_by: Mapped[str] = mapped_column(Text)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class AlertOutboxRow(Base):
+    """A queued, sent, failed or suppressed alert. Unique per rule, key and channel."""
+
+    __tablename__ = "alert_outbox"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    rule_kind: Mapped[str] = mapped_column(Text)
+    dedupe_key: Mapped[str] = mapped_column(Text)
+    channel_id: Mapped[int] = mapped_column(BigInteger)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    state: Mapped[str] = mapped_column(Text, server_default=text("'pending'"), nullable=False)
+    attempts: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(Text)
+
+
+class AlertCursorRow(Base):
+    """Ingest's progress per alert rule."""
+
+    __tablename__ = "alert_cursors"
+
+    rule_kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    cursor: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )
+
+
+class WeeklyReportRow(Base):
+    """A rendered weekly report, kept for two years."""
+
+    __tablename__ = "weekly_reports"
+
+    week_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    html: Mapped[str] = mapped_column(Text)
+    summary: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class AlertTestRequestRow(Base):
+    """A request to send a test message to a channel (the API inserts, ingest answers)."""
+
+    __tablename__ = "alert_test_requests"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger)
+    requested_by: Mapped[str] = mapped_column(Text)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    state: Mapped[str] = mapped_column(Text, server_default=text("'queued'"), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text)

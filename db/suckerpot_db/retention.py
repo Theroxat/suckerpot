@@ -33,6 +33,13 @@ MAINTENANCE_PROC = "suckerpot_maintenance"
 INDICATOR_PRUNE_PROC = "suckerpot_indicator_prune"  # created by migration 0009
 AUDIT_PRUNE_PROC = "suckerpot_audit_prune"  # created by migration 0010
 AUDIT_RETENTION_DAYS = 365
+CAMPAIGN_PRUNE_PROC = "suckerpot_campaign_prune"  # created by migration 0011
+SCRIPT_PRUNE_PROC = "suckerpot_script_prune"  # created by migration 0013
+ALERT_PRUNE_PROC = "suckerpot_alert_prune"  # created by migration 0014
+DEFAULT_CAMPAIGNS_MAX_ROWS = 50_000
+DEFAULT_SCRIPTS_MAX_ROWS = 100_000
+ALERT_OUTBOX_DAYS = 30
+WEEKLY_REPORT_DAYS = 730
 
 # Name of each continuous aggregate with its bucket width.
 AGGREGATES: dict[str, str] = {
@@ -79,7 +86,57 @@ def indicator_max_rows(env: Mapping[str, str] | None = None) -> int:
     return rows
 
 
-def apply_policies(conn: Connection, days: int, indicator_rows: int | None = None) -> None:
+def _max_rows(name: str, default: int, env: Mapping[str, str] | None) -> int:
+    e = os.environ if env is None else env
+    raw = (e.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        rows = int(raw)
+    except ValueError:
+        raise RetentionError(f"{name} must be an integer") from None
+    if not 1000 <= rows <= 50_000_000:
+        raise RetentionError(f"{name} must be between 1000 and 50000000")
+    return rows
+
+
+def campaigns_max_rows(env: Mapping[str, str] | None = None) -> int:
+    """Parse ``CAMPAIGNS_MAX_ROWS`` (default 50000, range 1000 to 50 million)."""
+    return _max_rows("CAMPAIGNS_MAX_ROWS", DEFAULT_CAMPAIGNS_MAX_ROWS, env)
+
+
+def scripts_max_rows(env: Mapping[str, str] | None = None) -> int:
+    """Parse ``SCRIPTS_MAX_ROWS`` (default 100000, range 1000 to 50 million)."""
+    return _max_rows("SCRIPTS_MAX_ROWS", DEFAULT_SCRIPTS_MAX_ROWS, env)
+
+
+def _schedule_prune(conn: Connection, proc: str, every: str, config: dict[str, int]) -> None:
+    """Replace the job of a prune procedure; a no-op while the migration that adds it is pending."""
+    conn.execute(
+        text("SELECT delete_job(job_id) FROM timescaledb_information.jobs WHERE proc_name = :p"),
+        {"p": proc},
+    )
+    exists = conn.execute(
+        text("SELECT to_regprocedure(:p) IS NOT NULL"), {"p": f"{proc}(integer, jsonb)"}
+    ).scalar()
+    if exists:
+        # The keys are fixed identifiers of this module, the values integers: safe to inline.
+        pairs = ", ".join(f"'{k}', CAST({int(v)} AS bigint)" for k, v in config.items())
+        conn.execute(
+            text(
+                f"SELECT add_job('{proc}', INTERVAL '{every}', "
+                f"config => jsonb_build_object({pairs}))"
+            )
+        )
+
+
+def apply_policies(
+    conn: Connection,
+    days: int,
+    indicator_rows: int | None = None,
+    campaign_rows: int | None = None,
+    script_rows: int | None = None,
+) -> None:
     """(Re)create every background job with the configured retention. Idempotent."""
     # The compression window is fixed; retention is validated to be at least as long.
     conn.execute(
@@ -156,6 +213,24 @@ def apply_policies(conn: Connection, days: int, indicator_rows: int | None = Non
             ),
             {"d": AUDIT_RETENTION_DAYS},
         )
+    _schedule_prune(
+        conn,
+        CAMPAIGN_PRUNE_PROC,
+        "1 hour",
+        {"retention_days": days, "max_rows": campaign_rows or DEFAULT_CAMPAIGNS_MAX_ROWS},
+    )
+    _schedule_prune(
+        conn,
+        SCRIPT_PRUNE_PROC,
+        "1 hour",
+        {"retention_days": days, "max_rows": script_rows or DEFAULT_SCRIPTS_MAX_ROWS},
+    )
+    _schedule_prune(
+        conn,
+        ALERT_PRUNE_PROC,
+        "1 day",
+        {"outbox_days": ALERT_OUTBOX_DAYS, "report_days": WEEKLY_REPORT_DAYS},
+    )
 
 
 def backfill(conn: Connection, days: int) -> None:
@@ -185,7 +260,9 @@ def apply_retention(conn: Connection, env: Mapping[str, str] | None = None) -> i
     """Apply policies and backfill for ``RETENTION_DAYS``. ``conn`` must be autocommit."""
     days = retention_days(env)
     try:
-        apply_policies(conn, days, indicator_max_rows(env))
+        apply_policies(
+            conn, days, indicator_max_rows(env), campaigns_max_rows(env), scripts_max_rows(env)
+        )
         backfill(conn, days)
     except DBAPIError as exc:
         code = getattr(exc.orig, "sqlstate", None)
