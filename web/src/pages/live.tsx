@@ -166,7 +166,8 @@ export function LivePage() {
         bySensor={stats?.by_sensor}
         focus={focus}
         onFocusChange={setFocus}
-        mapClassName="h-[19rem] sm:h-[26rem] lg:h-[clamp(26rem,calc(100dvh-17rem),72rem)]"
+        // Phones: the World preset's own shape (11:8), so it fills the card with no empty band.
+        mapClassName="aspect-[11/8] sm:aspect-auto sm:h-[26rem] lg:h-[clamp(26rem,calc(100dvh-17rem),72rem)]"
         footer={
           <LiveTicker
             events={ticker}

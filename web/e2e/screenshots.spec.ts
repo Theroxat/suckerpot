@@ -150,16 +150,17 @@ test("live", async ({ page }, info) => {
     await shoot(page, "live-1920", info.project.name)
   }
 
-  // The "World" preset (remembered on this browser afterwards, so it goes last).
+  // World is the default; the "Europe" preset is one click away (remembered on this browser
+  // afterwards, so it goes last).
   await page.goto("/live")
   await ready()
-  await page.getByRole("button", { name: "World", exact: true }).click()
+  await page.getByRole("button", { name: "Europe", exact: true }).click()
   await page.waitForTimeout(300)
-  await shoot(page, "live-world", info.project.name)
+  await shoot(page, "live-europe", info.project.name)
   if (info.project.name.startsWith("desktop")) {
     await page.setViewportSize({ width: 1920, height: 1080 })
     await page.waitForTimeout(300)
-    await shoot(page, "live-1920-world", info.project.name)
+    await shoot(page, "live-1920-europe", info.project.name)
   }
 })
 
