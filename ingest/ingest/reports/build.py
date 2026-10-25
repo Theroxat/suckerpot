@@ -15,12 +15,34 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ingest.alerts.text import clean, defang
+from ingest.alerts.text import clean_text, defang
 
 REAL = (
     "NOT s.benign AND NOT (s.src_ip <<= '192.0.2.0/24'::inet "
     "OR s.src_ip <<= '198.51.100.0/24'::inet OR s.src_ip <<= '203.0.113.0/24'::inet)"
 )
+
+# How a sensor is named in prose and in the printed report (same names as the web registry).
+SENSOR_LABEL = {
+    "ssh": "SSH",
+    "telnet": "Telnet",
+    "web": "Web",
+    "rdp": "RDP",
+    "smb": "SMB",
+    "redis": "Redis",
+    "docker": "Docker",
+    "mysql": "MySQL",
+    "mssql": "MSSQL",
+    "adb": "ADB",
+    "sip": "SIP",
+}
+
+
+def sensor_label(sensor: object) -> str:
+    """The display name of a sensor; an unknown value is cleaned and kept as is."""
+    key = str(sensor)
+    return SENSOR_LABEL.get(key, clean_text(key, 20))
+
 
 SENSOR_ADVICE = {
     "ssh": "SSH was the most targeted service: allow it only from a VPN, no password logins.",
@@ -75,7 +97,7 @@ async def collect(session: AsyncSession, week_start: date, tz_name: str) -> dict
     start, end = window(week_start, tz)
     prev_start = start - timedelta(days=7)
     p = {"s": start, "e": end}
-    await session.execute(text("SET LOCAL statement_timeout = '30s'"))
+    await session.execute(text("SET LOCAL statement_timeout = '60s'"))
     totals = (
         (
             await session.execute(
@@ -118,7 +140,7 @@ async def collect(session: AsyncSession, week_start: date, tz_name: str) -> dict
         ).all()
     ]
     countries = [
-        {"country": clean(r.country, 8), "sessions": r.n}
+        {"country": clean_text(r.country, 8), "sessions": r.n}
         for r in (
             await session.execute(
                 text(
@@ -134,7 +156,7 @@ async def collect(session: AsyncSession, week_start: date, tz_name: str) -> dict
         ).all()
     ]
     tags = [
-        {"tag": clean(r.tag, 40), "sessions": r.n}
+        {"tag": clean_text(r.tag, 40), "sessions": r.n}
         for r in (
             await session.execute(
                 text(
@@ -151,7 +173,7 @@ async def collect(session: AsyncSession, week_start: date, tz_name: str) -> dict
     campaigns = [
         {
             "id": r.id,
-            "name": clean(r.name, 80),
+            "name": clean_text(r.name, 80),
             "severity": r.severity,
             "sessions": r.sessions,
             "sources": r.sources,
@@ -187,7 +209,7 @@ async def collect(session: AsyncSession, week_start: date, tz_name: str) -> dict
         ).all()
     ]
     cves = [
-        {"cve_id": clean(r.cve_id, 24), "sessions": r.n}
+        {"cve_id": clean_text(r.cve_id, 24), "sessions": r.n}
         for r in (
             await session.execute(
                 text(
@@ -249,7 +271,7 @@ def summarize(
         headline = "A quiet week: no attack sessions were recorded."
     else:
         headline = f"{sessions:,} attack sessions from {sources:,} addresses, {trend}" + (
-            f", mostly against {clean(top, 20)}." if top else "."
+            f", mostly against {sensor_label(top)}." if top else "."
         )
     actions: list[str] = []
     if hosts:

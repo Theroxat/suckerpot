@@ -8,6 +8,7 @@ a clickable (or auto-fetched) URL.
 from __future__ import annotations
 
 import ipaddress
+import re
 import unicodedata
 
 ELLIPSIS = "…"
@@ -27,6 +28,23 @@ def clean(value: object, limit: int = 120) -> str:
     if len(out) > limit:
         out = out[: limit - 1].rstrip() + ELLIPSIS
     return out
+
+
+_SCHEME = re.compile(r"\b(https?|ftps?|sftp|tftp)://", re.IGNORECASE)
+_WWW = re.compile(r"\bwww\.", re.IGNORECASE)
+
+
+def clean_text(value: object, limit: int = 120) -> str:
+    """``clean`` for free text that came from outside: URL schemes and ``www.`` are defanged.
+
+    A chat client or mail reader turns ``http://host`` into a link; written ``hxxp[://]host`` it is
+    only text. Safe to apply twice.
+    """
+    out = clean(value, limit)
+    out = _SCHEME.sub(
+        lambda m: {"http": "hxxp", "https": "hxxps"}.get(m[1].lower(), "fxp") + "[://]", out
+    )
+    return _WWW.sub("www[.]", out)
 
 
 def defang(value: str, limit: int = 120) -> str:

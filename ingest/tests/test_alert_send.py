@@ -215,3 +215,35 @@ async def test_email_needs_configuration_and_a_clean_address(smtp: type[FakeSMTP
         await s2.send("email", "a@example.org\nBcc: b@example.org", sample_message())
     assert err2.value.code == "blocked_target"
     assert smtp.instances == []
+
+
+async def test_an_unexpected_exception_becomes_a_constant_internal_error() -> None:
+    async def broken(_host: str) -> list[str]:
+        raise ValueError(f"boom {DISCORD}")
+
+    s = Sender(AlertSettings(), resolver=broken, client=httpx.AsyncClient())
+    with pytest.raises(SendError) as err:
+        await s.send("discord", DISCORD, sample_message())
+    assert err.value.code == "internal" and TOKEN not in str(err.value)
+    assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
+async def test_the_whole_smtp_exchange_has_a_deadline(
+    smtp: type[FakeSMTP], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    import ingest.alerts.send as send_mod
+
+    monkeypatch.setattr(send_mod, "SMTP_DEADLINE_S", 0.05)
+    s, _ = sender(lambda _r: httpx.Response(204), settings=MAIL)
+    monkeypatch.setattr(s, "_smtp_send", lambda *_a: time.sleep(0.5))
+    with pytest.raises(SendError) as err:
+        await s.send("email", "analyst@example.org", sample_message())
+    assert err.value.code == "timeout" and err.value.retryable
+
+
+def test_the_http_client_keeps_no_connections_alive() -> None:
+    s = Sender(AlertSettings())
+    pool = s.client._transport._pool  # type: ignore[attr-defined]
+    assert pool._max_keepalive_connections == 0

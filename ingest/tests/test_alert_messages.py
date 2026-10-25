@@ -13,7 +13,7 @@ from ingest.alerts.messages import (
     render_email,
     render_teams,
 )
-from ingest.alerts.text import clean, defang, mask_ip, show_ip
+from ingest.alerts.text import clean, clean_text, defang, mask_ip, show_ip
 
 EVIL = "<script>alert(1)</script> @everyone [click](http://evil.example) ‮\x07"
 
@@ -134,3 +134,41 @@ def test_smtp_settings_are_validated() -> None:
     ):
         with pytest.raises(ValueError, match="must"):
             AlertSettings.from_env(env)
+
+
+def test_clean_text_defangs_urls_and_www_in_free_text() -> None:
+    raw = "see http://evil.example/x, HTTPS://a.test and www.bad.test or ftp://h.test"
+    out = clean_text(raw)
+    assert "http://" not in out.lower() and "https://" not in out.lower() and "ftp://" not in out
+    assert "www." not in out
+    assert "hxxp[://]evil.example/x" in out and "hxxps[://]a.test" in out
+    assert clean_text(out) == out  # applying it twice changes nothing
+
+
+def test_every_attacker_field_in_a_message_is_defanged() -> None:
+    evil = "http://evil.example/a www.evil.test"
+    campaign = Candidate(
+        "new_campaign",
+        "campaign:1",
+        "severe",
+        {
+            "id": 1,
+            "name": evil,
+            "sources": 2,
+            "sessions": 3,
+            "sensors": [evil],
+            "countries": [evil],
+            "techniques": [evil],
+        },
+    )
+    drop_data = {"sensor": evil, "org": evil, "country": evil, "tags": [evil]}
+    drop = Candidate("malware_drop", "k", "severe", {**drop_data, "src_ip": "8.8.4.4"})
+    cve = Candidate(
+        "watched_cve_seen", "k", "warning", {"cve_id": "CVE-2026-1", "sessions": 1, "title": evil}
+    )
+    host = Candidate(
+        "new_download_host", "k", "warning", {"host": "x", "family": evil, "sightings": 1}
+    )
+    for cand in (campaign, drop, cve, host):
+        flat = json.dumps(build_message(cand, mask_ips=True)).lower()
+        assert "http://" not in flat and "www." not in flat, cand.rule

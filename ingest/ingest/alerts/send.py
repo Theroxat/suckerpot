@@ -40,6 +40,7 @@ log = logging.getLogger(__name__)
 HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 DNS_TIMEOUT_S = 5.0
 SMTP_TIMEOUT_S = 15.0
+SMTP_DEADLINE_S = 60.0  # the whole exchange, whatever the server drips
 MAX_BODY_BYTES = 12_000  # well under every service's limit
 
 Resolver = Callable[[str], Awaitable[list[str]]]
@@ -89,14 +90,29 @@ class Sender:
         self.settings = settings
         self.smtp_password = smtp_password
         self.resolver = resolver
+        # No connection is kept: each call pins its own address, and a pooled connection to
+        # one address must never be reused for another host name.
         self.client = client or httpx.AsyncClient(
-            timeout=HTTP_TIMEOUT, follow_redirects=False, trust_env=False, verify=True
+            timeout=HTTP_TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+            verify=True,
+            limits=httpx.Limits(max_keepalive_connections=0),
         )
 
     async def aclose(self) -> None:
         await self.client.aclose()
 
     async def send(self, kind: str, target: str, message: dict[str, Any]) -> None:
+        try:
+            await self._dispatch(kind, target, message)
+        except SendError:
+            raise
+        except Exception as exc:  # never let a message text (it may hold a target) escape
+            log.warning("alert send failed unexpectedly (%s)", type(exc).__name__)
+            raise SendError("internal") from None
+
+    async def _dispatch(self, kind: str, target: str, message: dict[str, Any]) -> None:
         base = self.settings.dashboard_url
         if kind == "email":
             await self._send_email(target, message, base)
@@ -161,7 +177,10 @@ class Sender:
         mail["Subject"] = subject
         mail.set_content(text)
         mail.add_alternative(body_html, subtype="html")
-        await asyncio.to_thread(self._smtp_send, mail, to)
+        try:
+            await asyncio.wait_for(asyncio.to_thread(self._smtp_send, mail, to), SMTP_DEADLINE_S)
+        except TimeoutError:
+            raise SendError("timeout", retryable=True) from None
 
     def _smtp_send(self, mail: EmailMessage, to: str) -> None:
         s = self.settings
