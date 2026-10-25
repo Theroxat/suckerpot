@@ -316,7 +316,7 @@ async function failure(res: Response, notify: boolean): Promise<ApiError> {
   return new ApiError(res.status, detail, code)
 }
 
-type Param = string | number | readonly string[] | undefined
+export type Param = string | number | readonly string[] | undefined
 
 /**
  * Known research scanners (Censys, Shodan...) are hidden by the API unless a request says

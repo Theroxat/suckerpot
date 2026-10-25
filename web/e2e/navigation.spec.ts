@@ -2,10 +2,9 @@ import { expect, test } from "@playwright/test"
 import { h1, settle, shoot } from "./helpers"
 
 // P0: the three spaces in the nav and the placeholder pages behind the new routes.
-// Campaigns and Techniques (M15) are real pages now: campaigns.spec.ts covers them.
+// Every page behind the new routes is real now: campaigns.spec.ts, scripts.spec.ts and the
+// feature specs cover them, so no placeholder is left to check here.
 const PLACEHOLDERS: [path: string, title: string][] = [
-  ["/scripts", "Scripts"],
-  ["/scripts/42", "Script"],
 ]
 
 test("nav spaces and placeholder routes", async ({ page }, info) => {
