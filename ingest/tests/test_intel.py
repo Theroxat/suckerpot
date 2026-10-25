@@ -315,13 +315,23 @@ class TestWithDatabase:
         async with engine.begin() as conn:
             await conn.execute(
                 text(
-                    "INSERT INTO indicators (type, value, role, first_seen, last_seen, sightings) "
-                    "VALUES ('domain', 'files.badhost.ru', 'download_host', now(), now(), 9), "
-                    "('url', 'http://files.badhost.ru/a.sh', 'download_host', now(), now(), 5), "
-                    "('domain', 'files.example.net', 'download_host', now(), now(), 4), "
-                    "('hash', :sha, 'hash', now(), now(), 3)"
+                    "INSERT INTO indicators (type, value, role, host, first_seen, last_seen, "
+                    "sightings, trusted) VALUES "
+                    "('domain', 'files.badhost.ru', 'download_host', null, now(), now(), 9, false), "
+                    "('url', 'http://files.badhost.ru/a.sh', 'download_host', 'files.badhost.ru', "
+                    "now(), now(), 5, false), "
+                    "('domain', 'files.example.net', 'download_host', null, now(), now(), 4, false), "
+                    "('hash', :sha, 'hash', null, now(), now(), 3, true)"
                 ),
                 {"sha": SHA},
+            )
+            # Two distinct source addresses each: shared indicators, full quota, 24 h cache.
+            await conn.execute(
+                text(
+                    "INSERT INTO indicator_sessions SELECT i.id, 's' || g, "
+                    "CAST('198.51.100.' || g AS inet), 'ssh', now() "
+                    "FROM indicators i, generate_series(1, 2) g"
+                )
             )
 
     async def used(self, engine: AsyncEngine, provider: str) -> int:
@@ -347,13 +357,14 @@ class TestWithDatabase:
         remote = Remote(answer)
         worker = remote.worker(factory=factory)
         made = await worker.run_once()
-        # 3 eligible indicators x 2 abuse.ch sources + 1 VirusTotal; the example.net one is skipped.
-        assert made == 7 and len(remote.requests) == 7
+        # domain and hash x 2 abuse.ch sources + 1 VirusTotal. The URL waits for a listed host,
+        # and the example.net one is skipped.
+        assert made == 5 and len(remote.requests) == 5
         assert {r.url.host for r in remote.requests} == ALLOWED_HOSTS
         sent = b"".join(r.read() for r in remote.requests)
         assert b"example.net" not in sent
         assert (
-            await self.used(engine, "abusech") == 6 and await self.used(engine, "virustotal") == 1
+            await self.used(engine, "abusech") == 4 and await self.used(engine, "virustotal") == 1
         )
         async with engine.connect() as conn:
             rows = (
@@ -364,8 +375,8 @@ class TestWithDatabase:
                     )
                 )
             ).all()
-        # 3 eligible x (urlhaus + threatfox), 1 VirusTotal, 2 "not-checked" markers
-        assert len(rows) == 9
+        # 2 eligible x (urlhaus + threatfox), 1 VirusTotal, 2 "not-checked" markers
+        assert len(rows) == 7
         skipped = [r for r in rows if r.value == "files.example.net"]
         assert {r.source for r in skipped} == {"urlhaus", "threatfox"}
         assert all(r.tags == ["not-checked"] and not r.known for r in skipped)
@@ -378,7 +389,7 @@ class TestWithDatabase:
             await conn.execute(
                 text("UPDATE indicator_intel SET checked_at = now() - interval '25 hours'")
             )
-        assert await worker.run_once() == 7
+        assert await worker.run_once() == 5
 
     async def test_daily_quota_is_a_hard_cap(
         self, engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]

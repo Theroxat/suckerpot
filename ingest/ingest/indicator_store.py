@@ -62,6 +62,8 @@ async def _write(session: AsyncSession, items: Sequence[Aggregate], link_cap: in
             # 'download_host' sorts after 'contacted_host': once seen as a download source it stays.
             "role": func.greatest(t.c.role, ex.role),
             "host": func.coalesce(t.c.host, ex.host),
+            "trusted": t.c.trusted | ex.trusted,
+            "demo": t.c.demo & ex.demo,
         },
     ).returning(t.c.id, t.c.type, t.c.value)
     rows = [
@@ -73,6 +75,8 @@ async def _write(session: AsyncSession, items: Sequence[Aggregate], link_cap: in
             "first_seen": a.first_seen,
             "last_seen": a.last_seen,
             "sightings": a.sightings,
+            "trusted": a.trusted,
+            "demo": a.demo,
             "sensors": sorted(a.sensors),
         }
         for a in items

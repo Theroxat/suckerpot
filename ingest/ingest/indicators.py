@@ -28,9 +28,11 @@ import ipaddress
 import logging
 import os
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
+from functools import lru_cache
 from typing import Any
+from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
 
@@ -61,9 +63,15 @@ _DIGITS = frozenset("0123456789")
 # string is only scanned for ``scheme://`` URLs, which keeps header values such as ``Host``
 # (our own address) out of the results.
 _COMMAND_KEYS = frozenset({"input", "command", "body_preview", "payload", "statement", "script"})
-_SKIP_KEYS = frozenset(
-    {"host", "hostname", "server_name", "servername", "sni", "password_hash", "nt_response_preview"}
-)
+_OWN_HOST_KEYS = frozenset({"host", "hostname", "server_name", "servername", "sni"})
+# Fields the attacker or a proxy fills with our own name or an unrelated page: never indicators.
+_SKIP_KEYS = _OWN_HOST_KEYS | frozenset(
+    {
+        "password_hash", "nt_response_preview", "referer", "referrer", "origin", "forwarded",
+        "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-server",
+        "x-real-ip", "x-original-url", "x-original-host", "via",
+    }
+)  # fmt: skip
 _HASH_KEYS = {"sha256": 64, "sha1": 40, "md5": 32, "hash": 0, "sha256_hex": 64}
 _EMPTY_HASHES = frozenset(
     {
@@ -115,9 +123,15 @@ class IndicatorSettings:
     def from_env(cls, env: Mapping[str, str] | None = None) -> IndicatorSettings:
         e = os.environ if env is None else env
         raw = e.get("INDICATORS_IGNORE", "")
-        ignore = tuple(
-            dict.fromkeys(p.strip().lower().strip(".") for p in raw.split(",") if p.strip())
-        )[:64]
+        names = [p.strip().lower().strip(".") for p in raw.split(",") if p.strip()]
+        # The names this deployment answers to are never attack infrastructure.
+        names += [h.strip().lower().strip(".") for h in e.get("API_ALLOWED_HOSTS", "").split(",")]
+        for origin in e.get("API_ALLOWED_ORIGINS", "").split(","):
+            try:
+                names.append((urlsplit(origin.strip()).hostname or "").lower())
+            except ValueError:
+                continue
+        ignore = tuple(dict.fromkeys(n for n in names if n and n != "*"))[:128]
         return cls(
             enabled=_flag(e.get("INDICATORS_ENABLED", "true")),
             ignore=ignore,
@@ -132,6 +146,8 @@ class Hit:
     value: str
     role: str  # download_host | contacted_host | hash
     host: str | None = None
+    trusted: bool = False  # a hash computed by a sensor (download or upload digest)
+    demo: bool = False  # the event came from the demo generator
 
 
 # ---- normalisation -----------------------------------------------------------------------
@@ -146,13 +162,59 @@ def _is_documentation_domain(host: str) -> bool:
     return tld in _DOC_TLDS or any(host == d or host.endswith("." + d) for d in _DOC_DOMAINS)
 
 
+@lru_cache(maxsize=256)
+def _network(entry: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network | None:
+    """``entry`` as an address or CIDR block, or None when it is a host name."""
+    try:
+        return ipaddress.ip_network(entry.strip("[]"), strict=False)
+    except ValueError:
+        return None
+
+
 def _ignored(host: str, ignore: Sequence[str]) -> bool:
-    return any(host == i or host.endswith("." + i) for i in ignore)
+    """Host names (and their subdomains), addresses and CIDR blocks from ``INDICATORS_IGNORE``."""
+    addr = parse_ip(host)
+    for entry in ignore:
+        net = _network(entry)
+        if net is not None:
+            if addr is not None and addr.version == net.version and addr in net:
+                return True
+        elif host == entry or host.endswith("." + entry):
+            return True
+    return False
+
+
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+_NAT64_LOCAL = ipaddress.ip_network("64:ff9b:1::/48")
+_TEREDO = ipaddress.ip_network("2001::/32")
+_SIX_TO_FOUR = ipaddress.ip_network("2002::/16")
+
+
+def unwrap_ipv6(
+    addr: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """The IPv4 address hidden in a mapped, NAT64, Teredo or 6to4 address, so it is checked as IPv4.
+
+    Local-use NAT64 (``64:ff9b:1::/48``) carries no fixed embedding: it is dropped (None).
+    """
+    if not isinstance(addr, ipaddress.IPv6Address):
+        return addr
+    if addr.ipv4_mapped is not None:
+        return addr.ipv4_mapped
+    if addr in _NAT64:
+        return ipaddress.IPv4Address(addr.packed[-4:])
+    if addr in _NAT64_LOCAL:
+        return None
+    if addr in _TEREDO and addr.teredo is not None:
+        return addr.teredo[1]
+    if addr in _SIX_TO_FOUR and addr.sixtofour is not None:
+        return addr.sixtofour
+    return addr
 
 
 def parse_ip(text: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     """An IP address from dotted-quad IPv4, bracket-free IPv6 or a single decimal/hex integer."""
-    if not text or len(text) > 45:
+    if not text or len(text) > 45 or "%" in text:  # a zone id (fe80::1%eth0) is never public
         return None
     try:
         if ":" in text:
@@ -182,8 +244,10 @@ def normalize_host(
     keep_doc = settings.keep_documentation
     addr = parse_ip(host)
     if addr is not None:
-        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
-            addr = addr.ipv4_mapped
+        unwrapped = unwrap_ipv6(addr)
+        if unwrapped is None:
+            return None
+        addr = unwrapped
         value = str(addr)
         if _ignored(value, settings.ignore):
             return None
@@ -359,7 +423,7 @@ def scan_command(text: str, settings: IndicatorSettings) -> list[Hit]:
 
 
 def _iter_strings(data: Mapping[str, Any], budget: list[int]) -> Iterator[tuple[str, str]]:
-    """``(top-level key, string)`` pairs from ``data``, at most ``MAX_STRINGS`` in total."""
+    """``(innermost key, string)`` pairs from ``data``, at most ``MAX_STRINGS`` in total."""
 
     def walk(key: str, value: Any, depth: int) -> Iterator[tuple[str, str]]:
         if budget[0] <= 0:
@@ -370,7 +434,7 @@ def _iter_strings(data: Mapping[str, Any], budget: list[int]) -> Iterator[tuple[
         elif depth < MAX_DEPTH and isinstance(value, Mapping):
             for k, v in list(value.items())[:MAX_STRINGS]:
                 if str(k).lower() not in _SKIP_KEYS:
-                    yield from walk(key, v, depth + 1)
+                    yield from walk(str(k).lower(), v, depth + 1)
         elif depth < MAX_DEPTH and isinstance(value, list):
             for v in value[:MAX_STRINGS]:
                 yield from walk(key, v, depth + 1)
@@ -379,6 +443,23 @@ def _iter_strings(data: Mapping[str, Any], budget: list[int]) -> Iterator[tuple[
         if str(k).lower() in _SKIP_KEYS:
             continue
         yield from walk(str(k).lower(), v, 0)
+
+
+def own_hosts(data: Mapping[str, Any]) -> frozenset[str]:
+    """The name the attacker connected to (Host header, SNI): ours, not theirs."""
+    found: set[str] = set()
+    sources: list[Mapping[str, Any]] = [data]
+    headers = data.get("headers")
+    if isinstance(headers, Mapping):
+        sources.append(headers)
+    for src in sources:
+        for k, v in list(src.items())[:MAX_STRINGS]:
+            if str(k).lower() in _OWN_HOST_KEYS and isinstance(v, str):
+                h = v.strip().lower()[:MAX_HOST]
+                if h.count(":") == 1:
+                    h = h.split(":", 1)[0]
+                found.add(h.strip("[]"))
+    return frozenset(found)
 
 
 class IndicatorExtractor:
@@ -390,9 +471,19 @@ class IndicatorExtractor:
         s = self.settings
         if not s.enabled:
             return []
+        # Demo events (data.demo is true) keep documentation values and are flagged, so they are
+        # shown but never sent to an intel service.
+        demo = data.get("demo") is True
+        if demo and not s.keep_documentation:
+            s = replace(s, keep_documentation=True)
+        own = own_hosts(data)
         out: dict[tuple[str, str], Hit] = {}
 
         def add(hit: Hit) -> None:
+            if hit.value in own or (hit.host is not None and hit.host in own):
+                return
+            if demo:
+                hit = replace(hit, demo=True)
             key = (hit.type, hit.value)
             old = out.get(key)
             if old is None:
@@ -406,7 +497,7 @@ class IndicatorExtractor:
             if key in _HASH_KEYS:
                 digest = normalize_hash(value, _HASH_KEYS[key])
                 if digest is not None:
-                    add(Hit("hash", digest, "hash"))
+                    add(Hit("hash", digest, "hash", trusted=True))
                 continue
             for raw in find_urls(value):
                 norm = normalize_url(raw, s)
@@ -433,6 +524,8 @@ class Aggregate:
     first_seen: datetime
     last_seen: datetime
     sightings: int = 0
+    trusted: bool = False
+    demo: bool = True
     sensors: set[str] = field(default_factory=set)
     sessions: dict[str, tuple[str, str, datetime]] = field(default_factory=dict)
 
@@ -452,9 +545,12 @@ def aggregate_batch(events: Sequence[Any], extractor: IndicatorExtractor) -> lis
                 if len(agg) >= MAX_AGGREGATES_PER_BATCH:
                     continue
                 a = agg[key] = Aggregate(hit.type, hit.value, hit.role, hit.host, ev.ts, ev.ts, 0)
+                a.demo = hit.demo
             elif _ROLE_RANK.get(hit.role, 0) > _ROLE_RANK.get(a.role, 0):
                 a.role = hit.role
             a.sightings += 1
+            a.trusted = a.trusted or hit.trusted
+            a.demo = a.demo and hit.demo
             a.first_seen = min(a.first_seen, ev.ts)
             a.last_seen = max(a.last_seen, ev.ts)
             a.sensors.add(str(ev.sensor))
