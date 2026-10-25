@@ -95,6 +95,7 @@ class SessionRow(Base):
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
     )
+    client_tool: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
         Index("ix_sessions_started_at", text("started_at DESC")),
