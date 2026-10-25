@@ -35,6 +35,7 @@ class SessionOut(BaseModel):
     abuse_score: int | None
     known_scanner: bool | None
     tags: list[str]
+    client_tool: str | None = None
 
 
 class EventOut(BaseModel):

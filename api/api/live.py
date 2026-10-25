@@ -188,6 +188,35 @@ def _adb_summary(etype: str, d: Mapping[str, Any], flags: set[str]) -> str | Non
     return None
 
 
+def _rdp_summary(etype: str, d: Mapping[str, Any], flags: set[str]) -> str | None:
+    tool = d.get("client_tool")
+    tool_name = _clean(tool, 16) if isinstance(tool, str) and tool and tool != "unknown" else ""
+    if etype == "login_attempt":
+        method = d.get("method")
+        user = _clean(d.get("username") or "?", 40)
+        domain = d.get("domain")
+        password = d.get("password")
+        if method == "rdp-nla-off":
+            who = f"{_clean(domain, 24)}\\{user}" if domain else user
+            return f"RDP cleartext login {who}" + (f" ({tool_name})" if tool_name else "")
+        if method == "rdp-ntlm":
+            if d.get("anonymous") is True:
+                return "RDP null session" + (f" ({tool_name})" if tool_name else "")
+            notes = [tool_name] if tool_name else []
+            if isinstance(password, str) and password:
+                notes.append("weak password")
+                tail = f" ({', '.join(notes)})"
+                return f"RDP login {user} / {_clean(password, 40)}{tail}"
+            who = f"{_clean(domain, 24)}\\{user}" if domain else user
+            return f"RDP NTLM login {who}" + (f" ({tool_name})" if tool_name else "")
+        if method == "rdp-cookie":
+            return f"RDP connection request {user}" + (f" ({tool_name})" if tool_name else "")
+        return None
+    if etype in ("disconnect", "scan") and "bluekeep_probe" in flags:
+        return "BlueKeep probe" + (f" ({tool_name})" if tool_name else "")
+    return None
+
+
 def _service_summary(sensor: str, etype: str, d: Mapping[str, Any]) -> str | None:
     """Sensor-aware one-liners for the non-shell sensors; None falls back to the generic ones."""
     flags = _flags(d)
@@ -217,6 +246,10 @@ def _service_summary(sensor: str, etype: str, d: Mapping[str, Any]) -> str | Non
         adb = _adb_summary(etype, d, flags)
         if adb is not None:
             return adb
+    if sensor == "rdp":
+        rdp = _rdp_summary(etype, d, flags)
+        if rdp is not None:
+            return rdp
     if sensor == "sip" and etype in ("scan", "command", "login_attempt"):
         return _sip_summary(etype, d, flags)
     if sensor == "smb" and etype in ("scan", "command", "login_attempt"):

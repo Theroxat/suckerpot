@@ -300,3 +300,10 @@ def test_new_tag_severities() -> None:
         assert r.TAG_SEVERITY[tag] == "severe"
     for tag in ("db-ransom", "redis-rogue-master", "sip-fraud", "persistence"):
         assert r.TAG_SEVERITY[tag] == "warning"
+
+
+def test_rdp_tag_severities() -> None:
+    assert r.TAG_SEVERITY["bluekeep"] == "warning"
+    assert r.TAG_SEVERITY["weak-credentials"] == "warning"
+    assert "rdp-cleartext" not in r.TAG_SEVERITY  # informational: default notice
+    assert r.TAG_LABELS["bluekeep"]

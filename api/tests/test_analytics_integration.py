@@ -342,3 +342,56 @@ async def test_multi_sensor_filter(client: httpx.AsyncClient, form: str) -> None
     heat = await client.get("/stats/heatmap", params=[*sensors, ("since", since), ("until", until)])
     assert top.status_code == 200 and heat.status_code == 200
     assert (await client.get("/sessions", params=[("sensor", "ftp")])).status_code == 422
+
+
+async def test_rdp_logins_feed_top_usernames_and_passwords(client: httpx.AsyncClient) -> None:
+    """rdp-ntlm carries a password only on a decoy match; null passwords never become a value."""
+    from sqlalchemy import insert
+    from suckerpot_db import EventRow
+
+    def row(data: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "ts": BASE - timedelta(minutes=2),
+            "sensor": "rdp",
+            "session_id": "rdp1",
+            "type": "login_attempt",
+            "src_ip": "198.51.100.9",
+            "src_port": 1,
+            "dst_port": 3389,
+            "data": data,
+        }
+
+    async with owner_engine() as owner, owner.begin() as conn:
+        await conn.execute(
+            insert(EventRow),
+            [
+                row(
+                    {
+                        "method": "rdp-ntlm",
+                        "username": "rdpuser",
+                        "password": None,
+                        "success": False,
+                    }
+                ),
+                row(
+                    {
+                        "method": "rdp-ntlm",
+                        "username": "rdpuser",
+                        "password": "P@ssw0rd",
+                        "success": True,
+                    }
+                ),
+                row(
+                    {
+                        "method": "rdp-nla-off",
+                        "username": "evil",
+                        "password": "hunter2",
+                        "success": False,
+                    }
+                ),
+            ],
+        )
+    users = await get(client, "/stats/top", field="username", sensor="rdp", **WIN)
+    assert {i["value"]: i["count"] for i in users["items"]} == {"rdpuser": 2, "evil": 1}
+    pws = await get(client, "/stats/top", field="password", sensor="rdp", **WIN)
+    assert {i["value"] for i in pws["items"]} == {"P@ssw0rd", "hunter2"}

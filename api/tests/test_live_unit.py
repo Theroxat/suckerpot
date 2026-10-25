@@ -401,6 +401,55 @@ async def test_poller_advances_past_bad_rows(monkeypatch: pytest.MonkeyPatch) ->
         ("adb", "scan", {"kind": "cnxn_garbage"}, "ADB probe (cnxn garbage)"),
         ("mysql", "scan", {}, "MySQL probe"),
         ("ssh", "command", {"input": "id"}, "ran `id`"),
+        (
+            "rdp",
+            "login_attempt",
+            {
+                "method": "rdp-ntlm",
+                "domain": "OFFICE",
+                "username": "administrator",
+                "password": None,
+                "client_tool": "FreeRDP",
+            },
+            "RDP NTLM login OFFICE\\administrator (FreeRDP)",
+        ),
+        (
+            "rdp",
+            "login_attempt",
+            {
+                "method": "rdp-ntlm",
+                "username": "administrator",
+                "password": "P@ssw0rd",
+                "success": True,
+                "client_tool": "unknown",
+            },
+            "RDP login administrator / P@ssw0rd (weak password)",
+        ),
+        (
+            "rdp",
+            "login_attempt",
+            {"method": "rdp-ntlm", "username": "", "anonymous": True, "client_tool": "nmap"},
+            "RDP null session (nmap)",
+        ),
+        (
+            "rdp",
+            "login_attempt",
+            {
+                "method": "rdp-nla-off",
+                "username": "evil",
+                "password": "x",
+                "client_tool": "rdesktop",
+            },
+            "RDP cleartext login evil (rdesktop)",
+        ),
+        ("rdp", "disconnect", {"flags": ["rdp_ntlm", "bluekeep_probe"]}, "BlueKeep probe"),
+        ("rdp", "disconnect", {"duration_s": 2, "flags": ["rdp_ntlm"]}, "disconnected after 2s"),
+        (
+            "rdp",
+            "login_attempt",
+            {"method": "rdp-cookie", "username": "nmap", "password": None, "success": False},
+            "RDP connection request nmap",
+        ),
         ("redis", "disconnect", {"duration_s": 3}, "disconnected after 3s"),
     ],
 )
@@ -421,3 +470,19 @@ def test_scan_summary_sanitises_attacker_strings() -> None:
     )
     assert "\x1b" not in s and "‮" not in s and len(s) <= 160
     assert "\n" not in build_summary("scan", {"kind": "x\ny" * 50}, "redis")
+
+
+def test_rdp_summary_sanitises_attacker_strings() -> None:
+    s = build_summary(
+        "login_attempt",
+        {
+            "method": "rdp-ntlm",
+            "username": "a\x1b[2J‮" + "u" * 200,
+            "domain": "d\n" * 50,
+            "password": "p\x07" + "w" * 200,
+            "client_tool": "t\x1b" * 20,
+        },
+        "rdp",
+    )
+    assert "\x1b" not in s and "‮" not in s and "\n" not in s and "\x07" not in s
+    assert len(s) <= 200
