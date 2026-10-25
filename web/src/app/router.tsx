@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- route table: lazy page components live next to the router on purpose. */
 import { Suspense, lazy } from "react"
-import { Navigate, createBrowserRouter, type RouteObject } from "react-router"
+import { createBrowserRouter, type RouteObject } from "react-router"
 import { PageSkeleton } from "@/components/skeletons"
 import { AttacksPage } from "@/pages/attacks"
 import { NotFoundPage, RouteError } from "@/pages/not-found"
@@ -13,6 +13,7 @@ import { RequireAuth } from "./auth"
 const OverviewPage = lazy(() =>
   import("@/pages/overview").then((m) => ({ default: m.OverviewPage })),
 )
+const TodayPage = lazy(() => import("@/pages/today").then((m) => ({ default: m.TodayPage })))
 const LivePage = lazy(() => import("@/pages/live").then((m) => ({ default: m.LivePage })))
 const SessionDetailPage = lazy(() =>
   import("@/pages/session-detail").then((m) => ({ default: m.SessionDetailPage })),
@@ -85,7 +86,14 @@ function appRoutes(): RouteObject {
     element: <AppShell />,
     errorElement: <RouteError />,
     children: [
-      { index: true, element: <Navigate to="/overview" replace /> },
+      {
+        index: true,
+        element: (
+          <Lazy>
+            <TodayPage />
+          </Lazy>
+        ),
+      },
       {
         path: "live",
         element: (

@@ -10,6 +10,8 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { AuthProvider } from "./app/auth"
 import { LiveFeedProvider } from "./app/live-feed"
 import { IpMaskProvider } from "./app/ip-mask"
+import { ScannerFilterProvider } from "./app/scanner-filter"
+import { applyMotionMode } from "./lib/motion"
 import { ThemeProvider } from "./app/theme"
 import { router } from "./app/router"
 
@@ -30,6 +32,8 @@ async function enableMocks() {
   })
 }
 
+applyMotionMode()
+
 void enableMocks().then(() => {
   const root = document.getElementById("root")
   if (!root) throw new Error("#root missing")
@@ -41,7 +45,9 @@ void enableMocks().then(() => {
             <TooltipProvider delayDuration={300}>
               <AuthProvider>
                 <LiveFeedProvider>
-                  <RouterProvider router={router} />
+                  <ScannerFilterProvider>
+                    <RouterProvider router={router} />
+                  </ScannerFilterProvider>
                 </LiveFeedProvider>
               </AuthProvider>
             </TooltipProvider>

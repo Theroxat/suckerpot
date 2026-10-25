@@ -2,6 +2,7 @@ import { delay, http, HttpResponse } from "msw"
 import type { Page, Session, StatsSummary } from "@/lib/api"
 import { SENSORS } from "@/lib/api"
 import { analyticsHandlers } from "./analytics"
+import { buildBenignFixtures } from "./benign"
 import { buildFixtures } from "./fixtures"
 import { buildReplayFixtures } from "./replay-fixture"
 import { liveHandlers, recentEvents } from "./live"
@@ -21,7 +22,9 @@ import { todayHandlers } from "./today"
 const fixtures = [...buildReplayFixtures(), ...buildFixtures()].sort((a, b) =>
   b.session.started_at.localeCompare(a.session.started_at),
 )
-const byId = new Map(fixtures.map((f) => [f.session.session_id, f]))
+// Research-scanner sessions (M19) are listed only when the request asks for them.
+const benignFixtures = buildBenignFixtures()
+const byId = new Map([...fixtures, ...benignFixtures].map((f) => [f.session.session_id, f]))
 
 function encodeCursor(offset: number) {
   return btoa(JSON.stringify({ o: offset })).replace(/=+$/, "")
@@ -110,6 +113,12 @@ export const handlers = [
     const since = url.searchParams.get("since")
     const until = url.searchParams.get("until")
     let items: Session[] = fixtures.map((f) => f.session)
+    // Like the API: scanners show with the switch off, or when one address is asked for by name.
+    if (url.searchParams.get("include_benign") === "1" || srcIp) {
+      items = [...items, ...benignFixtures.map((f) => f.session)].sort((a, b) =>
+        b.started_at.localeCompare(a.started_at),
+      )
+    }
     if (sensors.length) items = items.filter((s) => sensors.includes(s.sensor))
     if (srcIp) items = items.filter((s) => s.src_ip === srcIp)
     const tag = url.searchParams.get("tag")

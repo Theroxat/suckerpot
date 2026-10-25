@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft, SearchX } from "lucide-react"
 import { Link, useParams } from "react-router"
 import { useIpMask } from "@/app/ip-mask"
+import { Term } from "@/components/term"
 import { DayBars } from "@/components/charts/day-bars"
 import { CountryFlag } from "@/components/country-flag"
 import { EmptyState } from "@/components/empty-state"
@@ -39,12 +40,13 @@ function Reputation({ a }: { a: Attacker }) {
     <span className="flex flex-wrap items-center gap-x-2">
       {a.abuse_score !== null ? (
         <span>
-          Abuse score <span className="tabular-nums">{a.abuse_score}</span> / 100
+          <Term id="abuse-score">Abuse score</Term>{" "}
+          <span className="tabular-nums">{a.abuse_score}</span> / 100
         </span>
       ) : null}
       {a.known_scanner !== null ? (
         <span className="text-fg-muted">
-          {a.known_scanner ? "Known scanner" : "Not a known scanner"}
+          {a.known_scanner ? <Term id="known-scanner">Known scanner</Term> : "Not a known scanner"}
         </span>
       ) : null}
     </span>

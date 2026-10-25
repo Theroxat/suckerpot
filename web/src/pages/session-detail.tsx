@@ -3,6 +3,7 @@ import { ArrowLeft, FileQuestion, TerminalSquare } from "lucide-react"
 import { lazy, Suspense, useMemo } from "react"
 import { Link, useParams } from "react-router"
 import { useIpMask } from "@/app/ip-mask"
+import { Term } from "@/components/term"
 import { CountryFlag } from "@/components/country-flag"
 import { CampaignChip } from "@/components/campaigns/campaign-chip"
 import { EmptyState } from "@/components/empty-state"
@@ -71,7 +72,7 @@ function timelineFinding(s: Session): string {
   return `${what} in ${durationOf(s)}.`
 }
 
-function Meta({ label, children }: { label: string; children: React.ReactNode }) {
+function Meta({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="min-w-0 space-y-1">
       <dt className="text-xs text-fg-muted">{label}</dt>
@@ -243,10 +244,10 @@ export function SessionDetailPage() {
           className="self-start"
         >
           <dl className="grid grid-cols-2 gap-4">
-            <Meta label="Abuse score">
+            <Meta label={<Term id="abuse-score">Abuse score</Term>}>
               {s?.abuse_score != null ? `${s.abuse_score} / 100` : "–"}
             </Meta>
-            <Meta label="Known scanner">
+            <Meta label={<Term id="known-scanner">Known scanner</Term>}>
               {s?.known_scanner == null ? "–" : s.known_scanner ? "Yes" : "No"}
             </Meta>
           </dl>

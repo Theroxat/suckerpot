@@ -145,4 +145,10 @@
   --dur-base: 200ms;
   --dur-slow: 250ms;
   --dur-tween: 600ms;
+  /* Entrance of cards and pages (M19): a short fade with a few pixels of travel. */
+  --motion-card-duration: 320ms;
+  --motion-card-distance: 8px;
+  --motion-stagger: 60ms;
+  --motion-page-duration: 200ms;
+  --motion-page-distance: 4px;
 }

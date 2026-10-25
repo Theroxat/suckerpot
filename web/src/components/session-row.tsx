@@ -2,6 +2,7 @@ import { Link } from "react-router"
 import { CountryFlag } from "@/components/country-flag"
 import { IPChip } from "@/components/ip-chip"
 import { RelativeTime } from "@/components/relative-time"
+import { ScannerBadge } from "@/components/scanner-badge"
 import { SensorBadge } from "@/components/sensor-badge"
 import { SessionStory } from "@/components/session-story"
 import { SeverityBadge } from "@/components/severity-badge"
@@ -61,6 +62,7 @@ export function SessionRow({ session, masked, showSource = true, className }: Se
           </>
         ) : null}
         <span className="ml-auto flex shrink-0 items-center gap-2">
+          {session.benign ? <ScannerBadge name={session.scanner_name} short /> : null}
           {flagged ? <SeverityBadge severity={severity} iconOnly /> : null}
           <RelativeTime iso={session.started_at} className="relative z-10 text-xs" />
         </span>
@@ -85,6 +87,7 @@ export function SessionRow({ session, masked, showSource = true, className }: Se
       )}
 
       <div className="hidden items-center justify-end gap-1.5 md:flex">
+        {session.benign ? <ScannerBadge name={session.scanner_name} className="z-10" /> : null}
         {session.tags.slice(0, 2).map((t) => (
           <TagBadge key={t} tag={t} className="z-10" />
         ))}

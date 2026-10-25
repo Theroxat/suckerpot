@@ -127,6 +127,9 @@ These pages are generated from the code, so they match the running version. Use 
 | `GET` | `/api/v1/sessions/{session_id}` | One session |
 | `GET` | `/api/v1/sessions/{session_id}/events` | Events of one session, oldest first |
 | `GET` | `/api/v1/stats/summary` | Totals for the last 24 hours |
+| `GET` | `/api/v1/today` | The cards of the Today page (M19) |
+| `GET` | `/api/v1/search` | Global search (M19) |
+| `GET` | `/api/v1/stats/benign` | Sessions and addresses from research scanners in the last 24 hours (M19) |
 | `GET` | `/api/v1/settings/system` | Sensor status, retention policy, disk guard state and database size. See [System settings](#get-apiv1settingssystem). |
 | `GET` | `/api/v1/settings/enrichment` | GeoIP database status and reputation quotas. See [Enrichment status](#get-apiv1settingsenrichment). |
 | `PUT` | `/api/v1/settings/providers/{provider}` | Set or replace an enrichment API key. See [Provider keys](#provider-keys). |
@@ -515,6 +518,24 @@ Example, a top list (fake values):
 ```
 
 The target is under 300 ms per endpoint on the default demo data set (about 3,000 sessions and 25,000 events).
+
+## Today, search and research scanners (M19)
+
+### `include_benign`
+
+Ingest labels sessions from known research scanners (`ingest/rules/scanners.yaml`) with `benign=true` and `scanner_name`. Every list, chart and summary endpoint leaves them out unless the request has `include_benign=true`: `/sessions`, `/attackers`, `/asns`, `/stats/summary`, `/stats/timeseries`, `/stats/top`, `/stats/heatmap`, `/events/recent`, `/insights`, `/trends/new`, `/trends/tags`, `/today` and the WebSocket `/live` (`?include_benign=1`). `/sessions` also returns them when `src_ip` names one address. Sessions carry `benign` and `scanner_name`; live events carry `benign`. The continuous aggregates are not split by `benign`.
+
+### `GET /api/v1/stats/benign`
+
+`{"window_hours": 24, "sessions": 1204, "sources": 31}`: what the "hide research scanners" switch hides.
+
+### `GET /api/v1/search`
+
+Query `q` (1 to 512 characters, cut to 128). Under two characters the answer is empty. The answer is `{"q": "...", "groups": [{"kind": "ip|campaign|cve|hash|domain", "hits": [...], "more": false}]}` with at most five hits per group. Every lookup uses an index: an exact or dotted-prefix address (`203.0.113.` stands for the /24), a complete CVE id, a file-hash prefix of eight characters or more, a domain or URL prefix, a campaign-name prefix or id. A hit has `kind`, `value` (address, CVE id, indicator id or campaign id), `label` (indicators are defanged), `detail`, `count`, `last_seen` and `benign`. Research scanners are included on purpose. Statements time out after 3 seconds.
+
+### `GET /api/v1/today`
+
+`{"generated_at", "window_hours": 24, "hidden_benign": 0, "cards": [...]}`. Each card has `id` (`happened`, `campaigns`, `act`, `new_week`, `exposure`), a `sentence`, up to three `items` (`kind`, `value`, `label`, `detail`, `count`, `to` = a web route with its filters), one `action` (`label`, `to`) and `empty`. The `exposure` card is only present once the service inventory has rows. The answer is cached for a minute per `include_benign` value.
 
 ## Insights, trends and malware (M7)
 
