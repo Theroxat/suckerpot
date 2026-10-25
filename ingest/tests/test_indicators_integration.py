@@ -253,3 +253,94 @@ async def test_api_and_ingest_roles_are_connectable(engine: AsyncEngine) -> None
                 )
     finally:
         await eng.dispose()
+
+
+async def rows_of(engine: AsyncEngine) -> list[Any]:
+    return await rows(engine, "SELECT value, trusted, demo FROM indicators")
+
+
+async def test_trusted_and_demo_flags_are_stored_and_merged(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession], tmp_path: Path
+) -> None:
+    enr = enricher(tmp_path)
+    sha = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
+    await write_batch(
+        factory,
+        [
+            make_event("command", sid="a", data={"input": f"echo {sha}", "demo": True}),
+            make_event(
+                "download_attempt", sid="b", data={"url": "http://203.0.113.9/x", "demo": True}
+            ),
+        ],
+        enr,
+    )
+    found = {r.value: r for r in await rows_of(engine)}
+    assert found[sha].trusted is False and found[sha].demo is True
+    assert found["203.0.113.9"].demo is True
+    # the same hash later from a real sensor digest: trusted, and no longer demo-only
+    await write_batch(
+        factory,
+        [make_event("download_attempt", sid="c", data={"url": "http://x", "sha256": sha})],
+        enr,
+    )
+    found = {r.value: r for r in await rows_of(engine)}
+    assert found[sha].trusted is True and found[sha].demo is False
+
+
+async def test_prune_enforces_the_row_ceiling_single_source_first(engine: AsyncEngine) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO indicators (type, value, role, first_seen, last_seen, sightings) "
+                "SELECT 'domain', 'h' || g || '.badhost.ru', 'contacted_host', now(), "
+                "now() - make_interval(secs => g), g FROM generate_series(1, 10) g"
+            )
+        )
+        # h10 (the best sighted) and h1 (the least) are seen from two addresses
+        await conn.execute(
+            text(
+                "INSERT INTO indicator_sessions SELECT id, 's' || n, "
+                "CAST('198.51.100.' || n AS inet), 'ssh', now() FROM indicators, "
+                "generate_series(1, 2) n WHERE value IN ('h10.badhost.ru', 'h1.badhost.ru')"
+            )
+        )
+    async with engine.begin() as conn:
+        await conn.execute(text("CALL suckerpot_indicator_prune(0, '{\"max_rows\": 4}')"))
+    left = {r.value for r in await rows(engine, "SELECT value FROM indicators")}
+    assert len(left) == 4
+    assert {"h1.badhost.ru", "h10.badhost.ru"} <= left  # shared ones survive
+    assert {"h9.badhost.ru", "h8.badhost.ru"} <= left  # then the best sighted single-source ones
+
+
+async def test_the_ceiling_halves_while_the_disk_guard_is_trimming(engine: AsyncEngine) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO indicators (type, value, role, first_seen, last_seen) "
+                "SELECT 'domain', 'g' || g || '.badhost.ru', 'contacted_host', now(), now() "
+                "FROM generate_series(1, 10) g"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO system_status (key, value) VALUES ('disk_guard', "
+                'CAST(\'{"active": true, "state": "trimmed"}\' AS jsonb)) '
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
+            )
+        )
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("CALL suckerpot_indicator_prune(0, '{\"max_rows\": 8}')"))
+        assert len(await rows(engine, "SELECT 1 FROM indicators")) == 4
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(text("DELETE FROM system_status WHERE key = 'disk_guard'"))
+
+
+async def test_the_job_carries_the_configured_row_ceiling(engine: AsyncEngine) -> None:
+    (r,) = await rows(
+        engine,
+        "SELECT config ->> 'max_rows' AS m FROM timescaledb_information.jobs "
+        "WHERE proc_name = 'suckerpot_indicator_prune'",
+    )
+    assert r.m == "500000"

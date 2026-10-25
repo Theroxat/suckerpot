@@ -18,7 +18,7 @@ import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -53,6 +53,12 @@ MAX_TAGS = 8
 _IOC_MATCH_LIMIT = 25
 _SAFE_TEXT = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ._-:+/()#@,")
 _LOOKUP_SETTINGS = IndicatorSettings()  # strict: documentation and reserved names are skipped
+# Quota policy: one source address must not be able to spend the day's quota.
+RESERVED_FOR_SHARED = 0.3  # share of each quota only multi-source indicators may use
+PER_SOURCE_PER_DAY = 20  # lookups per day for indicators seen from a single address
+NEGATIVE_TTL_SINGLE = "7 days"  # an unknown, single-source indicator is not asked about again
+MARK_INTERVAL_S = 600.0
+MARK_LIMIT = 5000
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +67,7 @@ class Candidate:
     type: str
     value: str
     missing: tuple[str, ...]  # sources without a fresh answer
+    ips: int = 0  # distinct source addresses that used it
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,13 +120,26 @@ def parse_when(value: Any) -> datetime | None:
     return None
 
 
-def eligible(kind: str, value: str) -> bool:
-    """True for values worth asking an intel API about (public hosts, URLs, valid hashes)."""
+def eligible(kind: str, value: str, settings: IndicatorSettings = _LOOKUP_SETTINGS) -> bool:
+    """True for values worth asking an intel API about (public hosts, URLs, valid hashes).
+
+    ``settings`` carries the owner's ignore list; documentation values are always refused here,
+    whatever ``INDICATORS_KEEP_DOCUMENTATION`` says.
+    """
     if kind == "hash":
         return len(value) in (32, 40, 64) and set(value) <= set("0123456789abcdef")
+    strict = replace(settings, keep_documentation=False)
     if kind == "url":
-        return normalize_url(value, _LOOKUP_SETTINGS) is not None
-    return normalize_host(value, _LOOKUP_SETTINGS) is not None
+        return normalize_url(value, strict) is not None
+    return normalize_host(value, strict) is not None
+
+
+def sources_for(kind: str, value: str) -> tuple[str, ...]:
+    """The intel sources that can answer about an indicator of this kind."""
+    if kind == "hash":
+        sha1 = len(value) == 40
+        return ("threatfox", "virustotal") if sha1 else ("urlhaus", "threatfox", "virustotal")
+    return ("urlhaus", "threatfox")
 
 
 def _host_of_ioc(ioc: str) -> str:
@@ -134,9 +154,12 @@ class IntelWorker:
         factory: async_sessionmaker[AsyncSession],
         settings: EnrichmentSettings,
         client: httpx.AsyncClient | None = None,
+        indicator_settings: IndicatorSettings | None = None,
     ) -> None:
         self.factory = factory
         self.s = settings
+        self.ind = indicator_settings or IndicatorSettings.from_env()
+        self._last_mark = 0.0
         # follow_redirects is off: a redirect from an intel API is an error, never a hop.
         self.client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=False)
         self.state = _State()
@@ -193,7 +216,8 @@ class IntelWorker:
             async with self.client.stream(
                 method,
                 url,
-                headers={**headers, "Accept": "application/json"},
+                # identity: the byte cap then counts what really comes over the wire.
+                headers={**headers, "Accept": "application/json", "Accept-Encoding": "identity"},
                 data=data,
                 json=body,
                 follow_redirects=False,
@@ -385,51 +409,103 @@ class IntelWorker:
         return result
 
     async def candidates(self, provider: str, limit: int = PER_CYCLE) -> list[Candidate]:
-        """Busiest recent indicators without a fresh answer from ``provider``."""
+        """Indicators without a fresh answer from ``provider``, best evidence first.
+
+        Ranked by distinct source addresses, then payload-source role, then sightings. Hashes need
+        a sensor-computed digest or two distinct sources; URLs wait until their host is known to
+        be listed (a host lookup covers its URLs); one address cannot spend more than
+        ``PER_SOURCE_PER_DAY`` lookups a day; unknown single-source answers last a week.
+        """
+        fresh = (
+            "n.checked_at > now() - CASE WHEN n.known OR l.ips >= 2 "
+            f"THEN interval '24 hours' ELSE interval '{NEGATIVE_TTL_SINGLE}' END"
+        )
         if provider == "virustotal":
             where_type = "AND i.type = 'hash'"
             sources: tuple[str, ...] = ("virustotal",)
-            having = (
-                "count(*) FILTER (WHERE n.source = 'virustotal' "
-                "AND n.checked_at > now() - interval '24 hours') = 0"
-            )
+            having = f"count(*) FILTER (WHERE n.source = 'virustotal' AND {fresh}) = 0"
         else:
             where_type = ""
             sources = ("urlhaus", "threatfox")
-            having = (
-                "count(*) FILTER (WHERE n.source IN ('urlhaus', 'threatfox') "
-                "AND n.checked_at > now() - interval '24 hours') < 2"
-            )
+            having = f"count(*) FILTER (WHERE n.source IN ('urlhaus', 'threatfox') AND {fresh}) < 2"
         stmt = text(
             f"""
-            SELECT i.id, i.type, i.value,
-                   COALESCE(
-                       array_agg(n.source)
-                           FILTER (WHERE n.checked_at > now() - interval '24 hours'),
-                       '{{}}'
-                   ) AS fresh
+            SELECT i.id, i.type, i.value, l.ips, host(l.one) AS one, u.used,
+                   COALESCE(array_agg(n.source) FILTER (WHERE {fresh}), '{{}}') AS fresh
             FROM indicators i
+            CROSS JOIN LATERAL (
+                SELECT count(DISTINCT s.src_ip) AS ips, min(s.src_ip) AS one
+                FROM indicator_sessions s WHERE s.indicator_id = i.id
+            ) l
+            CROSS JOIN LATERAL (
+                SELECT CASE WHEN l.ips = 1 THEN (
+                    SELECT count(DISTINCT x.indicator_id)
+                    FROM indicator_sessions s2
+                    JOIN indicator_intel x ON x.indicator_id = s2.indicator_id
+                    WHERE s2.src_ip = l.one AND x.checked_at > date_trunc('day', now())
+                      AND NOT ('not-checked' = ANY (x.tags))) ELSE 0 END AS used
+            ) u
             LEFT JOIN indicator_intel n ON n.indicator_id = i.id
-            WHERE i.last_seen > now() - interval '7 days' {where_type}
-            GROUP BY i.id
+            WHERE i.last_seen > now() - interval '7 days' AND NOT i.demo {where_type}
+              AND (i.type <> 'hash' OR i.trusted OR l.ips >= 2)
+              AND (i.type <> 'url' OR EXISTS (
+                    SELECT 1 FROM indicators h
+                    JOIN indicator_intel hn ON hn.indicator_id = h.id
+                         AND hn.source = 'urlhaus' AND hn.known
+                    WHERE h.type IN ('domain', 'ip') AND h.value = i.host))
+              AND u.used < :per_ip
+            GROUP BY i.id, l.ips, l.one, u.used
             HAVING {having}
-            ORDER BY i.sightings DESC, i.id
+            ORDER BY l.ips DESC, (i.role = 'download_host') DESC, i.sightings DESC, i.id
             LIMIT :k
             """  # noqa: S608 - fixed fragments chosen above, no user input
         )
         async with self.factory() as session:
-            rows = (await session.execute(stmt, {"k": limit})).all()
+            rows = (await session.execute(stmt, {"k": limit, "per_ip": PER_SOURCE_PER_DAY})).all()
         out: list[Candidate] = []
+        batch: dict[str, int] = {}  # single-source lookups already picked in this batch
         for r in rows:
+            if r.ips == 1:
+                if r.used + batch.get(r.one, 0) >= PER_SOURCE_PER_DAY:
+                    continue
+                batch[r.one] = batch.get(r.one, 0) + 1
             wanted = [
-                s
-                for s in sources
-                if s not in (r.fresh or [])
-                and not (s == "urlhaus" and r.type == "hash" and len(r.value) == 40)
+                s for s in sources if s in sources_for(r.type, r.value) and s not in (r.fresh or [])
             ]
             if wanted:
-                out.append(Candidate(r.id, r.type, r.value, tuple(wanted)))
+                out.append(Candidate(r.id, r.type, r.value, tuple(wanted), r.ips))
         return out
+
+    async def mark_unlookable(self) -> int:
+        """Mark stored indicators that must never be sent anywhere as "not checked".
+
+        Demo indicators and values that match the owner's ignore list or the private, reserved
+        and documentation rules (including ones added to the ignore list after they were stored).
+        """
+        async with self.factory() as session:
+            rows = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT i.id, i.type, i.value, i.demo FROM indicators i
+                        WHERE i.last_seen > now() - interval '7 days'
+                          AND NOT EXISTS (SELECT 1 FROM indicator_intel n
+                                          WHERE n.indicator_id = i.id
+                                            AND 'not-checked' = ANY (n.tags))
+                        ORDER BY i.id LIMIT :k
+                        """
+                    ),
+                    {"k": MARK_LIMIT},
+                )
+            ).all()
+        marked = 0
+        for r in rows:
+            if r.demo or not eligible(r.type, r.value, self.ind):
+                await self._store_skipped(
+                    Candidate(r.id, r.type, r.value, sources_for(r.type, r.value))
+                )
+                marked += 1
+        return marked
 
     async def _store(self, indicator_id: int, result: IntelResult) -> None:
         async with self.factory() as session, session.begin():
@@ -465,6 +541,11 @@ class IntelWorker:
         """One cycle over both providers. Returns how many requests were made."""
         made = 0
         st = self.state
+        now = time.monotonic()
+        st.retry_after = {k: v for k, v in st.retry_after.items() if v > now}
+        if now - self._last_mark >= MARK_INTERVAL_S:
+            self._last_mark = now
+            await self.mark_unlookable()
         for provider in ("abusech", "virustotal"):
             if not self.enabled(provider) or self._paused(provider):
                 continue
@@ -472,15 +553,18 @@ class IntelWorker:
             for cand in await self.candidates(provider):
                 if time.monotonic() < st.retry_after.get((provider, cand.id), 0.0):
                     continue
-                if not eligible(cand.type, cand.value):
+                if not eligible(cand.type, cand.value, self.ind):
                     await self._store_skipped(cand)
                     continue
                 stop = False
                 for source in cand.missing:
-                    if not await reserve_quota(self.factory, provider, quota):
+                    # A share of the quota is kept for indicators several addresses used.
+                    limit = quota if cand.ips >= 2 else int(quota * (1 - RESERVED_FOR_SHARED))
+                    if not await reserve_quota(self.factory, provider, limit):
                         log.info("%s daily quota exhausted", provider)
-                        st.paused_until[provider] = time.monotonic() + 600
-                        stop = True
+                        if cand.ips >= 2:
+                            st.paused_until[provider] = time.monotonic() + 600
+                            stop = True
                         break
                     made += 1
                     try:
