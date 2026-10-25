@@ -25,7 +25,7 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 
 ## Status
 
-Feature complete and working toward `v0.1.0`; the release is pending. All four sensors, enrichment, tagging, the dashboard, login, retention and backups are built. Every sensor went through several rounds of adversarial security review; the web sensor is in its final review. See the [roadmap](docs/ROADMAP.md).
+`v0.1.0` is released. All four sensors, enrichment, tagging, the dashboard, login, retention and backups are built. Every sensor went through several rounds of adversarial security review; all passed. See the [roadmap](docs/ROADMAP.md).
 
 ## Features
 
@@ -121,9 +121,9 @@ SuckerPot runs hostile traffic through containers, so isolation is a feature, no
 | M3 | Design system and web shell | Done |
 | M4 | Enrichment and tagging | Done |
 | M5 | Core pages and terminal replay | Done |
-| M6 | Telnet, web and RDP sensors | Done (web in final review) |
+| M6 | Telnet, web and RDP sensors | Done |
 | M7 | Live globe, Trends, Malware | Done |
-| M8 | Dashboard login, retention, backups, `v0.1.0` | Nearly done, release pending |
+| M8 | Dashboard login, retention, backups, `v0.1.0` | Done (`v0.1.0`) |
 
 Details in [docs/ROADMAP.md](docs/ROADMAP.md).
 
