@@ -34,7 +34,12 @@ export function ScriptRow({ item }: { item: ScriptItem }) {
         aria-label={`Script ${item.id}: ${summary}`}
       />
       <div className="min-w-0 space-y-1.5">
-        <p className={cn("text-sm text-pretty", item.summary ? "text-fg" : "text-fg-muted")}>
+        <p
+          className={cn(
+            "text-sm text-pretty normal-nums",
+            item.summary ? "text-fg" : "text-fg-muted",
+          )}
+        >
           {summary}
         </p>
         <pre
@@ -56,7 +61,7 @@ export function ScriptRow({ item }: { item: ScriptItem }) {
           {item.campaign_name ? (
             <Link
               to={`/campaigns/${item.campaign_id}`}
-              className="relative z-10 rounded-sm border border-border-strong px-1.5 py-0.5 text-2xs text-fg-muted transition-colors hover:border-fg-subtle hover:text-fg"
+              className="relative z-10 rounded-sm border border-border-strong px-1.5 py-0.5 text-2xs text-fg-muted normal-nums transition-colors hover:border-fg-subtle hover:text-fg"
             >
               Campaign: {item.campaign_name}
             </Link>

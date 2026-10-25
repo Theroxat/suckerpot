@@ -144,7 +144,7 @@ export function ScriptDetailPage() {
       <PageHeader
         title={`Script ${item.id}`}
         eyebrow={back}
-        description={describeScript(item, item.summary)}
+        description={<span className="normal-nums">{describeScript(item, item.summary)}</span>}
       />
 
       <div className="space-y-4">
@@ -158,7 +158,7 @@ export function ScriptDetailPage() {
           {d.campaign ? (
             <Link
               to={`/campaigns/${d.campaign.id}`}
-              className="rounded-sm border border-border-strong px-2 py-1 text-fg-muted transition-colors hover:border-fg-subtle hover:text-fg"
+              className="rounded-sm border border-border-strong px-2 py-1 text-fg-muted normal-nums transition-colors hover:border-fg-subtle hover:text-fg"
             >
               Campaign: {d.campaign.name}
             </Link>
@@ -167,6 +167,7 @@ export function ScriptDetailPage() {
 
         <FindingCard
           eyebrow="Line by line"
+          className="normal-nums"
           finding={
             d.lines.length === 0
               ? "No explanation is stored for this script yet."
@@ -197,6 +198,7 @@ export function ScriptDetailPage() {
         {d.techniques_detail.length > 0 ? (
           <FindingCard
             eyebrow="Techniques"
+            className="normal-nums"
             finding={`It uses ${plural(d.techniques_detail.length, "known attacker technique")}.`}
             detail="Names from the MITRE ATT&CK catalogue. Select one to find other scripts that use it."
           >

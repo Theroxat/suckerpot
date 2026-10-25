@@ -26,8 +26,11 @@ export function AiLabel({ model }: { model: string | null }) {
 }
 
 /**
- * The optional second opinion from a language model. Everything it wrote is rendered as plain
- * text (React escapes it; nothing here uses innerHTML or turns text into links).
+ * The optional second opinion from a language model. It must never pass for the built-in
+ * explanation: a dashed border (the "not ours" surface), the AI label always in the header, and
+ * muted text only, so it never reads louder than the rule-based lines above. Everything it wrote
+ * is rendered as plain text (React escapes it; nothing here uses innerHTML or turns text into
+ * links).
  */
 export function AiExplanationCard({
   ai,
@@ -49,7 +52,7 @@ export function AiExplanationCard({
 
   if (!ai && !llm.available) {
     return (
-      <p className="flex items-start gap-2 text-sm text-fg-muted">
+      <p className="flex items-start gap-2 text-sm text-fg-muted normal-nums">
         <Sparkles aria-hidden className="mt-0.5 size-4 shrink-0" />
         <span>{llmUnavailable(llm)}</span>
       </p>
@@ -70,17 +73,21 @@ export function AiExplanationCard({
           : "Only the cleaned-up command text is sent: no addresses, no host names, no session data."
       }
       action={<AiLabel model={ai?.model ?? llm.model} />}
+      className="border-dashed border-border-strong normal-nums shadow-none"
     >
       {ai ? (
-        <div className="space-y-3">
-          <p className="text-sm text-fg">{ai.summary}</p>
+        <div className="animate-fade-in space-y-3">
+          <p className="max-w-3xl text-sm text-pretty text-fg-muted">{ai.summary}</p>
           <ol aria-label="AI explanation, line by line" className="space-y-1.5">
             {ai.lines.map((l) => (
-              <li key={l.n} className="grid grid-cols-[2rem_minmax(0,1fr)] gap-x-2 text-sm">
-                <span className="text-right font-mono text-xs text-fg-subtle tabular-nums">
+              <li
+                key={l.n}
+                className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-x-2.5 text-sm sm:grid-cols-[2rem_minmax(0,1fr)] sm:gap-x-3"
+              >
+                <span className="text-right font-mono text-xs/5 text-fg-subtle tabular-nums">
                   {l.n}
                 </span>
-                <span className="text-fg-muted">{l.explanation}</span>
+                <span className="max-w-3xl text-pretty text-fg-muted">{l.explanation}</span>
               </li>
             ))}
           </ol>

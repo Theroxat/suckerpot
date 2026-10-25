@@ -171,7 +171,7 @@ const SEEDS: Seed[] = [
         "file-ops",
       ],
       [
-        "echo 'ssh-rsa AAAAB3NzaC1yc2E attacker@example' >> ~/.ssh/authorized_keys",
+        "echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCExampleOnlyNotARealKey0123456789abcdefghijKLMNOPQRSTuvwxyzExampleOnlyNotARealKey0123456789abcdefghijKLMNOPQRSTuvwxyzExampleOnlyNotARealKey0123456789abcdefghijKLMNOPQRSTuvwxyz attacker@example' >> ~/.ssh/authorized_keys",
         "Adds the attacker's SSH key so they can log in again later without a password.",
         "severe",
         "T1098.004",

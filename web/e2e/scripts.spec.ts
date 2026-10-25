@@ -41,6 +41,12 @@ test("script detail", async ({ page }, info) => {
   })
   await shoot(page, "script-detail-ai", info.project.name, true)
 
+  // A long command line (an SSH key) wraps inside its code band.
+  await page.goto("/scripts/4")
+  await expect(h1(page, "Script 4")).toBeVisible()
+  await settle(page)
+  await shoot(page, "script-detail-long", info.project.name, true)
+
   await page.goto("/scripts/9999")
   await expect(page.getByText("This script is not in the library")).toBeVisible()
 })
