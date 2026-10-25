@@ -47,6 +47,8 @@ function settings(over: Partial<EnrichmentSettings> = {}): EnrichmentSettings {
       updated_at: "2026-10-24T10:00:00Z",
     }),
     maxmind: NO_KEY,
+    nvd: NO_KEY,
+    github: NO_KEY,
     key_editing: { enabled: true, reason: null },
     reported_at: null,
     ...over,

@@ -80,6 +80,22 @@ const keys: Record<ProviderId, MockKey> = {
     testRequestedAt: minutesAgo(20.5),
     testDoneAt: null,
   },
+  nvd: {
+    source: null,
+    last4: null,
+    updatedAt: null,
+    test: null,
+    testRequestedAt: null,
+    testDoneAt: null,
+  },
+  github: {
+    source: null,
+    last4: null,
+    updatedAt: null,
+    test: null,
+    testRequestedAt: null,
+    testDoneAt: null,
+  },
   maxmind: {
     source: null,
     last4: null,
@@ -156,6 +172,8 @@ export function enrichmentSettings(): EnrichmentSettings {
       last_error: null,
     },
     maxmind: keyInfo("maxmind"),
+    nvd: keyInfo("nvd"),
+    github: keyInfo("github"),
     key_editing: editingOff
       ? {
           enabled: false,
@@ -167,7 +185,7 @@ export function enrichmentSettings(): EnrichmentSettings {
 }
 
 const isProvider = (v: unknown): v is ProviderId =>
-  v === "abuseipdb" || v === "greynoise" || v === "maxmind"
+  v === "abuseipdb" || v === "greynoise" || v === "maxmind" || v === "nvd" || v === "github"
 
 const reauthFailed = () =>
   HttpResponse.json(

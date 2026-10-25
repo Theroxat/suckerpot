@@ -84,6 +84,8 @@ describe("settings findings", () => {
       last_error: null,
     },
     maxmind: NO_KEY,
+    nvd: NO_KEY,
+    github: NO_KEY,
     key_editing: { enabled: true, reason: null },
     reported_at: null,
   }

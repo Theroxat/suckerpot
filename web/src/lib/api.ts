@@ -13,6 +13,7 @@ import type {
   TagsResponse,
 } from "./trends"
 import type { EnrichmentSettings, SystemSettings } from "./settings"
+import type { CveDetail, CveFilters, CvePage, CveSync } from "./cves"
 
 // The sensor list lives in the registry (./sensors); re-exported for existing imports.
 import { isSensor, SENSORS, type Sensor } from "./sensors"
@@ -377,6 +378,11 @@ export const api = {
     limit = 50,
   ) => getJson<Page<MalwareItem>>("/malware", { ...filters, cursor: cursor ?? undefined, limit }),
   malwareDetail: (url: string) => getJson<MalwareDetail>("/malware/detail", { url }),
+  // M12: CVE watch.
+  cves: (filters: CveFilters, cursor?: string | null, limit = 25) =>
+    getJson<CvePage>("/cves", { ...filters, cursor: cursor ?? undefined, limit }),
+  cve: (id: string) => getJson<CveDetail>(`/cves/${encodeURIComponent(id)}`),
+  cveSync: () => getJson<CveSync>("/cves/sync"),
   // M8: read-only settings.
   systemSettings: () => getJson<SystemSettings>("/settings/system"),
   enrichmentSettings: () => getJson<EnrichmentSettings>("/settings/enrichment"),
@@ -399,6 +405,9 @@ export const queryKeys = {
   heatmap: (range: StatsRange) => ["stats", "heatmap", range] as const,
   malware: (filters: object) => ["malware", filters] as const,
   malwareDetail: (url: string) => ["malware", "detail", url] as const,
+  cves: (filters: object, limit: number) => ["cves", filters, limit] as const,
+  cve: (id: string) => ["cves", "detail", id] as const,
+  cveSync: ["cves", "sync"] as const,
   systemSettings: ["settings", "system"] as const,
   enrichmentSettings: ["settings", "enrichment"] as const,
 }

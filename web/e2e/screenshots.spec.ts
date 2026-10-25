@@ -318,6 +318,22 @@ test("malware", async ({ page }, info) => {
   await shoot(page, "malware-detail", info.project.name)
 })
 
+test("cve watch", async ({ page }, info) => {
+  await page.goto("/cves")
+  await expect(h1(page, "CVE watch")).toBeVisible()
+  await expect(page.getByRole("list", { name: "CVEs" })).toBeVisible()
+  await expect(page.getByText(/new critical CVEs? this week/)).toBeVisible()
+  await settle(page)
+  await shoot(page, "cves", info.project.name)
+
+  await page.goto("/cves?cve=CVE-2099-10001")
+  await expect(page.getByRole("dialog")).toBeVisible()
+  await expect(page.getByRole("dialog").getByRole("status", { name: "Loading" })).toHaveCount(0)
+  await page.getByRole("button", { name: "Copy trap sheet" }).click()
+  await expect(page.getByLabel("Trap sheet")).toBeVisible()
+  await shoot(page, "cves-detail", info.project.name)
+})
+
 // Login (M8): the mock build treats everyone as signed in, the form itself is always reachable.
 test("login", async ({ page }, info) => {
   await page.goto("/login")
