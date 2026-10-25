@@ -632,7 +632,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncssh", specifier = ">=2.18,<3" },
+    { name = "asyncssh", specifier = "==2.24.1" },
     { name = "suckerpot-common", directory = "../common" },
 ]
 
