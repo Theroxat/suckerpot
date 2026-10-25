@@ -80,7 +80,7 @@ const authHandlers = [
 
 export const handlers = [
   ...authHandlers,
-  ...campaignsHandlers,
+  ...campaignsHandlers(fixtures),
   ...defendHandlers,
   ...scriptsHandlers,
   ...alertsHandlers,
@@ -116,6 +116,10 @@ export const handlers = [
     const country = url.searchParams.get("country")
     const asn = url.searchParams.get("asn")
     if (tag) items = items.filter((s) => s.tags.includes(tag))
+    const technique = url.searchParams.get("technique")
+    const campaignId = url.searchParams.get("campaign_id")
+    if (technique) items = items.filter((s) => s.techniques?.includes(technique))
+    if (campaignId) items = items.filter((s) => String(s.campaign_id) === campaignId)
     if (country) items = items.filter((s) => s.country === country.toUpperCase())
     if (asn) items = items.filter((s) => String(s.asn) === asn)
     if (since) items = items.filter((s) => s.started_at >= new Date(since).toISOString())

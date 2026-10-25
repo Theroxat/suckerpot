@@ -9,16 +9,20 @@ const label = (day: string) => dayFmt.format(new Date(`${day}T00:00:00Z`))
 function Tip({
   active,
   payload,
+  unit,
 }: {
   active?: boolean
   payload?: readonly { payload?: DayPoint }[]
+  unit: string
 }) {
   const p = payload?.[0]?.payload
   if (!active || !p) return null
   return (
     <div className="rounded-md border bg-surface-raised px-3 py-2 text-xs shadow-md">
       <span className="text-fg-muted">{label(p.day)}</span>{" "}
-      <span className="font-medium text-fg tabular-nums">{formatNumber(p.events)} events</span>
+      <span className="font-medium text-fg tabular-nums">
+        {formatNumber(p.events)} {unit}
+      </span>
     </div>
   )
 }
@@ -27,17 +31,23 @@ function Tip({
 export function DayBars({
   points,
   className,
+  unit = "events",
+  days = 30,
 }: {
   points: readonly DayPoint[]
   className?: string
+  /** What a bar counts, for the tooltip and the text alternative ("sessions"). */
+  unit?: string
+  /** Number of days drawn, ending today (UTC). */
+  days?: number
 }) {
   const reduced = useReducedMotion()
-  const data = fillDays(points)
+  const data = fillDays(points, days)
   return (
     <div className={className}>
       <div
         role="img"
-        aria-label={`Events per day over the last ${data.length} days`}
+        aria-label={`${unit.charAt(0).toUpperCase()}${unit.slice(1)} per day over the last ${data.length} days`}
         className="h-32 w-full"
       >
         <ResponsiveContainer width="100%" height="100%">
@@ -56,7 +66,7 @@ export function DayBars({
               minTickGap={48}
             />
             <Tooltip
-              content={<Tip />}
+              content={<Tip unit={unit} />}
               cursor={{ fill: "var(--surface-hover)" }}
               isAnimationActive={false}
             />
@@ -71,11 +81,11 @@ export function DayBars({
         </ResponsiveContainer>
       </div>
       <table className="sr-only">
-        <caption>Events per day</caption>
+        <caption>{`${unit.charAt(0).toUpperCase()}${unit.slice(1)} per day`}</caption>
         <thead>
           <tr>
             <th scope="col">Day</th>
-            <th scope="col">Events</th>
+            <th scope="col">{unit.charAt(0).toUpperCase() + unit.slice(1)}</th>
           </tr>
         </thead>
         <tbody>

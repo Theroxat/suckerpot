@@ -4,6 +4,7 @@ import { lazy, Suspense, useMemo } from "react"
 import { Link, useParams } from "react-router"
 import { useIpMask } from "@/app/ip-mask"
 import { CountryFlag } from "@/components/country-flag"
+import { CampaignChip } from "@/components/campaigns/campaign-chip"
 import { EmptyState } from "@/components/empty-state"
 import { EventTimeline } from "@/components/event-timeline"
 import { FindingCard } from "@/components/finding-card"
@@ -142,6 +143,7 @@ export function SessionDetailPage() {
                 <TagBadge key={t} tag={t} />
               ))}
             </div>
+            {s.campaign_id ? <CampaignChip id={s.campaign_id} /> : null}
             <h1 className="text-lg font-medium text-pretty sm:text-xl">
               <span className="sr-only">Session {s.session_id}: </span>
               <SessionStory session={s} layout="block" />
