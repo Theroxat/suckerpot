@@ -13,6 +13,7 @@ from suckerpot_common import Event, EventType, SensorName
 from demo.cli import main, parse_args, run
 from demo.generator import Generator
 from demo.ips import is_acceptable, random_public_ip
+from demo.plans import CAMPAIGN_HOSTS
 
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
 DOC_NETS = [ipaddress.ip_network(n) for n in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")]
@@ -157,12 +158,31 @@ def test_downloads_are_synthetic_and_recorded(events: list[Event]) -> None:
         assert e.data["tool"] in {"wget", "curl", "tftp", "powershell"}
         assert e.data["url"].split("://")[0] in {"http", "tftp"}
         host = e.data["url"].split("://")[1].split("/")[0]
+        if host in CAMPAIGN_HOSTS:
+            continue
         if host[0].isdigit():
             assert is_acceptable(host)
         else:
             assert host.rsplit(".", 1)[1] in {
                 "xyz", "top", "site", "click", "online", "icu", "cyou", "buzz", "sbs", "shop",
             }  # fmt: skip
+
+
+def test_campaign_hosts_are_shared_documentation_values(events: list[Event]) -> None:
+    for host in CAMPAIGN_HOSTS:
+        if host[0].isdigit():
+            assert any(ipaddress.ip_address(host) in n for n in DOC_NETS), host
+        else:
+            assert host.endswith((".example.net", ".example.org", ".example.com")), host
+    dls = [e for e in events if e.type is EventType.download_attempt]
+    per_host: dict[str, set[str]] = {}
+    for e in dls:
+        host = e.data["url"].split("://")[1].split("/")[0]
+        if host in CAMPAIGN_HOSTS:
+            per_host.setdefault(host, set()).add(str(e.src_ip))
+    assert per_host and max(len(ips) for ips in per_host.values()) >= 20  # shared infrastructure
+    hashed = [e.data["sha256"] for e in dls if "sha256" in e.data]
+    assert hashed and all(len(h) == 64 and set(h) <= set("0123456789abcdef") for h in hashed)
 
 
 def test_telnet_mirai_flow(events: list[Event]) -> None:

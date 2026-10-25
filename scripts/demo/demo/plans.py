@@ -8,6 +8,7 @@ just a string in an event.
 from __future__ import annotations
 
 import base64
+import hashlib
 import random
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -82,11 +83,11 @@ class Builder:
         self.add(EventType.command, d, gap)
         if dl:
             tool, url = dl
-            self.add(
-                EventType.download_attempt,
-                {"url": url, "tool": tool, "command": text},
-                (0.01, 0.25),
-            )
+            data: dict[str, Any] = {"url": url, "tool": tool, "command": text}
+            digest = campaign_sha256(url)
+            if digest is not None and self.rng.random() < 0.5:
+                data["sha256"] = digest
+            self.add(EventType.download_attempt, data, (0.01, 0.25))
 
     def finish(
         self, reason: str, gap: Gap = (0.1, 1.5), extra: dict[str, Any] | None = None
@@ -105,8 +106,28 @@ class Builder:
 # ---------------------------------------------------------------- shared helpers
 
 
+# A few "infrastructure" hosts shared by many sources, so the Infrastructure page has a story.
+# Documentation addresses and example domains only: a real stack drops them while extracting
+# indicators unless INDICATORS_KEEP_DOCUMENTATION=true (see docs/demo-data.md).
+CAMPAIGN_HOSTS = (
+    "203.0.113.66", "203.0.113.66", "dl.example.net", "dl.example.net", "198.51.100.77",
+    "cdn.example.org",
+)  # fmt: skip
+CAMPAIGN_SHARE = 0.4
+
+
+def campaign_sha256(url: str) -> str | None:
+    """A synthetic, stable sha256 for payloads served by a campaign host (never a real file)."""
+    host = url.split("://", 1)[-1].split("/", 1)[0].split(":")[0]
+    if host not in CAMPAIGN_HOSTS:
+        return None
+    return hashlib.sha256(f"suckerpot-demo:{url}".encode()).hexdigest()
+
+
 def synthetic_host(rng: random.Random) -> str:
-    """A throwaway malware host: random-syllable domain (mostly) or a random public IP."""
+    """A throwaway malware host: a shared campaign host, a random-syllable domain or a public IP."""
+    if rng.random() < CAMPAIGN_SHARE:
+        return rng.choice(CAMPAIGN_HOSTS)
     if rng.random() < 0.3:
         return random_public_ip(rng)
     name = "".join(rng.choice(D.SYLLABLES) for _ in range(rng.randint(3, 5)))
