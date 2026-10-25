@@ -30,7 +30,7 @@ from ingest.campaigns.keys import (
     script_key,
 )
 from ingest.campaigns.naming import campaign_name, severity_of, stages_of
-from ingest.campaigns.plan import Cand, build_plan
+from ingest.campaigns.plan import Cand, build_plan, net_of
 
 log = logging.getLogger(__name__)
 
@@ -700,7 +700,7 @@ async def _upsert_keys(
         [
             {
                 "kind": kind, "value": value, "cid": cid,
-                "src": len({m.src_ip for m in ms}),
+                "src": len({net_of(m.src_ip) for m in ms}),
                 "fs": min(m.started_at for m in ms),
                 "ls": max(m.last_event_at for m in ms),
             }
