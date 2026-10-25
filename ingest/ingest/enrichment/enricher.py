@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from ingest.bruteforce import BruteForceTracker
 from ingest.enrichment.geo import GeoResolver
+from ingest.indicators import IndicatorExtractor
 from ingest.tagging import RuleSet
 
 
@@ -14,3 +15,5 @@ class Enricher:
     geo: GeoResolver
     rules: RuleSet
     brute: BruteForceTracker = field(default_factory=BruteForceTracker)
+    indicators: IndicatorExtractor | None = None
+    link_cap: int = 500

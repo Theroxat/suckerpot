@@ -24,6 +24,7 @@ from ingest.enrichment.downloader import GeoManager
 from ingest.enrichment.enricher import Enricher
 from ingest.enrichment.reputation import ReputationWorker
 from ingest.enrichment.status import publish_status
+from ingest.indicators import IndicatorExtractor, IndicatorSettings
 from ingest.tagging import load_rules
 
 log = logging.getLogger(__name__)
@@ -62,7 +63,14 @@ async def run() -> None:
         await publish_system_status(factory, "ingest_disk", detail)
 
     guard = DiskGuard(factory, max_db_bytes(), on_status=disk_status)
-    consumer = Consumer(settings, redis, factory, Enricher(resolver, rules), guard)
+    indicator_settings = IndicatorSettings.from_env()
+    enricher = Enricher(
+        resolver,
+        rules,
+        indicators=IndicatorExtractor(indicator_settings) if indicator_settings.enabled else None,
+        link_cap=indicator_settings.link_cap,
+    )
+    consumer = Consumer(settings, redis, factory, enricher, guard)
 
     async def geo_status(detail: dict[str, Any]) -> None:
         await publish_status(factory, "geoip", detail)

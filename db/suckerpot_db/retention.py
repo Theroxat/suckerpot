@@ -107,14 +107,18 @@ def apply_policies(conn: Connection, days: int) -> None:
         text("SELECT delete_job(job_id) FROM timescaledb_information.jobs WHERE proc_name = :p"),
         {"p": INDICATOR_PRUNE_PROC},
     )
-    conn.execute(
-        text(
-            f"SELECT add_job('{INDICATOR_PRUNE_PROC}', INTERVAL '1 hour', "
-            "config => jsonb_build_object('retention_days', CAST(:d AS integer))) "
-            f"WHERE to_regprocedure('{INDICATOR_PRUNE_PROC}(integer, jsonb)') IS NOT NULL"
-        ),
-        {"d": days},
-    )
+    exists = conn.execute(
+        text("SELECT to_regprocedure(:p) IS NOT NULL"),
+        {"p": f"{INDICATOR_PRUNE_PROC}(integer, jsonb)"},
+    ).scalar()
+    if exists:
+        conn.execute(
+            text(
+                f"SELECT add_job('{INDICATOR_PRUNE_PROC}', INTERVAL '1 hour', "
+                "config => jsonb_build_object('retention_days', CAST(:d AS integer)))"
+            ),
+            {"d": days},
+        )
 
 
 def backfill(conn: Connection, days: int) -> None:

@@ -31,6 +31,7 @@ from ingest.aggregate import SessionDelta, compute_session_deltas
 from ingest.bruteforce import TAG as BRUTE_TAG
 from ingest.diskguard import DiskGuard
 from ingest.enrichment.enricher import Enricher
+from ingest.indicator_store import store_indicators
 
 log = logging.getLogger(__name__)
 
@@ -180,6 +181,8 @@ async def write_batch(
         result = await session.execute(upsert, [delta_to_row(d) for d in deltas])
         if enricher is not None:
             await _apply_session_rules(session, enricher, result.all())
+            if enricher.indicators is not None and not degraded:
+                await store_indicators(session, events, enricher.indicators, enricher.link_cap)
 
 
 async def _apply_session_rules(
