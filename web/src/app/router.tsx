@@ -36,6 +36,31 @@ const StyleguidePage = lazy(() =>
   import("@/pages/styleguide").then((m) => ({ default: m.StyleguidePage })),
 )
 
+const CampaignsPage = lazy(() =>
+  import("@/pages/campaigns").then((m) => ({ default: m.CampaignsPage })),
+)
+const CampaignDetailPage = lazy(() =>
+  import("@/pages/campaign-detail").then((m) => ({ default: m.CampaignDetailPage })),
+)
+const TechniquesPage = lazy(() =>
+  import("@/pages/techniques").then((m) => ({ default: m.TechniquesPage })),
+)
+const ScriptsPage = lazy(() => import("@/pages/scripts").then((m) => ({ default: m.ScriptsPage })))
+const ScriptDetailPage = lazy(() =>
+  import("@/pages/script-detail").then((m) => ({ default: m.ScriptDetailPage })),
+)
+const BlocklistsPage = lazy(() =>
+  import("@/pages/blocklists").then((m) => ({ default: m.BlocklistsPage })),
+)
+const DetectionsPage = lazy(() =>
+  import("@/pages/detections").then((m) => ({ default: m.DetectionsPage })),
+)
+const ExposurePage = lazy(() =>
+  import("@/pages/exposure").then((m) => ({ default: m.ExposurePage })),
+)
+const AlertsPage = lazy(() => import("@/pages/alerts").then((m) => ({ default: m.AlertsPage })))
+const ReportPage = lazy(() => import("@/pages/report").then((m) => ({ default: m.ReportPage })))
+
 /** Suspense with a skeleton in the final layout, so nothing jumps when the chunk lands. */
 function Lazy({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageSkeleton />}>{children}</Suspense>
@@ -147,6 +172,86 @@ function appRoutes(): RouteObject {
         element: (
           <Lazy>
             <StyleguidePage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "campaigns",
+        element: (
+          <Lazy>
+            <CampaignsPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "campaigns/:id",
+        element: (
+          <Lazy>
+            <CampaignDetailPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "techniques",
+        element: (
+          <Lazy>
+            <TechniquesPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "scripts",
+        element: (
+          <Lazy>
+            <ScriptsPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "scripts/:id",
+        element: (
+          <Lazy>
+            <ScriptDetailPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "defend/blocklists",
+        element: (
+          <Lazy>
+            <BlocklistsPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "defend/detections",
+        element: (
+          <Lazy>
+            <DetectionsPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "defend/exposure",
+        element: (
+          <Lazy>
+            <ExposurePage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "defend/alerts",
+        element: (
+          <Lazy>
+            <AlertsPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "reports/:week",
+        element: (
+          <Lazy>
+            <ReportPage />
           </Lazy>
         ),
       },

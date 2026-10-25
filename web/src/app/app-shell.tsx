@@ -21,15 +21,34 @@ import { useLiveStatus } from "./use-live-status"
 
 const MOCK = import.meta.env.VITE_MOCK === "1"
 
-function NavList({ onNavigate }: { onNavigate?: () => void }) {
+/** `main` = the three spaces, `footer` = Settings and Styleguide (pinned under the scroll area). */
+function NavList({
+  onNavigate,
+  part = "all",
+}: {
+  onNavigate?: () => void
+  part?: "all" | "main" | "footer"
+}) {
+  const groups = NAV.filter((g) => part === "all" || (part === "footer") === (g.space === "footer"))
   return (
-    <nav aria-label="Main" className="flex flex-col gap-6">
-      {NAV.map((group) => (
-        <div key={group.label} className="flex flex-col gap-0.5">
-          <div className="px-2.5 pb-1.5 text-2xs font-medium tracking-wide text-fg-subtle uppercase">
+    <nav
+      aria-label={part === "footer" ? "System" : "Main"}
+      className={cn("flex flex-col", part === "footer" ? "gap-0.5 px-3 pb-3" : "gap-5")}
+    >
+      {groups.map((group) => (
+        <div
+          key={group.space}
+          role="group"
+          aria-labelledby={`nav-${group.space}`}
+          className="flex flex-col gap-0.5"
+        >
+          <div
+            id={`nav-${group.space}`}
+            className="px-2.5 pb-1.5 text-2xs font-medium tracking-wide text-fg-subtle uppercase"
+          >
             {group.label}
           </div>
-          {group.items.map(({ to, label, icon: Icon }) => (
+          {group.items.map(({ to, label, icon: Icon, badge }) => (
             <NavLink
               key={to}
               to={to}
@@ -54,6 +73,11 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
                     strokeWidth={1.85}
                   />
                   {label}
+                  {badge ? (
+                    <span className="ml-auto rounded-full border px-1.5 text-2xs font-medium text-fg-muted">
+                      {badge}
+                    </span>
+                  ) : null}
                 </>
               )}
             </NavLink>
@@ -114,7 +138,10 @@ export function AppShell() {
           <Logo />
         </div>
         <div className="flex-1 overflow-y-auto px-3">
-          <NavList />
+          <NavList part="main" />
+        </div>
+        <div className="pt-2">
+          <NavList part="footer" />
         </div>
         <StatusFooter />
       </aside>
