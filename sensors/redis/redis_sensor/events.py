@@ -68,8 +68,39 @@ class Buckets:
             self._items.popitem(last=False)
         return allowed
 
+    def take(self, key: str, cost: float = 1.0) -> tuple[bool, bool]:
+        """Spend for ``key``: returns ``(allowed, heavy)``.
+
+        ``heavy`` is True once the key has used more than half of its burst, i.e. it is a source
+        consuming much more than its fair share."""
+        allowed = self.allow(key, cost)
+        return allowed, self._items[key][0] < self.burst / 2
+
     def __len__(self) -> int:
         return len(self._items)
+
+
+class FairBucket:
+    """A shared token bucket whose last ``reserve`` tokens only light sources may spend.
+
+    Heavy sources (see :meth:`Buckets.take`) can drain it only down to the reserve, so any
+    number of flooding IPs leaves a quiet one the shared budget (lesson 18)."""
+
+    def __init__(self, rate: float, burst: float, reserve_fraction: float = 0.3) -> None:
+        self.rate = rate
+        self.burst = burst
+        self.reserve = burst * reserve_fraction
+        self.tokens = burst
+        self._last = time.monotonic()
+
+    def allow(self, heavy: bool) -> bool:
+        now = time.monotonic()
+        self.tokens = min(self.burst, self.tokens + (now - self._last) * self.rate)
+        self._last = now
+        if self.tokens - 1.0 >= (self.reserve if heavy else 0.0):
+            self.tokens -= 1.0
+            return True
+        return False
 
 
 class EventSink:
@@ -120,11 +151,11 @@ class EventSink:
         # Sized above the per-IP session admission rate, so every recorded session can close.
         self._ip_disconnects = Buckets(ip_disconnect_rate, ip_disconnect_burst)
         self._per_ip = Buckets(per_ip_rate, per_ip_burst)
-        self._global = Buckets(global_rate, global_burst, max_keys=1)
-        self._events = Buckets(events_rate, events_burst, max_keys=1)
-        self._priority = Buckets(priority_rate, priority_burst, max_keys=1)
+        self._global = FairBucket(global_rate, global_burst)
+        self._events = FairBucket(events_rate, events_burst)
+        self._priority = FairBucket(priority_rate, priority_burst)
         # Disconnects carry the session summary, so they have their own (generous) budget.
-        self._disconnects = Buckets(disconnect_rate, disconnect_burst, max_keys=1)
+        self._disconnects = FairBucket(disconnect_rate, disconnect_burst)
         self._suppressed: OrderedDict[str, int] = OrderedDict()
         self._tasks: list[asyncio.Task[None]] = []
         self.emitted = 0
@@ -144,7 +175,8 @@ class EventSink:
 
     def admit(self, src_ip: str) -> bool:
         """Should this new connection be recorded? Never raises."""
-        if self._per_ip.allow(src_ip) and self._global.allow("*"):
+        allowed, heavy = self._per_ip.take(src_ip)
+        if allowed and self._global.allow(heavy):
             return True
         self.note_suppressed(src_ip)
         return False
@@ -222,21 +254,18 @@ class EventSink:
         urgent = priority or type_ in URGENT_TYPES
         if not force:
             if type_ == EventType.disconnect:
-                if not self._ip_disconnects.allow(src_ip):
-                    self.ip_limited += 1
-                    return False
-            else:
-                cost = 300.0 + sum(len(v) for v in data.values() if isinstance(v, str))
-                if not (self._ip_priority if urgent else self._ip_events).allow(
-                    src_ip
-                ) or not self._ip_bytes.allow(src_ip, cost):
-                    self.ip_limited += 1
-                    return False
-            if type_ == EventType.disconnect:
+                allowed, heavy = self._ip_disconnects.take(src_ip)
                 bucket = self._disconnects
             else:
+                cost = 300.0 + sum(len(v) for v in data.values() if isinstance(v, str))
+                allowed, heavy = (self._ip_priority if urgent else self._ip_events).take(src_ip)
+                ok_bytes, heavy_bytes = self._ip_bytes.take(src_ip, cost)
+                allowed, heavy = allowed and ok_bytes, heavy or heavy_bytes
                 bucket = self._priority if urgent else self._events
-            if not bucket.allow("*"):
+            if not allowed:
+                self.ip_limited += 1
+                return False
+            if not bucket.allow(heavy):
                 self.events_limited += 1
                 return False
         try:

