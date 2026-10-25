@@ -15,6 +15,7 @@ from suckerpot_db.secretbox import SecretBox, SecretError, box_from_env
 
 from ingest.config import Settings
 from ingest.consumer import Consumer
+from ingest.cve import CveWatch
 from ingest.diskguard import DiskGuard, publish_system_status
 from ingest.enrichment import EnrichmentSettings, GeoResolver
 from ingest.enrichment.credentials import CredentialSync
@@ -87,18 +88,28 @@ async def run() -> None:
         )
     )
     appliers.append(reputation.apply_settings)
+    cve_watch = CveWatch(factory, enrich)
+    appliers.append(cve_watch.apply_settings)
 
     async def rep_status(detail: dict[str, Any]) -> None:
         for name, value in detail.items():
             await publish_status(factory, name, {**value, **sync.status(name)})
 
+    async def cve_status(detail: dict[str, Any]) -> None:
+        for name, value in detail.items():
+            extra = sync.status(name) if name in ("nvd", "github") else {}
+            await publish_status(factory, name, {**value, **extra})
+
     async def publish_all() -> None:
         await rep_status(await reputation.status())
+        await cve_status(await cve_watch.status())
         await publish_status(factory, "maxmind", sync.status("maxmind"))
 
     async def run_test(provider: str) -> None:
         if provider == "maxmind":
             await sync.test_maxmind()
+        elif provider in ("nvd", "github"):
+            await cve_watch.run_key_test(provider)
         else:
             await reputation.run_key_test(provider)
 
@@ -107,6 +118,7 @@ async def run() -> None:
     background = [
         asyncio.create_task(geo.run(), name="geoip"),
         asyncio.create_task(reputation.run(rep_status), name="reputation"),
+        asyncio.create_task(cve_watch.run(cve_status), name="cve-watch"),
         asyncio.create_task(sync.run(), name="credentials"),
     ]
     loop = asyncio.get_running_loop()
@@ -121,6 +133,7 @@ async def run() -> None:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         await reputation.aclose()
+        await cve_watch.aclose()
         await sync.aclose()
         resolver.close()
         await redis.aclose()

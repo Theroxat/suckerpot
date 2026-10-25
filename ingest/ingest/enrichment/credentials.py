@@ -45,6 +45,10 @@ def _env_has(base: EnrichmentSettings, provider: str) -> bool:
         return bool(base.abuseipdb_api_key)
     if provider == "greynoise":
         return bool(base.greynoise_api_key)
+    if provider == "nvd":
+        return bool(base.nvd_api_key)
+    if provider == "github":
+        return bool(base.github_token)
     return base.maxmind_enabled
 
 
@@ -54,6 +58,10 @@ def changed_providers(old: EnrichmentSettings, new: EnrichmentSettings) -> set[s
         out.add("abuseipdb")
     if old.greynoise_api_key != new.greynoise_api_key:
         out.add("greynoise")
+    if old.nvd_api_key != new.nvd_api_key:
+        out.add("nvd")
+    if old.github_token != new.github_token:
+        out.add("github")
     if (old.maxmind_account_id, old.maxmind_license_key) != (
         new.maxmind_account_id,
         new.maxmind_license_key,
@@ -111,6 +119,10 @@ class CredentialSync:
                     eff = replace(eff, abuseipdb_api_key=cred.key)
                 elif provider == "greynoise":
                     eff = replace(eff, greynoise_api_key=cred.key)
+                elif provider == "nvd":
+                    eff = replace(eff, nvd_api_key=cred.key)
+                elif provider == "github":
+                    eff = replace(eff, github_token=cred.key)
                 else:
                     eff = replace(
                         eff, maxmind_account_id=cred.account_id or "", maxmind_license_key=cred.key
