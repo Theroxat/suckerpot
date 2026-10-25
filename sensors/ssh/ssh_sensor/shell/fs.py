@@ -1,0 +1,278 @@
+"""In-memory fake filesystem: an immutable base image plus a per-session copy-on-write overlay."""
+
+from __future__ import annotations
+
+import posixpath
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
+
+ROOT = "/"
+MAX_PATH = 1024
+MAX_SYMLINKS = 8
+_WRITABLE_PREFIXES = ("/tmp", "/var/tmp", "/dev/shm", "/dev/null")
+
+
+class FSError(Exception):
+    """Filesystem error carrying a strerror-style message (e.g. 'No such file or directory')."""
+
+
+@dataclass(frozen=True, slots=True)
+class Node:
+    kind: str  # "d" directory, "f" file, "l" symlink
+    mode: int = 0o644
+    owner: str = "root"
+    group: str = "root"
+    mtime: int = 1_726_000_000
+    content: bytes = b""
+    target: str = ""
+    tag: str = ""  # "" | "elf" | "dropped-script": marks files created by fake downloads
+
+
+@dataclass(frozen=True)
+class BaseImage:
+    """Immutable filesystem image shared by all sessions."""
+
+    nodes: dict[str, Node]
+    children: dict[str, tuple[str, ...]]
+    dynamic: dict[str, Callable[[], bytes]] = field(default_factory=dict)
+    binaries: tuple[str, ...] = ()
+
+    @staticmethod
+    def build(
+        nodes: dict[str, Node],
+        dynamic: dict[str, Callable[[], bytes]],
+        binaries: tuple[str, ...],
+    ) -> BaseImage:
+        kids: dict[str, set[str]] = {}
+        for path in nodes:
+            if path == ROOT:
+                continue
+            parent, name = posixpath.split(path)
+            kids.setdefault(parent or ROOT, set()).add(name)
+        return BaseImage(
+            nodes=nodes,
+            children={k: tuple(sorted(v)) for k, v in kids.items()},
+            dynamic=dynamic,
+            binaries=binaries,
+        )
+
+
+class FakeFS:
+    """Per-session view: reads fall through to the base image, writes go to the overlay."""
+
+    def __init__(self, base: BaseImage, *, max_bytes: int, max_nodes: int, now: int) -> None:
+        self._base = base
+        self._added: dict[str, Node] = {}
+        self._deleted: set[str] = set()
+        self._max_bytes = max_bytes
+        self._max_nodes = max_nodes
+        self._bytes = 0
+        self._now = now
+
+    @property
+    def used_bytes(self) -> int:
+        return self._bytes
+
+    @property
+    def free_bytes(self) -> int:
+        return max(0, self._max_bytes - self._bytes)
+
+    @property
+    def base(self) -> BaseImage:
+        return self._base
+
+    # ---- path handling -------------------------------------------------------------------
+    def normalize(self, cwd: str, path: str) -> str:
+        """Absolute, normalised path (``..`` and ``.`` resolved, symlinks not followed)."""
+        if len(path) > MAX_PATH:
+            raise FSError("File name too long")
+        if not path.startswith("/"):
+            path = posixpath.join(cwd, path)
+        norm = posixpath.normpath(path)
+        return "/" + norm.lstrip("/") if norm.startswith("//") else norm
+
+    def resolve(self, cwd: str, path: str, *, follow_last: bool = True) -> str:
+        """Like :meth:`normalize` but follows symlinks (bounded)."""
+        current = self.normalize(cwd, path)
+        for _ in range(MAX_SYMLINKS + 1):
+            parts = [p for p in current.split("/") if p]
+            built = ""
+            changed = False
+            for i, part in enumerate(parts):
+                built = f"{built}/{part}"
+                last = i == len(parts) - 1
+                node = self._raw(built)
+                if node is not None and node.kind == "l" and (follow_last or not last):
+                    rest = "/".join(parts[i + 1 :])
+                    target = posixpath.join(posixpath.dirname(built), node.target)
+                    current = posixpath.normpath(posixpath.join(target, rest))
+                    changed = True
+                    break
+            if not changed:
+                return current or ROOT
+        raise FSError("Too many levels of symbolic links")
+
+    def _raw(self, path: str) -> Node | None:
+        if path in self._deleted:
+            return None
+        node = self._added.get(path)
+        if node is not None:
+            return node
+        return self._base.nodes.get(path)
+
+    # ---- queries -------------------------------------------------------------------------
+    def stat(self, path: str) -> Node | None:
+        return self._raw(path)
+
+    def exists(self, path: str) -> bool:
+        return self._raw(path) is not None
+
+    def is_dir(self, path: str) -> bool:
+        node = self._raw(path)
+        return node is not None and node.kind == "d"
+
+    def read(self, path: str) -> bytes:
+        node = self._raw(path)
+        if node is None:
+            raise FSError("No such file or directory")
+        if node.kind == "d":
+            raise FSError("Is a directory")
+        dyn = self._base.dynamic.get(path)
+        if dyn is not None and path not in self._added:
+            return dyn()
+        return node.content
+
+    def listdir(self, path: str) -> list[str]:
+        node = self._raw(path)
+        if node is None:
+            raise FSError("No such file or directory")
+        if node.kind != "d":
+            raise FSError("Not a directory")
+        names = set(self._base.children.get(path, ()))
+        prefix = "/" if path == ROOT else path + "/"
+        for p in self._added:
+            if p != path and p.startswith(prefix) and "/" not in p[len(prefix) :]:
+                names.add(p[len(prefix) :])
+        return sorted(n for n in names if (prefix + n) not in self._deleted)
+
+    # ---- mutations -----------------------------------------------------------------------
+    @staticmethod
+    def may_write(path: str, user: str, home: str) -> bool:
+        if user == "root":
+            return True
+        if path == home or path.startswith(home + "/"):
+            return True
+        return any(path == p or path.startswith(p + "/") for p in _WRITABLE_PREFIXES)
+
+    def _check_parent(self, path: str) -> None:
+        parent = posixpath.dirname(path) or ROOT
+        pnode = self._raw(parent)
+        if pnode is None:
+            raise FSError("No such file or directory")
+        if pnode.kind != "d":
+            raise FSError("Not a directory")
+
+    def _put(self, path: str, node: Node) -> None:
+        old = self._raw(path)
+        if old is None and len(self._added) >= self._max_nodes:
+            raise FSError("No space left on device")
+        delta = len(node.content) - (len(old.content) if old and path in self._added else 0)
+        if self._bytes + delta > self._max_bytes:
+            raise FSError("No space left on device")
+        self._bytes += delta
+        self._deleted.discard(path)
+        self._added[path] = node
+
+    def write(
+        self, path: str, data: bytes, *, append: bool, owner: str, mode: int = 0o644, tag: str = ""
+    ) -> None:
+        self._check_parent(path)
+        old = self._raw(path)
+        if old is not None and old.kind == "d":
+            raise FSError("Is a directory")
+        if path == "/dev/null":
+            return
+        appending = append and old is not None
+        # Check the projected size BEFORE concatenating: `>>` on a large file must not build
+        # a copy that would then be refused.
+        old_len = len(self.read(path)) if appending else 0
+        held = len(old.content) if old is not None and path in self._added else 0
+        if self._bytes + old_len + len(data) - held > self._max_bytes:
+            raise FSError("No space left on device")
+        base = self.read(path) if appending else b""
+        node = Node(
+            "f",
+            mode=old.mode if old is not None else mode,
+            owner=old.owner if old is not None else owner,
+            group=old.group if old is not None else owner,
+            mtime=self._now,
+            content=(base + data),
+            tag=tag if old is None or tag else old.tag,
+        )
+        self._put(path, node)
+
+    def mkdir(self, path: str, owner: str, mode: int = 0o755) -> None:
+        if self._raw(path) is not None:
+            raise FSError("File exists")
+        self._check_parent(path)
+        self._put(path, Node("d", mode=mode, owner=owner, group=owner, mtime=self._now))
+
+    def touch(self, path: str, owner: str) -> None:
+        node = self._raw(path)
+        if node is None:
+            self.write(path, b"", append=False, owner=owner)
+        else:
+            self._added[path] = replace(node, mtime=self._now)
+
+    def chmod(self, path: str, mode: int) -> None:
+        node = self._raw(path)
+        if node is None:
+            raise FSError("No such file or directory")
+        self._added[path] = replace(node, mode=mode)
+
+    def remove(self, path: str) -> None:
+        node = self._raw(path)
+        if node is None:
+            raise FSError("No such file or directory")
+        if node.kind == "d" and self.listdir(path):
+            raise FSError("Directory not empty")
+        if path in self._added:
+            self._bytes -= len(self._added[path].content)
+            del self._added[path]
+        if path in self._base.nodes:
+            self._deleted.add(path)
+
+    def remove_tree(self, path: str, limit: int = 5000) -> None:
+        """Remove ``path`` and everything under it (bounded)."""
+        stack = [path]
+        order: list[str] = []
+        while stack and len(order) < limit:
+            cur = stack.pop()
+            order.append(cur)
+            node = self._raw(cur)
+            if node is not None and node.kind == "d":
+                prefix = "/" if cur == ROOT else cur + "/"
+                stack.extend(prefix + n for n in self.listdir(cur))
+        for cur in reversed(order):
+            if self._raw(cur) is not None:
+                self.remove(cur)
+
+    def copy(self, src: str, dst: str, owner: str) -> None:
+        node = self._raw(src)
+        if node is None:
+            raise FSError("No such file or directory")
+        if node.kind == "d":
+            raise FSError("omitting directory")
+        self._check_parent(dst)
+        self._put(dst, replace(node, content=self.read(src), owner=owner, mtime=self._now))
+
+    def rename(self, src: str, dst: str) -> None:
+        node = self._raw(src)
+        if node is None:
+            raise FSError("No such file or directory")
+        if node.kind == "d":
+            raise FSError("Operation not permitted")
+        self._check_parent(dst)
+        content = self.read(src)
+        self.remove(src)
+        self._put(dst, replace(node, content=content, mtime=self._now))
