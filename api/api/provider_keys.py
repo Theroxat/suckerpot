@@ -99,6 +99,11 @@ async def _guard(request: Request, password: str | None) -> tuple[str, Response 
     return (principal.username if principal else "unknown"), refused
 
 
+def _actor_id(request: Request) -> int | str | None:
+    principal = request.scope.get("state", {}).get("principal")
+    return audit_db.actor_id_of(principal)
+
+
 def _ip(request: Request) -> str:
     service: auth_mod.AuthService = request.app.state.auth
     return service.client_ip(request)
@@ -135,8 +140,9 @@ async def set_key(
     stmt = insert(ProviderSecretRow).values(provider=provider, **values)
     await session.execute(stmt.on_conflict_do_update(index_elements=["provider"], set_=values))
     await audit_db.record(
-        session, actor=actor, action="provider_key.set", target=provider, ip=_ip(request)
-    )
+        session, actor=actor, action="provider_key.set", target=provider, ip=_ip(request),
+        actor_id=_actor_id(request),
+    )  # fmt: skip
     await session.commit()
     audit.info("provider key set provider=%s actor=%s at=%s", provider, actor, now.isoformat())
     return JSONResponse(
@@ -157,8 +163,9 @@ async def remove_key(
         return refused
     await session.execute(delete(ProviderSecretRow).where(ProviderSecretRow.provider == provider))
     await audit_db.record(
-        session, actor=actor, action="provider_key.remove", target=provider, ip=_ip(request)
-    )
+        session, actor=actor, action="provider_key.remove", target=provider, ip=_ip(request),
+        actor_id=_actor_id(request),
+    )  # fmt: skip
     await session.commit()
     audit.info(
         "provider key removed provider=%s actor=%s at=%s", provider, actor, datetime.now(UTC)
@@ -217,8 +224,9 @@ async def request_test(provider: ProviderName, request: Request, session: DbSess
         wait = TEST_COOLDOWN.seconds
         return _error(429, "A test was just requested.", "cooldown", {"Retry-After": str(wait)})
     await audit_db.record(
-        session, actor=actor, action="provider_key.test", target=provider, ip=_ip(request)
-    )
+        session, actor=actor, action="provider_key.test", target=provider, ip=_ip(request),
+        actor_id=_actor_id(request),
+    )  # fmt: skip
     await session.commit()
     audit.info("provider key test requested provider=%s actor=%s", provider, actor)
     return JSONResponse(

@@ -629,20 +629,30 @@ async def _sender(ws: WebSocket, q: ClientQueue, skip_up_to: int) -> None:
         await asyncio.wait_for(ws.send_text(text), SEND_TIMEOUT_S)
 
 
-async def _session_watch(auth: Any, token: str | None, factory: Any) -> None:
+MAX_SESSION_CHECK_FAILURES = 6  # consecutive database errors before the socket is closed
+
+
+async def _session_watch(auth: Any, token: str | None, factory: Any) -> bool:
     """Return once the session expires or is revoked (checked every few seconds).
 
     A user's session also ends when they are disabled, deleted, demoted or signed out
-    everywhere (their session version changed). A database hiccup does not end it.
+    everywhere (their session version changed). A short database hiccup does not end it, but
+    after ``MAX_SESSION_CHECK_FAILURES`` failed checks in a row the socket cannot vouch for the
+    session any more: returns False (close with 1013) instead of True (revoked, 1008).
     """
+    failures = 0
     while True:
         await asyncio.sleep(SESSION_RECHECK_S)
         try:
             principal = await auth.resolve(token, factory)
         except (SQLAlchemyError, OSError):
+            failures += 1
+            if failures >= MAX_SESSION_CHECK_FAILURES:
+                return False
             continue
+        failures = 0
         if principal is None:
-            return
+            return True
 
 
 async def _receiver(ws: WebSocket, q: ClientQueue) -> None:
@@ -678,7 +688,7 @@ async def live(ws: WebSocket) -> None:
         await ws.close(code=1013)
         return
     code = 1011
-    tasks: set[asyncio.Task[None]] = set()
+    tasks: set[asyncio.Task[Any]] = set()
     try:
         async with hub.backfill_sem, ws.app.state.session_factory() as session:
             backfill = await fetch_recent(session)
@@ -697,7 +707,10 @@ async def live(ws: WebSocket) -> None:
         watcher = asyncio.create_task(_session_watch(auth, auth.session_token(ws.scope), factory))
         tasks.add(watcher)
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        code = 1008 if watcher in done else 1001 if q.closed else 1000
+        if watcher in done:
+            code = 1008 if watcher.result() else 1013
+        else:
+            code = 1001 if q.closed else 1000
     except Exception:
         log.warning("live client error", exc_info=True)
     finally:

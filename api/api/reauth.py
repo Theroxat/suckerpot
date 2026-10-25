@@ -71,6 +71,7 @@ async def guard(
     except (SQLAlchemyError, OSError):
         return principal, error(503, "Service unavailable", "unavailable")
     if not ok:
+        service.record_failure(ip, REAUTH_SCOPE)
         audit.warning("%s refused: wrong password actor=%s ip=%s", what, actor, ip[:64])
         await asyncio.sleep(auth_mod.FAILURE_DELAY_S)
         if service.reauth_failed(principal.session):

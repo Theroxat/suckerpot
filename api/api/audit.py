@@ -30,9 +30,19 @@ async def record(
     target: str | None = None,
     ip: str | None = None,
     details: dict[str, Any] | None = None,
+    actor_id: int | str | None = None,
+    target_id: int | None = None,
 ) -> None:
-    """Add an entry to the caller's transaction (the caller commits)."""
-    safe = details or {}
+    """Add an entry to the caller's transaction (the caller commits).
+
+    Names can be reused after a deletion, so the numeric ids go into ``details``: ``actor_id``
+    is a user id, ``"owner"`` for the owner account, or ``"system"``; ``target_id`` is a user id.
+    """
+    safe = dict(details or {})
+    if actor_id is not None:
+        safe["actor_id"] = actor_id
+    if target_id is not None:
+        safe["target_id"] = target_id
     if len(json.dumps(safe, default=str)) > MAX_DETAILS_BYTES:
         safe = {"truncated": True}
     db.add(
@@ -44,3 +54,10 @@ async def record(
             details=json.loads(json.dumps(safe, default=str)),
         )
     )
+
+
+def actor_id_of(principal: Any) -> int | str | None:
+    """The audit ``actor_id`` of a ``Principal``: its user id, or ``"owner"``."""
+    if principal is None:
+        return None
+    return "owner" if principal.is_owner else principal.user_id

@@ -198,9 +198,11 @@ def test_rate_limit_per_ip_and_global() -> None:
     assert [svc.rate_limited("192.0.2.1") for _ in range(3)] == [None] * 3
     retry = svc.rate_limited("192.0.2.1")
     assert retry is not None and 1 <= retry <= 61
-    assert svc.rate_limited("192.0.2.2") is None  # other IP unaffected...
-    assert svc.rate_limited("192.0.2.3") is None  # ...until the global budget (5) is used
-    assert svc.rate_limited("192.0.2.4") is not None
+    assert svc.rate_limited("192.0.2.2") is None  # other IP unaffected
+    # The global window counts wrong passwords only: attempts alone never fill it.
+    for _ in range(5):
+        svc.record_failure("192.0.2.2")
+    assert svc.rate_limited("192.0.2.3") is not None  # the global budget (5 failures) is used
     clock.now += 61
     assert svc.rate_limited("192.0.2.1") is None  # window slid
 
@@ -369,22 +371,72 @@ def test_old_v1_tokens_are_rejected() -> None:
     assert svc.validate("v1.1.99999999999.nonce.sig") is None
 
 
-def test_rate_limit_per_username_across_addresses() -> None:
+def test_rate_limit_per_username_counts_failures_across_addresses() -> None:
     clock = Clock()
     svc = AuthService(settings(rate_per_ip=50, rate_global=500, rate_per_user=3), clock)
     for i in range(3):
         assert svc.rate_limited(f"192.0.2.{i + 1}", username="Alice") is None
+        svc.record_failure(f"192.0.2.{i + 1}", username="Alice")
     assert svc.rate_limited("192.0.2.9", username="alice") is not None  # case-insensitive
     assert svc.rate_limited("192.0.2.9", username="bob") is None  # another account is unaffected
+    assert svc.rate_limited("192.0.2.9") is None  # no name (the owner): never limited by name
     clock.now += 61
     assert svc.rate_limited("192.0.2.9", username="alice") is None
 
 
-def test_a_refused_attempt_is_not_charged_to_the_other_windows() -> None:
-    svc = AuthService(settings(rate_per_ip=1, rate_global=500, rate_per_user=5), Clock())
-    assert svc.rate_limited("192.0.2.1", username="alice") is None
-    assert svc.rate_limited("192.0.2.1", username="alice") is not None  # per-address limit
-    assert len(svc._per_ip["user|alice"].hits) == 1
+def test_successes_do_not_use_up_the_account_or_global_windows() -> None:
+    svc = AuthService(settings(rate_per_ip=100, rate_global=3, rate_per_user=3), Clock())
+    for i in range(30):
+        assert svc.rate_limited(f"192.0.2.{i}", username="alice") is None  # no failures recorded
+
+
+def test_reauth_has_its_own_windows() -> None:
+    svc = AuthService(settings(rate_per_ip=100, rate_global=2), Clock())
+    svc.record_failure("192.0.2.1", "reauth")
+    svc.record_failure("192.0.2.1", "reauth")
+    assert svc.rate_limited("192.0.2.1", "reauth") is not None
+    assert svc.rate_limited("192.0.2.1") is None  # login is untouched
+
+
+def test_source_lock_grows_and_is_per_source() -> None:
+    clock = Clock()
+    svc = AuthService(settings(), clock)
+    for _ in range(5):
+        svc.source_failed(7, "203.0.113.9")
+    assert svc.source_locked(7, "203.0.113.9")
+    assert not svc.source_locked(7, "192.0.2.1")  # another source
+    assert not svc.source_locked(8, "203.0.113.9")  # another account
+    clock.now += 61
+    assert not svc.source_locked(7, "203.0.113.9")  # first lock: one minute
+    for _ in range(5):
+        svc.source_failed(7, "203.0.113.9")
+    clock.now += 61
+    assert svc.source_locked(7, "203.0.113.9")  # second lock: two minutes
+    clock.now += 60
+    assert not svc.source_locked(7, "203.0.113.9")
+    svc.source_ok(7, "203.0.113.9")
+    for _ in range(5):
+        svc.source_failed(7, "203.0.113.9")
+    clock.now += 61
+    assert not svc.source_locked(7, "203.0.113.9")  # a success reset the strikes
+    svc.clear_sources(7)
+    assert not svc._sources
+
+
+def test_source_lock_is_capped_and_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    import api.auth as mod
+
+    clock = Clock()
+    svc = AuthService(settings(), clock)
+    for _ in range(40):
+        for _ in range(5):
+            svc.source_failed(1, "203.0.113.9")
+        clock.now += mod.SOURCE_LOCK_MAX_S + 1
+    assert svc._sources[(1, "203.0.113.9")].locked_until - clock.now < mod.SOURCE_LOCK_MAX_S
+    monkeypatch.setattr(mod, "MAX_TRACKED_SOURCES", 3)
+    for i in range(10):
+        svc.source_failed(100 + i, "x")
+    assert len(svc._sources) <= 3
 
 
 async def test_check_hash_with_no_hash_costs_a_verification_and_fails() -> None:

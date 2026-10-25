@@ -78,7 +78,10 @@ MAX_VERIFY_CONCURRENCY = 1  # one argon2 verify holds ~64 MiB: more would risk t
 MAX_VERIFY_PENDING = 3  # running + queued; beyond this login answers 429 immediately
 OWNER = "o"  # token subject of the owner account; database users are "u<id>"
 TOKEN_VERSION = "v2"  # noqa: S105 - the token format tag, not a password
-MAX_USER_WINDOWS = MAX_TRACKED_IPS
+MAX_TRACKED_SOURCES = 10_000
+SOURCE_FAILS_BEFORE_LOCK = 5  # wrong passwords from one source before that source is locked
+SOURCE_LOCK_BASE_S = 60.0  # first lock; doubles with every repeat, up to the maximum
+SOURCE_LOCK_MAX_S = 900.0
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "[::1]")
 
 
@@ -223,6 +226,13 @@ class _Window:
             self.hits.popleft()
 
 
+@dataclass
+class _SourceState:
+    fails: int = 0
+    strikes: int = 0
+    locked_until: float = 0.0
+
+
 def _b64(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
@@ -247,7 +257,9 @@ class AuthService:
         self._csrf_key = hashlib.sha256(b"sp-csrf|" + settings.secret).digest()
         self._revoked: dict[str, int] = {}
         self._per_ip: dict[str, _Window] = {}
-        self._global = _Window()
+        self._globals: dict[str, _Window] = {}
+        self._global = self._global_window("")
+        self._sources: dict[tuple[int, str], _SourceState] = {}
         self._reauth_failures: dict[str, int] = {}
         self._verify_sem = asyncio.Semaphore(MAX_VERIFY_CONCURRENCY)
         self._pending = 0
@@ -424,40 +436,97 @@ class AuthService:
         win.prune(now)
         return win
 
-    def rate_limited(self, ip: str, scope: str = "", username: str | None = None) -> int | None:
-        """Record an attempt. Returns Retry-After seconds when over the limit, else None.
+    def _global_window(self, scope: str) -> _Window:
+        win = self._globals.get(scope)
+        if win is None:
+            win = self._globals[scope] = _Window()
+        return win
 
-        ``scope`` gives another action (e.g. password re-authentication) its own per-address
-        window, but every attempt is also charged to the same global window as login, so
-        re-authentication cannot be used to guess the password around the login limit.
-        ``username`` adds a per-account window (case-insensitive), so one account cannot be
-        hammered from many addresses.
+    def rate_limited(self, ip: str, scope: str = "", username: str | None = None) -> int | None:
+        """Check the limits. Returns Retry-After seconds when over one, else None.
+
+        Three windows: per client address (charged here, on every attempt), per account name
+        (case-insensitive) and global. The account and global windows are charged by
+        ``record_failure`` only: successful sign-ins never use them up, so a busy tunnel or an
+        attacker's wrong guesses cannot shut a legitimate user out for long. ``scope`` gives
+        another action (password re-authentication) its own windows, separate from login.
+        Callers pass no ``username`` for the owner, so the owner is never limited by name.
         """
-        ip = rate_key(ip)
-        glob = self._global
+        key = rate_key(ip)
         if scope:
-            ip = f"{scope}|{ip}"
+            key = f"{scope}|{key}"
         now = self.clock()
+        glob = self._global_window(scope)
         glob.prune(now)
-        windows = [(self._window(ip, now), self.settings.rate_per_ip)]
+        windows = [
+            (self._window(key, now), self.settings.rate_per_ip),
+            (glob, self.settings.rate_global),
+        ]
         if username is not None:
-            windows.append(
-                (
-                    self._window(f"user|{username.strip().lower()[:64]}", now),
-                    self.settings.rate_per_user,
-                )
+            windows.insert(
+                1,
+                (self._window(self._user_key(scope, username), now), self.settings.rate_per_user),
             )
-        windows.append((glob, self.settings.rate_global))
-        charged: list[_Window] = []
         for w, limit in windows:
             if w is None:
                 return int(RATE_WINDOW_S)
             if len(w.hits) >= limit:
                 return max(1, int(RATE_WINDOW_S - (now - w.hits[0])) + 1)
-            charged.append(w)
-        for w in charged:
-            w.hits.append(now)
+        windows[0][0].hits.append(now)  # type: ignore[union-attr]
         return None
+
+    @staticmethod
+    def _user_key(scope: str, username: str) -> str:
+        return f"{scope}|user|{username.strip().lower()[:64]}"
+
+    def record_failure(self, ip: str, scope: str = "", username: str | None = None) -> None:
+        """Charge a wrong password to the account and global windows."""
+        del ip
+        now = self.clock()
+        glob = self._global_window(scope)
+        glob.prune(now)
+        glob.hits.append(now)
+        if username is not None:
+            win = self._window(self._user_key(scope, username), now)
+            if win is not None:
+                win.hits.append(now)
+
+    # -- per-source lockout --------------------------------------------------------------------
+
+    def source_locked(self, user_id: int, source: str) -> bool:
+        """True while ``source`` (an address, IPv6 by /64) is locked out for this account."""
+        st = self._sources.get((user_id, source))
+        return st is not None and st.locked_until > self.clock()
+
+    def source_failed(self, user_id: int, source: str) -> None:
+        """A wrong password for this account from this source. Locks grow with repeats."""
+        now = self.clock()
+        key = (user_id, source)
+        st = self._sources.get(key)
+        if st is None:
+            if len(self._sources) >= MAX_TRACKED_SOURCES:
+                for k in [k for k, v in self._sources.items() if v.locked_until <= now]:
+                    del self._sources[k]
+                if len(self._sources) >= MAX_TRACKED_SOURCES:
+                    self._sources.clear()
+            st = self._sources[key] = _SourceState()
+        if st.locked_until > now:
+            return
+        st.fails += 1
+        if st.fails >= SOURCE_FAILS_BEFORE_LOCK:
+            st.fails = 0
+            st.strikes += 1
+            st.locked_until = now + min(
+                SOURCE_LOCK_MAX_S, SOURCE_LOCK_BASE_S * 2 ** (st.strikes - 1)
+            )
+
+    def source_ok(self, user_id: int, source: str) -> None:
+        self._sources.pop((user_id, source), None)
+
+    def clear_sources(self, user_id: int) -> None:
+        """Forget every per-source lock of an account (admin unlock or password reset)."""
+        for k in [k for k in self._sources if k[0] == user_id]:
+            del self._sources[k]
 
     def client_ip(self, conn: HTTPConnection) -> str:
         """The peer address, or the forwarded client when the peer is a trusted proxy."""
@@ -728,46 +797,95 @@ def _set_csrf(response: Response, service: AuthService, token: str) -> None:
     )
 
 
+async def _owner_touch(
+    factory: async_sessionmaker[AsyncSession] | None,
+    service: AuthService,
+    ok: bool,
+    ip: str,
+) -> None:
+    """Give the owner's path the same database work as everybody else's.
+
+    A lookup always runs; a success then writes its audit entry and a failure a no-op write.
+    Best effort: the owner must get in, and be refused, even when the database is down.
+    """
+    if factory is None:
+        return
+    name = service.settings.username
+    try:
+        async with factory() as db:
+            await accounts.find_by_username(db, name)
+            if ok:
+                await audit.record(
+                    db, actor=name, action="auth.login", target=name, ip=ip, actor_id="owner"
+                )
+            else:
+                await accounts.dummy_write(db)
+            await db.commit()
+    except (SQLAlchemyError, OSError):
+        log.warning("owner sign-in could not use the database")
+
+
 async def _authenticate(
     request: Request, service: AuthService, body: LoginBody, ip: str
 ) -> LoginResult | None:
-    """Check the credentials. Exactly one argon2 verification runs, whoever the user is."""
+    """Check the credentials. Exactly one argon2 verification runs, whoever the user is.
+
+    The argon2 cost is the same for the owner, a known user and an unknown name, and every
+    path makes one database lookup and one write (a real one or a no-op), so the small
+    remaining differences are a database round trip, far below the hash. A database failure
+    gives the same 401 as a wrong password for a database user.
+    """
     factory = _session_factory(request.app)
     if service.is_owner_name(body.username):
-        if not await service.check_credentials(body.username, body.password):
-            return None
-        if factory is not None:  # the audit entry is best effort: the owner must always get in
-            try:
-                async with factory() as db:
-                    name = service.settings.username
-                    await audit.record(db, actor=name, action="auth.login", target=name, ip=ip)
-                    await db.commit()
-            except (SQLAlchemyError, OSError):
-                log.warning("owner login could not be written to the audit log")
-        return LoginResult(OWNER, 0)
+        ok = await service.check_credentials(body.username, body.password)
+        await _owner_touch(factory, service, ok, ip)
+        return LoginResult(OWNER, 0) if ok else None
     if factory is None:
         await service.check_hash(None, body.password)
         return None
-    async with factory() as db:
-        row = await accounts.find_by_username(db, body.username)
-        ok = await service.check_hash(row.password_hash if row else None, body.password)
-        if row is None:
-            return None
-        usable = not row.disabled and not accounts.is_locked(row)
-        if ok and usable:
-            await accounts.register_success(db, row.id)
-            await audit.record(
-                db, actor=row.username, action="auth.login", target=row.username, ip=ip
+    source = rate_key(ip)
+    hashed = False
+    try:
+        async with factory() as db:
+            row = await accounts.find_by_username(db, body.username)
+            ok = await service.check_hash(row.password_hash if row else None, body.password)
+            hashed = True
+            if row is None:
+                await accounts.dummy_write(db)
+                await db.commit()
+                return None
+            source_locked = service.source_locked(row.id, source)
+            usable = (
+                not row.disabled and not source_locked and not accounts.is_locked_for(row, source)
             )
+            if ok and usable:
+                await accounts.register_success(db, row.id, source)
+                service.source_ok(row.id, source)
+                await audit.record(
+                    db, actor=row.username, action="auth.login", target=row.username, ip=ip,
+                    actor_id=row.id, target_id=row.id,
+                )  # fmt: skip
+                await db.commit()
+                return LoginResult(f"u{row.id}", row.session_version)
+            locked_now = False
+            if not ok and not row.disabled and not source_locked:
+                service.source_failed(row.id, source)
+                locked_now = await accounts.register_failure(db, row.id)
+            else:
+                await accounts.dummy_write(db)
+            if locked_now:
+                await audit.record(
+                    db, actor="system", action="user.locked", target=row.username, ip=ip,
+                    details={"failures": accounts.LOCK_AFTER_FAILURES},
+                    actor_id="system", target_id=row.id,
+                )  # fmt: skip
+                log.warning("account locked after repeated failures from many sources")
             await db.commit()
-            return LoginResult(f"u{row.id}", row.session_version)
-        if not ok and not row.disabled and usable and await accounts.register_failure(db, row.id):
-            await audit.record(
-                db, actor=row.username, action="user.locked", target=row.username, ip=ip,
-                details={"failures": accounts.LOCK_AFTER_FAILURES},
-            )  # fmt: skip
-            log.warning("account locked after repeated failures")
-        await db.commit()
+            return None
+    except (SQLAlchemyError, OSError):
+        log.warning("dashboard login: database unavailable")
+        if not hashed:
+            await service.check_hash(None, body.password)
         return None
 
 
@@ -780,7 +898,8 @@ async def login(body: LoginBody, request: Request) -> Response:
     if not same_origin(request):
         return JSONResponse({"detail": "Cross-origin login refused"}, status_code=403)
     ip = service.client_ip(request)
-    retry = service.rate_limited(ip, username=body.username)
+    by_name = None if service.is_owner_name(body.username) else body.username
+    retry = service.rate_limited(ip, username=by_name)
     if retry is not None:
         return JSONResponse(
             {"detail": "Too many attempts"}, status_code=429, headers={"Retry-After": str(retry)}
@@ -795,6 +914,7 @@ async def login(body: LoginBody, request: Request) -> Response:
         log.warning("dashboard login failed: database unavailable")
         return JSONResponse({"detail": "Sign-in is temporarily unavailable"}, status_code=503)
     if result is None:
+        service.record_failure(ip, username=by_name)
         log.warning("dashboard login failed ip=%s", ip[:64])  # never the submitted values
         await asyncio.sleep(FAILURE_DELAY_S)
         return JSONResponse({"detail": "Invalid credentials"}, status_code=401)
@@ -909,6 +1029,7 @@ async def change_password(body: PasswordBody, request: Request) -> Response:
             if row is None:
                 return _problem(401, "Not authenticated", "unauthenticated")
             if not ok:
+                service.record_failure(ip, "reauth")
                 await asyncio.sleep(FAILURE_DELAY_S)
                 if service.reauth_failed(info):
                     return _problem(
@@ -927,8 +1048,9 @@ async def change_password(body: PasswordBody, request: Request) -> Response:
             row.password_changed_at = datetime.now(UTC)
             row.session_version += 1
             await audit.record(
-                db, actor=row.username, action="password.change", target=row.username, ip=ip
-            )
+                db, actor=row.username, action="password.change", target=row.username, ip=ip,
+                actor_id=row.id, target_id=row.id,
+            )  # fmt: skip
             await db.commit()
             version = row.session_version
     except LoginBusy:

@@ -332,6 +332,9 @@ class UserRow(Base):
     failed_logins: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     session_version: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    known_sources: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
 
 
 class AuditLogRow(Base):
