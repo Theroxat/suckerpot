@@ -1,3 +1,5 @@
+import pytest
+
 from ingest.aggregate import compute_session_deltas
 
 from .helpers import T0, make_event
@@ -49,3 +51,25 @@ def test_multiple_sessions_sorted_by_id() -> None:
 
 def test_empty() -> None:
     assert compute_session_deltas([]) == []
+
+
+def test_client_tool_from_rdp_only() -> None:
+    (d,) = compute_session_deltas(
+        [
+            make_event("login_attempt", sensor="rdp", data={"client_tool": "FreeRDP"}),
+            make_event("disconnect", offset_s=2, sensor="rdp", data={"client_tool": "unknown"}),
+        ]
+    )
+    assert d.client_tool == "FreeRDP"
+    (other,) = compute_session_deltas(
+        [make_event("login_attempt", data={"client_tool": "FreeRDP"})]
+    )
+    assert other.client_tool is None
+
+
+@pytest.mark.parametrize("tool", ["unknown", "", "x" * 40, "a\x1b[2J", 5, None])
+def test_client_tool_rejects_junk(tool: object) -> None:
+    (d,) = compute_session_deltas(
+        [make_event("disconnect", sensor="rdp", data={"client_tool": tool})]
+    )
+    assert d.client_tool is None

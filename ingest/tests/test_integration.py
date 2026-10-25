@@ -195,6 +195,33 @@ async def test_write_and_query(
     assert (await client.get("/api/v1/sessions/nope")).status_code == 404
 
 
+async def test_rdp_client_tool_reaches_the_api(
+    factory: async_sessionmaker[AsyncSession], client: httpx.AsyncClient
+) -> None:
+    ntlm = {"method": "rdp-ntlm", "username": "admin", "success": False, "client_tool": "FreeRDP"}
+    await write_batch(
+        factory,
+        [make_event("login_attempt", sid="r1", sensor="rdp", ip="198.51.100.4", data=ntlm)],
+    )
+    # A later event without a tool, or with "unknown", must not erase what was learned.
+    await write_batch(
+        factory,
+        [
+            make_event(
+                "disconnect",
+                sid="r1",
+                offset_s=3,
+                sensor="rdp",
+                ip="198.51.100.4",
+                data={"client_tool": "unknown"},
+            )
+        ],
+    )
+    assert (await client.get("/api/v1/sessions/r1")).json()["client_tool"] == "FreeRDP"
+    await write_batch(factory, [make_event("connect", sid="ssh9", offset_s=0)])
+    assert (await client.get("/api/v1/sessions/ssh9")).json()["client_tool"] is None
+
+
 async def test_pagination_walks_all_sessions(
     factory: async_sessionmaker[AsyncSession], client: httpx.AsyncClient
 ) -> None:
