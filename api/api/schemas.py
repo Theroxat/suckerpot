@@ -175,5 +175,7 @@ class EnrichmentSettings(BaseModel):
     abuseipdb: ReputationProvider
     greynoise: ReputationProvider
     maxmind: KeyInfo
+    nvd: KeyInfo
+    github: KeyInfo
     key_editing: KeyEditing
     reported_at: datetime | None
