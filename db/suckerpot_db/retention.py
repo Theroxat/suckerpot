@@ -29,6 +29,7 @@ MAX_RETENTION_DAYS = 3650
 COMPRESS_AFTER_DAYS = 7
 REFRESH_WINDOW_DAYS = 3
 MAINTENANCE_PROC = "suckerpot_maintenance"
+INDICATOR_PRUNE_PROC = "suckerpot_indicator_prune"  # created by migration 0009
 
 # Name of each continuous aggregate with its bucket width.
 AGGREGATES: dict[str, str] = {
@@ -98,6 +99,19 @@ def apply_policies(conn: Connection, days: int) -> None:
         text(
             f"SELECT add_job('{MAINTENANCE_PROC}', INTERVAL '1 hour', "
             "config => jsonb_build_object('retention_days', CAST(:d AS integer)))"
+        ),
+        {"d": days},
+    )
+    # Indicators expire with the raw events. The procedure only exists from migration 0009 on.
+    conn.execute(
+        text("SELECT delete_job(job_id) FROM timescaledb_information.jobs WHERE proc_name = :p"),
+        {"p": INDICATOR_PRUNE_PROC},
+    )
+    conn.execute(
+        text(
+            f"SELECT add_job('{INDICATOR_PRUNE_PROC}', INTERVAL '1 hour', "
+            "config => jsonb_build_object('retention_days', CAST(:d AS integer))) "
+            f"WHERE to_regprocedure('{INDICATOR_PRUNE_PROC}(integer, jsonb)') IS NOT NULL"
         ),
         {"d": days},
     )
