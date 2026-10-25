@@ -70,7 +70,7 @@ export function AiExplanationCard({
       detail={
         ai
           ? undefined
-          : "Only the cleaned-up command text is sent: no addresses, no host names, no session data."
+          : "Only the cleaned-up command text is sent (addresses and URLs are replaced)."
       }
       action={<AiLabel model={ai?.model ?? llm.model} />}
       className="border-dashed border-border-strong normal-nums shadow-none"
