@@ -48,9 +48,12 @@ describe("describeCves", () => {
       "No new CVE this week affects the services we emulate.",
     )
   })
-  it("leads with critical CVEs and adds KEV and traffic", () => {
+  it("counts every figure against the same set, critical first when they all are", () => {
     expect(describeCves({ critical: 3, relevant: 5, kevRelevant: 1, seen: 2 })).toBe(
-      "3 new critical CVEs this week affect services we emulate: 1 already exploited in the wild (CISA KEV), 2 seen in our traffic.",
+      "5 new CVEs this week affect services we emulate, 3 of them critical. 1 is already exploited in the wild (CISA KEV) and 2 were seen in our traffic.",
+    )
+    expect(describeCves({ critical: 2, relevant: 2, kevRelevant: 2, seen: 0 })).toBe(
+      "2 new critical CVEs this week affect services we emulate. 2 are already exploited in the wild (CISA KEV).",
     )
   })
   it("uses the singular and falls back to all relevant CVEs", () => {
