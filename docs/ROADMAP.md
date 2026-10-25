@@ -152,6 +152,7 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 ## Later (not part of the loop)
 
 - Discord alerts on malware drops.
+- Provider keys: sealed-box (public-key) encryption so the API can store a key but never read it back, only ingest can.
 - Public read-only page through Cloudflare Tunnel, IPs masked.
 - LLM-backed SSH shell.
 - RDP: a fake Windows logon screen that records keystrokes.

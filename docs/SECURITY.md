@@ -43,6 +43,7 @@ Keep the dashboard port private anyway. Login is one layer, not the only one.
 | An attacker abuses the dashboard | Login with an argon2 hash, signed `HttpOnly` `Secure` `SameSite=Strict` cookies, CSRF protection, rate-limited login. Keep the port private as well. |
 | The project is used to attack others | No offensive behaviour (see below) |
 | Someone gets a copy of the database (backup, dump, stolen volume) | Provider keys in it are encrypted with AES-256-GCM. The encryption key lives only in `.env` (`SETTINGS_ENCRYPTION_KEY`). A dump alone reveals nothing. |
+| Someone steals an admin session (cookie) | They can see where each key comes from and its last four characters, and trigger key tests, capped at 10 per provider per day with a 20 second cooldown. They cannot change or remove a key without the admin password, and five wrong passwords in a row revoke the session. |
 | Secrets leak into the public repo | Repo hygiene rules, `.gitignore`, secret scanning (see below) |
 
 ## Controls
@@ -127,6 +128,8 @@ The admin can enter the AbuseIPDB, GreyNoise and MaxMind keys on the Settings pa
 - **Who can change them.** Setting, replacing or removing a key needs the session cookie, the CSRF token, a same-origin request and the admin password again (checked with argon2). Every attempt is charged to the same global window as the login (plus a separate per-address window), so re-authentication cannot be used to guess the password around the login limit. Five wrong passwords in a row revoke the session.
 - **Audit.** Every change writes a line to the API log with the provider, the action, the time and the account. It never contains the key or the password.
 - **No key in an error.** Validation errors do not echo the submitted values. Keys are checked for length and printable ASCII, and are never written to a log line, an exception message or a status row.
+- **Test cap.** "Test key" spends provider quota, so it is limited to 10 per provider per day and one per 20 seconds, enforced in a single database statement.
+- **Key quality.** `SETTINGS_ENCRYPTION_KEY` must decode to at least 32 bytes with at least 16 distinct byte values, and must differ from `SESSION_SECRET` and every `*_PASSWORD` variable. Otherwise editing is disabled.
 - **Least privilege.** The API role may write `provider_secrets`. The ingest role may only read it. The API still has no internet access: "Test key" leaves a request in the database, and ingest makes the one real call and spends one unit of the provider's daily quota.
 
 ### Secrets policy

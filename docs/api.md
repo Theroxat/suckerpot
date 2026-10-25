@@ -455,7 +455,7 @@ For each provider, `source` is `env` (the key comes from `.env`), `settings` (se
 | `DELETE` | `{"password": "<admin password>"}` | `204` |
 | `POST .../test` | none | `202` with `requested_at`. Poll `GET /api/v1/settings/enrichment` for `test`. |
 
-Changes need the session cookie, the `X-CSRF-Token` header, a same-origin request and the admin password again. Errors carry a `code`: `editing_disabled` (`503`, no `SETTINGS_ENCRYPTION_KEY`), `invalid_key` (`422`, wrong length or characters), `reauth_failed` (`403`, wrong password), `origin` (`403`), `rate_limited` (`429`, the password check has its own limit), `no_key` (`409`) and `cooldown` (`429`, one test per 20 seconds). A `422` never repeats the submitted values.
+Changes need the session cookie, the `X-CSRF-Token` header, a same-origin request and the admin password again. Errors carry a `code`: `editing_disabled` (`503`, no `SETTINGS_ENCRYPTION_KEY`), `invalid_key` (`422`, wrong length or characters), `reauth_failed` (`403`, wrong password), `origin` (`403`), `rate_limited` (`429`, shared with the login limit), `no_key` (`409`), `cooldown` (`429`, one test per 20 seconds), `daily_cap` (`429`, 10 tests per provider per day) and `session_revoked` (`401`, five wrong passwords in a row). A `422` never repeats the submitted values.
 
 ## Analytics endpoints
 
