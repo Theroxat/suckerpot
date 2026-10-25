@@ -34,6 +34,8 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 "tests/**" = ["S101", "S311"]
 # The generator is deterministic on purpose: `random` is not used for security here.
 "demo/**" = ["S311"]
+# Attack scripts are canned strings: fake temp paths and SQL text are the data, not code.
+"demo/plans_services.py" = ["S108", "S608", "E501"]
 
 [tool.mypy]
 strict = true

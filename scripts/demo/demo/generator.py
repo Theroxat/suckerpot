@@ -9,7 +9,27 @@ from suckerpot_common import Event, SensorName
 
 from demo.ips import random_public_ip
 from demo.plans import Plan, build_rdp, build_ssh, build_telnet, build_web, pick
+from demo.plans_services import (
+    build_adb,
+    build_docker,
+    build_mssql,
+    build_mysql,
+    build_redis,
+    build_sip,
+    build_smb,
+)
 from demo.schedule import SENSORS, Context, Schedule
+
+CORE_SENSORS = (SensorName.ssh, SensorName.web, SensorName.telnet, SensorName.rdp)
+SERVICE_BUILDERS = {
+    SensorName.redis: build_redis,
+    SensorName.docker: build_docker,
+    SensorName.mysql: build_mysql,
+    SensorName.adb: build_adb,
+    SensorName.mssql: build_mssql,
+    SensorName.smb: build_smb,
+    SensorName.sip: build_sip,
+}
 
 
 class Generator:
@@ -27,6 +47,10 @@ class Generator:
         }
         self.regulars = [random_public_ip(rng) for _ in range(120)]
         self.campaign = [random_public_ip(rng) for _ in range(14)]
+        # A few persistent heavy hitters per service sensor (the same scanners come back daily).
+        self.heavy = {
+            s: [random_public_ip(rng) for _ in range(3)] for s in SENSORS[len(CORE_SENSORS) :]
+        }
 
     # -- source IP selection
 
@@ -36,6 +60,9 @@ class Generator:
             return rng.choice(self.campaign)
         if ctx.botnet_wave and sensor is SensorName.telnet:
             return random_public_ip(rng)
+        if sensor in self.heavy and rng.random() < 0.3:
+            ips = self.heavy[sensor]
+            return rng.choices(ips, [1 / (i + 1) for i in range(len(ips))])[0]
         r = rng.random()
         if r < 0.28:
             cands = [ip for ip in self.repeaters if sensor in self._affinity[ip]]
@@ -66,7 +93,9 @@ class Generator:
             return build_web(rng, ip, php2shell_p=ctx.php2shell_p)
         if sensor is SensorName.telnet:
             return build_telnet(rng, ip, wave=ctx.botnet_wave)
-        return build_rdp(rng, ip)
+        if sensor is SensorName.rdp:
+            return build_rdp(rng, ip)
+        return SERVICE_BUILDERS[sensor](rng, ip)
 
     def events_for(self, plan: Plan, start: datetime) -> list[Event]:
         sid = self._session_id()
