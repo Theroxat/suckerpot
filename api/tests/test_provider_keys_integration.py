@@ -153,3 +153,27 @@ async def test_undecryptable_key_is_flagged(client: httpx.AsyncClient) -> None:
 async def test_test_without_any_key_is_refused(client: httpx.AsyncClient) -> None:
     r = await client.post("/api/v1/settings/providers/greynoise/test")
     assert r.status_code == 409
+
+
+async def test_test_requests_are_capped_per_day_and_per_20_seconds(
+    client: httpx.AsyncClient,
+) -> None:
+    await status("greynoise", {"configured": True, "source": "env", "env_configured": True})
+    url = "/api/v1/settings/providers/greynoise/test"
+    assert (await client.post(url)).status_code == 202
+    assert (await client.post(url)).json()["code"] == "cooldown"
+    for n in range(2, 11):  # tests 2..10 are allowed once the cooldown has passed
+        async with owner_engine() as owner, owner.begin() as conn:
+            await conn.execute(
+                text("UPDATE provider_test_requests SET requested_at = now() - interval '1 minute'")
+            )
+        assert (await client.post(url)).status_code == 202, n
+    async with owner_engine() as owner, owner.begin() as conn:
+        await conn.execute(
+            text("UPDATE provider_test_requests SET requested_at = now() - interval '1 minute'")
+        )
+    capped = await client.post(url)
+    assert capped.status_code == 429 and capped.json()["code"] == "daily_cap"
+    async with owner_engine() as owner, owner.begin() as conn:  # a new day resets the count
+        await conn.execute(text("UPDATE provider_test_requests SET tests_day = current_date - 1"))
+    assert (await client.post(url)).status_code == 202

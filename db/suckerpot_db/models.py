@@ -176,3 +176,8 @@ class ProviderTestRequestRow(Base):
     )
     requested_by: Mapped[str] = mapped_column(Text, nullable=False)
     handled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Daily cap on requested tests (the API refuses more, atomically, in one upsert).
+    tests_day: Mapped[date] = mapped_column(
+        Date, server_default=text("current_date"), nullable=False
+    )
+    tests_today: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
