@@ -4,8 +4,7 @@ import { h1, settle, shoot } from "./helpers"
 // P0: the three spaces in the nav and the placeholder pages behind the new routes.
 // Every page behind the new routes is real now: campaigns.spec.ts, scripts.spec.ts and the
 // feature specs cover them, so no placeholder is left to check here.
-const PLACEHOLDERS: [path: string, title: string][] = [
-]
+const PLACEHOLDERS: [path: string, title: string][] = []
 
 test("nav spaces and placeholder routes", async ({ page }, info) => {
   for (const [path, title] of PLACEHOLDERS) {
