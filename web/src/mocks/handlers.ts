@@ -9,6 +9,7 @@ import { settingsHandlers } from "./settings"
 import { siteHandlers } from "./site"
 import { cveHandlers } from "./cves"
 import { m7Handlers } from "./m7"
+import { intelHandlers } from "./intel"
 
 const fixtures = [...buildReplayFixtures(), ...buildFixtures()].sort((a, b) =>
   b.session.started_at.localeCompare(a.session.started_at),
@@ -79,6 +80,7 @@ export const handlers = [
   ...analyticsHandlers(fixtures),
   ...m7Handlers(fixtures.map((f) => f.session)),
   ...cveHandlers(),
+  ...intelHandlers(fixtures.map((f) => f.session)),
 
   http.get("/api/v1/events/recent", async ({ request }) => {
     await delay(LATENCY_MS)

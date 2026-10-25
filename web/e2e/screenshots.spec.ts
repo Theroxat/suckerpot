@@ -344,6 +344,32 @@ test("cve watch", async ({ page }, info) => {
   await shoot(page, "cves-trap", info.project.name)
 })
 
+// Infrastructure (M13): indicators are text, never links, and always defanged.
+test("infrastructure", async ({ page }, info) => {
+  await page.goto("/infrastructure")
+  await expect(h1(page, "Infrastructure")).toBeVisible()
+  await expect(page.getByRole("list", { name: "Indicators", exact: true })).toBeVisible()
+  // No link anywhere in the lists points at an indicator host.
+  await expect(
+    page.getByRole("list", { name: "Indicators", exact: true }).locator('a[href^="http"]'),
+  ).toHaveCount(0)
+  await settle(page)
+  await shoot(page, "infrastructure", info.project.name, true)
+
+  await page.goto("/infrastructure?mask=1")
+  await expect(page.getByRole("list", { name: "Indicators", exact: true })).toBeVisible()
+  await settle(page)
+  const text = await page.locator("main").innerText()
+  expect(text).not.toMatch(/\b(192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}\b/)
+  await page.goto("/infrastructure?mask=0")
+
+  await page.getByRole("list", { name: "Indicators", exact: true }).getByRole("button").first().click({ position: { x: 4, y: 4 } })
+  await expect(page.getByRole("dialog")).toBeVisible()
+  await expect(page.getByRole("dialog").getByRole("status", { name: "Loading" })).toHaveCount(0)
+  await expect(page.getByRole("dialog").getByText("Threat intelligence").first()).toBeVisible()
+  await shoot(page, "infrastructure-detail", info.project.name)
+})
+
 // Login (M8): the mock build treats everyone as signed in, the form itself is always reachable.
 test("login", async ({ page }, info) => {
   await page.goto("/login")

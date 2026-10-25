@@ -256,6 +256,23 @@ export function ProviderKeys({ e }: { e: EnrichmentSettings }) {
         <KeyRow id="nvd" info={e.nvd} editable={editable} envName="NVD_API_KEY" />
         <KeyRow id="github" info={e.github} editable={editable} envName="GITHUB_ADVISORY_TOKEN" />
       </ul>
+      <div className="space-y-1">
+        <h4 className="text-sm font-medium text-fg">Threat intelligence</h4>
+        <p className="text-xs text-fg-muted">
+          For the Infrastructure page. Only the indicator itself (a URL, host or file hash) is sent
+          to these services, never a session or a source address, and the indicator is never
+          contacted. VirusTotal is asked about file hashes only.
+        </p>
+      </div>
+      <ul aria-label="Threat intelligence keys" className="divide-y">
+        <KeyRow id="abusech" info={e.abusech} editable={editable} envName="ABUSECH_AUTH_KEY" />
+        <KeyRow
+          id="virustotal"
+          info={e.virustotal}
+          editable={editable}
+          envName="VIRUSTOTAL_API_KEY"
+        />
+      </ul>
     </div>
   )
 }
