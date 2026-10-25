@@ -111,3 +111,25 @@ def test_validation_accepts_and_last4() -> None:
     assert validate_credential("greynoise", SAMPLE, None).key == SAMPLE
     assert validate_credential("maxmind", SAMPLE, "42").account_id == "42"
     assert last4(SAMPLE) == "3456"
+
+
+def test_low_entropy_master_rejected() -> None:
+    with pytest.raises(SecretError):
+        SecretBox(b"A" * 32)
+    with pytest.raises(SecretError):
+        SecretBox(bytes(range(8)) * 4)  # 8 distinct bytes
+    SecretBox(bytes(range(16)) * 2)  # 16 distinct bytes is enough
+    weak = base64.b64encode(b"A" * 32).decode()
+    with pytest.raises(SecretError):
+        box_from_env({"SETTINGS_ENCRYPTION_KEY": weak})
+
+
+def test_master_must_differ_from_other_secrets() -> None:
+    good = base64.b64encode(MASTER).decode()
+    for other in ("SESSION_SECRET", "REDIS_PASSWORD", "POSTGRES_API_PASSWORD"):
+        with pytest.raises(SecretError) as exc:
+            box_from_env({"SETTINGS_ENCRYPTION_KEY": good, other: good})
+        assert other in str(exc.value) and good not in str(exc.value)
+    assert (
+        box_from_env({"SETTINGS_ENCRYPTION_KEY": good, "SESSION_SECRET": "different"}) is not None
+    )
