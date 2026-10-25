@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Plus, X } from "lucide-react"
+import { Check, Plus, X } from "lucide-react"
 import { useId, useState, type SyntheticEvent } from "react"
 import { Link } from "react-router"
 import { useAuth } from "@/app/auth"
@@ -26,7 +26,8 @@ import {
 import type { Severity } from "@/lib/severity"
 import { cn } from "@/lib/utils"
 
-function ChannelPicker({
+/** Where a rule sends: one toggle per channel, a check when on, a dashed "+" when off. */
+export function ChannelPicker({
   channels,
   selected,
   disabled,
@@ -38,7 +39,10 @@ function ChannelPicker({
   onChange: (ids: number[]) => void
 }) {
   return (
-    <div role="group" aria-label="Send to" className="flex flex-wrap gap-1.5">
+    <div role="group" aria-label="Send to" className="flex flex-wrap items-center gap-1.5">
+      <span aria-hidden className="mr-1 text-xs text-fg-subtle">
+        Send to
+      </span>
       {channels.map((c) => {
         const on = selected.includes(c.id)
         return (
@@ -50,14 +54,19 @@ function ChannelPicker({
             title={c.enabled ? undefined : "This channel is switched off"}
             onClick={() => onChange(on ? selected.filter((i) => i !== c.id) : [...selected, c.id])}
             className={cn(
-              "h-7 rounded-md border px-2.5 text-xs font-medium transition-colors",
+              "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors duration-150",
               "focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
               "disabled:cursor-not-allowed disabled:opacity-50",
               on
-                ? "border-border-strong bg-surface-raised text-fg"
-                : "bg-transparent text-fg-muted hover:text-fg",
+                ? "border-border-strong bg-surface-hover text-fg"
+                : "border-dashed bg-transparent text-fg-muted hover:border-border-strong hover:text-fg",
             )}
           >
+            {on ? (
+              <Check aria-hidden className="size-3.5" strokeWidth={2.25} />
+            ) : (
+              <Plus aria-hidden className="size-3.5 text-fg-subtle" />
+            )}
             {c.name}
           </button>
         )
@@ -124,7 +133,7 @@ function RuleRow({
         </label>
       </div>
       {rule.enabled ? (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pl-9">
+        <div className="flex animate-slide-in flex-wrap items-center gap-x-5 gap-y-2 pl-9">
           <ChannelPicker
             channels={channels}
             selected={rule.channel_ids}
@@ -136,12 +145,17 @@ function RuleRow({
             }
           />
           {info.kind !== "weekly_report" && info.kind !== "malware_drop" ? (
-            <SegmentedControl
-              label={`Severity for ${info.title}`}
-              value={rule.min_severity === "notice" ? "info" : rule.min_severity}
-              onChange={(min_severity: Severity) => void save({ min_severity })}
-              options={SEVERITY_OPTIONS}
-            />
+            <div className="flex items-center gap-2">
+              <span aria-hidden className="text-xs text-fg-subtle">
+                Severity
+              </span>
+              <SegmentedControl
+                label={`Severity for ${info.title}`}
+                value={rule.min_severity === "notice" ? "info" : rule.min_severity}
+                onChange={(min_severity: Severity) => void save({ min_severity })}
+                options={SEVERITY_OPTIONS}
+              />
+            </div>
           ) : null}
         </div>
       ) : null}

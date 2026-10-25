@@ -25,7 +25,8 @@ const STATE_STYLE: Record<OutboxState, { icon: LucideIcon; className: string }> 
   suppressed: { icon: CircleSlash, className: "text-fg-muted" },
 }
 
-function OutboxRow({ item }: { item: OutboxItem }) {
+/** One queued, sent or held-back alert: severity, title, summary, destination, state and time. */
+export function OutboxRow({ item }: { item: OutboxItem }) {
   const { icon: Icon, className } = STATE_STYLE[item.state]
   const reason = describeError(item.error_code)
   return (

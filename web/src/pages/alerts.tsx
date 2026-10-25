@@ -43,7 +43,7 @@ export function AlertsPage() {
           </Button>
         }
       />
-      <div className="grid grid-cols-1 gap-4">
+      <div className="grid grid-cols-1 gap-4 normal-nums">
         <RulesCard />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <ReportsCard />

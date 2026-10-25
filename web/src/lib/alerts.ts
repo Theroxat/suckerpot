@@ -87,15 +87,33 @@ export interface ReportItem {
   created_at: string
 }
 
+/** The stored summary, as ingest writes it (`ingest/reports/build.py`). Every field is optional:
+ * older or partial reports still render, with an empty section instead of an error. */
+export interface ReportSummary {
+  headline?: string
+  week_end?: string
+  timezone?: string
+  actions?: string[]
+  totals?: {
+    sessions?: number
+    sources?: number
+    with_commands?: number
+    malware?: number
+    previous_sessions?: number
+    change_pct?: number | null
+  }
+  by_sensor?: { sensor: string; sessions: number }[]
+  countries?: { country: string; sessions: number }[]
+  tags?: { tag: string; sessions: number }[]
+  campaigns?: { id: number; name: string; severity: string; sessions: number; sources: number }[]
+  download_hosts?: { host: string; sightings: number }[]
+  watched_cves?: { cve_id: string; sessions: number }[]
+}
+
 export interface ReportDetail {
   week_start: string
   created_at: string
-  summary: {
-    headline?: string
-    week_end?: string
-    timezone?: string
-    actions?: string[]
-  } & Record<string, unknown>
+  summary: ReportSummary
 }
 
 export const KIND_LABEL: Record<ChannelKind, string> = {
@@ -169,9 +187,9 @@ export const RULE_TITLE: Record<RuleKind, string> = Object.fromEntries(
 ) as Record<RuleKind, string>
 
 export const SEVERITY_OPTIONS = [
-  { value: "info", label: "All" },
-  { value: "warning", label: "Warning+" },
-  { value: "severe", label: "Severe" },
+  { value: "info", label: "Any" },
+  { value: "warning", label: "Warning and up" },
+  { value: "severe", label: "Severe only" },
 ] as const
 
 export const STATE_LABEL: Record<OutboxState, string> = {

@@ -164,6 +164,14 @@ A campaign is told as up to six **stages**, always in story order: Looking aroun
 - **Detail**, top to bottom: header (severity, status, sensors, malware family, one sentence), the counters strip, then "How the attack unfolded": the six-step stepper (`StageTrail variant="steps"`, solid ring seen, dashed ring not seen) and the numbered `StoryStages` (a plain question, one sentence, ATT&CK chips that open this campaign's matching sessions plus an external link). On phones and tablets **What to do** comes right after the story; on desktop it heads the side column above the clues. Then a real excerpt (repeated lines folded into "× 4"), activity per day, and the latest sessions full width so each row keeps its one-line story.
 - **Techniques**: the heatmap groups rows by stage (icon and name in each group heading), uses the neutral five-step scale, and the full technique name gets 19 rem on desktop.
 
+## Alerts and reports
+
+- **Rules read as sentences** ("Malware is dropped"), each with a switch. Switched on, a row reveals where it sends (`ChannelPicker`: a check when a channel is on, a dashed "+" when off, so the state never rests on a border shade) and, for event rules, the minimum severity ("Any", "Warning and up", "Severe only"). Both have a small visible label.
+- **Delivery states** are an icon plus a word: Sent (status green), Waiting, Not sent (neutral), Failed (orange). Red stays for severe events.
+- **The weekly report page** is drawn with the design system from the stored summary: four KPI tiles, "What to do next" as a numbered list, then one finding card per section (services, countries, behaviours, watched CVEs, campaigns, defanged download hosts as plain text, never links). "Print or save as PDF" opens the server's HTML page.
+- **The printable report** (`ingest/ingest/reports/render.py`) is made to be forwarded as is: one A4 page, black and white, no colour carrying meaning, every value escaped, no script. Tables are capped at seven rows with an "N more" line and long values are cut with an ellipsis in print, so the worst case still fits one page.
+- Prose with hyphenated words or IDs ("E-mail", "CVE-2026-…") uses `normal-nums`.
+
 ## Loading
 
 Heavy pages (Overview, Live, Attackers, attacker profile, session detail, styleguide) load on demand behind a `PageSkeleton` in the final layout. Recharts and xterm get their own chunks, so the first load stays small.
