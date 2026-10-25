@@ -17,6 +17,7 @@ from suckerpot_db import create_engine, create_session_factory
 from api.analytics import router as analytics_router
 from api.auth import AuthMiddleware, AuthService, AuthSettings, allowed_hosts_from_env
 from api.auth import router as auth_router
+from api.cves import router as cves_router
 from api.insights import router as insights_router
 from api.live import LiveHub, LivePoller, live_router
 from api.malware import router as malware_router
@@ -87,6 +88,7 @@ def create_app(
     app.include_router(analytics_router, prefix="/api/v1")
     app.include_router(insights_router, prefix="/api/v1")
     app.include_router(trends_router, prefix="/api/v1")
+    app.include_router(cves_router, prefix="/api/v1")
     app.include_router(malware_router, prefix="/api/v1")
     app.include_router(settings_router, prefix="/api/v1")
     app.include_router(provider_keys_router, prefix="/api/v1")

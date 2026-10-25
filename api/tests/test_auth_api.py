@@ -353,3 +353,8 @@ def test_trusted_host_rejects_unknown_hosts(monkeypatch: pytest.MonkeyPatch) -> 
         assert c.get("/healthz").status_code == 400
         assert c.get("/healthz", headers={"Host": "dash.example.com"}).status_code != 400
         assert c.get("/healthz", headers={"Host": "localhost:8000"}).status_code != 400
+
+
+def test_cve_routes_need_a_session(client: TestClient) -> None:
+    for path in ("/api/v1/cves", "/api/v1/cves/sync", "/api/v1/cves/CVE-2099-0001"):
+        assert client.get(path).status_code == 401
