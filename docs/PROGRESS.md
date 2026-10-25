@@ -41,3 +41,10 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - AbuseIPDB, GreyNoise and MaxMind keys can be set, replaced and removed from Settings. Keys are stored with AES-256-GCM (key derived from `SETTINGS_ENCRYPTION_KEY`, provider bound as associated data), shown only by their last four characters, and every change needs the admin password again; five wrong passwords end the session.
 - Ingest reloads keys every 30 s without a restart; Settings shows where each key comes from (`.env` or Settings). "Test key" asks ingest for one quota-counted check, at most 10 per provider per day.
 - Security review PASS; follow-ups fixed (MaxMind redirect, shared re-auth budget, test cap, no forced GeoIP re-download, weak or reused master keys refused). A sealed-box scheme so the API can only encrypt is listed for later.
+
+## 2026-10-25 — M10 RDP sensor, deeper
+
+- CredSSP now goes as far as the NTLM challenge: every brute-force attempt records domain, user, workstation and NTLM version (an 8-byte response preview only). Responses for a short list of public decoy accounts are verified against their known passwords, so weak-password attempts are recognised; nothing is ever cracked and no session is granted.
+- Optional "NLA disabled" mode (off by default) runs the MCS/GCC sequence up to the Client Info PDU and records the cleartext credentials TLS-only clients send.
+- Client tool identification (nmap, FreeRDP and the tools built on it, rdesktop, mstsc) from JA3, cookie, NTLM and GCC data, stored on the session and shown on the session page; new tags `bluekeep`, `weak-credentials` and `rdp-cleartext`.
+- Security review: first pass FAIL (a busy loop in the optional MCS path, TLS slots without a per-IP cap), both fixed; second pass PASS in both modes. Contract lessons 16–18 now apply to RDP too.

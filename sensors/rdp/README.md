@@ -208,8 +208,9 @@ captured signatures. Add a new capture to both when a new tool is characterised.
       RDP_PUBLIC_PORT: ${RDP_HOST_PORT:-3389}
       RDP_HOSTNAME: ${RDP_HOSTNAME:-}
       RDP_DATA_DIR: /data
-      SENSOR_RDP_NLA_MODE: ${SENSOR_RDP_NLA_MODE:-required}
-      SENSOR_RDP_ACCOUNTS: ${SENSOR_RDP_ACCOUNTS:-administrator:P@ssw0rd,administrator:123456,admin:admin}
+      SENSOR_RDP_NLA_MODE: ${RDP_NLA_MODE:-required}
+      SENSOR_RDP_ACCOUNTS: ${RDP_ACCOUNTS:-administrator:P@ssw0rd,administrator:123456,admin:admin}
+      RDP_MAX_TLS_PER_IP: ${RDP_MAX_TLS_PER_IP:-4}
       RDP_MAX_CONNECTIONS: ${RDP_MAX_CONNECTIONS:-200}
       RDP_MAX_PER_IP: ${RDP_MAX_PER_IP:-8}
     # Explicit IPv4 so Docker does not also publish on [::]. No capability needed.
