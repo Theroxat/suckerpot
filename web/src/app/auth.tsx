@@ -4,6 +4,7 @@ import { createContext, use, useCallback, useEffect, useMemo, useRef, useState }
 import { Navigate, Outlet, useLocation } from "react-router"
 import { PageSkeleton } from "@/components/skeletons"
 import { setUnauthorizedHandler } from "@/lib/api"
+import { demoMode } from "./demo-role"
 import { fetchMe, loginRequest, logoutRequest, safeNext, type AuthUser } from "@/lib/auth-api"
 
 /** Mock and demo builds have no backend: the visitor is always signed in. */
@@ -16,19 +17,38 @@ export interface AuthState {
   user: AuthUser | null
   /** True after an explicit sign-out, so the login page does not bounce back to the old page. */
   signedOut: boolean
+  /** True for an administrator: every write control is available. A viewer reads only. */
+  canWrite: boolean
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  /** Loads the account again (after the first password was chosen, say). */
+  refresh: () => Promise<void>
 }
 
-const DEMO_USER: AuthUser = { username: "demo" }
+function demoUser(): AuthUser {
+  const mode = demoMode()
+  return {
+    username: mode === "viewer" ? "colleague" : "demo",
+    display_name: mode === "viewer" ? "A Colleague" : "Demo admin",
+    role: mode === "viewer" ? "viewer" : "admin",
+    is_owner: mode === "admin",
+    must_change_password: mode === "first-login",
+    read_only: mode === "viewer",
+    last_login_at: new Date(Date.now() - 26 * 3_600_000).toISOString(),
+  }
+}
+
+const DEMO_USER: AuthUser = demoUser()
 
 // Without a provider (isolated component tests) everything behaves as signed in.
 const AuthContext = createContext<AuthState>({
   status: "authenticated",
   user: DEMO_USER,
   signedOut: false,
+  canWrite: true,
   login: () => Promise.resolve(),
   logout: () => Promise.resolve(),
+  refresh: () => Promise.resolve(),
 })
 
 export function useAuth(): AuthState {
@@ -71,10 +91,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       generation.current++
       setSignedOut(false)
       queryClient.clear()
-      apply((await fetchMe()) ?? { username })
+      apply(await fetchMe())
     },
     [apply, queryClient],
   )
+
+  const refresh = useCallback(async () => {
+    if (AUTH_BYPASS) {
+      apply(await fetchMe().catch(() => demoUser()))
+      return
+    }
+    apply(await fetchMe())
+  }, [apply])
 
   const logout = useCallback(async () => {
     if (!AUTH_BYPASS) await logoutRequest()
@@ -84,16 +112,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!AUTH_BYPASS) apply(null)
   }, [apply, queryClient])
 
+  const canWrite = user?.role === "admin" && !user.must_change_password
   const value = useMemo(
-    () => ({ status, user, signedOut, login, logout }),
-    [status, user, signedOut, login, logout],
+    () => ({ status, user, signedOut, canWrite, login, logout, refresh }),
+    [status, user, signedOut, canWrite, login, logout, refresh],
   )
   return <AuthContext value={value}>{children}</AuthContext>
 }
 
-/** Route wrapper: renders the nested routes for a signed-in user, else goes to /login?next=… */
+/** Route wrapper: renders the nested routes for a signed-in user, else goes to /login?next=…
+ * (or to /set-password while the account still has a temporary password). */
 export function RequireAuth() {
-  const { status, signedOut } = useAuth()
+  const { status, signedOut, user } = useAuth()
   const location = useLocation()
   if (status === "loading") return <PageSkeleton />
   if (status === "anonymous") {
@@ -101,5 +131,7 @@ export function RequireAuth() {
     const target = signedOut ? "/login" : `/login?next=${encodeURIComponent(safeNext(here))}`
     return <Navigate to={target} replace />
   }
+  // A new account (or one whose password an administrator reset) must choose its own first.
+  if (user?.must_change_password) return <Navigate to="/set-password" replace />
   return <Outlet />
 }

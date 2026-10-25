@@ -20,7 +20,7 @@ http://127.0.0.1:8443
 
 ## Authentication
 
-Every `/api/v1` path needs a session, except `/api/v1/auth/*`. `/healthz` and the static web app stay public. There is one admin account.
+Every `/api/v1` path needs a session, except `/api/v1/auth/*`. `/healthz` and the static web app stay public. There are two kinds of account: the owner from `.env`, and users with the role `admin` or `viewer` (see [Users and roles](configuration.md#users-and-roles)). A viewer can call every `GET` that an admin can, except the user and audit endpoints, and nothing that changes data: any other method needs an admin, unless it is sign in, sign out or changing one's own password, and the API answers `403` with `{"code": "admin_required"}`.
 
 ### Endpoints
 
@@ -28,7 +28,8 @@ Every `/api/v1` path needs a session, except `/api/v1/auth/*`. `/healthz` and th
 | --- | --- | --- |
 | `POST` | `/api/v1/auth/login` | Body `{"username": "...", "password": "..."}`. Returns `204` and sets the cookies. `401` for wrong credentials, `403` for a cross-origin request, `429` with `Retry-After` when rate limited. |
 | `POST` | `/api/v1/auth/logout` | Revokes the session and clears the cookie. Needs the CSRF token. Returns `204`. |
-| `GET` | `/api/v1/auth/me` | `{"username": "admin"}` when signed in, `401` otherwise. The web app uses it to decide whether to show the login page. |
+| `GET` | `/api/v1/auth/me` | Who is signed in: `username`, `display_name`, `role`, `is_owner`, `must_change_password`, `read_only` and `last_login_at` (the sign-in before this one). `401` otherwise. The web app uses it to decide what to show. |
+| `POST` | `/api/v1/auth/password` | Body `{"current_password": "...", "new_password": "..."}`. Changes the signed-in user's own password and keeps this browser signed in; every other session of the user ends. `403` with `reauth_failed` for a wrong current password, `422` with `weak_password` for a rejected new one, `403` with `owner_password_in_env` for the owner. Allowed while `must_change_password` is true. |
 | `GET` | `/api/v1/auth/csrf` | `{"token": "..."}` and sets the CSRF cookie. |
 
 ### Cookies
@@ -448,6 +449,23 @@ The status of the enrichment providers and today's quota use. It never returns a
 For each provider, `source` is `env` (the key comes from `.env`), `settings` (set on the Settings page) or `null` (no key). `last4` and `updated_at` are set only for keys saved in Settings. `secret_error` is `cannot_decrypt` or `no_encryption_key` when a saved key cannot be used; ingest then falls back to the `.env` key. `pending_apply` is true for the few seconds before ingest picks up a change. `test` is the last "Test key" result (`error` is one of `no_key`, `quota_exhausted`, `auth`, `rate_limited`, `error`). `key_editing.enabled` is false when `SETTINGS_ENCRYPTION_KEY` is not set, with the reason in `reason`.
 
 `provider` is `maxmind`, `dbip`, `off`, or `unknown` when ingest has not reported yet. The attribution text must be shown wherever DB-IP data is displayed.
+
+### Users and audit log (administrators)
+
+Every request below needs an administrator and, when it changes something, the administrator's own password in the body (`password`), the same re-authentication as the provider keys. Each change writes an audit entry. A user who must still choose a password gets `403` with `password_change_required` from every other endpoint.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/users` | `owner` (read-only), `items` (users by id) and `next_cursor`. Query: `limit` (1 to 200, default 50), `cursor`. |
+| `POST` | `/api/v1/users` | Body `username`, `display_name`, `role`, `password`. `201` with the `user` and a one-time `temporary_password` (`Cache-Control: no-store`). `409` with `username_taken` (also for the owner's name). |
+| `PATCH` | `/api/v1/users/{id}` | Body `role`, `disabled` or `display_name` (at least one) and `password`. A role change or a disable ends the user's sessions. |
+| `POST` | `/api/v1/users/{id}/reset-password` | Body `password`. Returns a new `temporary_password`, ends the user's sessions and makes them choose a password again. |
+| `POST` | `/api/v1/users/{id}/unlock` | Body `password`. Clears the lock after repeated wrong passwords. |
+| `POST` | `/api/v1/users/{id}/revoke-sessions` | Body `password`. Ends every session of the user. `204`. |
+| `DELETE` | `/api/v1/users/{id}` | Body `password`. `204`. |
+| `GET` | `/api/v1/audit` | Newest first. Query: `actor` (exact name, any case), `action` (a name such as `user.create`, or a prefix such as `user.`), `limit` (1 to 200, default 50), `cursor`. |
+
+An administrator cannot disable, demote, reset or delete their own account (`409`, `self_action`). Audit actions: `auth.login`, `user.create`, `user.role`, `user.disable`, `user.enable`, `user.rename`, `user.reset_password`, `user.unlock`, `user.locked`, `user.revoke_sessions`, `user.delete`, `password.change`, `provider_key.set`, `provider_key.remove`, `provider_key.test`.
 
 ### Provider keys
 

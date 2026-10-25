@@ -12,6 +12,9 @@ import { FindingCard } from "@/components/finding-card"
 import { Meter } from "@/components/meter"
 import { PageHeader } from "@/components/page-header"
 import { ProviderKeys } from "@/components/provider-keys"
+import { AuditCard } from "@/components/users/audit-card"
+import { UsersCard } from "@/components/users/users-card"
+import { useAuth } from "@/app/auth"
 import { RelativeTime } from "@/components/relative-time"
 import { SensorBadge } from "@/components/sensor-badge"
 import { SkeletonText } from "@/components/skeletons"
@@ -329,6 +332,7 @@ function RetentionCard({ data, loading }: { data?: SystemSettings; loading: bool
 /* --- Page --------------------------------------------------------------- */
 
 export function SettingsPage() {
+  const { canWrite } = useAuth()
   const q = useQuery({
     queryKey: queryKeys.systemSettings,
     queryFn: api.systemSettings,
@@ -338,17 +342,28 @@ export function SettingsPage() {
     <>
       <PageHeader
         title="Settings"
-        description="Sensor health, enrichment keys, retention and storage."
+        description={
+          canWrite
+            ? "Sensor health, enrichment keys, users, retention and storage."
+            : "Sensor health, enrichment, retention and storage."
+        }
       />
 
       <div className="mb-6 flex items-start gap-2.5 rounded-lg border border-dashed px-4 py-3 text-sm text-fg-muted">
         <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-        <p>
-          The enrichment API keys can be edited below. Everything else lives in{" "}
-          <code className="font-mono text-fg">.env</code>: change it there and restart with{" "}
-          <code className="font-mono text-fg">docker compose up -d</code>. Every option is
-          documented in <code className="font-mono">.env.example</code>.
-        </p>
+        {canWrite ? (
+          <p>
+            The enrichment API keys and the users can be edited below. Everything else lives in{" "}
+            <code className="font-mono text-fg">.env</code>: change it there and restart with{" "}
+            <code className="font-mono text-fg">docker compose up -d</code>. Every option is
+            documented in <code className="font-mono">.env.example</code>.
+          </p>
+        ) : (
+          <p>
+            You have read-only access: you can look at everything here, and an administrator changes
+            it. The server settings live in <code className="font-mono">.env</code>.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4">
@@ -360,6 +375,12 @@ export function SettingsPage() {
             <RetentionCard data={q.data} loading={q.isPending} />
           </div>
         </div>
+        {canWrite ? (
+          <>
+            <UsersCard />
+            <AuditCard />
+          </>
+        ) : null}
       </div>
     </>
   )

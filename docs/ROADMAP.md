@@ -165,6 +165,20 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 **Acceptance:** passive only — nothing is executed, contacted beyond the intel APIs, or reported without the owner.
 
+## M14 — Users and roles
+
+- [x] Database users (`admin` and `viewer`) next to the `.env` owner account, which keeps working unchanged as the break-glass login.
+- [x] Server-side roles with a default-deny check on every state-changing route, and a test that walks the route table.
+- [x] Session versions: password change, reset, disable, role change, deletion and "Sign out everywhere" end the user's sessions at once.
+- [x] Login hardening: per-username limit, lock after 10 wrong passwords for 15 minutes (admin can unlock), same work and same message for unknown names.
+- [x] Password policy (12 to 256 characters, common-password list, not the username) and one-time temporary passwords with a forced change at first sign-in.
+- [x] Settings > Users and Audit log for admins; a read-only shell for viewers; first-login "Set your password" screen; account menu with "Change password" and "Sign out".
+- [x] Every admin action re-authenticates and writes an audit entry (kept one year).
+- [ ] Security and UI reviews.
+- [ ] Optional TOTP two-factor sign-in (future).
+
+**Acceptance:** a colleague can be given read-only access and cannot change anything, by any request; disabling or resetting them ends their sessions at once; security review PASS.
+
 ## Later (not part of the loop)
 
 - Discord alerts on malware drops.

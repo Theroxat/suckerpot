@@ -123,7 +123,8 @@ A compromised sensor has no route to the internet (masquerading is off), but wit
 
 - The owner role is used only by the database container and by the migration step.
 - `suckerpot_ingest` can insert events and write sessions. It cannot read other tables, change the schema, or create roles.
-- `suckerpot_api` can only read the event, session and enrichment tables. It can also read and write the encrypted provider keys (`provider_secrets`) and queue key tests (`provider_test_requests`), and nothing else.
+- `suckerpot_api` can only read the event, session and enrichment tables. It can also read and write the encrypted provider keys (`provider_secrets`), queue key tests (`provider_test_requests`) and manage the dashboard `users` table, and it can append to and read `audit_log`. Nothing else.
+- `suckerpot_ingest` has no access to `users` and `audit_log`.
 - `suckerpot_ingest` can read `provider_secrets` (to use the keys) but never write it.
 - Both application roles have a statement timeout (30 s for ingest, 5 s for the API), so a slow query cannot hold the database.
 - The role passwords come from `.env`. The `migrate` service sets them on every run as SCRAM-SHA-256 verifiers, so a rotation is one `docker compose run --rm migrate`, and the clear text never reaches the database logs.
@@ -207,9 +208,9 @@ Docker restarts a container that exits. It does **not** restart a container that
 
 ### Dashboard authentication
 
-- One admin account. The password is stored as an argon2id hash in `.env` (`ADMIN_PASSWORD_HASH`), made with `python -m api.hashpw`. The password itself is never stored or logged.
+- The **owner** account (`ADMIN_USERNAME`) has its argon2id hash in `.env` (`ADMIN_PASSWORD_HASH`), made with `python -m api.hashpw`. It is always an administrator, works when the database is down, and cannot be disabled, demoted or deleted from the UI. Other accounts are database users with the role `admin` or `viewer` (see below). No password is ever stored in clear or logged.
 - The session cookie is `__Host-sp_session`: `HttpOnly`, `Secure`, `SameSite=Strict`, no `Domain`. The `__Host-` prefix means the browser accepts it only over HTTPS for this exact host, so a sibling subdomain cannot plant it. (With `COOKIE_SECURE=false`, for local development only, the cookies have plain names and no `Secure` flag.)
-- The session is a signed token with an expiry (12 hours by default). The signing key comes from `SESSION_SECRET` (at least 32 bytes), the password hash and a random value made at each API start. So changing the password, rotating the secret or restarting the API signs everybody out. Logout and a new login revoke the old session.
+- The session is a signed token `v2.<subject>.<version>.<issued>.<expires>.<nonce>.<signature>` with an expiry (12 hours by default). The subject is the owner or `u<id>`; the version is the user's `session_version`. The signing key comes from `SESSION_SECRET` (at least 32 bytes), the owner password hash and a random value made at each API start. So changing the owner password, rotating the secret or restarting the API signs everybody out. Logout and a new login revoke the old session.
 - CSRF protection by double submit: every unsafe request must echo the signed CSRF cookie in `X-CSRF-Token`, and the token is bound to the session. Login is checked against `Origin` or `Referer`: the full origin must be in `API_ALLOWED_ORIGINS` when that is set.
 - Rate-limited login: 5 attempts per address (IPv6 per /64) and 30 overall per minute, a fixed delay on failure, and the hash is always verified, so timing does not reveal the account name. Argon2 runs one check at a time; with more than two waiting, logins get `429` at once, so a login flood cannot starve the API.
 - Failed and successful logins are logged with the client address only. Nothing in the auth code logs a password, a hash or a cookie.
@@ -220,6 +221,20 @@ Docker restarts a container that exits. It does **not** restart a container that
 - `API_AUTH_DISABLED=true` works only together with `SUCKERPOT_DEMO=1`, and only the test overlay `docker-compose.ci.yml` (`just up-test`) sets both. Never use it in production.
 - The state (revocations, login counters, the per-boot key) is in memory, so the API must run as **one** worker.
 - The dashboard is designed to sit behind an access layer such as Cloudflare Access as a second layer, but it must be safe without one.
+
+#### Users, roles and the audit log (M14)
+
+- **Roles.** `admin` can do everything. `viewer` can read everything an admin can read (including exports and the live feed) and change nothing; the user list and the audit log are for admins only.
+- **Default deny.** `authorize` (`api/api/authz.py`) is attached to every `/api/v1` HTTP route when a router is included: any method other than `GET`, `HEAD` and `OPTIONS` needs an admin unless the endpoint is explicitly marked `@allow_any_role` (sign in, sign out, change one's own password). A new write route is therefore admin-only without anyone remembering to say so. `tests/test_authz.py` reads the route table from the OpenAPI schema and calls every state-changing route as a viewer, so a route that escapes the rule fails the build; admin-only reads use `require_admin` and are listed in the same test. The server is the only enforcement: the web UI also hides controls, but that is a courtesy.
+- **Immediate revocation.** The middleware resolves the account from the database on every request. A user's `session_version` is bumped by a password change or reset, a disable, a role change, "Sign out everywhere" and, because the row is gone, a deletion. A session whose version no longer matches is refused on its next request and its live WebSocket is closed within five seconds. The cost is one primary-key lookup per request.
+- **Lockout.** Ten consecutive wrong passwords lock the account for 15 minutes (one atomic statement, so concurrent guesses cannot skip the threshold); while locked the right password fails with the same generic message, and an admin can unlock. Logins are also limited per username (`LOGIN_RATE_USER`, shared with the per-address and global windows). The owner is never locked, so an attacker cannot lock out the break-glass account; the rate limits still apply to it.
+- **Constant work and generic messages.** An unknown username costs the same argon2 verification (against a dummy hash) as a known one, and every failure answers `401 Invalid credentials`, whether the name is unknown, the password wrong, the account disabled or locked.
+- **Passwords.** 12 to 256 characters; not in the bundled list of 1000 very common passwords (the NCSC 100k list, Open Government Licence v3.0, long entries only; see the header of `api/api/data/common-passwords.txt`) also with digits or symbols added; not containing the username. Hashing uses the same argon2id defaults as the owner hash, under the same one-at-a-time limit. A temporary password has about 114 bits, is returned once with `Cache-Control: no-store`, and only its hash is stored.
+- **Onboarding.** A new or reset account has `must_change_password`: the middleware answers `403 password_change_required` to everything except `/api/v1/auth/*`, and the WebSocket refuses it. Changing the password needs the current (temporary) one and rotates the session.
+- **Re-authentication and audit.** Every user-management request needs the acting admin's own password (the M11 helper: same rate limit, five wrong passwords end the session) and writes an `audit_log` row in the same transaction. Entries hold names, roles and flags, never a password, hash, cookie or token (`details` is limited to 2 KiB by a database constraint). Failed logins of unknown names are not recorded, to keep the table from growing under attack; a lock is. Entries are deleted after one year by a database job.
+- **Database grants.** `suckerpot_api` may select, insert, update and delete `users`, and select and insert `audit_log` (no update, delete or truncate). `suckerpot_ingest` has no privilege on either table. The grant test is in `api/tests/test_users_integration.py`.
+- **Self-protection.** An admin cannot disable, demote, reset or delete their own account.
+- **Not built:** two-factor sign-in (TOTP) and password-history rules.
 
 ### SIP anti-reflection
 

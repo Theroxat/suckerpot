@@ -5,6 +5,7 @@ import { PageSkeleton } from "@/components/skeletons"
 import { AttacksPage } from "@/pages/attacks"
 import { NotFoundPage, RouteError } from "@/pages/not-found"
 import { LoginPage } from "@/pages/login"
+import { SetPasswordPage } from "@/pages/set-password"
 import { AppShell } from "./app-shell"
 import { RequireAuth } from "./auth"
 
@@ -43,6 +44,7 @@ function Lazy({ children }: { children: React.ReactNode }) {
 export const router = createBrowserRouter(
   [
     { path: "login", element: <LoginPage /> },
+    { path: "set-password", element: <SetPasswordPage /> },
     {
       element: <RequireAuth />,
       errorElement: <RouteError />,
