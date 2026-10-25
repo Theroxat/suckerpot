@@ -138,12 +138,12 @@ One admin account. See [API](api.md#authentication) for how it works.
 
 The API refuses to start when the hash or the secret is missing or weak. `SUCKERPOT_ALLOW_DEFAULT_SECRETS=1` accepts a weak setup for CI only.
 
-## Site (globe)
+## Site (Live map home)
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SITE_HOME_LAT`, `SITE_HOME_LON` | `46.8`, `8.2` | Where attack arcs land on the Live globe. Rounded to one decimal. Use a country-level point, never your real address. |
-| `SITE_HOME_LABEL` | `Switzerland` | Name shown for that point (64 characters at most) |
+| `SITE_HOME_LAT`, `SITE_HOME_LON` | `46.8`, `8.2` | Where attack arcs land on the Live map. Rounded to one decimal. Use a country-level point, never your real address. |
+| `SITE_HOME_LABEL` | `Switzerland` | Name shown next to the home point on the Live map (64 characters at most) |
 
 ## Ingest
 

@@ -11,8 +11,6 @@ This page describes how SuckerPot is built: the services, the networks, the queu
 
 **In progress:** the analytics API (M5).
 
-**In progress:** the Live globe (M7).
-
 **Built since:** insights, trends and malware endpoints and pages (M7), and dashboard login (M8).
 
 **Built since:** retention, compressed storage, kept-forever aggregates and the database disk guard (see [Data retention](retention.md)), and backups (`just backup`).
@@ -268,7 +266,7 @@ The WebSocket checks the `Origin` header. Requests with no `Origin` (non-browser
 | Queue | Redis 7.4 Streams |
 | Database | PostgreSQL 17 with TimescaleDB 2.22.1 |
 | Enrichment | MaxMind GeoLite2 or DB-IP Lite (local files), AbuseIPDB, GreyNoise Community |
-| Web UI | React, Vite, TypeScript (strict), Tailwind, shadcn/ui, TanStack Query. Globe and terminal replay planned. |
+| Web UI | React, Vite, TypeScript (strict), Tailwind, shadcn/ui, TanStack Query. The Live page is a flat SVG map, with no WebGL. Terminal replay planned. |
 | Python tooling | uv, ruff, mypy (strict), pytest |
 | Web tooling | pnpm, eslint, prettier, vitest, Playwright |
 | Task runner | `justfile`. See [Development](development.md). |

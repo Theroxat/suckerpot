@@ -585,7 +585,7 @@ The API returns URLs exactly as the attacker sent them. They are dangerous strin
 
 ### `GET /api/v1/settings/site`
 
-The home position for the globe on the Live page, as a country-level point.
+The home point of the Live map, where the attack arcs land, as a country-level point.
 
 ```json
 {"home": {"lat": 46.8, "lon": 8.2, "label": "Switzerland"}}
