@@ -54,8 +54,8 @@ PRIVATE = [
     "169.254.169.254",
     "::1",
     "fd00::1",
-]  # gitleaks:allow (must be refused)
 ]
+
 
 @pytest.mark.parametrize("address", PRIVATE)
 async def test_private_addresses_are_refused_before_any_request(address: str) -> None:
