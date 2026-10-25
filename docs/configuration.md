@@ -77,6 +77,8 @@ Inside `ingest` and `api`, Compose sets `POSTGRES_USER` and `POSTGRES_PASSWORD` 
 | `REDIS_PASSWORD` and the other `REDIS_*_PASSWORD` secrets | none | `.env`, required | See [Secrets](#secrets) |
 | `EVENTS_MAXLEN` | `10000` | `.env` | Approximate maximum length of each sensor's stream (`XADD MAXLEN ~`) |
 | `DEMO_EVENTS_MAXLEN` | `100000` | `.env` | The same cap, for the demo generator only. Keep it above the number of events per sensor in a backfill, or entries ingest has not read yet are trimmed. |
+| `EVENTS_MAX_BYTES_PER_SEC` | `200000` | Code default | Publisher backstop for **every** sensor: a token bucket on serialized event bytes per second. Beyond it the publisher drops events and counts them. |
+| `EVENTS_MAX_BYTES_BURST` | `2000000` | Code default | Burst of that bucket, in bytes |
 | `REDIS_HOST` | `redis` | Fixed by Compose | Redis host |
 | `REDIS_PORT` | `6379` | Fixed by Compose | Redis port |
 | `REDIS_USER` | per service | Fixed by Compose | `ingest`, `sensor-ssh`, `demo` |
@@ -190,6 +192,18 @@ The variables in the first group are passed through from `.env`. The second grou
 | `SSH_SUMMARY_INTERVAL` | `60` | Seconds between summaries of suppressed events (at least 5) |
 | `SSH_LINE_BUDGET` | `0.15` | CPU seconds allowed per command line |
 | `SSH_MEMORY_BUDGET_MB` | `48` | Memory budget over all sessions |
+| `SSH_MEMORY_SHARE_PER_IP` | `0.25` | Share of the memory budget one source address may hold (0.01 to 1) |
+| `SSH_MEMORY_LIMIT_MB` | `256` | Memory limit the guard compares against when the cgroup limit cannot be read. Keep it equal to the container limit. |
+| `SSH_MEMORY_PRESSURE` | `0.70` | Fraction of the limit above which new connections are refused and the biggest connections stop being read |
+| `SSH_MEMORY_CRITICAL` | `0.85` | Fraction above which the biggest connections are closed |
+| `SSH_CHANNEL_WINDOW_KB` | `32` | Flow-control window of a session channel, in KiB (8 to 1024). A session with more than four windows of unread input is closed. |
+| `SSH_INBOUND_CONN_KB_PER_SEC` | `32` | Inbound data one connection may send per second, in KiB (metered before decryption). Also caps `scp` uploads. |
+| `SSH_INBOUND_KB_PER_SEC` | `256` | The same, for all connections together |
+| `SSH_SHELL_CPU_SHARE` | `0.3` | CPU-seconds of shell time per second for all sessions together (0.05 to 0.9), shared fairly between source addresses |
+| `SSH_SHELL_CPU_BURST` | `0.2` | Burst of that budget, in CPU-seconds |
+| `SSH_IP_EVENT_BYTES_PER_SEC`, `SSH_IP_EVENT_BYTES_BURST` | `20000`, `1000000` | Event bytes per source address per second, and the burst |
+| `SSH_GLOBAL_EVENT_BYTES_PER_SEC`, `SSH_GLOBAL_EVENT_BYTES_BURST` | `200000`, `2000000` | Event bytes per second for the whole sensor, and the burst. Over budget, an event first loses its bulk (`output_omitted`, `replay_omitted`), then is dropped. |
+| `SSH_STATS_INTERVAL` | `60` | Seconds between the sensor's own statistics log lines (at least 5) |
 | `SSH_MAX_COMMANDS` | `5000` | Commands per session |
 | `SSH_FAKE_IP` | derived | Private address shown by `ifconfig` and `ip a` |
 | `SSH_OS_VERSION`, `SSH_KERNEL`, `SSH_KERNEL_BUILD` | `24.04.4`, `6.8.0-100-generic`, matching build | Fake OS and kernel versions |
@@ -283,13 +297,19 @@ Built. Compose sets `TELNET_PUBLIC_PORT` (from `TELNET_HOST_PORT`) and the Redis
 
 See [Demo data](demo-data.md) for the command-line options that override these.
 
+## Retention and disk guard
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `RETENTION_DAYS` | `90` | Days to keep raw events (7 to 3650). Aggregates are kept forever. Read by the `migrate` service, which re-applies the policies on every run. See [Data retention](retention.md). |
+| `DB_MAX_SIZE_GB` | `10` | Size ceiling of the database (at least 1). Above 90% the disk guard drops the oldest raw chunks down to 80%. Above 95% ingest keeps only payload previews. Read by `migrate` and `ingest`. |
+
 ## In `.env.example` but not used yet
 
 These names are in the template. The code does not read them, so setting them has no effect today.
 
 | Variable | Default | Milestone | Description |
 | --- | --- | --- | --- |
-| `RETENTION_DAYS` | `90` | M8 | Days to keep raw events (7 to 3650). Aggregates are kept forever. Read by the `migrate` service; see [Data retention](retention.md) |
 | `FETCH_PAYLOADS` | `false` | not scheduled | If `true`, ingest fetches files from captured download URLs into quarantine. Not implemented. |
 | `PAYLOAD_MAX_BYTES` | `10485760` | not scheduled | Maximum size of one fetched payload |
 | `PAYLOAD_TIMEOUT_SECONDS` | `20` | not scheduled | Timeout for one payload fetch |

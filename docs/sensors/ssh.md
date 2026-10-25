@@ -24,10 +24,10 @@ All events use the shared [Event schema](../event-schema.md). `dst_port` is the 
 | --- | --- |
 | `connect` | `client_version`, `banner` |
 | `login_attempt` | `username`, `password` (null for a public key), `success`, `method`. A public key adds `key_type` and `key_fingerprint`. |
-| `command` | `input`, `output` (8 KiB cap), `output_preview` (256 characters), `cwd`, `user`, `prompt`, `status` |
+| `command` | `input`, `output` (8 KiB cap), `output_preview` (1 KiB), `cwd`, `user`, `prompt`, `status`. `output_omitted` when the byte budget dropped `output`. A collapsed repeat has `repeat_count`, `first_ts` and `last_ts` and no `output`. |
 | `download_attempt` | `url`, `tool`, `command`, `cwd`, `user` |
-| `scan` | `kind` = `tcp_forward_attempt`, `host`, `port`. Also `kind` = `events_suppressed` when events were dropped by a rate limit. |
-| `disconnect` | `duration_s`, `reason`, `login_attempts`, `commands`, `downloads`, `events_suppressed`, `replay`, `replay_truncated` |
+| `scan` | `kind` = `tcp_forward_attempt` (`host`, `port`), `events_suppressed` (`count`), or `connection_summary` (`count`, `rejected`, `first_seen`, `last_seen`, `interval_s`) |
+| `disconnect` | `duration_s`, `reason`, `login_attempts`, `commands`, `downloads`, `events_suppressed`, `replay`, `replay_truncated`, `replay_omitted` |
 
 ### Terminal recording
 
@@ -41,21 +41,42 @@ The recording holds attacker-controlled bytes, including terminal escape sequenc
 
 ## Limits and abuse resistance
 
+The SSH sensor went through four review passes and passed the fourth. Most of what follows came out of those reviews. The idea throughout: an attacker can send as much as the network allows, so every resource the sensor spends on a connection has a budget, and the budget is enforced **before** the work is done.
+
+### Per connection and per shell
+
 | Scope | Limit |
 | --- | --- |
-| Connections | `SSH_MAX_CONNECTIONS` in total (200), `SSH_MAX_PER_IP` per source (5) |
+| Connections | `SSH_MAX_CONNECTIONS` in total (200), `SSH_MAX_PER_IP` per source (5). New connections per source are rate limited (`SSH_CONN_RATE_PER_IP`, burst `SSH_CONN_BURST_PER_IP`) and excess ones are closed at once. |
 | Timeouts | Login `SSH_LOGIN_TIMEOUT` (30 s), idle `SSH_IDLE_TIMEOUT` (300 s), whole session `SSH_MAX_SESSION` (1800 s) |
 | Per connection | 2 session channels, 20 refused requests, one shared fake file system (1 MiB, 2000 nodes), 5000 commands, auth requests capped at 4 times `SSH_MAX_AUTH_ATTEMPTS` |
 | Per shell | 256 variables and 64 KiB, 64 KiB of history, 64 KiB per expanded word |
 | Per command line | A CPU budget (`SSH_LINE_BUDGET`, 0.15 s: the line is aborted with `Killed`), 200 simple commands, 64 KiB of output |
-| Whole sensor | A memory budget over all sessions (`SSH_MEMORY_BUDGET_MB`, 48: beyond it, new sessions are refused and commands fail with `Cannot allocate memory`) |
-| Events | `connect` per source IP (`SSH_EVENTS_PER_SEC`), `scan` and `login_attempt` per session, `command` and `download_attempt` per session in a separate quota, `disconnect` never limited, all but `disconnect` capped sensor-wide (`SSH_GLOBAL_EVENTS_PER_SEC`) |
 
-Suppressed events are counted. The `disconnect` event carries `events_suppressed`, and a `scan` event with `kind = events_suppressed` is emitted.
+Output sizes are computed or capped **before** a result is built, never built and then cut: 256 KiB per command (stdout and stderr share it), 2000 characters per line and 5000 lines when a command splits text, 1 MiB read across all the files of one command, bounded `sort`, `uniq`, `wc`, `sed`, `tr`, `base64` and `date`, `>>` and `tee` checked against the file system cap first, and nested shells capped while they run. Attacker text never reaches a regular expression with nested quantifiers: `awk` and `sed` programs are parsed by hand, and `grep` patterns become globs.
 
-- **Watchdog.** A thread exits the process (status 70) when the event loop does not run for 10 seconds. Compose then restarts the container.
-- **No regular expression on attacker text with nested quantifiers.** `awk` and `sed` programs are parsed by hand, and `grep` patterns are translated to globs.
-- **Container.** Non-root (UID 10001), read-only root file system with a `tmpfs` at `/tmp`, all capabilities dropped, 256 MB memory with no swap, 0.5 CPU, 128 processes. A volume holds the host keys.
+### Floods
+
+- **Input is flow-controlled.** Each session channel has a small window (`SSH_CHANNEL_WINDOW_KB`, 32 KiB). The accounting counts data that is still buffered, so a channel never holds more than about twice the window of unread input. A session whose unread input exceeds four windows is closed (`input flood`).
+- **Inbound data is metered before it is decrypted.** Socket data is fed in 4 KiB slices, one per loop step, within a per-connection budget (`SSH_INBOUND_CONN_KB_PER_SEC`, 32 KiB/s) and a sensor-wide one (`SSH_INBOUND_KB_PER_SEC`, 256 KiB/s) shared fairly between source addresses. While a budget is used up the socket is not read, and TCP pushes back on the client. This bounds tiny-packet floods, where every packet costs a decryption. It also means an `scp` upload can never exceed about 32 KiB/s.
+- **Shell CPU is shared fairly.** All command lines together may use `SSH_SHELL_CPU_SHARE` CPU-seconds per second (0.3, burst `SSH_SHELL_CPU_BURST`). When it is used up, commands queue, and the source address that used the least CPU recently goes first, so one address with many channels cannot starve the others. A command that waits more than 10 s fails with `fork: retry: Resource temporarily unavailable`.
+- **Memory has three layers.** A budget over all sessions (`SSH_MEMORY_BUDGET_MB`, 48), of which one source address may hold at most `SSH_MEMORY_SHARE_PER_IP` (25%). Beyond it, new sessions are refused and commands fail with `Cannot allocate memory`. On top of that, a **cgroup memory guard** compares the container's real memory use with its limit once a second. Above `SSH_MEMORY_PRESSURE` (70%) new connections and sessions are refused and the biggest connections stop being read. Above `SSH_MEMORY_CRITICAL` (85%) the biggest connections are closed. The guard acts only while sessions and queued events hold at least 10% of the limit, so heap that the allocator merely kept after a burst does not trigger it.
+- **A watchdog** thread exits the process (status 70) if the event loop does not run for 10 s, so Compose restarts the container. Lags over 1 s are logged.
+
+### Event budgets
+
+Events are limited by count and, since the last review, by **bytes**:
+
+- Counts: `connect` per source address, `scan` and `login_attempt` per session, `command` and `download_attempt` per session in a separate quota, and a sensor-wide cap (`SSH_GLOBAL_EVENTS_PER_SEC`). Ten percent of that cap is reserved for the `disconnect` events of sessions that logged in or ran a command, so those are lost last.
+- Bytes: per source address (`SSH_IP_EVENT_BYTES_PER_SEC`, 20 KB/s, burst 1 MB) and sensor-wide (`SSH_GLOBAL_EVENT_BYTES_PER_SEC`, 200 KB/s, burst 2 MB). An event that does not fit is first **degraded**: a `command` keeps its `input` and the 1 KiB `output_preview` and gets `output_omitted`; a `disconnect` loses its recording and gets `replay_omitted`. If even the degraded event does not fit, it is **dropped** and counted. The in-process event queue is capped at 8 MiB.
+- A last backstop sits in the shared publisher for all sensors: `EVENTS_MAX_BYTES_PER_SEC` (200 kB/s) and `EVENTS_MAX_BYTES_BURST` (2 MB).
+- **Repeats are collapsed.** Consecutive identical command lines in a connection are reported once as a normal `command` event, and the repeats as a single `command` event with `repeat_count`, `first_ts` and `last_ts`. It is sent when another line comes, at the end of the session, or every 1000 repeats.
+- Suppressed events are counted. The `disconnect` event carries `events_suppressed`, and for sessions that logged in or ran a command a `scan` event with `kind = events_suppressed` is emitted.
+- Connections that never send an authentication request (port scans, banner grabs) and connections refused by a limit get no `connect` or `disconnect`. They are counted per source address and reported every `SSH_SUMMARY_INTERVAL` seconds as one `scan` event with `kind = connection_summary`.
+
+### Container
+
+Non-root (UID 10001), read-only root file system with a `tmpfs` at `/tmp`, all capabilities dropped, 256 MB memory with no swap, 0.5 CPU, 128 processes. A volume holds the host keys.
 
 ## Configuration
 
