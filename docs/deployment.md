@@ -294,7 +294,7 @@ API_ALLOWED_ORIGINS=https://dash.example.com
 
 Use full origins (scheme and host, no path), comma-separated. Then restart the API: `docker compose up -d api`. Same-host origins are always accepted, so local use keeps working.
 
-Also set the tunnel's own access policy (for example Cloudflare Access) in front of the dashboard, as a second layer in front of the dashboard login.
+Also set the tunnel's own access policy (for example Cloudflare Access) in front of the dashboard, as a second layer in front of the dashboard login. If you give a colleague an account (Settings > Users), **add their email address to the Cloudflare Access policy as well**, or they never reach the sign-in page.
 
 Keep `COOKIE_SECURE=true` (the default). The browser talks HTTPS to the tunnel, so the `__Host-` cookies work, even though the tunnel talks plain HTTP to the API. Production must be served over HTTPS. `COOKIE_SECURE=false` (plain cookie names, no `Secure` flag) is for local development over HTTP only. Without the full origin in `API_ALLOWED_ORIGINS`, **login fails with 403** and the live feed is refused, so set it before you try to sign in. Also set `API_ALLOWED_HOSTS` to the tunnel's host name, or the API accepts any `Host`.
 

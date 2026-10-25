@@ -10,6 +10,7 @@ import { siteHandlers } from "./site"
 import { cveHandlers } from "./cves"
 import { m7Handlers } from "./m7"
 import { intelHandlers } from "./intel"
+import { userHandlers } from "./users"
 
 const fixtures = [...buildReplayFixtures(), ...buildFixtures()].sort((a, b) =>
   b.session.started_at.localeCompare(a.session.started_at),
@@ -56,7 +57,6 @@ const LATENCY_MS = 180
  * limited, anything else works.
  */
 const authHandlers = [
-  http.get("/api/v1/auth/me", () => HttpResponse.json({ username: "demo" })),
   http.get("/api/v1/auth/csrf", () => HttpResponse.json({ token: "mock-csrf" })),
   http.post("/api/v1/auth/login", async ({ request }) => {
     await delay(LATENCY_MS)
@@ -74,6 +74,7 @@ const authHandlers = [
 
 export const handlers = [
   ...authHandlers,
+  ...userHandlers,
   ...liveHandlers,
   ...siteHandlers,
   ...settingsHandlers,

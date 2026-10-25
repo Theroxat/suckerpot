@@ -1,8 +1,9 @@
-import { LogOut, Menu } from "lucide-react"
+import { Menu } from "lucide-react"
 import { useState } from "react"
-import { NavLink, Outlet, ScrollRestoration, useLocation, useNavigate } from "react-router"
+import { NavLink, Outlet, ScrollRestoration, useLocation } from "react-router"
 import { LiveIndicator } from "@/components/live-indicator"
 import { MaskToggle } from "@/components/mask-toggle"
+import { ReadOnlyBadge } from "@/components/read-only-badge"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import {
@@ -13,7 +14,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
-import { useAuth } from "./auth"
+import { AccountMenu } from "./account-menu"
 import { Logo } from "./logo"
 import { NAV } from "./nav"
 import { useLiveStatus } from "./use-live-status"
@@ -65,8 +66,6 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
 
 function StatusFooter() {
   const { status, detail } = useLiveStatus()
-  const { user, logout } = useAuth()
-  const navigate = useNavigate()
   return (
     <div className="flex flex-col gap-3 border-t px-3 pt-4">
       <div className="flex items-center justify-between gap-2 px-1">
@@ -82,20 +81,9 @@ function StatusFooter() {
         <ThemeToggle />
       </div>
       <MaskToggle className="px-1" />
-      <div className="flex items-center justify-between gap-2 border-t px-1 pt-3">
-        <span className="min-w-0 truncate text-xs text-fg-muted" title={user?.username}>
-          {user?.username}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            void logout().finally(() => navigate("/login", { replace: true }))
-          }}
-        >
-          <LogOut aria-hidden className="size-4" />
-          Sign out
-        </Button>
+      <div className="flex flex-col gap-2 border-t pt-3">
+        <ReadOnlyBadge className="mx-1 self-start" />
+        <AccountMenu />
       </div>
     </div>
   )
@@ -152,7 +140,8 @@ export function AppShell() {
         </Sheet>
         <Logo />
         <span className="sr-only">{currentLabel(pathname)}</span>
-        <LiveIndicator status={status} className="mr-2 ml-auto" />
+        <ReadOnlyBadge className="ml-auto" />
+        <LiveIndicator status={status} className="mr-2 ml-2" />
       </header>
 
       <main id="main" className="lg:pl-60">

@@ -476,6 +476,94 @@ test("settings keys disabled", async ({ page }, info) => {
   await shoot(page, "settings-keys-disabled", info.project.name)
 })
 
+// M14: users and roles. Mock data only: every name, address and password is fake.
+test("settings users", async ({ page }, info) => {
+  await page.goto("/settings")
+  const users = page.getByRole("list", { name: "Users", exact: true })
+  await expect(users).toBeVisible()
+  await expect(users.getByRole("listitem")).toHaveCount(6)
+  await settle(page)
+  await users.scrollIntoViewIfNeeded()
+  await shoot(page, "settings-users", info.project.name)
+
+  // Add a user: a wrong password first, then the one-time password reveal.
+  await page.getByRole("button", { name: "Add user" }).click()
+  const dialog = page.getByRole("dialog")
+  await dialog.getByLabel("Username").fill("alex.martin")
+  await dialog.getByLabel("Name", { exact: true }).fill("Alex Martin")
+  await dialog.getByLabel("Your password").fill("a-demo-password")
+  await shoot(page, "settings-user-add", info.project.name)
+  await dialog.getByRole("button", { name: "Create user" }).click()
+  const reveal = page.getByRole("dialog", { name: /Account created/ })
+  await expect(reveal.getByTestId("temporary-password")).toBeVisible()
+  await shoot(page, "settings-user-reveal", info.project.name)
+  await reveal.getByRole("button", { name: "I have copied it" }).click()
+  await expect(reveal).toBeHidden()
+  await expect(users.getByRole("listitem")).toHaveCount(7)
+
+  // A row action asks for the password again.
+  await page.getByRole("button", { name: "Actions for riley" }).click()
+  await shoot(page, "settings-user-menu", info.project.name)
+  await page.getByRole("menuitem", { name: "Unlock" }).click()
+  await expect(page.getByRole("dialog")).toBeVisible()
+  await shoot(page, "settings-user-unlock", info.project.name)
+})
+
+test("settings audit", async ({ page }, info) => {
+  await page.goto("/settings")
+  const audit = page.getByRole("list", { name: "Audit log" })
+  await expect(audit).toBeVisible()
+  await settle(page)
+  await audit.scrollIntoViewIfNeeded()
+  await shoot(page, "settings-audit", info.project.name)
+  await page.getByRole("radio", { name: "Users" }).click()
+  await expect(page).toHaveURL(/audit_action=user\./)
+  await expect(audit.getByRole("listitem").first()).toBeVisible()
+  await settle(page)
+  await shoot(page, "settings-audit-filtered", info.project.name)
+})
+
+test("set your password", async ({ page }, info) => {
+  await page.goto("/overview?as=first-login")
+  await expect(page.getByRole("heading", { level: 1, name: "Set your password" })).toBeVisible()
+  await settle(page)
+  await shoot(page, "set-password", info.project.name)
+  await page.getByLabel("Temporary password").fill("a-demo-password")
+  await page.getByLabel("New password", { exact: true }).fill("short")
+  await page.getByRole("button", { name: "Save and continue" }).click()
+  await expect(page.getByText("Use at least 12 characters.")).toBeVisible()
+  await shoot(page, "set-password-error", info.project.name)
+})
+
+test("viewer shell", async ({ page }, info) => {
+  await page.goto("/settings?as=viewer")
+  await expect(h1(page, "Settings")).toBeVisible()
+  await expect(page.getByText("Read-only access").locator("visible=true").first()).toBeVisible()
+  // Nothing that changes anything, and no administration cards.
+  await expect(page.getByRole("list", { name: "Users", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("list", { name: "Audit log" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: /Set the|Replace the|Remove the/ })).toHaveCount(0)
+  await settle(page)
+  await shoot(page, "settings-viewer", info.project.name, true)
+  await page.goto("/overview")
+  await expect(h1(page, "Overview")).toBeVisible()
+  await settle(page)
+  await shoot(page, "overview-viewer", info.project.name)
+})
+
+test("account menu", async ({ page }, info) => {
+  test.skip(!info.project.name.startsWith("desktop"), "the menu is part of the sidebar footer")
+  await page.goto("/settings?as=viewer")
+  await expect(h1(page, "Settings")).toBeVisible()
+  await settle(page)
+  await page.getByRole("button", { name: /Account menu for/ }).click()
+  await expect(page.getByRole("menuitem", { name: "Change password" })).toBeVisible()
+  await shoot(page, "account-menu", info.project.name)
+  await page.getByRole("menuitem", { name: "Change password" }).click()
+  await expect(page.getByRole("dialog")).toBeVisible()
+  await shoot(page, "account-change-password", info.project.name)
+})
+
 // M10: RDP stories with the guessed client, warning tags, and an NTLM session's detail.
 test("rdp", async ({ page }, info) => {
   await page.goto("/attacks?sensor=rdp")

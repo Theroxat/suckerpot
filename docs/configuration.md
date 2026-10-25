@@ -120,23 +120,46 @@ Inside each service, Compose sets `REDIS_PASSWORD` to the password of that servi
 Built in M8, security review passed. Compose passes all of these variables to the `api` service from your `.env`. `ADMIN_PASSWORD_HASH` and `SESSION_SECRET` are required: `docker compose up` and `just up` refuse to start, with a message that names the variable, until both are set. `API_AUTH_DISABLED` and `SUCKERPOT_DEMO` are set only by `docker-compose.ci.yml`.
 ```
 
-One admin account. See [API](api.md#authentication) for how it works.
+The owner account lives in `.env`: it is always an administrator and works even when the database is down. Colleagues get their own accounts, with the role `admin` or `viewer`, from **Settings > Users** (see [Users and roles](#users-and-roles)). See [API](api.md#authentication) for how sign-in works.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ADMIN_USERNAME` | `admin` | Name of the admin account |
+| `ADMIN_USERNAME` | `admin` | Name of the owner account. A user created in Settings cannot take this name. |
 | `ADMIN_PASSWORD_HASH` | none, **required** | Argon2 hash of the admin password. Make it with `docker compose run --rm api python -m api.hashpw`. Put it in `.env` in **single quotes**, because it contains `$`. |
 | `SESSION_SECRET` | none, **required** | Signs the session and CSRF cookies. At least 32 bytes. Generate it with `openssl rand -base64 48`. Different from every other secret. |
 | `SESSION_TTL_HOURS` | `12` | How long a login lasts |
 | `COOKIE_SECURE` | `true` | Cookies are `Secure` and named `__Host-sp_session` and `__Host-sp_csrf`. Keep `true`, also behind a TLS-terminating tunnel (the browser talks HTTPS to the tunnel). `false` gives the plain names `sp_session` and `sp_csrf` without `Secure`: local development over HTTP only. |
 | `LOGIN_RATE` | `5` | Login attempts per client address per minute |
 | `LOGIN_RATE_GLOBAL` | `30` | Login attempts per minute for the whole server |
+| `LOGIN_RATE_USER` | `10` | Login attempts per minute for one username (any letter case), from any address. Together with the lock after 10 wrong passwords in a row, this stops a slow guess spread over many addresses. |
 | `AUTH_TRUSTED_PROXIES` | empty | Comma-separated CIDR list of proxy addresses (such as `203.0.113.0/24`). Only from those peers does the API read `CF-Connecting-IP`, or the rightmost non-proxy `X-Forwarded-For` entry, as the client address. Empty means the headers are never trusted. Replaces the old `AUTH_TRUST_PROXY_HEADERS`. |
 | `API_ALLOWED_HOSTS` | empty | Comma-separated host names the API answers to. If empty, the hosts of `API_ALLOWED_ORIGINS` are used. `localhost` and `127.0.0.1` are always allowed. If both are empty, any host is allowed and the API logs a warning: set one in production, for example the tunnel's host name. |
 | `API_AUTH_DISABLED` | `false` | Turns authentication **off**. It takes effect only together with `SUCKERPOT_DEMO=1`, and Compose sets both only through `docker-compose.ci.yml` (`just up-test`). The base `docker-compose.yml` never does. Never use it in production. |
 | `API_ALLOWED_ORIGINS` | empty | Also used by login: when set, the **full origin** of a login request (scheme, host, port) must be listed. When empty, only the host is compared with the `Host` header. Set it behind a tunnel. |
 
 The API refuses to start when the hash or the secret is missing or weak. `SUCKERPOT_ALLOW_DEFAULT_SECRETS=1` accepts a weak setup for CI only.
+
+### Users and roles
+
+Added in M14. There is nothing to configure in `.env` for it (apart from `LOGIN_RATE_USER` above): users are created and managed in **Settings > Users**, by an administrator.
+
+| | Owner | Administrator | Viewer |
+| --- | --- | --- | --- |
+| Where it lives | `.env` | database | database |
+| Look at every page, export data, watch Live | yes | yes | yes |
+| Change settings and provider keys | yes | yes | no |
+| Manage users, read the audit log | yes | yes | no |
+| Password changed | in `.env` only | by the user | by the user |
+| Can be disabled, demoted or deleted | no | yes, by another administrator | yes |
+
+- A new account gets a strong temporary password that the administrator sees **once**. The person must choose their own password at the first sign-in; until then nothing else works.
+- Passwords have 12 to 256 characters, are not one of about a thousand very common passwords (the list is `api/api/data/common-passwords.txt`) and must not contain the username.
+- Ten wrong passwords in a row lock the account for 15 minutes. An administrator can unlock it at once.
+- Every change to a user asks the administrator for their own password again, and is written to the audit log (kept for one year).
+- Changing a password, disabling an account, changing its role, deleting it or choosing "Sign out everywhere" ends all of that user's sessions immediately.
+- Optional two-factor sign-in is not built yet.
+
+**Losing the owner password:** make a new hash with `docker compose run --rm api python -m api.hashpw`, put it in `.env` as `ADMIN_PASSWORD_HASH` and restart the API. The owner account never depends on the database, so this works even when users cannot sign in.
 
 ## Site (Live map home)
 

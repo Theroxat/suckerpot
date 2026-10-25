@@ -9,6 +9,7 @@ import {
 import { useState } from "react"
 import { Meter } from "@/components/meter"
 import { RemoveKeyDialog, SetKeyDialog } from "@/components/provider-key-dialogs"
+import { useAuth } from "@/app/auth"
 import { RelativeTime } from "@/components/relative-time"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -52,11 +53,14 @@ function KeyRow({
   id,
   info,
   editable,
+  readOnly,
   envName,
 }: {
   id: ProviderId
   info: KeyInfo | ReputationProvider
   editable: boolean
+  /** A viewer: no control that changes anything is shown. */
+  readOnly: boolean
   envName: string
 }) {
   const name = PROVIDER_NAMES[id]
@@ -122,7 +126,7 @@ function KeyRow({
         </div>
       ) : null}
 
-      {!info.configured ? (
+      {!info.configured && !readOnly ? (
         <p className="text-xs text-fg-muted">
           {editable ? (
             "Add a key to turn it on."
@@ -145,52 +149,54 @@ function KeyRow({
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <SetKeyDialog
-          provider={id}
-          replacing={info.source === "settings"}
-          onDone={() => void refresh()}
-          trigger={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!editable}
-              aria-label={`${info.source === "settings" ? "Replace" : "Set"} the ${names}`}
-            >
-              {info.source === "settings" ? "Replace" : "Set key"}
-            </Button>
-          }
-        />
-        {hasSavedKey ? (
-          <RemoveKeyDialog
+      {readOnly ? null : (
+        <div className="flex flex-wrap items-center gap-2">
+          <SetKeyDialog
             provider={id}
+            replacing={info.source === "settings"}
             onDone={() => void refresh()}
             trigger={
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 disabled={!editable}
-                aria-label={`Remove the ${names}`}
+                aria-label={`${info.source === "settings" ? "Replace" : "Set"} the ${names}`}
               >
-                Remove
+                {info.source === "settings" ? "Replace" : "Set key"}
               </Button>
             }
           />
-        ) : null}
-        {info.configured ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={testing || keyInFlight(info)}
-            onClick={() => test.mutate()}
-            aria-label={`Test the ${names}`}
-            aria-busy={testing || undefined}
-          >
-            {testing ? <LoaderCircle aria-hidden className="animate-spin" /> : null}
-            {testing ? "Testing…" : "Test key"}
-          </Button>
-        ) : null}
-      </div>
+          {hasSavedKey ? (
+            <RemoveKeyDialog
+              provider={id}
+              onDone={() => void refresh()}
+              trigger={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!editable}
+                  aria-label={`Remove the ${names}`}
+                >
+                  Remove
+                </Button>
+              }
+            />
+          ) : null}
+          {info.configured ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={testing || keyInFlight(info)}
+              onClick={() => test.mutate()}
+              aria-label={`Test the ${names}`}
+              aria-busy={testing || undefined}
+            >
+              {testing ? <LoaderCircle aria-hidden className="animate-spin" /> : null}
+              {testing ? "Testing…" : "Test key"}
+            </Button>
+          ) : null}
+        </div>
+      )}
       <div role="status" aria-live="polite" className="empty:hidden">
         {testError ? (
           <p className="text-xs text-sev-warning">{testError}</p>
@@ -231,12 +237,19 @@ function WithCode({ text }: { text: string }) {
 
 /** The three provider keys: where each comes from, and the dialogs to change them. */
 export function ProviderKeys({ e }: { e: EnrichmentSettings }) {
+  const { canWrite } = useAuth()
+  const readOnly = !canWrite
   const editable = e.key_editing.enabled
   return (
     <div className="space-y-4">
       <div className="space-y-1">
         <h4 className="text-sm font-medium text-fg">API keys</h4>
-        {editable ? (
+        {readOnly ? (
+          <p className="text-xs text-fg-muted">
+            Which keys are set, and their last four characters. Only an administrator can change
+            them.
+          </p>
+        ) : editable ? (
           <p className="text-xs text-fg-muted">
             Keys are encrypted and never shown again, only their last four characters. A key set
             here replaces the one in <code className="font-mono">.env</code>. Test key makes one
@@ -250,11 +263,41 @@ export function ProviderKeys({ e }: { e: EnrichmentSettings }) {
         )}
       </div>
       <ul aria-label="API keys" className="divide-y">
-        <KeyRow id="abuseipdb" info={e.abuseipdb} editable={editable} envName="ABUSEIPDB_API_KEY" />
-        <KeyRow id="greynoise" info={e.greynoise} editable={editable} envName="GREYNOISE_API_KEY" />
-        <KeyRow id="maxmind" info={e.maxmind} editable={editable} envName="MAXMIND_LICENSE_KEY" />
-        <KeyRow id="nvd" info={e.nvd} editable={editable} envName="NVD_API_KEY" />
-        <KeyRow id="github" info={e.github} editable={editable} envName="GITHUB_ADVISORY_TOKEN" />
+        <KeyRow
+          id="abuseipdb"
+          info={e.abuseipdb}
+          editable={editable}
+          readOnly={readOnly}
+          envName="ABUSEIPDB_API_KEY"
+        />
+        <KeyRow
+          id="greynoise"
+          info={e.greynoise}
+          editable={editable}
+          readOnly={readOnly}
+          envName="GREYNOISE_API_KEY"
+        />
+        <KeyRow
+          id="maxmind"
+          info={e.maxmind}
+          editable={editable}
+          readOnly={readOnly}
+          envName="MAXMIND_LICENSE_KEY"
+        />
+        <KeyRow
+          id="nvd"
+          info={e.nvd}
+          editable={editable}
+          readOnly={readOnly}
+          envName="NVD_API_KEY"
+        />
+        <KeyRow
+          id="github"
+          info={e.github}
+          editable={editable}
+          readOnly={readOnly}
+          envName="GITHUB_ADVISORY_TOKEN"
+        />
       </ul>
       <div className="space-y-1">
         <h4 className="text-sm font-medium text-fg">Threat intelligence</h4>
@@ -265,11 +308,18 @@ export function ProviderKeys({ e }: { e: EnrichmentSettings }) {
         </p>
       </div>
       <ul aria-label="Threat intelligence keys" className="divide-y">
-        <KeyRow id="abusech" info={e.abusech} editable={editable} envName="ABUSECH_AUTH_KEY" />
+        <KeyRow
+          id="abusech"
+          info={e.abusech}
+          editable={editable}
+          readOnly={readOnly}
+          envName="ABUSECH_AUTH_KEY"
+        />
         <KeyRow
           id="virustotal"
           info={e.virustotal}
           editable={editable}
+          readOnly={readOnly}
           envName="VIRUSTOTAL_API_KEY"
         />
       </ul>

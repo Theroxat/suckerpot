@@ -424,6 +424,8 @@ export const queryKeys = {
   indicator: (id: number) => ["indicators", "detail", id] as const,
   infrastructureGraph: (hours: number, role: string) =>
     ["infrastructure", "graph", hours, role] as const,
+  users: ["users"] as const,
+  audit: (filters: object) => ["audit", filters] as const,
   systemSettings: ["settings", "system"] as const,
   enrichmentSettings: ["settings", "enrichment"] as const,
 }

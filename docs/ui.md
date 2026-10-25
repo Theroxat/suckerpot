@@ -34,12 +34,25 @@ The pages read the endpoints described in [API](api.md).
 | Trends | `/trends` | Built | Top usernames, passwords, commands and URLs, tags over time, a day by hour heatmap, and "new this week" (values never seen in the 90 days before). |
 | Infrastructure | `/infrastructure` | Built | A finding first ("40 scanning IPs fetched payloads from 2 shared hosts this week"), a flow diagram from source addresses through indicators to malware families (a list on narrow screens), a filterable indicator table, a detail panel with threat-intelligence answers, and CSV or STIX 2.1 export buttons. Indicators are defanged text, never links. |
 | Malware | `/malware` | Built | Download URLs, defanged, with how often, from how many addresses and with which tool. File hashes and VirusTotal links appear only if payload fetching exists, which it does not yet. |
-| Settings | `/settings` | Built | Sensor status, enrichment quotas, retention, the disk guard and the database size. The enrichment API keys (AbuseIPDB, GreyNoise, MaxMind) can be set, replaced, removed and tested here: write-only, with a password prompt for every change (see [Enrichment keys in Settings](configuration.md#enrichment-keys-in-settings)). It uses `GET /api/v1/settings/system`, `/settings/enrichment` and `/settings/providers/{provider}`. |
+| Settings | `/settings` | Built | Sensor status, enrichment quotas, retention, the disk guard and the database size. The enrichment API keys (AbuseIPDB, GreyNoise, MaxMind) can be set, replaced, removed and tested here: write-only, with a password prompt for every change (see [Enrichment keys in Settings](configuration.md#enrichment-keys-in-settings)). Administrators also see **Users** (add a person, change a role, disable, reset a password, unlock, sign out everywhere, delete) and the **Audit log**; viewers see neither, and no control that changes anything (see [Users and roles](#users-and-roles)). It uses `GET /api/v1/settings/system`, `/settings/enrichment`, `/settings/providers/{provider}`, `/users` and `/audit`. |
 | Styleguide | `/styleguide` | Built | Every token and component, in every state. |
 
 ## Sign in
 
 When the API answers `401`, the app shows the sign-in page. After a successful login the session lasts `SESSION_TTL_HOURS` (12 by default). The cookies are set by the server; the app never stores the password or a token in the browser's storage. The app reads the CSRF cookie and sends it on every write. Too many attempts show "Wait a minute, then try again". If login keeps failing behind a tunnel (the API answers `403` to a cross-origin login), add the public origin to `API_ALLOWED_ORIGINS` (see [Deployment](deployment.md#behind-a-tls-terminating-tunnel)).
+
+## Users and roles
+
+Two kinds of people can use the dashboard besides the owner: **administrators** and **viewers** (see [Users and roles](configuration.md#users-and-roles) for what each may do).
+
+- **Add a user** (Settings > Users > Add user): username, name, role and your own password. The app then shows a temporary password **once**, in a dialog that does not close by accident, with a Copy button and a warning. The person signs in with it and is taken to **Set your password** before anything else.
+- **Row actions** (the three dots): change role, disable or enable, unlock (only while locked), reset password (shows a new temporary password once), sign out everywhere, delete. Each asks for your own password. You cannot do the destructive ones to your own account.
+- **Status** is one word with an icon: Active, Waiting for first sign-in, Locked, Disabled. The owner row says "Set in .env" and has no actions.
+- **Audit log**: newest first, one sentence per entry ("sam reset the password of riley"), filterable by kind (Sign-ins, Users, Keys) and by name; the filters are in the URL (`?audit_action=user.&audit_actor=sam`). Click a name to filter by it.
+- **Viewers** get the same pages, with a small "Read-only access" mark in the sidebar footer (and in the mobile header), no key buttons, and no Users or Audit cards.
+- **Account menu** (sidebar footer): your name, role, last sign-in, **Change password** and **Sign out**. The owner's password is changed in `.env`, so that entry is disabled for the owner.
+
+In the demo and mock builds, add `?as=viewer` to any address to preview the read-only interface and `?as=first-login` for the Set your password screen (`?as=admin` goes back). The choice lasts for the browser tab.
 
 ## Insights
 
