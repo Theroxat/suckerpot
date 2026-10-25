@@ -24,6 +24,11 @@ class EnrichmentSettings:
     maxmind_license_key: str = field(default="", repr=False)
     abuseipdb_api_key: str = field(default="", repr=False)
     greynoise_api_key: str = field(default="", repr=False)
+    nvd_api_key: str = field(default="", repr=False)
+    github_token: str = field(default="", repr=False)
+    cve_watch_enabled: bool = True
+    cve_nvd_daily_quota: int = 200
+    cve_github_daily_quota: int = 100
     abuseipdb_daily_quota: int = 1000
     greynoise_daily_quota: int = 50
     reputation_min_events: int = 10
@@ -61,6 +66,11 @@ class EnrichmentSettings:
             maxmind_license_key=e.get("MAXMIND_LICENSE_KEY", "").strip(),
             abuseipdb_api_key=e.get("ABUSEIPDB_API_KEY", "").strip(),
             greynoise_api_key=e.get("GREYNOISE_API_KEY", "").strip(),
+            nvd_api_key=e.get("NVD_API_KEY", "").strip(),
+            github_token=e.get("GITHUB_TOKEN", "").strip(),
+            cve_watch_enabled=_flag(e.get("CVE_WATCH_ENABLED", "true")),
+            cve_nvd_daily_quota=max(0, int(e.get("CVE_NVD_DAILY_QUOTA", "200"))),
+            cve_github_daily_quota=max(0, int(e.get("CVE_GITHUB_DAILY_QUOTA", "100"))),
             abuseipdb_daily_quota=max(0, int(e.get("ABUSEIPDB_DAILY_QUOTA", "1000"))),
             greynoise_daily_quota=max(0, int(e.get("GREYNOISE_DAILY_QUOTA", "50"))),
             reputation_min_events=max(1, int(e.get("REPUTATION_MIN_EVENTS", "10"))),

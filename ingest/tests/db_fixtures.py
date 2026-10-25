@@ -93,7 +93,7 @@ async def engine(migrated: None) -> AsyncIterator[AsyncEngine]:
             text(
                 "TRUNCATE events, sessions, ip_reputation, enrichment_quota, "
                 "enrichment_status, sessions_daily, system_status, maintenance_log, "
-                "provider_secrets, provider_test_requests"
+                "provider_secrets, provider_test_requests, cve, cve_sync_state"
             )
         )
     yield eng
