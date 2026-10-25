@@ -9,7 +9,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useUrlParam } from "@/hooks/use-url-param"
 import { queryKeys } from "@/lib/api"
-import { AUDIT_GROUPS, describeAudit, usersApi, type AuditEntry } from "@/lib/users"
+import {
+  AUDIT_GROUPS,
+  auditActorLabel,
+  describeAudit,
+  isSystemActor,
+  usersApi,
+  type AuditEntry,
+} from "@/lib/users"
 
 const GROUP_VALUES = AUDIT_GROUPS.map((g) => g.value) as readonly string[]
 
@@ -18,8 +25,8 @@ function finding(entries: AuditEntry[] | undefined, filtered: boolean): string {
   const first = entries[0]
   if (!first) return filtered ? "Nothing matches these filters." : "Nothing has been recorded yet."
   return filtered
-    ? `${entries.length}${entries.length >= 25 ? "+" : ""} matching entries, the latest by ${first.actor}.`
-    : `Latest entry: ${first.actor} ${describeAudit(first)}.`
+    ? `${entries.length}${entries.length >= 25 ? "+" : ""} matching entries, the latest by ${auditActorLabel(first)}.`
+    : `Latest entry: ${auditActorLabel(first)} ${describeAudit(first)}.`
 }
 
 /** Administrators only: who did what, newest first. Entries are kept for a year. */
@@ -90,14 +97,20 @@ export function AuditCard() {
                 className="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-1 px-4 py-2.5 sm:px-5 lg:grid-cols-[7rem_minmax(0,1fr)_11rem]"
               >
                 <p className="col-span-2 text-sm text-fg lg:col-span-1 lg:col-start-2 lg:row-start-1">
-                  <button
-                    type="button"
-                    onClick={() => setActorParam(e.actor)}
-                    className="font-medium underline-offset-4 hover:underline"
-                    title="Show only this actor"
-                  >
-                    {e.actor}
-                  </button>{" "}
+                  {isSystemActor(e) ? (
+                    <span className="font-medium" title="Done automatically by SuckerPot">
+                      System
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setActorParam(e.actor)}
+                      className="font-medium underline-offset-4 hover:underline"
+                      title="Show only this actor"
+                    >
+                      {e.actor}
+                    </button>
+                  )}{" "}
                   <span className="text-fg-muted">{describeAudit(e)}</span>
                 </p>
                 <RelativeTime

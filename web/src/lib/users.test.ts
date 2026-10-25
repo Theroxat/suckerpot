@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
+  auditActorLabel,
   describeAudit,
+  isSystemActor,
   userState,
   usersFinding,
   validateNewUser,
@@ -95,7 +97,23 @@ describe("describeAudit", () => {
       "saved the AbuseIPDB key",
     )
     expect(describeAudit(entry("auth.login"))).toBe("signed in")
-    expect(describeAudit(entry("user.locked"))).toBe("was locked after too many wrong passwords")
+    expect(
+      describeAudit(entry("user.locked", { actor: "system", details: { actor_id: "system" } })),
+    ).toBe("locked colleague after too many wrong passwords")
+    // Older entries named the locked user as the actor.
+    expect(describeAudit(entry("user.locked", { actor: "colleague" }))).toBe(
+      "was locked after too many wrong passwords",
+    )
+  })
+
+  it("names the system, not a user, for automatic entries", () => {
+    const lock = entry("user.locked", { actor: "system", details: { actor_id: "system" } })
+    expect(isSystemActor(lock)).toBe(true)
+    expect(auditActorLabel(lock)).toBe("System")
+    // A person who happens to be called "system" stays a person.
+    const person = entry("auth.login", { actor: "system", details: { actor_id: 7 } })
+    expect(isSystemActor(person)).toBe(false)
+    expect(auditActorLabel(person)).toBe("system")
   })
 
   it("never fails on an action it does not know", () => {
