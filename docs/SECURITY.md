@@ -56,8 +56,18 @@ These rules apply to every sensor.
 - Fake commands return canned or generated output from an in-memory fake file system. The file system has a size cap (1 MiB, 2000 nodes in the SSH sensor), and each connection gets its own copy.
 - `wget`, `curl`, `tftp`, `ftpget` and `scp` are recorded as `download_attempt` events. They are never run and never fetched by the sensor.
 - The web sensor analyses requests with byte searches over a bounded slice, with no regular expressions. URLs found in payloads are reported, never opened.
-- The RDP sensor never completes CredSSP or NTLM, so it never receives a password-derived response. The only credential it records is the user name in the connection cookie.
+- The RDP sensor runs the NTLM exchange only as far as the logon decision, then refuses the logon. It never grants a session and never cracks a password. Its only password check is against the decoy accounts (see below).
 - Sensors open no outbound connection at all.
+
+### Credentials the sensors record
+
+Attackers send credentials to the sensors, so the sensors record some of them. These are the rules.
+
+- **Decoy accounts are public by design.** The RDP sensor's default decoy pairs (`SENSOR_RDP_ACCOUNTS`) are in this repository and in the sensor's documentation. They are fake, no real host uses them, and they exist so that a login with a common password can be shown as a weak-credential match. Anyone can read them, and that is fine.
+- **Decoys are verified, never cracked.** For an NTLM login, the sensor checks only the pairs it was configured with, against the response and the server challenge it sent. It never tries a list of passwords and never derives a password from the response. Any other pair is recorded without a password.
+- **Cleartext from TLS-only clients is opt-in.** A client that does not use NLA sends its password inside TLS. The RDP sensor reads that password only when the owner sets `RDP_NLA_MODE=optional`. The default, `required`, accepts NLA clients only, so it never reads a password from a TLS-only client. Turn the optional mode on only when you accept that real passwords typed into such clients will be stored in the database. Those passwords are length-limited, like every captured field, and they are then subject to the retention rules in [Retention](retention.md).
+- **Stored passwords are data, not secrets to reuse.** They are stored as the attacker sent them, in the event `data` field, and shown to the owner in the dashboard. Treat the database with the same care as any other capture.
+- **Nothing from the decoy list is ever a real secret.** Do not put a real password in `RDP_ACCOUNTS`. The sensor treats each pair as public.
 
 ### Downloads
 

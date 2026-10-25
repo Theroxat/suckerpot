@@ -14,7 +14,7 @@ SuckerPot runs eleven sensors in four families. The family sets the colour in th
 | Databases | [Redis](redis.md) | Redis 7.2 with no password | 6379 | `events:redis` |
 | Databases | [MySQL](mysql.md) | MySQL 8.0 with weak logins | 3306 | `events:mysql` |
 | Databases | [MSSQL](mssql.md) | SQL Server 2019 or 2022 with weak logins | 1433 | `events:mssql` |
-| Windows and VoIP | [RDP](rdp.md) | Windows Server 2022 with NLA, handshake only | 3389 | `events:rdp` |
+| Windows and VoIP | [RDP](rdp.md) | Windows Server 2022 with NLA: NTLM logins, decoy password checks, optional cleartext mode | 3389 | `events:rdp` |
 | Windows and VoIP | [SMB](smb.md) | Windows Server file service, observation only | 445 | `events:smb` |
 | Windows and VoIP | [SIP](sip.md) | Asterisk-style PBX on UDP and TCP | 5060 (UDP and TCP) | `events:sip` |
 

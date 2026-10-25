@@ -77,7 +77,7 @@ Host (nftables table "suckerpot_host", see Deployment)
 | `sensor-redis` | `ingress`, `sensors-redis` | Redis 7.2 with no password. See [Redis](sensors/redis.md). Stream `events:redis`. | Built (M9) |
 | `sensor-mysql` | `ingress`, `sensors-mysql` | MySQL 8.0 with weak logins. See [MySQL](sensors/mysql.md). Stream `events:mysql`. | Built (M9) |
 | `sensor-mssql` | `ingress`, `sensors-mssql` | SQL Server look-alike. See [MSSQL](sensors/mssql.md). Stream `events:mssql`. | Built (M9) |
-| `sensor-rdp` | `ingress`, `sensors-rdp` | RDP handshake sensor. See [RDP](sensors/rdp.md). Stream `events:rdp`. | Built |
+| `sensor-rdp` | `ingress`, `sensors-rdp` | RDP sensor (NLA and NTLM). See [RDP](sensors/rdp.md). Stream `events:rdp`. | Built |
 | `sensor-smb` | `ingress`, `sensors-smb` | SMB file service, observation only. See [SMB](sensors/smb.md). Stream `events:smb`. | Built (M9) |
 | `sensor-sip` | `ingress`, `sensors-sip` | Asterisk-style PBX on UDP and TCP 5060. See [SIP](sensors/sip.md). Stream `events:sip`. | Built (M9) |
 | `demo` | `tools` | Synthetic attack generator. Runs only with `--profile tools`. | Built |
@@ -232,7 +232,7 @@ Built (M4) and wired into Compose: ingest gets the provider variables and the `g
 
 - **GeoIP and ASN** are read from local MMDB files, never from a web service per event. The provider is MaxMind GeoLite2 when `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` are set, otherwise DB-IP Lite (no key, CC BY 4.0, attribution shown in the dashboard). Ingest downloads and refreshes the files itself, with a size cap and a check that the file opens. `GEOIP_PROVIDER=off` turns it off.
 - **Reputation** (AbuseIPDB and GreyNoise Community) runs in a background worker, not in the event path. It picks the busiest addresses with no fresh answer, spends one unit of a persisted daily quota per lookup (`ABUSEIPDB_DAILY_QUOTA`, `GREYNOISE_DAILY_QUOTA`), caches the answer for 24 hours, and pauses for an hour after a rate-limit answer. It only reads. Nothing is ever reported to AbuseIPDB.
-- **Tags** come from a declarative rules engine. Rules are YAML files in `ingest/rules/` (`shell.yaml` for commands, `web.yaml` for HTTP, `services.yaml` for the database, container, mobile, file-sharing and VoIP sensors, and `session.yaml` for session counters). A rule can match URL patterns, typical shell commands, user agents or CVE signatures. Tags include `recon`, `mirai`, `crypto-miner`, `exec-attempt`, `malware-drop`, `credential-stuffing`, `scanner`, `php2shell`, and for the M9 sensors `persistence`, `container-escape`, `sql-rce`, `db-ransom`, `eternalblue` and `sip-fraud`. A broken rule file stops ingest at start-up.
+- **Tags** come from a declarative rules engine. Rules are YAML files in `ingest/rules/` (`shell.yaml` for commands, `web.yaml` for HTTP, `services.yaml` for the database, container, mobile, file-sharing and VoIP sensors, and `session.yaml` for session counters). A rule can match URL patterns, typical shell commands, user agents or CVE signatures. Tags include `recon`, `mirai`, `crypto-miner`, `exec-attempt`, `malware-drop`, `credential-stuffing`, `scanner`, `php2shell`, for the M9 sensors `persistence`, `container-escape`, `sql-rce`, `db-ransom`, `eternalblue` and `sip-fraud`, and for the RDP sensor `bluekeep`, `weak-credentials` and `rdp-cleartext`. A broken rule file stops ingest at start-up.
 
 A **session** is one connection. It is the unit the dashboard tells as a story, such as "tried 37 SSH passwords, then ran a crypto-miner".
 
