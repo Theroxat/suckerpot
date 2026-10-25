@@ -266,17 +266,22 @@ Built (M6) and wired into `docker-compose.yml`. It is still under security revie
 ```{admonition} Status
 :class: note
 
-Built. Compose sets the ports, `RDP_HOSTNAME`, `RDP_MAX_CONNECTIONS` and `RDP_MAX_PER_IP`; the rest use the defaults below unless you add them with an override file.
+Built. Compose sets the ports, `RDP_HOSTNAME`, the caps, and the NLA mode and decoy accounts. The rest use the defaults below unless you add them with an override file.
 ```
+
+Set these in `.env`. Compose passes them to the sensor under the `SENSOR_RDP_` names shown in the first column. The `.env` names are in the second column, and `.env.example` lists them with comments.
 
 | Variable | Default | Description |
 | --- | --- | --- |
+| `SENSOR_RDP_NLA_MODE` (`.env`: `RDP_NLA_MODE`) | `required` | `required` accepts NLA clients only. `optional` also accepts TLS-only clients and records the cleartext password they send. This is an owner opt-in, see [Security](SECURITY.md#credentials-the-sensors-record). Any other value stops the sensor at start-up. |
+| `SENSOR_RDP_ACCOUNTS` (`.env`: `RDP_ACCOUNTS`) | `administrator:P@ssw0rd,administrator:123456,admin:admin` | Decoy `user:password` pairs, comma separated. Only these pairs are checked, and the pairs are public by design. |
 | `RDP_PORT` | `3389` | Port inside the container |
 | `RDP_PUBLIC_PORT` | `3389` | Port recorded as `dst_port` |
 | `RDP_HOSTNAME` | derived | NetBIOS name in the certificate, 1 to 15 characters |
 | `RDP_DATA_DIR` | `/data` | Profile secret, certificate and key (a volume) |
 | `RDP_ENABLE_TLS` | `true` | Complete the TLS handshake after selecting CredSSP |
 | `RDP_MAX_CONNECTIONS`, `RDP_MAX_PER_IP` | `200`, `8` | Connection caps |
+| `RDP_MAX_TLS_PER_IP` | `4` | TLS handshakes allowed from one source at the same time (`.env` uses the same name) |
 | `RDP_FIRST_DATA_TIMEOUT` | `8` | Seconds to wait for the first bytes |
 | `RDP_HANDSHAKE_TIMEOUT` | `10` | Seconds per PDU and for the TLS handshake |
 | `RDP_CREDSSP_TIMEOUT` | `10` | Seconds to wait for the first `TSRequest` |

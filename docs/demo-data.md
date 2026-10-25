@@ -33,7 +33,7 @@ The generator first creates a **backfill**: sessions spread over the last `--day
 | SSH | Password guessing, successful login with reconnaissance, persistence attempts, a miner install | Tried a list of passwords, then logged in and ran a miner |
 | Telnet | Single logins, and botnet waves that arrive together | Part of a coordinated wave of weak-password attempts |
 | Web | Generic HTTP scanning, WordPress login probes, and PHP upload probes | Looked for admin pages, then tried an exploit |
-| RDP | Connection probes with one username | Opened a session and tried one username |
+| RDP | Connection probes, NTLM logins (some with a decoy password), BlueKeep-style channel probes, and standard clients (FreeRDP, mstsc, nmap and others) | Tried one username, or logged in with a common password and was refused |
 
 Some SSH sessions come from one campaign: a single source tries many passwords. The mix, the timing and the source addresses aim to look realistic, with busy hours, quiet nights and a few repeat visitors.
 

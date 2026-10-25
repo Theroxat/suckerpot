@@ -32,7 +32,7 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 - **SSH sensor.** The fingerprint of OpenSSH 9.6 on Ubuntu, a configurable set of weak logins, and a pure-emulation shell over an in-memory fake filesystem. It records every login attempt and command, records `wget` / `curl` / `tftp` downloads as URLs only, and keeps timed terminal I/O for replay (see [the sensor notes](sensors/ssh/README.md)).
 - **Telnet sensor.** A BusyBox telnetd look-alike with Mirai-style login and command flows.
 - **Web sensor** (in final security review). A byte-identical fake Apache 2.4.58 with PHP 8.3 (unpatched mod_php), WordPress and phpMyAdmin pages, and detection of PHP2Shell (upload-progress) exploit attempts, tagged `php2shell`.
-- **RDP sensor.** A Windows Server look-alike with NLA that captures usernames.
+- **RDP sensor.** A Windows Server look-alike with NLA. It records NTLM logins, checks decoy passwords, identifies the client tool, and can optionally capture cleartext passwords from clients that skip NLA (owner opt-in).
 - **Eleven sensors in four families.** Each family has its own colour in the dashboard, and each sensor has its own icon and name.
 
 | Family | Sensors | What they fake |

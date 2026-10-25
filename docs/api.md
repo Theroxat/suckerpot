@@ -262,6 +262,7 @@ Example response (values are fake, and use documentation addresses):
       "org": null,
       "abuse_score": null,
       "known_scanner": null,
+      "client_tool": null,
       "tags": []
     },
     {
@@ -285,6 +286,7 @@ Example response (values are fake, and use documentation addresses):
       "org": null,
       "abuse_score": null,
       "known_scanner": null,
+      "client_tool": null,
       "tags": []
     }
   ],
@@ -295,6 +297,8 @@ Example response (values are fake, and use documentation addresses):
 The cursor in the example is opaque and only shows the format. Do not decode or edit it.
 
 The enrichment fields (`country`, `city`, `asn`, `org`, `abuse_score`, `known_scanner`) are `null` and `tags` is empty until ingest has enriched the session. Enrichment and tagging run in ingest (M4). Ingest has to download a GeoIP database first, so right after a first start the fields stay `null` for a short while. Sessions that were stored before enrichment was running are not enriched afterwards.
+
+`client_tool` is a best-effort guess at the client software of an RDP session (see [RDP sensor](sensors/rdp.md#client-tool-identification)). It is `null` for every other sensor, and for RDP when the guess is `unknown`.
 
 Filters combine with AND. `since` and `until` need a time zone (`2026-10-24T00:00:00Z`). An invalid value returns `422`.
 

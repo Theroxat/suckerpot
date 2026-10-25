@@ -33,7 +33,19 @@ The `data` object is free-form, but sensors should use these keys. The tagging r
 
 | `type` | Keys |
 | --- | --- |
-| `login_attempt` | `username`, `password`, `success` (boolean), `method` (`password`, `publickey` or `keyboard-interactive`) |
+| `login_attempt` | `username`, `password`, `success` (boolean), `method` (`password`, `publickey` or `keyboard-interactive` for SSH and Telnet; `rdp-cookie`, `rdp-ntlm` or `rdp-nla-off` for RDP) |
+
+### RDP login methods
+
+The RDP sensor uses three login methods. Each one carries different fields, and the password is only ever set in the last two cases.
+
+| `method` | When it happens | Password | Extra fields |
+| --- | --- | --- | --- |
+| `rdp-cookie` | The client sent a `mstshash` user name in the connection request | Always null | `client_tool`, `requested_protocols`, `routing_token` and others |
+| `rdp-ntlm` | The client completed an NTLM exchange (NLA) | Set only for a configured decoy account whose password matched. Otherwise null. | `domain`, `workstation`, `ntlm_version` (`v1` or `v2`), `nt_response_len`, `nt_response_preview` (8 bytes) |
+| `rdp-nla-off` | The client skipped NLA and sent its password in the Client Info PDU. Only with `RDP_NLA_MODE=optional`. | Cleartext, length-limited | `domain`, `alternate_shell`, `working_dir`, `client_tool` |
+
+The full RDP field list is in [RDP sensor](sensors/rdp.md#what-it-records).
 | `command` | `input` (string), `output_preview` (string, optional) |
 | `download_attempt` | `url`, `tool` (`wget`, `curl`, `tftp` and so on), `command` |
 | `http_request` | `method`, `path`, `query`, `headers` (object), `user_agent`, `body_preview`, `status` |
@@ -102,3 +114,5 @@ If the database rejects a batch, ingest retries it with a backoff. A single mess
 ## Session fields
 
 Ingest groups events by `session_id` into the `sessions` table. A session keeps its first and last times, the number of events, and counters such as `login_attempts`, `login_success`, `commands`, `downloads` and `http_requests`. Enrichment and tags are added to both events and sessions (M4).
+
+A session also has `client_tool`, a best-effort guess at the software that connected (for example `FreeRDP`, `nmap` or `mstsc`). Only the RDP sensor sets it, from the `client_tool` value in its events. `unknown` and other sensors' values are stored as null. The guess is never authoritative. See [Client tool identification](sensors/rdp.md#client-tool-identification).
