@@ -8,13 +8,14 @@ and the timeline covers at most 30 days.
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import func, or_, select, tuple_
 from suckerpot_db.models import (
     AttackTechniqueRow,
     CampaignKeyRow,
@@ -44,6 +45,8 @@ MAX_DAYS = 365
 MAX_TIMELINE_DAYS = 30
 EXCERPT_LINES = 12
 INDICATOR_LIMIT = 100
+#: A key counts as evidence only when this many distinct sources showed it (ingest's rule).
+MIN_SOURCES = max(2, int(os.environ.get("CAMPAIGN_MIN_SOURCES", "2") or 2))
 LINE_CHARS = 200
 
 CampaignId = Annotated[int, Path(ge=1, le=2**62)]
@@ -142,6 +145,8 @@ class IndicatorOut(BaseModel):
     value: str
     defanged: str
     sources: int
+    #: "low" when fewer sources than the clustering rule needs: do not block on this alone.
+    confidence: Literal["normal", "low"]
     first_seen: datetime
     last_seen: datetime
 
@@ -370,8 +375,12 @@ async def campaign_story(db: DbSession, campaign_id: CampaignId) -> CampaignStor
     host_rows = (
         await db.scalars(
             select(CampaignKeyRow.value)
-            .where(CampaignKeyRow.campaign_id == campaign_id, CampaignKeyRow.kind == "payload_host")
-            .order_by(CampaignKeyRow.last_seen.desc())
+            .where(
+                CampaignKeyRow.campaign_id == campaign_id,
+                CampaignKeyRow.kind == "payload_host",
+                CampaignKeyRow.sources >= MIN_SOURCES,
+            )
+            .order_by(CampaignKeyRow.sources.desc(), CampaignKeyRow.last_seen.desc())
             .limit(3)
         )
     ).all()
@@ -437,7 +446,11 @@ async def campaign_sessions(
     db: DbSession, campaign_id: CampaignId, limit: Limit = 50, cursor: Cursor = None
 ) -> SessionPage:
     await _get(db, campaign_id)
-    stmt = select(SessionRow).where(SessionRow.campaign_id == campaign_id)
+    # Sessions not yet re-pointed after a merge still carry the id of the absorbed campaign.
+    absorbed = select(CampaignRow.id).where(CampaignRow.merged_into == campaign_id)
+    stmt = select(SessionRow).where(
+        or_(SessionRow.campaign_id == campaign_id, SessionRow.campaign_id.in_(absorbed))
+    )
     if cursor is not None:
         try:
             c_ts, c_id = parse_session_cursor(cursor)
@@ -463,7 +476,12 @@ async def campaign_indicators(db: DbSession, campaign_id: CampaignId) -> Indicat
         await db.scalars(
             select(CampaignKeyRow)
             .where(CampaignKeyRow.campaign_id == campaign_id)
-            .order_by(CampaignKeyRow.kind, CampaignKeyRow.last_seen.desc(), CampaignKeyRow.value)
+            .order_by(
+                CampaignKeyRow.kind,
+                CampaignKeyRow.sources.desc(),
+                CampaignKeyRow.last_seen.desc(),
+                CampaignKeyRow.value,
+            )
             .limit(INDICATOR_LIMIT)
         )
     ).all()
@@ -474,6 +492,7 @@ async def campaign_indicators(db: DbSession, campaign_id: CampaignId) -> Indicat
                 value=r.value,
                 defanged=_defang(r.kind, r.value),
                 sources=r.sources,
+                confidence="normal" if r.sources >= MIN_SOURCES else "low",
                 first_seen=r.first_seen,
                 last_seen=r.last_seen,
             )

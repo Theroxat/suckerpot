@@ -8,8 +8,9 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
 from pydantic import AfterValidator, AwareDatetime
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import func, or_, select, tuple_
 from suckerpot_db.models import (
+    CampaignRow,
     EnrichmentQuotaRow,
     EnrichmentStatusRow,
     EventRow,
@@ -118,7 +119,10 @@ async def list_sessions(
     if technique is not None:
         stmt = stmt.where(SessionRow.techniques.contains([technique]))
     if campaign_id is not None:
-        stmt = stmt.where(SessionRow.campaign_id == campaign_id)
+        absorbed = select(CampaignRow.id).where(CampaignRow.merged_into == campaign_id)
+        stmt = stmt.where(
+            or_(SessionRow.campaign_id == campaign_id, SessionRow.campaign_id.in_(absorbed))
+        )
     if sensor is not None:
         stmt = stmt.where(SessionRow.sensor.in_(sensor))
     if src_ip is not None:

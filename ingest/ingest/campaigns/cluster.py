@@ -20,11 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ingest.attack.mapping import AttackMap
 from ingest.campaigns.keys import (
-    MAX_KEYS_PER_SESSION,
     MIN_CREDLIST_ATTEMPTS,
     PAYLOAD_TAGS,
     Key,
-    clamp,
+    cap_keys,
     credlist_key,
     exploit_key,
     is_benign_host,
@@ -36,6 +35,8 @@ from ingest.campaigns.plan import Cand, build_plan
 log = logging.getLogger(__name__)
 
 CHUNK = 200
+MOVE_BATCH = 2000
+MAX_KEYS_PER_CAMPAIGN = 1000
 MAX_COMMANDS = 64
 MAX_LOGINS = 256
 CAP_COUNTRIES = 64
@@ -103,33 +104,54 @@ def _union(*groups: Iterable[Any], cap: int) -> list[Any]:
 # ---- reading ---------------------------------------------------------------------------------
 
 
-async def _load_candidates(s: AsyncSession, cfg: ClusterConfig, now: datetime) -> list[Cand]:
-    rows = await s.execute(
-        text(
-            "SELECT session_id, sensor, host(src_ip) AS ip, country, asn, tags, techniques, "
-            "started_at, last_event_at, commands, downloads, login_attempts "
-            "FROM sessions WHERE clustered_at IS NULL AND NOT benign AND last_event_at < :quiet "
-            "ORDER BY last_event_at DESC LIMIT :n"
-        ),
-        {"quiet": now - timedelta(minutes=cfg.quiet_minutes), "n": cfg.batch},
+#: A session can only carry a clustering key if it did one of these things.
+_KEYABLE = "(commands >= 2 OR downloads > 0 OR login_attempts >= :logins OR tags && :payload)"
+PER_IP_CAP = 25
+
+
+def _cand(r: Any) -> Cand:
+    return Cand(
+        session_id=r.session_id,
+        sensor=r.sensor,
+        src_ip=r.ip,
+        country=r.country,
+        asn=r.asn,
+        tags=list(r.tags or []),
+        techniques=list(r.techniques or []),
+        started_at=r.started_at,
+        last_event_at=r.last_event_at,
+        commands=r.commands,
+        downloads=r.downloads,
+        login_attempts=r.login_attempts,
     )
-    return [
-        Cand(
-            session_id=r.session_id,
-            sensor=r.sensor,
-            src_ip=r.ip,
-            country=r.country,
-            asn=r.asn,
-            tags=list(r.tags or []),
-            techniques=list(r.techniques or []),
-            started_at=r.started_at,
-            last_event_at=r.last_event_at,
-            commands=r.commands,
-            downloads=r.downloads,
-            login_attempts=r.login_attempts,
+
+
+async def _load_candidates(s: AsyncSession, cfg: ClusterConfig, now: datetime) -> list[Cand]:
+    """Half the budget from the newest sessions, half from the oldest, at most ``PER_IP_CAP``
+    per source address: neither a flood of new sessions nor one noisy address starves the rest."""
+    params = {
+        "quiet": now - timedelta(minutes=cfg.quiet_minutes),
+        "logins": MIN_CREDLIST_ATTEMPTS,
+        "payload": list(PAYLOAD_TAGS),
+    }
+    out: dict[str, Cand] = {}
+    per_ip: dict[str, int] = {}
+    for order, share in (("DESC", cfg.batch - cfg.batch // 2), ("ASC", cfg.batch // 2)):
+        rows = await s.execute(
+            text(
+                "SELECT session_id, sensor, host(src_ip) AS ip, country, asn, tags, techniques, "
+                "started_at, last_event_at, commands, downloads, login_attempts FROM sessions "
+                "WHERE clustered_at IS NULL AND NOT benign AND last_event_at < :quiet "
+                f"AND {_KEYABLE} ORDER BY last_event_at {order} LIMIT :n"
+            ).bindparams(bindparam("payload", type_=TEXT_ARRAY)),
+            {**params, "n": share},
         )
-        for r in rows
-    ]
+        for r in rows:
+            if r.session_id in out or per_ip.get(r.ip, 0) >= PER_IP_CAP:
+                continue
+            per_ip[r.ip] = per_ip.get(r.ip, 0) + 1
+            out[r.session_id] = _cand(r)
+    return list(out.values())
 
 
 async def _content_keys(
@@ -223,7 +245,7 @@ async def _indicator_keys(
     for chunk in _chunks(list(ids), 500):
         rows = await s.execute(
             text(
-                "SELECT l.session_id, i.type, i.value, i.role, i.host, f.family "
+                "SELECT l.session_id, i.type, i.value, i.role, i.host, i.trusted, f.family "
                 "FROM indicator_sessions l JOIN indicators i ON i.id = l.indicator_id "
                 "LEFT JOIN LATERAL (SELECT family FROM indicator_intel "
                 " WHERE indicator_id = i.id AND family IS NOT NULL "
@@ -238,20 +260,26 @@ async def _indicator_keys(
                 host = (r.host if r.type == "url" else r.value) or ""
                 if r.type in ("url", "domain", "ip") and host and not is_benign_host(host):
                     keys.add(("payload_host", host))
-            if r.type == "hash":
+            # Only a digest a sensor computed is evidence; a hash that is just text in a command
+            # (or a family label hanging off one) would let anyone forge a link.
+            if r.type == "hash" and r.trusted:
                 keys.add(("hash", r.value))
-            if r.family:
-                keys.add(("family", r.family))
+                if r.family:
+                    keys.add(("family", r.family))
     return out
 
 
-async def _stored_keys(s: AsyncSession, keys: Iterable[Key]) -> dict[Key, int]:
+async def _stored_keys(
+    s: AsyncSession, keys: Iterable[Key]
+) -> tuple[dict[Key, int], dict[Key, int]]:
+    """(key -> campaign id, key -> distinct sources recorded) for the stored keys."""
     wanted = sorted(set(keys))
     out: dict[Key, int] = {}
+    sources: dict[Key, int] = {}
     for chunk in _chunks(wanted, 500):
         rows = await s.execute(
             text(
-                "SELECT k.kind, k.value, k.campaign_id FROM campaign_keys k "
+                "SELECT k.kind, k.value, k.campaign_id, k.sources FROM campaign_keys k "
                 "JOIN unnest(:kinds, :values) AS u(kind, value) "
                 "ON u.kind = k.kind AND u.value = k.value WHERE k.campaign_id IS NOT NULL"
             ).bindparams(
@@ -261,7 +289,8 @@ async def _stored_keys(s: AsyncSession, keys: Iterable[Key]) -> dict[Key, int]:
         )
         for r in rows:
             out[(r.kind, r.value)] = r.campaign_id
-    return out
+            sources[(r.kind, r.value)] = r.sources
+    return out, sources
 
 
 async def _live_campaigns(
@@ -453,16 +482,25 @@ async def run_cycle(
             )
             for c in cands:
                 c.demo = content[c.session_id].demo
-                keys = {
-                    k
-                    for k in (
-                        clamp(k) for k in (*content[c.session_id].keys, *ind.get(c.session_id, ()))
-                    )
-                    if k
-                }
-                c.keys = set(sorted(keys)[:MAX_KEYS_PER_SESSION])
+                c.keys = cap_keys((*content[c.session_id].keys, *ind.get(c.session_id, ())))
             await _cluster(s, cands, cfg, now, stages_by_technique, stats)
-        # Housekeeping: stop re-checking sessions that never matched anything.
+        # Housekeeping: sessions that cannot carry a key are done at once, and so are the ones
+        # that never matched anything.
+        await s.execute(
+            text(
+                "UPDATE sessions SET clustered_at = :now WHERE session_id IN ("
+                "SELECT session_id FROM sessions WHERE clustered_at IS NULL "
+                f"AND last_event_at < :quiet AND NOT {_KEYABLE} "
+                "ORDER BY last_event_at LIMIT :n)"
+            ).bindparams(bindparam("payload", type_=TEXT_ARRAY)),
+            {
+                "now": now,
+                "quiet": now - timedelta(minutes=cfg.quiet_minutes),
+                "logins": MIN_CREDLIST_ATTEMPTS,
+                "payload": list(PAYLOAD_TAGS),
+                "n": cfg.batch * 5,
+            },
+        )
         await s.execute(
             text("UPDATE sessions SET clustered_at = :now WHERE session_id = ANY(:ids)").bindparams(
                 bindparam("ids", type_=TEXT_ARRAY)
@@ -503,10 +541,11 @@ async def _cluster(
     stats: CycleStats,
 ) -> None:
     keyed = [c for c in cands if c.keys]
-    stored = await _stored_keys(s, (k for c in keyed for k in c.keys))
+    stored, stored_sources = await _stored_keys(s, (k for c in keyed for k in c.keys))
     resolve, order = await _live_campaigns(s, set(stored.values()))
     key_campaign = {k: resolve[cid] for k, cid in stored.items() if cid in resolve}
-    plan = build_plan(keyed, key_campaign, order, cfg.min_sources, cfg.merge_budget)
+    plan = build_plan(keyed, key_campaign, order, cfg.min_sources, cfg.merge_budget, stored_sources)
+    guarded = await _guard_active(s)
     stats.deferred = plan.deferred
     by_id = {c.session_id: c for c in keyed}
 
@@ -526,6 +565,7 @@ async def _cluster(
 
     assigned: dict[int, list[Cand]] = {}
     new_ids: set[int] = set()
+    persist: dict[int, set[Key]] = {c: set(k) for c, k in plan.persist.items()}
     for sid, cid in plan.joins.items():
         assigned.setdefault(cid, []).append(by_id[sid])
         await state_of(cid)
@@ -548,6 +588,7 @@ async def _cluster(
         st.id = cid
         states[cid] = st
         assigned[cid] = members
+        persist[cid] = plan.group_keys[len(new_ids)]
         new_ids.add(cid)
         stats.created += 1
 
@@ -556,7 +597,8 @@ async def _cluster(
         if cid not in new_ids:
             st.add(members, {v for m in members for k, v in m.keys if k == "family"})
         await _link_sessions(s, cid, members, cfg.link_cap)
-        await _upsert_keys(s, cid, members)
+        if not guarded:
+            await _upsert_keys(s, cid, members, persist.get(cid, set()))
         await s.execute(
             text(
                 "UPDATE sessions SET campaign_id = :cid, clustered_at = :now "
@@ -573,17 +615,27 @@ async def _move_campaign(s: AsyncSession, loser: int, winner: int, link_cap: int
         text("UPDATE campaign_keys SET campaign_id = :w WHERE campaign_id = :l"),
         {"w": winner, "l": loser},
     )
+    # Bounded: the sessions beyond this batch keep pointing at the loser, and readers follow
+    # ``merged_into`` to the winner.
     await s.execute(
-        text("UPDATE sessions SET campaign_id = :w WHERE campaign_id = :l"),
-        {"w": winner, "l": loser},
+        text(
+            "UPDATE sessions SET campaign_id = :w WHERE session_id IN ("
+            "SELECT session_id FROM sessions WHERE campaign_id = :l LIMIT :n)"
+        ),
+        {"w": winner, "l": loser, "n": MOVE_BATCH},
     )
+    have = (
+        await s.execute(
+            text("SELECT count(*) FROM campaign_sessions WHERE campaign_id = :w"), {"w": winner}
+        )
+    ).scalar_one()
     await s.execute(
         text(
             "INSERT INTO campaign_sessions (campaign_id, session_id, src_ip, sensor, seen_at) "
             "SELECT :w, session_id, src_ip, sensor, seen_at FROM campaign_sessions "
-            "WHERE campaign_id = :l ORDER BY seen_at DESC LIMIT :cap ON CONFLICT DO NOTHING"
+            "WHERE campaign_id = :l ORDER BY seen_at DESC LIMIT :room ON CONFLICT DO NOTHING"
         ),
-        {"w": winner, "l": loser, "cap": link_cap},
+        {"w": winner, "l": loser, "room": max(0, link_cap - have)},
     )
     # The loser keeps its own links (the ingest role cannot delete them); retention prunes them.
     await s.execute(
@@ -618,10 +670,21 @@ async def _link_sessions(s: AsyncSession, cid: int, members: Sequence[Cand], cap
     )  # fmt: skip
 
 
-async def _upsert_keys(s: AsyncSession, cid: int, members: Sequence[Cand]) -> None:
+async def _guard_active(s: AsyncSession) -> bool:
+    """True while the disk guard is active: no new keys are stored then."""
+    row = await s.execute(
+        text("SELECT (value ->> 'active')::boolean FROM system_status WHERE key = 'disk_guard'")
+    )
+    return bool(row.scalar_one_or_none())
+
+
+async def _upsert_keys(
+    s: AsyncSession, cid: int, members: Sequence[Cand], allowed: set[Key]
+) -> None:
+    """Store the keys the plan allows (matched or strong), then trim to the per-campaign cap."""
     per_key: dict[Key, list[Cand]] = {}
     for m in members:
-        for k in m.keys:
+        for k in m.keys & allowed:
             per_key.setdefault(k, []).append(m)
     if not per_key:
         return
@@ -644,3 +707,11 @@ async def _upsert_keys(s: AsyncSession, cid: int, members: Sequence[Cand]) -> No
             for (kind, value), ms in sorted(per_key.items())
         ],
     )  # fmt: skip
+    await s.execute(
+        text(
+            "DELETE FROM campaign_keys WHERE campaign_id = :c AND (kind, value) IN ("
+            "SELECT kind, value FROM campaign_keys WHERE campaign_id = :c "
+            "ORDER BY sources DESC, last_seen DESC, kind, value OFFSET :cap)"
+        ),
+        {"c": cid, "cap": MAX_KEYS_PER_CAMPAIGN},
+    )

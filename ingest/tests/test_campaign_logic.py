@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime, timedelta
 
 from ingest.campaigns.keys import (
+    cap_keys,
     credlist_key,
     exploit_key,
     is_benign_host,
@@ -69,63 +71,120 @@ def test_benign_hosts() -> None:
 K1 = ("script", "aa")
 K2 = ("payload_host", "dl.example.net")
 K3 = ("family", "mirai")
+NETS = ("192.0.2", "198.51.100", "203.0.113")
 
 
-def test_a_key_from_two_sources_founds_a_campaign() -> None:
-    plan = build_plan([cand("a", "192.0.2.1", K1), cand("b", "192.0.2.2", K1)], {}, {}, 2)
+def ip(i: int) -> str:
+    """Addresses in three different /24 networks (the documentation ranges), cycling."""
+    return f"{NETS[i % 3]}.{i + 1}"
+
+
+def test_a_key_from_two_networks_founds_a_campaign() -> None:
+    plan = build_plan([cand("a", ip(0), K1), cand("b", ip(1), K1)], {}, {}, 2)
     assert plan.groups == [["a", "b"]]
+    assert plan.group_keys == [{K1}]
     assert plan.joins == {}
 
 
-def test_one_source_does_not_found_a_campaign() -> None:
-    plan = build_plan([cand("a", "192.0.2.1", K1), cand("b", "192.0.2.1", K1)], {}, {}, 2)
-    assert plan.groups == []
+def test_one_source_or_one_network_does_not_found_a_campaign() -> None:
+    one_ip = build_plan([cand("a", "192.0.2.1", K1), cand("b", "192.0.2.1", K1)], {}, {}, 2)
+    one_net = build_plan([cand("a", "192.0.2.1", K1), cand("b", "192.0.2.2", K1)], {}, {}, 2)
+    assert one_ip.groups == []
+    assert one_net.groups == []
 
 
-def test_credlist_needs_three_sources() -> None:
+def test_credlist_needs_three_networks() -> None:
     key = ("credlist", "cc")
-    two = build_plan([cand("a", "192.0.2.1", key), cand("b", "192.0.2.2", key)], {}, {}, 2)
-    three = build_plan([cand(s, f"192.0.2.{i}", key) for i, s in enumerate("abc", 1)], {}, {}, 2)
+    two = build_plan([cand("a", ip(0), key), cand("b", ip(1), key)], {}, {}, 2)
+    three = build_plan([cand(s, ip(i), key) for i, s in enumerate("abc")], {}, {}, 2)
     assert two.groups == []
     assert three.groups == [["a", "b", "c"]]
 
 
 def test_a_mapped_key_makes_the_session_join_even_from_one_source() -> None:
-    plan = build_plan([cand("a", "192.0.2.1", K1)], {K1: 7}, {7: (T0, 7)}, 2)
+    plan = build_plan([cand("a", ip(0), K1)], {K1: 7}, {7: (T0, 7)}, 2)
     assert plan.joins == {"a": 7}
     assert plan.groups == []
+    assert plan.persist == {7: {K1}}
 
 
-def test_keys_of_two_campaigns_merge_into_the_oldest() -> None:
-    order = {3: (T0, 3), 9: (T0 - timedelta(days=1), 9)}
-    plan = build_plan([cand("a", "192.0.2.1", K1, K2)], {K1: 3, K2: 9}, order, 2)
-    assert plan.merges == [(3, 9)]
-    assert plan.joins == {"a": 9}
+def order(*ids: int) -> dict[int, tuple[datetime, int]]:
+    return {cid: (T0 - timedelta(days=100 - cid), cid) for cid in ids}
 
 
-def test_merge_budget_defers_the_session() -> None:
-    order = {3: (T0, 3), 9: (T0 - timedelta(days=1), 9)}
-    plan = build_plan([cand("a", "192.0.2.1", K1, K2)], {K1: 3, K2: 9}, order, 2, merge_budget=0)
+def test_strong_keys_of_two_campaigns_merge_into_the_oldest() -> None:
+    sources = {K1: 2, K2: 2}
+    plan = build_plan(
+        [cand("a", ip(0), K1, K2)], {K1: 3, K2: 9}, order(3, 9), 2, key_sources=sources
+    )
+    assert plan.merges == [(9, 3)] or plan.merges == [(3, 9)]
+    winner = min((3, 9), key=lambda cid: order(3, 9)[cid])
+    assert plan.joins == {"a": winner}
+
+
+def test_a_weak_key_never_bridges_two_campaigns() -> None:
+    # K2 was seen from one source only: the session joins the oldest campaign, nothing merges.
+    plan = build_plan(
+        [cand("a", ip(0), K1, K2)], {K1: 3, K2: 9}, order(3, 9), 2, key_sources={K1: 2, K2: 1}
+    )
     assert plan.merges == []
-    assert plan.joins == {}
-    assert plan.deferred == 1
+    assert plan.joins == {"a": 3}
 
 
-def test_sessions_linked_by_different_keys_share_one_campaign() -> None:
+def test_one_session_causes_at_most_one_merge() -> None:
+    keys = {("payload_host", f"c{i}"): i for i in range(1, 17)}
+    sources = dict.fromkeys(keys, 5)
+    plan = build_plan(
+        [cand("evil", ip(0), *keys)], dict(keys), order(*range(1, 17)), 2, key_sources=sources
+    )
+    assert len(plan.merges) == 1
+
+
+def test_merge_budget_still_lets_the_session_join_without_merging() -> None:
+    sources = {K1: 2, K2: 2}
+    plan = build_plan(
+        [cand("a", ip(0), K1, K2)], {K1: 3, K2: 9}, order(3, 9), 2, merge_budget=0,
+        key_sources=sources,
+    )  # fmt: skip
+    assert plan.merges == []
+    assert len(plan.joins) == 1
+
+
+def test_sessions_linked_by_different_strong_keys_share_one_campaign() -> None:
     sessions = [
-        cand("a", "192.0.2.1", K1),
-        cand("b", "192.0.2.2", K1, K2),
-        cand("c", "192.0.2.3", K2),
-        cand("z", "192.0.2.4", K3),
+        cand("a", ip(0), K1),
+        cand("b", ip(1), K1, K2),
+        cand("c", ip(2), K2),
+        cand("z", ip(3), K3),
     ]
     plan = build_plan(sessions, {}, {}, 2)
     assert plan.groups == [["a", "b", "c"]]
+    assert plan.group_keys == [{K1, K2}]
 
 
-def test_a_joined_session_pulls_in_earlier_sessions_with_its_other_keys() -> None:
-    sessions = [cand("a", "192.0.2.1", K2, minutes=0), cand("b", "192.0.2.2", K1, K2, minutes=5)]
+def test_a_joined_session_pulls_in_earlier_sessions_with_its_strong_keys() -> None:
+    sessions = [cand("a", ip(0), K2, minutes=0), cand("b", ip(1), K1, K2, minutes=5)]
     plan = build_plan(sessions, {K1: 4}, {4: (T0, 4)}, 2)
     assert plan.joins == {"a": 4, "b": 4}
+
+
+def test_a_joining_session_does_not_teach_the_campaign_weak_keys() -> None:
+    plan = build_plan([cand("a", ip(0), K1, K2)], {K1: 4}, {4: (T0, 4)}, 2)
+    assert plan.persist == {4: {K1}}  # K2 came from one source: not stored
+
+
+def test_the_plan_is_linear_on_a_long_chain() -> None:
+    n = 3000
+    cands = [
+        cand(
+            f"s{i:05d}", ip(i), ("payload_host", f"h{i}"), ("payload_host", f"h{i + 1}"), minutes=i
+        )
+        for i in range(n)
+    ]
+    start = time.monotonic()
+    plan = build_plan(cands, {("payload_host", f"h{n}"): 1}, {1: (T0, 1)}, 2, 50)
+    assert time.monotonic() - start < 3.0
+    assert len(plan.joins) == n
 
 
 # ---- naming ----------------------------------------------------------------------------------
@@ -152,3 +211,15 @@ def test_severity_and_stages() -> None:
         "tool_transfer",
         "objective",
     ]
+
+
+def test_a_session_carries_a_bounded_number_of_keys_per_kind() -> None:
+    many = {("payload_host", f"h{i}.example.net") for i in range(30)}
+    many |= {("script", f"s{i}") for i in range(5)} | {("exploit", f"e{i}") for i in range(9)}
+    kept = cap_keys(many)
+
+    def count(kind: str) -> int:
+        return sum(1 for k in kept if k[0] == kind)
+
+    assert (count("payload_host"), count("script"), count("exploit")) == (4, 1, 3)
+    assert cap_keys(many) == kept  # deterministic
