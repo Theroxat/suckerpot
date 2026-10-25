@@ -36,6 +36,14 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - Pipeline and UI: tags and severities for the new flags, per-IP brute-force tagging and insight, multi-sensor filters, readable scan summaries, demo data for eleven sensors; sensors grouped into four colour families; a flat world map is now the default Live view, with the globe as an option.
 - Ops: memory limits sized from measured peaks, OOM and CPU priorities that protect db/redis/ingest, a shorter stream cap for the new sensors, port guard extended, conntrack sysctl and optional sensor slice templates.
 
+## 2026-10-25 — M13 Indicators and threat intelligence
+
+- Ingest extracts URLs, domains, IPs and file hashes from stored events (bounded scanning, no regular expressions; credentials stripped, private, documentation and own values dropped) into `indicators` and bounded `indicator_sessions` (migration 0009, retention aligned with raw events).
+- Passive enrichment: URLhaus and ThreatFox (one abuse.ch Auth-Key) and VirusTotal for hashes only, at three fixed hosts, no redirects, byte caps, timeouts, persisted daily quotas (VirusTotal default 400) and a 24 h cache. Keys come from `.env` or Settings, like the other providers.
+- API: indicators list, detail, a bounded infrastructure graph, and owner-triggered CSV and STIX 2.1 export.
+- Web: an Infrastructure page (finding, flow diagram of addresses, indicators and families, list fallback on mobile, filterable table, detail panel, export buttons). Indicators are defanged text, never links.
+- Open: migration 0009 follows 0007 (0008 reserved), to be re-chained at merge.
+
 ## 2026-10-25 — M11 Settings you can edit
 
 - AbuseIPDB, GreyNoise and MaxMind keys can be set, replaced and removed from Settings. Keys are stored with AES-256-GCM (key derived from `SETTINGS_ENCRYPTION_KEY`, provider bound as associated data), shown only by their last four characters, and every change needs the admin password again; five wrong passwords end the session.

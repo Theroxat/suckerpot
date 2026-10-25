@@ -120,7 +120,11 @@ This is **not** a complete block on outbound traffic. Without masquerading, pack
 
 ### Why only `ingest` has `egress`
 
+<<<<<<< HEAD
 Only `ingest` needs outbound calls: GeoIP database downloads, AbuseIPDB and GreyNoise checks, the daily CVE feeds (`www.cisa.gov`, `services.nvd.nist.gov`, `api.github.com`), and (in the future) optional payload fetches. The database and Redis are not reachable from the internet, and a sensor cannot reach the database.
+=======
+Only `ingest` needs outbound calls: GeoIP database downloads, AbuseIPDB and GreyNoise checks, indicator lookups at three fixed hosts (`urlhaus-api.abuse.ch`, `threatfox-api.abuse.ch`, `www.virustotal.com`) and (in the future) optional payload fetches. The database and Redis are not reachable from the internet, and a sensor cannot reach the database.
+>>>>>>> a516d08 (docs: indicators, threat intelligence, passive design and egress hosts)
 
 ## Redis
 
@@ -204,9 +208,16 @@ PostgreSQL 17 with TimescaleDB, managed by Alembic migrations in `db/`.
 | `sessions` | Regular table | One row per session, with counters, first and last times, enrichment and tags |
 | `ip_reputation` | Regular table | Cached AbuseIPDB and GreyNoise answers per IP (24 hours) |
 | `enrichment_quota` | Regular table | Lookups used per provider and day |
+<<<<<<< HEAD
 | `enrichment_status` | Regular table | Status of the GeoIP database, the reputation providers and the CVE feeds, shown in Settings |
 | `cve` | Regular table | Public vulnerabilities (CISA KEV, NVD, GitHub advisories), one row per CVE id, with a `relevance` (high, medium, none), the matched services and the tags that show it exploited. Public data, not captured data. |
 | `cve_sync_state` | Regular table | Last run, last success, last error and item count per feed |
+=======
+| `enrichment_status` | Regular table | Status of the GeoIP database and the reputation providers, shown in Settings |
+| `indicators` | Regular table | One row per URL, domain, IP or file hash seen in events: first and last seen, sightings, sensors, role guess (payload source, contacted, hash) |
+| `indicator_sessions` | Regular table | Bounded links from an indicator to the sessions that showed it |
+| `indicator_intel` | Regular table | 24 h cache of URLhaus, ThreatFox and VirusTotal answers per indicator |
+>>>>>>> a516d08 (docs: indicators, threat intelligence, passive design and egress hosts)
 
 Raw events are dropped after `RETENTION_DAYS` (90), compressed after 7 days, and four continuous aggregates plus `sessions_daily` are kept forever. A disk guard drops the oldest raw chunks when the database grows past `DB_MAX_SIZE_GB`. See [Data retention](retention.md).
 
@@ -234,6 +245,8 @@ Built (M4) and wired into Compose: ingest gets the provider variables and the `g
 - **Reputation** (AbuseIPDB and GreyNoise Community) runs in a background worker, not in the event path. It picks the busiest addresses with no fresh answer, spends one unit of a persisted daily quota per lookup (`ABUSEIPDB_DAILY_QUOTA`, `GREYNOISE_DAILY_QUOTA`), caches the answer for 24 hours, and pauses for an hour after a rate-limit answer. It only reads. Nothing is ever reported to AbuseIPDB.
 - **CVE watch** (`ingest/ingest/cve/`) is a background job. Every 15 minutes it checks which of three feeds is more than 24 hours old, and fetches only those: the CISA KEV catalogue, NVD API 2.0 (CVEs published in the last 30 days, or since the last success) and GitHub reviewed security advisories (only those with a CVE id). Each request spends a persisted daily quota (`CVE_NVD_DAILY_QUOTA`, `CVE_GITHUB_DAILY_QUOTA`; KEV is capped at a few requests a day), a failing feed is retried after an hour and does not stop the others, and the NVD is paced to its rate limit (5 requests per 30 s, 50 with `NVD_API_KEY`). The optional NVD key and GitHub token use the same Settings mechanism as the other provider keys. Records are merged per CVE id: each feed only fills the columns it is authoritative for. After a sync, ingest applies the relevance mapping in `ingest/rules/cve/relevance.yaml` to every row: a service (Apache + PHP, OpenSSH, Redis, ...) matches **high** when a CPE or the vendor or product name matches and **medium** when only the title or description mentions it. The same file maps CVE ids to our tags (for example `php2shell`), and the API counts sessions carrying those tags as "seen in our traffic". CVEs that are neither in KEV nor relevant are deleted after 180 days. The job only reads public data and never deploys or builds anything.
 - **Tags** come from a declarative rules engine. Rules are YAML files in `ingest/rules/` (`shell.yaml` for commands, `web.yaml` for HTTP, `services.yaml` for the database, container, mobile, file-sharing and VoIP sensors, and `session.yaml` for session counters). A rule can match URL patterns, typical shell commands, user agents or CVE signatures. Tags include `recon`, `mirai`, `crypto-miner`, `exec-attempt`, `malware-drop`, `credential-stuffing`, `scanner`, `php2shell`, for the M9 sensors `persistence`, `container-escape`, `sql-rce`, `db-ransom`, `eternalblue` and `sip-fraud`, and for the RDP sensor `bluekeep`, `weak-credentials` and `rdp-cleartext`. A broken rule file stops ingest at start-up.
+
+- **Indicators** (M13). While writing a batch, ingest extracts URLs, hosts and file hashes from the events (bounded string scanning, no regular expressions), drops private, documentation and own addresses, and upserts `indicators` and `indicator_sessions` in a savepoint, so a problem there never costs the events. A background worker then asks URLhaus, ThreatFox and (for hashes) VirusTotal about each indicator with the same quota, cache and key mechanism as the reputation worker. It is passive: indicator hosts are never contacted. An hourly job (`suckerpot_indicator_prune`) removes indicators with the raw events. The API serves them at `/api/v1/indicators` and `/api/v1/infrastructure/graph`. See [Security](SECURITY.md#indicators-and-threat-intelligence-passive-by-design).
 
 A **session** is one connection. It is the unit the dashboard tells as a story, such as "tried 37 SSH passwords, then ran a crypto-miner".
 
