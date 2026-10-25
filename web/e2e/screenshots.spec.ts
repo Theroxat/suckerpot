@@ -388,3 +388,32 @@ test("settings keys disabled", async ({ page }, info) => {
   await keys.scrollIntoViewIfNeeded()
   await shoot(page, "settings-keys-disabled", info.project.name)
 })
+
+// M10: RDP stories with the guessed client, warning tags, and an NTLM session's detail.
+test("rdp", async ({ page }, info) => {
+  await page.goto("/attacks?sensor=rdp")
+  const list = page.getByRole("list", { name: "Sessions" })
+  await expect(list).toBeVisible()
+  await expect(
+    list
+      .getByRole("listitem")
+      .filter({ hasText: / with \w+/ })
+      .first(),
+  ).toBeVisible()
+  await settle(page)
+  await shoot(page, "attacks-rdp", info.project.name)
+
+  // A decoy-password match: failed NTLM tries (hash only), then the matched password.
+  await page.goto("/attacks?sensor=rdp&tag=weak-credentials")
+  await expect(list).toBeVisible()
+  await settle(page)
+  const row = list
+    .getByRole("listitem")
+    .filter({ hasText: / with \w+ and got in/ })
+    .first()
+  await row.locator("a").first().click()
+  await expect(page.getByRole("list", { name: "Events" })).toBeVisible()
+  await expect(page.getByText("Client", { exact: true })).toBeVisible()
+  await settle(page)
+  await shoot(page, "session-rdp", info.project.name, true)
+})

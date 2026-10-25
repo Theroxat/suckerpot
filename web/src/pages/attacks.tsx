@@ -12,7 +12,7 @@ import { SkeletonList, SkeletonRow } from "@/components/skeletons"
 import { Button } from "@/components/ui/button"
 import { api, queryKeys, type SessionFilters } from "@/lib/api"
 import { useIpMask } from "@/app/ip-mask"
-import { formatNumber, maskIp } from "@/lib/format"
+import { formatNumber, maskIp, plural } from "@/lib/format"
 import { SENSOR_META, parseSensors, sensorSetPhrase } from "@/lib/sensors"
 import { cn } from "@/lib/utils"
 
@@ -201,7 +201,7 @@ export function AttacksPage() {
 
       {query.isSuccess && rows.length > 0 && !hasNextPage ? (
         <p className="mt-4 text-center text-xs text-fg-subtle">
-          End of the list · {formatNumber(rows.length)} sessions
+          End of the list · {plural(rows.length, "session")}
         </p>
       ) : null}
     </>

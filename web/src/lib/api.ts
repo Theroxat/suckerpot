@@ -55,6 +55,8 @@ export interface Session extends Enrichment {
   commands: number
   downloads: number
   http_requests: number
+  /** Best-effort client guess (RDP only: "FreeRDP", "nmap", ...); null or absent when unknown. */
+  client_tool?: string | null
 }
 
 export interface SensorEvent extends Enrichment {

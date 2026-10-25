@@ -7,6 +7,8 @@ describe("tag severity", () => {
       expect(tagSeverity(t)).toBe("severe")
     for (const t of ["db-ransom", "redis-rogue-master", "sip-fraud", "persistence"])
       expect(tagSeverity(t)).toBe("warning")
+    for (const t of ["bluekeep", "weak-credentials"]) expect(tagSeverity(t)).toBe("warning")
+    expect(tagSeverity("rdp-cleartext")).toBeNull()
     expect(tagSeverity("recon")).toBeNull()
   })
   it("reds only the event that carries the exploit", () => {
@@ -17,5 +19,6 @@ describe("tag severity", () => {
     expect(isSevereEvent("command", ["sql-rce"])).toBe(true)
     expect(isSevereEvent("login_attempt", ["sql-rce"])).toBe(false)
     expect(isSevereEvent("command", ["db-ransom"])).toBe(false)
+    expect(isSevereEvent("disconnect", ["bluekeep"])).toBe(false)
   })
 })

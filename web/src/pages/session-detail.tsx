@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError, api, queryKeys, type SensorEvent, type Session } from "@/lib/api"
 import { formatAbsolute, formatDuration, formatNumber, plural } from "@/lib/format"
 import { sessionSeverity } from "@/lib/severity"
+import { cn } from "@/lib/utils"
 
 // xterm.js is heavy and only this page needs it: load it on demand.
 const TerminalReplay = lazy(() =>
@@ -126,6 +127,8 @@ export function SessionDetailPage() {
   }
 
   const s = session.data
+  const clientTool =
+    s?.sensor === "rdp" && s.client_tool && s.client_tool !== "unknown" ? s.client_tool : null
   return (
     <>
       <header className="space-y-4 pb-6">
@@ -150,10 +153,19 @@ export function SessionDetailPage() {
       </header>
 
       {s ? (
-        <dl className="mb-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-lg border bg-surface p-4 shadow-sm sm:grid-cols-3 sm:p-5 lg:grid-cols-5">
+        <dl
+          className={cn(
+            "mb-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-lg border bg-surface p-4 shadow-sm sm:grid-cols-3 sm:p-5",
+            // Six cells: "Started" (a full date and time zone) gets more room so it stays on one line.
+            clientTool
+              ? "lg:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(0,1fr))]"
+              : "lg:grid-cols-5",
+          )}
+        >
           <Meta label="Started">{formatAbsolute(s.started_at)}</Meta>
           <Meta label="Duration">{s.ended_at ? durationOf(s) : "Still connected"}</Meta>
           <Meta label="Events">{formatNumber(s.event_count)}</Meta>
+          {clientTool ? <Meta label="Client">{clientTool}</Meta> : null}
           <Meta label="Ports">
             <span className="font-mono text-xs">
               {s.src_port} → {s.dst_port}

@@ -42,11 +42,19 @@ export function sessionOrigin(s: Pick<Session, "country" | "org">): string | nul
   return parts.length ? parts.join(", ") : null
 }
 
+/** " with FreeRDP" for a session whose sensor guessed the client; "" otherwise. */
+export function clientToolClause(s: Pick<Session, "sensor" | "client_tool">): string {
+  const tool = s.client_tool?.trim()
+  return s.sensor === "rdp" && tool && tool !== "unknown" ? ` with ${tool}` : ""
+}
+
 function accessClause(s: Session, noun: string): string | null {
   if (s.login_attempts <= 0) return null
-  if (s.login_success && s.login_attempts === 1) return `logged in to ${noun} on the first try`
+  const tool = clientToolClause(s)
+  if (s.login_success && s.login_attempts === 1)
+    return `logged in to ${noun} on the first try${tool}`
   const what = sensorMeta(s.sensor)?.credential ?? "login"
-  const tried = `tried ${plural(s.login_attempts, `${noun} ${what}`)}`
+  const tried = `tried ${plural(s.login_attempts, `${noun} ${what}`)}${tool}`
   return s.login_success ? `${tried} and got in` : tried
 }
 
@@ -65,6 +73,7 @@ function actionClauses(s: Session): string[] {
     out.push(install ? `${ran} to install ${install}` : rce ? `${ran}, trying ${rce}` : ran)
   }
   if (s.downloads > 0) out.push(`tried to download ${plural(s.downloads, "file")}`)
+  if (s.sensor === "rdp" && s.tags.includes("bluekeep")) out.push("probed for BlueKeep")
   return out
 }
 
