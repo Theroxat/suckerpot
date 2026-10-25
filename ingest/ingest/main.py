@@ -13,6 +13,10 @@ from suckerpot_db import create_engine, create_session_factory
 from suckerpot_db.diskguard import max_db_bytes
 from suckerpot_db.secretbox import SecretBox, SecretError, box_from_env
 
+from ingest.alerts import AlertWorker
+from ingest.attack import AttackCatalogWorker
+from ingest.blocklist import BlocklistWorker
+from ingest.campaigns import CampaignWorker
 from ingest.config import Settings
 from ingest.consumer import Consumer
 from ingest.cve import CveWatch
@@ -25,7 +29,11 @@ from ingest.enrichment.enricher import Enricher
 from ingest.enrichment.intel import IntelWorker
 from ingest.enrichment.reputation import ReputationWorker
 from ingest.enrichment.status import publish_status
+from ingest.features import FeatureSettings, FeatureWorker
 from ingest.indicators import IndicatorExtractor, IndicatorSettings
+from ingest.llm import ExplainerWorker
+from ingest.reports import ReportWorker
+from ingest.scripts import ScriptWorker
 from ingest.tagging import load_rules
 
 log = logging.getLogger(__name__)
@@ -118,7 +126,27 @@ async def run() -> None:
         await rep_status(await intel.status())
         await publish_status(factory, "maxmind", sync.status("maxmind"))
 
+    # M15 to M19 feature workers: off by default, no-op until their phase lands.
+    features = FeatureSettings.from_env()
+    feature_workers: list[FeatureWorker] = [
+        AttackCatalogWorker(features),
+        CampaignWorker(features),
+        BlocklistWorker(features),
+        ScriptWorker(features),
+        ExplainerWorker(features),
+        AlertWorker(features),
+        ReportWorker(features),
+    ]
+    for worker in feature_workers:
+        appliers.append(worker.apply_settings)
+
+    async def feature_status(detail: dict[str, Any]) -> None:
+        for name, value in detail.items():
+            await publish_status(factory, name, value)
+
     async def run_test(provider: str) -> None:
+        if provider in ("anthropic", "smtp"):
+            return  # their tests arrive with the LLM (M17) and alert (M18) workers
         if provider in ("abusech", "virustotal"):
             await intel.run_key_test(provider)
         elif provider == "maxmind":
@@ -136,6 +164,10 @@ async def run() -> None:
         asyncio.create_task(cve_watch.run(cve_status), name="cve-watch"),
         asyncio.create_task(intel.run(rep_status), name="intel"),
         asyncio.create_task(sync.run(), name="credentials"),
+        *(
+            asyncio.create_task(w.run(feature_status), name=f"feature-{w.name}")
+            for w in feature_workers
+        ),
     ]
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -151,6 +183,8 @@ async def run() -> None:
         await reputation.aclose()
         await cve_watch.aclose()
         await intel.aclose()
+        for worker in feature_workers:
+            await worker.aclose()
         await sync.aclose()
         resolver.close()
         await redis.aclose()
