@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router"
 import { describe, expect, it, vi } from "vitest"
 import { IpMaskProvider } from "@/app/ip-mask"
+import { CampaignName } from "@/components/campaigns/campaign-name"
 import { CampaignChip } from "@/components/campaigns/campaign-chip"
 import { CampaignRow } from "@/components/campaigns/campaign-row"
 import { ExcerptBlock } from "@/components/campaigns/excerpt-block"
@@ -226,6 +227,24 @@ describe("CampaignChip", () => {
     wrap(<CampaignChip id={999} />, client)
     await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled())
     await vi.waitFor(() => expect(screen.queryByRole("link")).toBeNull())
+    fetchSpy.mockRestore()
+  })
+})
+
+describe("CampaignName", () => {
+  it("shows the campaign name in a filter chip, the id until it is known", async () => {
+    const client = new QueryClient()
+    wrap(<CampaignName id="3" />, client)
+    expect(screen.getByText("#3")).toBeInTheDocument()
+    client.setQueryData(["campaigns", "detail", 3], campaign)
+    expect(await screen.findByText("Mirai-style loader over Telnet #3")).toBeInTheDocument()
+  })
+
+  it("never fetches for something that is not an id", () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+    wrap(<CampaignName id="abc" />)
+    expect(screen.getByText("#abc")).toBeInTheDocument()
+    expect(fetchSpy).not.toHaveBeenCalled()
     fetchSpy.mockRestore()
   })
 })

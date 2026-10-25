@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from api.attack import PLAIN, STAGE_LABELS, STAGE_RANK, STAGES, plain_phrase
-from api.campaigns import _defang, _join, _line, _parse_cursor, _what_to_do
+from api.campaigns import _defang, _join, _line, _parse_cursor, _sequence, _what_to_do
 from api.cursor import InvalidCursorError, encode_cursor
 
 
@@ -63,3 +63,12 @@ def test_next_actions_follow_what_the_campaign_did() -> None:
     )
     assert len(tips) == 4  # bounded
     assert tips[0].startswith("Block dl[.]example[.]net")
+
+
+def test_a_sequence_uses_commas_and_one_final_then() -> None:
+    assert _sequence([]) == ""
+    assert _sequence(["getting in"]) == "getting in"
+    assert _sequence(["getting in", "running code"]) == "getting in then running code"
+    assert _sequence(["getting in", "running code", "bringing tools"]) == (
+        "getting in, running code, then bringing tools"
+    )

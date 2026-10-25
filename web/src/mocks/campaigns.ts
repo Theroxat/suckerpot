@@ -752,7 +752,11 @@ export function campaignsHandlers(fixtures: Fixture[], now = Date.now()): Reques
       const hosts = b.keys.filter(([k]) => k === "payload_host").map(([, v]) => defang(v))
       const rep = b.members.find((m) => m.session.session_id === c.rep_session_id)
       const stages = storyStages(c.techniques)
-      const labels = stages.map((s) => s.label.toLowerCase()).join(" then ")
+      const names = stages.map((s) => s.label.toLowerCase())
+      const labels =
+        names.length > 2
+          ? `${names.slice(0, -1).join(", ")}, then ${names.at(-1)}`
+          : names.join(" then ")
       const story: CampaignStory = {
         campaign_id: c.id,
         headline: `${c.sessions.toLocaleString("en-US")} sessions from ${c.sources.toLocaleString("en-US")} ${c.sources === 1 ? "address" : "addresses"} followed the same playbook${labels ? `: ${labels}.` : "."}`,
