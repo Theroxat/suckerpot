@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     SmallInteger,
     Text,
     text,
@@ -182,3 +183,60 @@ class ProviderTestRequestRow(Base):
         Date, server_default=text("current_date"), nullable=False
     )
     tests_today: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+
+
+class CveRow(Base):
+    """A vulnerability from CISA KEV, NVD and/or GitHub advisories (one row per CVE id)."""
+
+    __tablename__ = "cve"
+
+    cve_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    title: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    vendor: Mapped[str | None] = mapped_column(Text)
+    product: Mapped[str | None] = mapped_column(Text)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cvss_score: Mapped[float | None] = mapped_column(Numeric(3, 1))
+    cvss_severity: Mapped[str | None] = mapped_column(Text)
+    cwes: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    ghsa_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    refs: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    in_kev: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    kev_added_at: Mapped[date | None] = mapped_column(Date)
+    kev_due_date: Mapped[date | None] = mapped_column(Date)
+    kev_ransomware: Mapped[bool | None] = mapped_column(Boolean)
+    kev_action: Mapped[str | None] = mapped_column(Text)
+    sources: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_cve_published_at", text("published_at DESC")),
+        Index("ix_cve_kev_added_at", text("kev_added_at DESC"), postgresql_where=text("in_kev")),
+        Index("ix_cve_cvss_score", text("cvss_score DESC")),
+    )
+
+
+class CveSyncStateRow(Base):
+    """Per-source state of the CVE watch job (last run, outcome, row count)."""
+
+    __tablename__ = "cve_sync_state"
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    items_last_run: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)

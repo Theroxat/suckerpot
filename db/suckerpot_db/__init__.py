@@ -7,6 +7,8 @@ from suckerpot_db.engine import (
 )
 from suckerpot_db.models import (
     Base,
+    CveRow,
+    CveSyncStateRow,
     EnrichmentQuotaRow,
     EnrichmentStatusRow,
     EventRow,
@@ -18,6 +20,8 @@ from suckerpot_db.models import (
 
 __all__ = [
     "Base",
+    "CveRow",
+    "CveSyncStateRow",
     "EnrichmentQuotaRow",
     "EnrichmentStatusRow",
     "EventRow",
