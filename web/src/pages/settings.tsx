@@ -10,7 +10,6 @@ import {
 import { useEffect, useRef } from "react"
 import { Link } from "react-router"
 import { ChannelsCard } from "@/components/alerts/channels-card"
-import { EmptyState } from "@/components/empty-state"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUrlParam } from "@/hooks/use-url-param"
 import { FeedsTab } from "@/components/feeds/feeds-tab"
