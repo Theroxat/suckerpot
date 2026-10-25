@@ -3,6 +3,7 @@ import base64
 import pytest
 
 from suckerpot_db.secretbox import (
+    PROVIDERS,
     Credential,
     SecretBox,
     SecretError,
@@ -111,6 +112,14 @@ def test_validation_accepts_and_last4() -> None:
     assert validate_credential("greynoise", SAMPLE, None).key == SAMPLE
     assert validate_credential("maxmind", SAMPLE, "42").account_id == "42"
     assert last4(SAMPLE) == "3456"
+
+
+@pytest.mark.parametrize("provider", ["nvd", "github"])
+def test_cve_watch_providers(provider: str) -> None:
+    assert provider in PROVIDERS
+    assert validate_credential(provider, SAMPLE, None).key == SAMPLE
+    with pytest.raises(ValidationError):
+        validate_credential(provider, SAMPLE, "42")
 
 
 def test_low_entropy_master_rejected() -> None:

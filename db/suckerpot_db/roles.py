@@ -82,7 +82,7 @@ DECLARE
             ARRAY['events', 'sessions', 'ip_reputation', 'enrichment_quota', 'enrichment_status',
                   'sessions_daily', 'events_hourly', 'events_daily_tags', 'events_daily_country',
                   'events_daily_ip', 'system_status', 'maintenance_log', 'provider_secrets',
-                  'provider_test_requests']
+                  'provider_test_requests', 'cve', 'cve_sync_state']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -102,6 +102,10 @@ BEGIN
         EXECUTE format('GRANT SELECT ON provider_secrets TO %I', r);
         EXECUTE format('GRANT SELECT, UPDATE ON provider_test_requests TO %I', r);
     END IF;
+    IF to_regclass('public.cve') IS NOT NULL THEN
+        -- The CVE watch job is the only writer; it never deletes (rows are small and bounded).
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE ON cve, cve_sync_state TO %I', r);
+    END IF;
     EXECUTE format(
         'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.events', 'id'), r);
 END
@@ -117,7 +121,7 @@ DECLARE
             ARRAY['events', 'sessions', 'ip_reputation', 'enrichment_quota', 'enrichment_status',
                   'sessions_daily', 'events_hourly', 'events_daily_tags', 'events_daily_country',
                   'events_daily_ip', 'system_status', 'maintenance_log', 'provider_secrets',
-                  'provider_test_requests']
+                  'provider_test_requests', 'cve', 'cve_sync_state']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -139,6 +143,9 @@ BEGIN
     IF to_regclass('public.provider_secrets') IS NOT NULL THEN
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON provider_secrets TO %I', r);
         EXECUTE format('GRANT SELECT, INSERT, UPDATE ON provider_test_requests TO %I', r);
+    END IF;
+    IF to_regclass('public.cve') IS NOT NULL THEN
+        EXECUTE format('GRANT SELECT ON cve, cve_sync_state TO %I', r);
     END IF;
 END
 $$
