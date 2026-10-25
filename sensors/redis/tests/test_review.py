@@ -13,6 +13,19 @@ from conftest import HarnessFactory, cmd, talk
 
 from redis_sensor.memguard import MemoryGuard
 
+# These tests are about the per-IP fairness of the event queues. The process-wide admission and
+# event buckets are shared by design (a fast flooder drains them, a slow runner does not), so they
+# are opened up here to keep the outcome independent of the machine's speed.
+_OPEN_GLOBALS = {
+    "global_rate": 1e6,
+    "global_burst": 1e6,
+    "events_rate": 1e6,
+    "events_burst": 1e6,
+    "priority_rate": 1e6,
+    "priority_burst": 1e6,
+    "disconnect_rate": 1e6,
+    "disconnect_burst": 1e6,
+}
 PATHOLOGICAL = "*a" * 31 + "*b"
 
 
@@ -143,7 +156,10 @@ async def test_large_replies_are_correct_when_streamed(make_harness: HarnessFact
 
 async def test_flooding_ip_cannot_starve_another_ip(make_harness: HarnessFactory) -> None:
     async with make_harness(
-        publish_delay=0.02, max_per_ip=8, max_commands=10_000, sink_kw={"queue_size": 300}
+        publish_delay=0.02,
+        max_per_ip=8,
+        max_commands=10_000,
+        sink_kw={"queue_size": 300, **_OPEN_GLOBALS},
     ) as h:
         end = time.monotonic() + 3.0
 
@@ -359,7 +375,9 @@ async def test_repeated_text_is_scanned_once(make_harness: HarnessFactory) -> No
 
 
 async def test_every_flood_session_gets_its_disconnect(make_harness: HarnessFactory) -> None:
-    async with make_harness(publish_delay=0.005, max_per_ip=8, max_commands=10_000) as h:
+    async with make_harness(
+        publish_delay=0.005, max_per_ip=8, max_commands=10_000, sink_kw=_OPEN_GLOBALS
+    ) as h:
         sessions = 0
         end = time.monotonic() + 3.0
 
