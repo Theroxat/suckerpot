@@ -99,6 +99,17 @@ const roleWord = (value: unknown) => (value === "admin" ? "administrator" : text
 /** "abuseipdb" reads as "AbuseIPDB", as on the Settings page. */
 const providerName = (id: string) => (id in PROVIDER_NAMES ? PROVIDER_NAMES[id as ProviderId] : id)
 
+/** Entries written by SuckerPot itself (the automatic lockout), not by a person. */
+export function isSystemActor(e: AuditEntry): boolean {
+  const id = e.details.actor_id
+  return id === undefined ? e.actor === "system" : id === "system"
+}
+
+/** The name that opens an audit sentence: the actor's username, or "System". */
+export function auditActorLabel(e: AuditEntry): string {
+  return isSystemActor(e) ? "System" : e.actor
+}
+
 /** What the actor did, to follow their name: "created the user colleague (viewer)". */
 export function describeAudit(e: AuditEntry): string {
   const who = e.target ?? "an account"
@@ -123,7 +134,10 @@ export function describeAudit(e: AuditEntry): string {
     case "user.unlock":
       return `unlocked ${who}`
     case "user.locked":
-      return "was locked after too many wrong passwords"
+      // Older entries name the locked user as the actor; newer ones are written by the system.
+      return e.target && (isSystemActor(e) || e.actor !== e.target)
+        ? `locked ${e.target} after too many wrong passwords`
+        : "was locked after too many wrong passwords"
     case "user.revoke_sessions":
       return `signed ${who} out everywhere`
     case "user.delete":
