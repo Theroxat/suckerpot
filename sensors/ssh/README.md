@@ -95,6 +95,16 @@ Consecutive identical command lines of a connection are collapsed: the first one
 `first_ts` and `last_ts` (when another line comes, at the end of the session, or every 1000
 repeats).
 
+### Fields consumers must handle
+
+- `command.repeat_count`, `first_ts`, `last_ts` (ISO 8601 UTC): this event stands for
+  `repeat_count` consecutive repeats of the same `input` between `first_ts` and `last_ts`. It has
+  no `output`. The first occurrence is always a separate normal `command` event.
+- `command.output_omitted` (true): `output` was dropped by the byte budget; `input` and
+  `output_preview` are still present.
+- `disconnect.replay_omitted` (true): `replay` was dropped by the byte budget (not the same as
+  `replay_truncated`, which means only older frames were cut).
+
 New connections are also limited per source IP (`SSH_CONN_RATE_PER_IP`, burst
 `SSH_CONN_BURST_PER_IP`); excess connections are closed at once. Connections that never send
 an authentication request (port scans, banner grabs) and connections refused by any connection
@@ -161,6 +171,12 @@ command-level replay works even when the raw stream was truncated.
 | `SSH_MEMORY_SHARE_PER_IP` | `0.25` | share of `SSH_MEMORY_BUDGET_MB` one source IP may hold |
 | `SSH_IP_EVENT_BYTES_PER_SEC` / `SSH_IP_EVENT_BYTES_BURST` | `20000` / `1000000` | event bytes per source IP |
 | `SSH_GLOBAL_EVENT_BYTES_PER_SEC` / `SSH_GLOBAL_EVENT_BYTES_BURST` | `200000` / `2000000` | event bytes sensor-wide |
+
+## asyncssh pin
+
+asyncssh is pinned to an exact version because the flow control swaps `__class__` on asyncssh
+objects and reads private attributes. `tests/test_asyncssh_contract.py` fails with
+"asyncssh internals changed: re-verify flow control" when they change.
 
 ## Development
 
