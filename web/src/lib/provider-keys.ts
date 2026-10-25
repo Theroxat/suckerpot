@@ -9,6 +9,8 @@ export const PROVIDER_NAMES: Record<ProviderId, string> = {
   abuseipdb: "AbuseIPDB",
   greynoise: "GreyNoise Community",
   maxmind: "MaxMind GeoLite2",
+  nvd: "NVD (CVE watch)",
+  github: "GitHub advisories (CVE watch)",
 }
 
 export const MIN_KEY_LENGTH = 16

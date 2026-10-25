@@ -7,6 +7,7 @@ import { buildReplayFixtures } from "./replay-fixture"
 import { liveHandlers, recentEvents } from "./live"
 import { settingsHandlers } from "./settings"
 import { siteHandlers } from "./site"
+import { cveHandlers } from "./cves"
 import { m7Handlers } from "./m7"
 
 const fixtures = [...buildReplayFixtures(), ...buildFixtures()].sort((a, b) =>
@@ -77,6 +78,7 @@ export const handlers = [
   ...settingsHandlers,
   ...analyticsHandlers(fixtures),
   ...m7Handlers(fixtures.map((f) => f.session)),
+  ...cveHandlers(),
 
   http.get("/api/v1/events/recent", async ({ request }) => {
     await delay(LATENCY_MS)

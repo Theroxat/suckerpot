@@ -3,6 +3,7 @@ import {
   Crosshair,
   LayoutDashboard,
   Radio,
+  ShieldAlert,
   Settings,
   SwatchBook,
   TrendingUp,
@@ -36,6 +37,7 @@ export const NAV: NavGroup[] = [
       { to: "/attackers", label: "Attackers", icon: Users },
       { to: "/trends", label: "Trends", icon: TrendingUp },
       { to: "/malware", label: "Malware", icon: Bug },
+      { to: "/cves", label: "CVE watch", icon: ShieldAlert },
     ],
   },
   {
