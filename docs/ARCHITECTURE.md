@@ -120,11 +120,7 @@ This is **not** a complete block on outbound traffic. Without masquerading, pack
 
 ### Why only `ingest` has `egress`
 
-<<<<<<< HEAD
-Only `ingest` needs outbound calls: GeoIP database downloads, AbuseIPDB and GreyNoise checks, the daily CVE feeds (`www.cisa.gov`, `services.nvd.nist.gov`, `api.github.com`), and (in the future) optional payload fetches. The database and Redis are not reachable from the internet, and a sensor cannot reach the database.
-=======
-Only `ingest` needs outbound calls: GeoIP database downloads, AbuseIPDB and GreyNoise checks, indicator lookups at three fixed hosts (`urlhaus-api.abuse.ch`, `threatfox-api.abuse.ch`, `www.virustotal.com`) and (in the future) optional payload fetches. The database and Redis are not reachable from the internet, and a sensor cannot reach the database.
->>>>>>> a516d08 (docs: indicators, threat intelligence, passive design and egress hosts)
+Only `ingest` needs outbound calls: GeoIP database downloads, AbuseIPDB and GreyNoise checks, the daily CVE feeds (`www.cisa.gov`, `services.nvd.nist.gov`, `api.github.com`), indicator lookups at three fixed hosts (`urlhaus-api.abuse.ch`, `threatfox-api.abuse.ch`, `www.virustotal.com`), and (in the future) optional payload fetches. The database and Redis are not reachable from the internet, and a sensor cannot reach the database.
 
 ## Redis
 
@@ -208,16 +204,12 @@ PostgreSQL 17 with TimescaleDB, managed by Alembic migrations in `db/`.
 | `sessions` | Regular table | One row per session, with counters, first and last times, enrichment and tags |
 | `ip_reputation` | Regular table | Cached AbuseIPDB and GreyNoise answers per IP (24 hours) |
 | `enrichment_quota` | Regular table | Lookups used per provider and day |
-<<<<<<< HEAD
-| `enrichment_status` | Regular table | Status of the GeoIP database, the reputation providers and the CVE feeds, shown in Settings |
+| `enrichment_status` | Regular table | Status of the GeoIP database, the reputation and intel providers and the CVE feeds, shown in Settings |
 | `cve` | Regular table | Public vulnerabilities (CISA KEV, NVD, GitHub advisories), one row per CVE id, with a `relevance` (high, medium, none), the matched services and the tags that show it exploited. Public data, not captured data. |
 | `cve_sync_state` | Regular table | Last run, last success, last error and item count per feed |
-=======
-| `enrichment_status` | Regular table | Status of the GeoIP database and the reputation providers, shown in Settings |
 | `indicators` | Regular table | One row per URL, domain, IP or file hash seen in events: first and last seen, sightings, sensors, role guess (payload source, contacted, hash) |
 | `indicator_sessions` | Regular table | Bounded links from an indicator to the sessions that showed it |
 | `indicator_intel` | Regular table | 24 h cache of URLhaus, ThreatFox and VirusTotal answers per indicator |
->>>>>>> a516d08 (docs: indicators, threat intelligence, passive design and egress hosts)
 
 Raw events are dropped after `RETENTION_DAYS` (90), compressed after 7 days, and four continuous aggregates plus `sessions_daily` are kept forever. A disk guard drops the oldest raw chunks when the database grows past `DB_MAX_SIZE_GB`. See [Data retention](retention.md).
 
