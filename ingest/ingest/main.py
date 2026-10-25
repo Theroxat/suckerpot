@@ -14,6 +14,7 @@ from suckerpot_db.diskguard import max_db_bytes
 from suckerpot_db.secretbox import SecretBox, SecretError, box_from_env
 
 from ingest.alerts import AlertWorker
+from ingest.alerts.config import AlertSettings
 from ingest.attack import AttackCatalogWorker, load_attack
 from ingest.blocklist import BlocklistWorker
 from ingest.campaigns import CampaignWorker
@@ -137,14 +138,25 @@ async def run() -> None:
         await publish_status(factory, "maxmind", sync.status("maxmind"))
 
     # M15 to M19 feature workers: off by default, no-op until their phase lands.
+    try:
+        alert_settings = AlertSettings.from_env()
+    except ValueError as exc:
+        log.error("alert e-mail settings are invalid (%s): e-mail alerts are off", exc)
+        alert_settings = AlertSettings()
     feature_workers: list[FeatureWorker] = [
         AttackCatalogWorker(features, factory, attack),
         CampaignWorker(features, factory, attack),
         BlocklistWorker(features, factory),
         ScriptWorker(features),
         ExplainerWorker(features),
-        AlertWorker(features),
-        ReportWorker(features),
+        AlertWorker(
+            features,
+            factory,
+            load_secret_box(),
+            alert_settings,
+            enrich.smtp_password,
+        ),
+        ReportWorker(features, factory),
     ]
     for worker in feature_workers:
         appliers.append(worker.apply_settings)
@@ -155,7 +167,7 @@ async def run() -> None:
 
     async def run_test(provider: str) -> None:
         if provider in ("anthropic", "smtp"):
-            return  # their tests arrive with the LLM (M17) and alert (M18) workers
+            return  # the LLM test arrives with M17; alert channels have their own test button
         if provider in ("abusech", "virustotal"):
             await intel.run_key_test(provider)
         elif provider == "maxmind":
