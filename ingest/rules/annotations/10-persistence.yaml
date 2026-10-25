@@ -1,0 +1,52 @@
+annotations:
+  - id: ssh-key-install
+    commands: [echo, cat, printf, tee, mkdir, chmod, sed]
+    args_any: [authorized_keys, .ssh]
+    explain: Adds the attacker's SSH key so they can log in again later without a password.
+    phrase: installs its own SSH key
+    risk: severe
+    technique: T1098.004
+  - id: write-cron-or-rc
+    commands: [echo, cat, printf, tee, sed]
+    args_any: [/etc/cron, /var/spool/cron, /etc/rc.local, .bashrc, .profile, /etc/init.d, systemd]
+    explain: Edits a startup or schedule file so the attacker's program starts again after a reboot.
+    phrase: edits a startup file to persist
+    risk: severe
+    technique: T1037.004
+  - id: ssh-keygen
+    commands: [ssh-keygen]
+    explain: Creates an SSH key pair.
+    phrase: creates an SSH key
+    risk: warning
+    technique: T1098.004
+  - id: cron
+    commands: [crontab, at, anacron]
+    explain: Schedules a program to run again later. A common way to survive a reboot.
+    phrase: schedules itself to run again
+    risk: severe
+    technique: T1053.003
+  - id: user-add
+    commands: [useradd, adduser, usermod, chpasswd, passwd, userdel, deluser]
+    explain: Creates or changes a user account, often to leave a hidden login or to lock the owner out.
+    phrase: creates or changes a user account
+    risk: severe
+    technique: T1136.001
+  - id: lock-file
+    commands: [chattr]
+    args_any: ["+i", "+a"]
+    explain: Makes a file impossible to change or delete, so the owner cannot remove the attacker's changes.
+    phrase: locks its files against removal
+    risk: severe
+    technique: T1222.002
+  - id: redis-config
+    commands: [config, slaveof, replicaof, module, flushall, flushdb, save, bgsave]
+    explain: A Redis administration command. Attackers use it to write files to disk or to load their own code into a database server.
+    phrase: reconfigures a Redis server
+    risk: severe
+    technique: T1190
+  - id: docker-cmd
+    commands: [docker, kubectl, podman, nsenter]
+    explain: Controls containers. Attackers start a privileged container to get out onto the host.
+    phrase: controls containers
+    risk: severe
+    technique: T1611

@@ -1,0 +1,99 @@
+annotations:
+  - id: download-and-run
+    commands: [wget, curl, tftp, ftpget, ftp, fetch, lwp-download]
+    args_any: ["| sh", "|sh", "| bash", "-o-", "-qo-", "-o -"]
+    explain: Downloads a program and runs it straight away.
+    phrase: downloads and runs a program
+    risk: severe
+    technique: T1105
+  - id: download
+    commands: [wget, curl, tftp, ftpget, fetch, lwp-download]
+    explain: Downloads a file from another server. The address is replaced by a placeholder so the same script from different servers counts as one.
+    phrase: downloads a file
+    risk: severe
+    technique: T1105
+  - id: chmod-exec
+    commands: [chmod]
+    args_any: ["+x", "777", "755", "775", "700", "711"]
+    explain: Makes a file runnable. It is nearly always the step between "download" and "run".
+    phrase: makes it executable
+    risk: severe
+    technique: T1222.002
+  - id: chmod
+    commands: [chmod, chown, umask]
+    explain: Changes who can read or run a file.
+    phrase: changes file permissions
+    risk: notice
+    technique: T1222.002
+  - id: archive
+    commands: [tar, unzip, gunzip, gzip, bzip2, xz, 7z, zip, unrar]
+    explain: Unpacks or packs an archive. Often used to unpack a downloaded toolkit.
+    phrase: unpacks an archive
+    risk: notice
+    technique: T1140
+  - id: file-ops
+    commands: [cp, mv, mkdir, touch, ln, dd, install]
+    explain: Copies, moves or creates files and folders.
+    phrase: moves files around
+    risk: info
+  - id: delete-recursive
+    commands: [rm]
+    args_any: ["-rf", "-fr", "-r", "-f"]
+    explain: Deletes files without asking. Attackers remove their own tools and logs after use.
+    phrase: deletes files
+    risk: warning
+    technique: T1070.004
+  - id: delete
+    commands: [rm, unlink, shred]
+    explain: Deletes files, often the attacker's own download.
+    phrase: cleans up after itself
+    risk: notice
+    technique: T1070.004
+  - id: kill
+    commands: [kill, pkill, killall]
+    explain: Stops running programs. Miners stop rival miners and security tools this way.
+    phrase: stops other programs
+    risk: warning
+    technique: T1489
+  - id: firewall-off
+    commands: [iptables, ip6tables, ufw, firewall-cmd, setenforce, nft]
+    explain: Changes or switches off the firewall or the mandatory access control, to avoid being blocked.
+    phrase: weakens the firewall
+    risk: warning
+    technique: T1562.004
+  - id: service-stop
+    commands: [systemctl, service, chkconfig, update-rc.d]
+    explain: Starts, stops or enables a system service. Used to disable defences or to survive a reboot.
+    phrase: changes a system service
+    risk: warning
+    technique: T1543.002
+  - id: package-install
+    commands: [apt, apt-get, yum, dnf, apk, pip, pip3, npm, opkg]
+    explain: Installs software, often the tools the attacker is missing.
+    phrase: installs software
+    risk: notice
+    technique: T1105
+  - id: netcat
+    commands: [nc, ncat, netcat, socat, telnet, ssh, scp]
+    explain: Opens a network connection to another machine. Used for reverse shells, which give the attacker control from outside.
+    phrase: opens a connection to another machine
+    risk: severe
+    technique: T1095
+  - id: ping
+    commands: [ping, traceroute, nslookup, dig, host]
+    explain: Tests whether the machine can reach the internet.
+    phrase: tests its internet access
+    risk: info
+    technique: T1016
+  - id: miner
+    commands: [xmrig, minerd, cpuminer, kdevtmpfsi, kinsing, ethminer]
+    explain: A cryptocurrency miner. It uses the machine's processor to earn money for the attacker.
+    phrase: starts a cryptocurrency miner
+    risk: severe
+    technique: T1496
+  - id: bot-names
+    commands: [mirai, gafgyt, bashlite, tsunami]
+    explain: The name of a known botnet program.
+    phrase: starts a known botnet program
+    risk: severe
+    technique: T1583.005
