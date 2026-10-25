@@ -2,6 +2,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { useWindowVirtualizer } from "@tanstack/react-virtual"
 import { Network, Search, SearchX, Users } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { Term } from "@/components/term"
 import { Link, useSearchParams } from "react-router"
 import { AttackerRow, ATTACKER_GRID } from "@/components/attacker-row"
 import { CountryFlag } from "@/components/country-flag"
@@ -332,11 +333,16 @@ export function AttackersPage() {
     : "sessions"
 
   const summaryCountry = filters.country ? (countryName(filters.country) ?? filters.country) : null
-  const description = asns
-    ? "Hosting providers and networks the attacks come from. Open one to see its addresses."
-    : summaryCountry
-      ? `Addresses from ${summaryCountry}, ${IP_SORTS.find((o) => o.id === sort)?.label.toLowerCase()} first.`
-      : "Every address that touched a sensor, with the story of what it did."
+  const description = asns ? (
+    <>
+      Hosting providers and networks (<Term id="asn">ASN</Term>) the attacks come from. Open one to
+      see its addresses.
+    </>
+  ) : summaryCountry ? (
+    `Addresses from ${summaryCountry}, ${IP_SORTS.find((o) => o.id === sort)?.label.toLowerCase()} first.`
+  ) : (
+    "Every address that touched a sensor, with the story of what it did."
+  )
 
   return (
     <>

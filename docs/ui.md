@@ -26,6 +26,7 @@ The pages read the endpoints described in [API](api.md).
 | Page | Path | Status | What it shows |
 | --- | --- | --- | --- |
 | Sign in | `/login` | Built | The login form. Any other page sends you here when there is no session. |
+| Today | `/` | Built | The home page: three to five cards, each one plain-English sentence, up to three items that open a filtered view, and one action. What happened in 24 hours, new campaigns, what to block now, what is new this week, and (once a service inventory exists) your exposure. See [Today, search and the glossary](#today-search-and-the-glossary). |
 | Live | `/live` | Built | A flat world map of the last 15 minutes of attacks, with arcs landing at the home point, a stats strip, a ticker of the newest events and rankings of addresses, countries and networks. See [The Live page](#the-live-page). |
 | Overview | `/overview` | Built | KPIs for the last 24 hours, activity per sensor, the sensor mix, the latest events and up to three insights (see below). |
 | Attacks | `/attacks` | Built | Sessions, newest first, one line each, as a short story. Filters: sensor, source address and period in the app today. The API also filters by tag, country and network. Pages of 50, virtualised. |
@@ -100,6 +101,18 @@ The Live page and the status dot in the sidebar share one connection per browser
 - **Hidden tabs.** After five minutes in the background, the app disconnects. It reconnects when the tab is visible again.
 - **Hold to read.** When you scroll away from the top of the feed, hover it, or press pause, new events wait in a counter ("N new events, jump to latest") instead of moving the list. The buffer keeps the newest 500 events.
 - **Slow clients.** If the server had to skip messages for this tab, the app is told how many (`dropped`), and it can say so.
+
+## Today, search and the glossary
+
+**Today** is the page you land on. Its sentences are written by the API (`GET /api/v1/today`), so they match the numbers on the other pages. A card with nothing to report keeps its place and says so.
+
+**Search** is the box at the top of every page on a computer, and the magnifier in the top bar on a phone. `Ctrl+K` (`Cmd+K` on a Mac) opens the same search from anywhere. Type an address, the start of an address ending in a dot such as `203.0.113.`, a CVE id, a file hash, a domain or a URL, or the start of a campaign name. Results are grouped, at most five per group, and Enter opens the first one: an attacker profile, a campaign, the CVE watch, or the Infrastructure page. Indicators are shown defanged and never as links.
+
+**Glossary.** Security words in the interface (ASN, KEV, campaign, indicator, and more) have a dotted underline. Hover, tap or press Enter on one to read what it means in a sentence or two.
+
+**Research scanners.** Known, harmless crawlers such as Censys and Shodan are labelled when they connect and hidden by default, so they do not drown the real attacks. The **Hide research scanners** switch in the sidebar footer shows them again, and a line under it says how many sessions the last 24 hours hid. The list lives in `ingest/rules/scanners.yaml`. A session that signs in, runs a command, downloads a file or carries an exploit tag is never labelled a scanner, whatever it claims to be. Charts that cover more than a few days come from pre-computed totals that do not separate scanners.
+
+**Motion.** Cards and pages fade in softly. With `prefers-reduced-motion`, or `?motion=off`, nothing moves.
 
 ## Screenshot mode
 

@@ -77,6 +77,7 @@ No decorative gradients. The only fills under lines are flat, 8 % opacity.
 ## Motion
 
 - 150 ms (hover), 200 ms (fades), 250 ms (slide-in), all `cubic-bezier(0.22, 1, 0.36, 1)` (ease-out).
+- **Entrance (M19).** Tokens in `tokens.css`: `--motion-card-duration` 320 ms, `--motion-card-distance` 8 px, `--motion-stagger` 60 ms, `--motion-page-duration` 200 ms, `--motion-page-distance` 4 px. A card uses `animate-card-in motion-stagger` with `--motion-i` set to its position, so a row of cards settles one after another. The app shell wraps every route in `animate-page-in`, a short fade with 4 px of travel. Both are removed (not shortened) under `prefers-reduced-motion`, with `?motion=off`, and when a test sets `window.__SUCKERPOT_MOTION__ = { freeze: true }` (screenshots do), via `data-motion="off"` on the root element (`src/lib/motion.ts`).
 - New feed items slide in 6 px from above (`animate-slide-in`). Numbers tween over 600 ms (`AnimatedNumber`). The live dot pulses slowly (2.4 s).
 - `prefers-reduced-motion: reduce` turns every animation and transition off; tweens jump to the final value.
 
@@ -122,7 +123,7 @@ Day × hour uses a five-step neutral scale (color-mix of `--fg` into `--surface`
 
 Live is the screen left running on a wall or a second monitor, so the map is the hero and everything else stays out of its way. There is no 3D globe: a flat map is easier to read at a glance and puts every source in its real place at once.
 
-**Layout, top to bottom.** The page header (title, one sentence, sensor filter, Pause), then one card: the map, full content width (the Live page lifts the 1200 px cap, up to 2400 px), about `100dvh - 17rem` tall on desktop (26rem to 72rem), 26rem on tablets, 11:8 on phones; the live ticker is the card's footer. Below the card, three ranking cards. On a 1440 × 900 screen the map, the ticker and the ranking titles are above the fold.
+**Layout, top to bottom.** The page header (title, one sentence, sensor filter, Pause), then one card: the map, full content width (the Live page lifts the 1200 px cap, up to 2400 px), about `100dvh - 19.5rem` tall on desktop (26rem to 72rem), 26rem on tablets, 11:8 on phones; the live ticker is the card's footer. Below the card, three ranking cards. On a 1440 × 900 screen the map, the ticker and the ranking titles are above the fold.
 
 **The picture** (`components/map/activity.ts`): the last **15 minutes** of sources, aggregated **per country**, one arc per country to home, coloured by the country's dominant sensor family, thicker for more events (log scale) and fading with age (never below 22 % inside the window). A new event sends one short dash along its arc; active sources (last minute) pulse softly. Nothing flashes, and a quiet minute still shows where traffic came from.
 
@@ -136,6 +137,19 @@ Live is the screen left running on a wall or a second monitor, so the map is the
 - **Pause** freezes the whole picture (map, rankings, ticker) at the newest event; Resume or the pill catches up.
 - **Reduced motion**: no dashes, pulses, glides or tweens; the picture is the same. Screenshots set `window.__SUCKERPOT_MAP__ = { freeze: true }` for the same effect.
 - **Weight**: the map paths are about 30 kB gzip, Live only. No WebGL, no three.js.
+
+## Today
+
+The home page at `/` (first item of Observe). Three to five cards in a two-column grid, each one the same shape: a small heading with an icon, one plain-English sentence written by `GET /today`, at most three items (each opens a filtered view), and one outlined action at the bottom. Cards are, in order: what happened in 24 h, new campaigns, act now (download servers worth blocking), new this week (first-seen networks, URLs, commands) and your exposure (only once a service inventory exists). An odd last card spans both columns. A card with nothing to report keeps its place, its sentence turns muted, and the action stays. Cards enter with the staggered `animate-card-in`. If research scanners are hidden, one line under the title says how many sessions are left out and offers "Show them".
+
+## Search and the glossary
+
+- **Header search.** Desktop has a slim sticky header above the content with a search box (it looks like an input and opens the palette); phones get the search icon in the top bar. `Ctrl+K` (`Cmd+K` on a Mac) opens the palette from anywhere. It searches addresses, campaigns, CVEs, file hashes and domains or URLs (`GET /search`: indexed prefix lookups, at most five hits per group, groups in a fixed order). Typing an address start such as `203.0.113.` lists the addresses under it. Results open the matching page (`/attackers/:ip`, `/campaigns/:id`, `/cves?cve=`, `/infrastructure?indicator=`); indicators are shown defanged and never as links. Recent searches show while the box is empty. A hit from a research scanner says so.
+- **Glossary.** `lib/glossary.ts` holds one or two plain sentences per security term; the `Term` component draws the word with a dotted underline and opens the definition on hover, tap, or Enter (a real button, so keyboard and screen readers get it; it adds a visually hidden ", definition"). `TermText` wraps the first mention of each known word inside a sentence written elsewhere. Do not put a `Term` inside another button or link.
+
+## Research scanners
+
+Ingest labels sessions from known, harmless crawlers (Censys, Shodan...; the list is `ingest/rules/scanners.yaml`) `benign`. They are hidden everywhere by default: the sidebar footer has a "Hide research scanners" switch (on by default; `?scanners=show` or `?scanners=hide` sets it, and the choice is kept per browser) with a line under it that always says how many sessions the last 24 hours hid, or how many it now shows. The flag lives in the API client (`setIncludeBenign`), which adds `include_benign=1` to every list, chart and summary request, so no page passes it around; flipping the switch refetches everything and reconnects the live feed. When scanners are shown, their sessions carry a neutral dashed "Research scanner" badge (never red: they are not a threat). Looking at one address by name (`?src_ip=`) always shows its sessions. The continuous aggregates behind long-window charts are not split by scanner.
 
 ## Settings
 

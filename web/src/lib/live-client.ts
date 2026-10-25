@@ -6,7 +6,7 @@
  * minutes, and falls back to polling `/events/recent` every 10 s when the
  * socket is refused (1013 server full, 1008 origin rejected) or keeps failing.
  */
-import { API_BASE, api, type LiveEvent, type LiveStats } from "@/lib/api"
+import { API_BASE, api, getIncludeBenign, type LiveEvent, type LiveStats } from "@/lib/api"
 import { mergeEvents, parseLiveMessage } from "@/lib/live-messages"
 
 export type LiveFeedStatus = "connecting" | "live" | "reconnecting" | "offline"
@@ -49,7 +49,9 @@ export interface LiveClientOptions {
 
 function defaultUrl(): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:"
-  return `${proto}//${window.location.host}${API_BASE}/live`
+  // Research scanners are left out of the feed unless the sidebar switch shows them.
+  const scanners = getIncludeBenign() ? "?include_benign=1" : ""
+  return `${proto}//${window.location.host}${API_BASE}/live${scanners}`
 }
 
 const INITIAL: LiveFeedState = {
@@ -115,6 +117,15 @@ export class LiveClient {
     this.attempts = 0
     this.everOpened = false
     this.state = { ...INITIAL, events: this.state.events, stats: this.state.stats }
+  }
+
+  /** Reconnect from scratch (the feed's filter changed): drops the buffered events. */
+  restart() {
+    if (!this.started) return
+    this.stop()
+    this.state = { ...INITIAL }
+    this.listeners.forEach((l) => l())
+    this.start()
   }
 
   private update(patch: Partial<LiveFeedState>) {

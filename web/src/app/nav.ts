@@ -13,6 +13,7 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  Sun,
   SwatchBook,
   TrendingUp,
   Users,
@@ -39,10 +40,10 @@ export interface NavGroup {
 
 /**
  * Observe: what is happening. Understand: what it means. Defend: what to do about it.
- * "Today" (the future home at "/") joins Observe when it exists; until then "/" redirects to
- * Activity. Settings tabs live in the page itself, not here.
+ * "Today" is the home page at "/". Settings tabs live in the page itself, not here.
  */
 export const NAV_ITEMS: NavItem[] = [
+  { space: "observe", to: "/", label: "Today", icon: Sun },
   { space: "observe", to: "/live", label: "Live", icon: Radio },
   { space: "observe", to: "/attacks", label: "Attacks", icon: Crosshair },
   { space: "observe", to: "/attackers", label: "Attackers", icon: Users },

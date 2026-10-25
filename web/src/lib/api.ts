@@ -77,6 +77,9 @@ export interface Session extends Enrichment {
   techniques?: string[]
   /** The campaign the session belongs to, once ingest has grouped it. */
   campaign_id?: number | null
+  /** A known research scanner (harmless crawler); only present when scanners are shown. */
+  benign?: boolean
+  scanner_name?: string | null
 }
 
 export interface SensorEvent extends Enrichment {
@@ -103,6 +106,8 @@ export interface LiveEvent extends Enrichment {
   dst_port: number
   /** Server-sanitised plain text. Always render it as text. */
   summary: string
+  /** A known research scanner (only delivered when scanners are shown). */
+  benign?: boolean
 }
 
 export interface LiveStats {
@@ -313,11 +318,39 @@ async function failure(res: Response, notify: boolean): Promise<ApiError> {
 
 type Param = string | number | readonly string[] | undefined
 
+/**
+ * Known research scanners (Censys, Shodan...) are hidden by the API unless a request says
+ * `include_benign=1`. The sidebar switch "Hide research scanners" flips this one flag, and every
+ * request to a list, chart or summary endpoint follows it, so no page has to remember.
+ */
+let includeBenign = false
+const BENIGN_AWARE = [
+  "/sessions",
+  "/attackers",
+  "/asns",
+  "/stats/",
+  "/events/",
+  "/insights",
+  "/trends",
+  "/today",
+]
+
+export function setIncludeBenign(on: boolean) {
+  includeBenign = on
+}
+
+export function getIncludeBenign(): boolean {
+  return includeBenign
+}
+
 export async function getJson<T>(path: string, params?: Record<string, Param>) {
   const qs = new URLSearchParams()
   for (const [k, v] of Object.entries(params ?? {})) {
     if (Array.isArray(v)) for (const item of v as readonly string[]) qs.append(k, item)
     else if (v !== undefined && v !== "") qs.set(k, String(v))
+  }
+  if (includeBenign && BENIGN_AWARE.some((prefix) => path.startsWith(prefix))) {
+    qs.set("include_benign", "1")
   }
   const url = `${API_BASE}${path}${qs.size ? `?${qs.toString()}` : ""}`
   const res = await fetch(url, {

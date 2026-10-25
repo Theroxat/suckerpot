@@ -4,6 +4,8 @@ import { NavLink, Outlet, ScrollRestoration, useLocation } from "react-router"
 import { LiveIndicator } from "@/components/live-indicator"
 import { MaskToggle } from "@/components/mask-toggle"
 import { ReadOnlyBadge } from "@/components/read-only-badge"
+import { ScannerToggle } from "@/components/scanner-toggle"
+import { SearchPaletteProvider, SearchTrigger } from "@/components/search/search-palette"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import {
@@ -52,6 +54,8 @@ function NavList({
             <NavLink
               key={to}
               to={to}
+              // "/" is the home page: without `end` it would light up on every route.
+              end={to === "/"}
               onClick={onNavigate}
               className={({ isActive }) =>
                 cn(
@@ -104,6 +108,7 @@ function StatusFooter() {
         <span className="text-xs text-fg-muted">Theme</span>
         <ThemeToggle />
       </div>
+      <ScannerToggle className="px-1" />
       <MaskToggle className="px-1" />
       <div className="flex flex-col gap-2 border-t pt-3">
         <ReadOnlyBadge className="mx-1 self-start" />
@@ -114,7 +119,10 @@ function StatusFooter() {
 }
 
 function currentLabel(pathname: string): string {
-  for (const g of NAV) for (const i of g.items) if (pathname.startsWith(i.to)) return i.label
+  for (const g of NAV)
+    for (const i of g.items) {
+      if (i.to === "/" ? pathname === "/" : pathname.startsWith(i.to)) return i.label
+    }
   return ""
 }
 
@@ -124,69 +132,79 @@ export function AppShell() {
   const { status } = useLiveStatus()
 
   return (
-    <div className="min-h-dvh bg-bg">
-      <a
-        href="#main"
-        className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
-      >
-        Skip to content
-      </a>
-
-      {/* Desktop sidebar */}
-      {/* The whole sidebar scrolls when the window is short, so a group is never cut in half;
-          on tall windows the spacer keeps System and the status footer at the bottom. */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col overflow-y-auto overscroll-contain border-r bg-bg py-4 lg:flex">
-        <div className="px-5 pt-1 pb-5">
-          <Logo />
-        </div>
-        <div className="flex-1 px-3">
-          <NavList part="main" />
-        </div>
-        <div className="pt-2">
-          <NavList part="footer" />
-        </div>
-        <StatusFooter />
-      </aside>
-
-      {/* Mobile top bar */}
-      <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-bg/85 px-2 backdrop-blur-md lg:hidden">
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Open navigation" className="size-10">
-              <Menu aria-hidden className="size-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-72 gap-0 border-r bg-bg p-0 py-4">
-            <SheetTitle className="px-5 pt-1 pb-6">
-              <Logo />
-            </SheetTitle>
-            <SheetDescription className="sr-only">Main navigation</SheetDescription>
-            <div className="flex-1 overflow-y-auto px-3">
-              <NavList onNavigate={() => setOpen(false)} />
-            </div>
-            <StatusFooter />
-          </SheetContent>
-        </Sheet>
-        <Logo />
-        <span className="sr-only">{currentLabel(pathname)}</span>
-        <div className="flex-1" />
-        <ReadOnlyBadge short />
-        <LiveIndicator status={status} className="mx-1" />
-        <AccountMenu variant="compact" />
-      </header>
-
-      <main id="main" className="lg:pl-60">
-        <div
-          className={cn(
-            "mx-auto w-full px-4 pt-6 pb-16 sm:px-6 lg:px-10 lg:pt-10",
-            // Live is the wall screen: its map uses the whole width. Other pages stay readable.
-            pathname.startsWith("/live") ? "max-w-[2400px]" : "max-w-[1200px]",
-          )}
+    <SearchPaletteProvider>
+      <div className="min-h-dvh bg-bg">
+        <a
+          href="#main"
+          className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
         >
-          <Outlet />
-        </div>
-      </main>
-      <ScrollRestoration />
-    </div>
+          Skip to content
+        </a>
+
+        {/* Desktop sidebar */}
+        {/* The whole sidebar scrolls when the window is short, so a group is never cut in half;
+            on tall windows the spacer keeps System and the status footer at the bottom. */}
+        <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col overflow-y-auto overscroll-contain border-r bg-bg py-4 lg:flex">
+          <div className="px-5 pt-1 pb-5">
+            <Logo />
+          </div>
+          <div className="flex-1 px-3">
+            <NavList part="main" />
+          </div>
+          <div className="pt-2">
+            <NavList part="footer" />
+          </div>
+          <StatusFooter />
+        </aside>
+
+        {/* Mobile top bar */}
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-bg/85 px-2 backdrop-blur-md lg:hidden">
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Open navigation" className="size-10">
+                <Menu aria-hidden className="size-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 gap-0 border-r bg-bg p-0 py-4">
+              <SheetTitle className="px-5 pt-1 pb-6">
+                <Logo />
+              </SheetTitle>
+              <SheetDescription className="sr-only">Main navigation</SheetDescription>
+              <div className="flex-1 overflow-y-auto px-3">
+                <NavList onNavigate={() => setOpen(false)} />
+              </div>
+              <StatusFooter />
+            </SheetContent>
+          </Sheet>
+          <Logo />
+          <span className="sr-only">{currentLabel(pathname)}</span>
+          <div className="flex-1" />
+          <SearchTrigger compact />
+          <ReadOnlyBadge short />
+          <LiveIndicator status={status} className="mx-1" />
+          <AccountMenu variant="compact" />
+        </header>
+
+        <main id="main" className="lg:pl-60">
+          {/* Desktop header: the search box. Phones get the icon in the top bar above. */}
+          <div className="sticky top-0 z-20 hidden h-14 items-center border-b bg-bg/85 px-10 backdrop-blur-md lg:flex">
+            <SearchTrigger className="max-w-md" />
+          </div>
+          <div
+            className={cn(
+              "mx-auto w-full px-4 pt-6 pb-16 sm:px-6 lg:px-10 lg:pt-8",
+              // Live is the wall screen: its map uses the whole width. Other pages stay readable.
+              pathname.startsWith("/live") ? "max-w-[2400px]" : "max-w-[1200px]",
+            )}
+          >
+            {/* A new route fades in softly (off under reduced motion and for screenshots). */}
+            <div key={pathname} className="animate-page-in">
+              <Outlet />
+            </div>
+          </div>
+        </main>
+        <ScrollRestoration />
+      </div>
+    </SearchPaletteProvider>
   )
 }
