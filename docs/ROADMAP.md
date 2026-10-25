@@ -157,6 +157,14 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 **Acceptance:** the feed updates daily within its quotas; nothing is deployed automatically.
 
+## M13 — Indicators and threat intelligence
+
+- [ ] Extract indicators (URLs, domains, IPs, hashes) from recorded events.
+- [ ] Enrich them with public threat-intelligence sources (quotas, caching, keys from Settings).
+- [ ] An Infrastructure view linking sources, indicators and malware families; export on demand.
+
+**Acceptance:** passive only — nothing is executed, contacted beyond the intel APIs, or reported without the owner.
+
 ## Later (not part of the loop)
 
 - Discord alerts on malware drops.
