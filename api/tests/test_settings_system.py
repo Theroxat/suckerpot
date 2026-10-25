@@ -38,7 +38,8 @@ def test_sensor_state_never_seen() -> None:
 
 @pytest.fixture
 async def client() -> AsyncIterator[httpx.AsyncClient]:
-    base = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    # Anchored to now, not the hour boundary: the API counts a trailing hour.
+    base = datetime.now(UTC).replace(microsecond=0)
     async with owner_engine() as owner:
         await small_dataset(base).write(owner)
         async with owner.begin() as conn:
