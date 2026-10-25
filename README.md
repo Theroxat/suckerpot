@@ -85,7 +85,7 @@ docker compose --profile tools run --rm demo     # or: just demo
 
 Open http://127.0.0.1:8443. The dashboard binds to loopback by default (`DASHBOARD_BIND`).
 
-**Before you expose anything**, follow the go-live checklist in [docs/deployment.md](docs/deployment.md) and apply [scripts/host/firewall.nft](scripts/host/firewall.nft). Set the admin password hash in `.env` (see [docs/deployment.md](docs/deployment.md)) and keep the dashboard port filtered upstream.
+**Before you expose anything**, follow the go-live checklist in [docs/deployment.md](docs/deployment.md) and apply [scripts/host/firewall.nft](scripts/host/firewall.nft). Set the admin password hash in `.env` (see [docs/deployment.md](docs/deployment.md)) and keep the dashboard port filtered upstream. Set `INDICATORS_IGNORE` in `.env` to your public IP and host names, so they are never recorded as attack infrastructure.
 
 ## Configuration
 

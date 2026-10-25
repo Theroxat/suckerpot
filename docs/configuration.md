@@ -196,8 +196,9 @@ The geolocation data has a licence that requires credit. See [Data sources and a
 | `VIRUSTOTAL_DAILY_QUOTA` | `400` | Maximum VirusTotal requests per day (the free tier allows 500). Requests are also spaced 16 s apart. |
 | `INTEL_INTERVAL_S` | `30` | Seconds between threat-intel cycles (at least 5) |
 | `INDICATORS_ENABLED` | `true` | Extract indicators from recorded events |
-| `INDICATORS_IGNORE` | empty | Comma-separated host names and addresses never recorded as indicators (your own domains and public IP). A name also covers its subdomains. |
-| `INDICATORS_KEEP_DOCUMENTATION` | `false` | Keep documentation addresses and example domains as indicators. Only for the demo data. |
+| `INDICATORS_IGNORE` | empty | Comma-separated host names, addresses and CIDR blocks never recorded as indicators: **set it to your public IP and domains before going live**. A name also covers its subdomains. The hosts in `API_ALLOWED_HOSTS` and `API_ALLOWED_ORIGINS` are added automatically. |
+| `INDICATORS_KEEP_DOCUMENTATION` | `false` | Keep documentation addresses and example domains as indicators. Demo events do not need it (they carry `demo: true`). They are never sent to an intel service either way. |
+| `INDICATORS_MAX_ROWS` | `500000` | Most indicator rows kept (1,000 to 50 million). Read by `migrate`. The hourly job drops the least sighted, oldest single-source ones first. |
 | `INDICATORS_LINK_CAP` | `500` | Most sessions linked to one indicator. Its counters stay exact beyond that. |
 | `RULES_DIR` | `ingest/rules` (`/app/rules` in the image) | Folder with the tagging rules (`*.yaml`) |
 
