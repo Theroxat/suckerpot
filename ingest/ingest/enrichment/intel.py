@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ingest.enrichment.config import EnrichmentSettings
 from ingest.enrichment.reputation import RATE_LIMIT_PAUSE_S, ProviderError, reserve_quota
 from ingest.indicators import IndicatorSettings, normalize_host, normalize_url
+from ingest.jsondepth import exceeds_depth
 
 log = logging.getLogger(__name__)
 
@@ -242,9 +243,12 @@ class IntelWorker:
             return status, None
         if status != 200:
             raise ProviderError("error")
+        raw = b"".join(chunks)
+        if exceeds_depth(raw):
+            raise ProviderError("error")
         try:
-            return status, json.loads(b"".join(chunks))
-        except ValueError:
+            return status, json.loads(raw)
+        except (ValueError, RecursionError):
             raise ProviderError("error") from None
 
     def _abusech_headers(self) -> dict[str, str]:

@@ -267,8 +267,21 @@ def test_urls_are_ascii_http_only() -> None:
 async def test_deeply_nested_json_is_a_source_error_not_a_crash() -> None:
     deep = b"[" * 100_000 + b"]" * 100_000
     async with client(lambda r: httpx.Response(200, content=deep)) as c:
-        with pytest.raises(SourceError):
+        with pytest.raises(SourceError) as exc:
             await fetch_json(c, "https://example.com/x", max_bytes=1_000_000)
+    assert exc.value.kind == "too_deep"
+
+
+def test_depth_guard_ignores_brackets_in_strings() -> None:
+    from ingest.jsondepth import exceeds_depth
+
+    assert not exceeds_depth(b'{"a": "' + b"[" * 500 + b'"}')
+    # an escaped backslash closes nothing: the quote after it ends the string
+    assert not exceeds_depth(rb'{"a": "\\", "b": "' + b"[" * 500 + b'"}')
+    # an escaped quote keeps the string open
+    assert not exceeds_depth(rb'["\"' + b"[" * 500 + b'"]')
+    assert exceeds_depth(b"[" * 65 + b"]" * 65)
+    assert not exceeds_depth(b"[" * 64 + b"]" * 64)
 
 
 def test_user_agent_is_generic() -> None:

@@ -21,6 +21,8 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from ingest.jsondepth import exceeds_depth
+
 KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 GITHUB_URL = "https://api.github.com/advisories"
@@ -57,7 +59,10 @@ Reserve = Callable[[], Awaitable[bool]]
 
 
 class SourceError(Exception):
-    """A feed could not be used. ``kind``: rate_limited | auth | too_large | timeout | error."""
+    """A feed could not be used.
+
+    ``kind``: rate_limited | auth | too_large | too_deep | timeout | error.
+    """
 
     def __init__(self, kind: str) -> None:
         super().__init__(kind)
@@ -197,9 +202,11 @@ async def fetch_json_with_headers(
         raise SourceError("timeout") from None
     except httpx.HTTPError:
         raise SourceError("error") from None
+    if exceeds_depth(body):
+        raise SourceError("too_deep")
     try:
         return json.loads(bytes(body)), resp_headers
-    except (ValueError, RecursionError):  # deeply nested JSON must not crash the job
+    except (ValueError, RecursionError):  # backstop: nested JSON must not crash the job
         raise SourceError("error") from None
 
 
