@@ -49,6 +49,8 @@ def item(kind: str, value: str, **kw: object) -> IndicatorOut:
         ("url", "ldap://ldap.badhost.ru/a", "ldxp://ldap[.]badhost[.]ru/a"),
         ("domain", "files.badhost.ru", "files[.]badhost[.]ru"),
         ("ip", "8.8.4.4", "8[.]8[.]4[.]4"),
+        ("ip", "2001:4860:4860::8888", "2001[:]4860[:]4860[:][:]8888"),
+        ("url", "http://[2001:4860::1]:8080/x", "hxxp://[2001[:]4860[:][:]1]:8080/x"),
         ("hash", "ab" * 16, "ab" * 16),
     ],
 )

@@ -185,8 +185,12 @@ def defang(kind: str, value: str) -> str:
             i = rest.find(ch)
             if 0 <= i < cut:
                 cut = i
-        return f"{scheme}://{rest[:cut].replace('.', '[.]')}{rest[cut:]}"
-    return out.replace(".", "[.]")
+        authority = rest[:cut]
+        if authority.startswith("["):  # an IPv6 host: defang its colons, keep the port's
+            end = authority.find("]") + 1 or len(authority)
+            authority = authority[:end].replace(":", "[:]") + authority[end:]
+        return f"{scheme}://{authority.replace('.', '[.]')}{rest[cut:]}"
+    return out.replace(".", "[.]").replace(":", "[:]")
 
 
 def safe_reference(url: str | None) -> str | None:
@@ -289,6 +293,15 @@ TypeFilter = Annotated[IndicatorType | None, Query()]
 RoleFilter = Annotated[IndicatorRole | None, Query()]
 FamilyFilter = Annotated[str | None, Query(max_length=64, pattern=r"^[A-Za-z0-9 ._:+/()#@,-]+$")]
 SearchFilter = Annotated[str | None, Query(max_length=128)]
+HoursFilter = Annotated[int | None, Query(ge=1, le=MAX_WINDOW_HOURS)]
+
+
+def _window(since: datetime | None, hours: int | None) -> datetime | None:
+    """The later of ``since`` and "``hours`` ago" (the graph's window), or None for all time."""
+    if hours is None:
+        return since
+    start = datetime.now(UTC) - timedelta(hours=hours)
+    return max(start, since) if since is not None else start
 
 
 @router.get("/indicators", response_model=IndicatorPage)
@@ -301,9 +314,10 @@ async def list_indicators(
     known: bool | None = None,
     family: FamilyFilter = None,
     since: datetime | None = None,
+    hours: HoursFilter = None,
     q: SearchFilter = None,
 ) -> IndicatorPage:
-    where, params = _filters(type, role, known, family, since, q)
+    where, params = _filters(type, role, known, family, _window(since, hours), q)
     if cursor is not None:
         try:
             c_ts, c_id = _parse_cursor(cursor)
@@ -400,9 +414,10 @@ async def export_indicators(
     known: bool | None = None,
     family: FamilyFilter = None,
     since: datetime | None = None,
+    hours: HoursFilter = None,
     q: SearchFilter = None,
 ) -> Response:
-    where, params = _filters(type, role, known, family, since, q)
+    where, params = _filters(type, role, known, family, _window(since, hours), q)
     sql = (
         f"SELECT {_COLUMNS} {_FROM} "
         + (f"WHERE {' AND '.join(where)} " if where else "")

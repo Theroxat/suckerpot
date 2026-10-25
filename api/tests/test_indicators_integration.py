@@ -50,7 +50,7 @@ async def seed() -> None:
         async with owner.begin() as conn:
             await conn.execute(text("TRUNCATE indicators CASCADE"))
             for kind, value, role, hours, sightings, sources in INDICATORS:
-                seen = NOW - timedelta(hours=hours)
+                seen = NOW - timedelta(hours=hours) + timedelta(minutes=10)
                 iid = await conn.scalar(
                     text(
                         "INSERT INTO indicators (type, value, role, host, first_seen, last_seen, "
@@ -151,6 +151,25 @@ async def test_filters(client: httpx.AsyncClient) -> None:
     }
     assert await listing(client, q="%") == []  # no pattern matching: a literal search
     assert await listing(client, q="nothing-like-this") == []
+
+
+async def test_hours_window_matches_the_graph_and_all_time_stays_available(
+    client: httpx.AsyncClient,
+) -> None:
+    assert len(await listing(client)) == len(INDICATORS)  # no window: all time
+    week = {i["value"] for i in await listing(client, hours=168)}
+    assert "old.badhost.ru" not in week and len(week) == len(INDICATORS) - 1
+    day = {i["value"] for i in await listing(client, hours=4)}
+    assert day == {"dl.badhost.ru", "http://dl.badhost.ru/bins/x86", "8.8.4.4", SHA}
+    # combined with `since`, the later bound wins
+    tight = await listing(
+        client, hours=168, since=(NOW - timedelta(hours=2, minutes=30)).isoformat()
+    )
+    assert {i["value"] for i in tight} == {"dl.badhost.ru", "http://dl.badhost.ru/bins/x86"}
+    csv = (await client.get("/indicators/export", params={"hours": 4})).text
+    assert "solo[.]badhost[.]ru" not in csv and "dl[.]badhost[.]ru" in csv
+    assert (await client.get("/indicators", params={"hours": 0})).status_code == 422
+    assert (await client.get("/indicators", params={"hours": 99999})).status_code == 422
 
 
 async def test_pagination_is_stable_and_complete(client: httpx.AsyncClient) -> None:
