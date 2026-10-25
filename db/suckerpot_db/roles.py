@@ -1,7 +1,8 @@
 """Least-privilege database roles, applied idempotently on every migrate run.
 
-``suckerpot_ingest`` may read and write events/sessions; ``suckerpot_api`` is read-only. Names
-and passwords come from POSTGRES_INGEST_USER/PASSWORD and POSTGRES_API_USER/PASSWORD.
+``suckerpot_ingest`` may read and write events/sessions; ``suckerpot_api`` is read-only, except
+for the encrypted provider keys it manages (``provider_secrets``). Names and passwords
+come from POSTGRES_INGEST_USER/PASSWORD and POSTGRES_API_USER/PASSWORD.
 
 Passwords never reach the server as plain text: a SCRAM-SHA-256 verifier is computed here and
 sent instead (PostgreSQL accepts pre-hashed passwords), so server logs and error CONTEXT
@@ -80,7 +81,8 @@ DECLARE
         SELECT string_agg(format('%I', c), ', ') FROM unnest(
             ARRAY['events', 'sessions', 'ip_reputation', 'enrichment_quota', 'enrichment_status',
                   'sessions_daily', 'events_hourly', 'events_daily_tags', 'events_daily_country',
-                  'events_daily_ip', 'system_status', 'maintenance_log']
+                  'events_daily_ip', 'system_status', 'maintenance_log', 'provider_secrets',
+                  'provider_test_requests']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -94,6 +96,11 @@ BEGIN
     END IF;
     IF to_regclass('public.system_status') IS NOT NULL THEN
         EXECUTE format('GRANT SELECT, INSERT, UPDATE ON system_status TO %I', r);
+    END IF;
+    IF to_regclass('public.provider_secrets') IS NOT NULL THEN
+        -- Keys are written by the API only; ingest reads them and answers test requests.
+        EXECUTE format('GRANT SELECT ON provider_secrets TO %I', r);
+        EXECUTE format('GRANT SELECT, UPDATE ON provider_test_requests TO %I', r);
     END IF;
     EXECUTE format(
         'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.events', 'id'), r);
@@ -109,7 +116,8 @@ DECLARE
         SELECT string_agg(format('%I', c), ', ') FROM unnest(
             ARRAY['events', 'sessions', 'ip_reputation', 'enrichment_quota', 'enrichment_status',
                   'sessions_daily', 'events_hourly', 'events_daily_tags', 'events_daily_country',
-                  'events_daily_ip', 'system_status', 'maintenance_log']
+                  'events_daily_ip', 'system_status', 'maintenance_log', 'provider_secrets',
+                  'provider_test_requests']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -127,6 +135,10 @@ BEGIN
     END IF;
     IF to_regclass('public.system_status') IS NOT NULL THEN
         EXECUTE format('GRANT SELECT ON system_status, maintenance_log TO %I', r);
+    END IF;
+    IF to_regclass('public.provider_secrets') IS NOT NULL THEN
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON provider_secrets TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE ON provider_test_requests TO %I', r);
     END IF;
 END
 $$

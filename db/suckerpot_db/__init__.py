@@ -11,6 +11,8 @@ from suckerpot_db.models import (
     EnrichmentStatusRow,
     EventRow,
     IpReputationRow,
+    ProviderSecretRow,
+    ProviderTestRequestRow,
     SessionRow,
 )
 
@@ -20,6 +22,8 @@ __all__ = [
     "EnrichmentStatusRow",
     "EventRow",
     "IpReputationRow",
+    "ProviderSecretRow",
+    "ProviderTestRequestRow",
     "SessionRow",
     "create_engine",
     "create_session_factory",
