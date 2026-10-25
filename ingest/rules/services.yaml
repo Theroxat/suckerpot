@@ -1,0 +1,132 @@
+# Rules for the database, container, mobile, file-sharing and VoIP sensors. They key on the
+# ``data.flags`` list set by the sensor (see the sensor READMEs), never on raw attacker text
+# alone, so an attacker cannot forge a tag from another sensor.
+rules:
+  - id: redis-persistence
+    tag: persistence
+    description: Redis abused to write a cron job or an SSH key through CONFIG SET dir/dbfilename.
+    when:
+      all:
+        - {field: sensor, equals: redis}
+        - {field: data.flags, has: [cron_write, ssh_key_write, cron_payload, ssh_key_payload]}
+
+  - id: redis-rogue-master
+    tag: redis-rogue-master
+    description: Redis replication hijack (SLAVEOF) or module load, used to drop a shared object.
+    when:
+      all:
+        - {field: sensor, equals: redis}
+        - {field: data.flags, has: [slaveof, module_load]}
+
+  - id: redis-miner
+    tag: crypto-miner
+    description: Miner or Kinsing indicators in the data stored or sent through Redis.
+    when:
+      all:
+        - {field: sensor, equals: redis}
+        - {field: data.flags, has: [miner, kinsing]}
+
+  - id: docker-miner
+    tag: crypto-miner
+    description: A container created from a miner image or command on the exposed Docker API.
+    when:
+      all:
+        - {field: sensor, equals: docker}
+        - {field: data.flags, has: miner}
+
+  - id: docker-container-escape
+    tag: container-escape
+    description: Privileged container or a host path mounted into a new container.
+    when:
+      all:
+        - {field: sensor, equals: docker}
+        - {field: data.flags, has: [privileged, host_mount, docker_sock_mount]}
+
+  - id: sql-rce
+    tag: sql-rce
+    description: Command execution through the database engine (xp_cmdshell, sp_OACreate).
+    when:
+      all:
+        - {field: sensor, in: [mysql, mssql]}
+        - any:
+            - {field: data.flags, has: [xp_cmdshell, sp_oacreate, ole_automation, shell_command, lolbin, udf]}
+            - all:
+                - {field: type, equals: command}
+                - {field: data.input, contains_any: [xp_cmdshell, sp_oacreate]}
+
+  - id: db-ransom
+    tag: db-ransom
+    description: Database dropped or a ransom note left behind.
+    when:
+      all:
+        - {field: sensor, in: [mysql, mssql, redis]}
+        - {field: data.flags, has: [ransom_note, drop_database]}
+
+  - id: service-download-drop
+    tag: malware-drop
+    description: A download was recorded from a session on a service that never legitimately fetches files.
+    when:
+      all:
+        - {field: sensor, in: [redis, docker, mysql, mssql, adb]}
+        - {field: type, equals: download_attempt}
+
+  - id: adb-malware-drop
+    tag: malware-drop
+    description: A file was pushed or an app installed through the exposed Android Debug Bridge.
+    when:
+      all:
+        - {field: sensor, equals: adb}
+        - {field: data.flags, has: [adb_push, adb_install]}
+
+  - id: adb-mirai
+    tag: mirai
+    description: Shell on the Android Debug Bridge using BusyBox loader tokens.
+    when:
+      all:
+        - {field: sensor, equals: adb}
+        - any:
+            - {field: data.flags, has: adb_shell}
+            - {field: type, equals: download_attempt}
+        - field: data.input
+          contains_any: [busybox, ecchi, mirai, /dev/watchdog]
+
+  - id: adb-mirai-download
+    tag: mirai
+    description: Download recorded from an Android Debug Bridge shell command using BusyBox.
+    when:
+      all:
+        - {field: sensor, equals: adb}
+        - {field: type, equals: download_attempt}
+        - {field: data.command, contains_any: [busybox, ecchi, mirai]}
+
+  - id: smb-eternalblue
+    tag: eternalblue
+    description: >-
+      EternalBlue (MS17-010) style traffic. The SMB sensor never asserts this itself; the rule keys
+      on the SMB1 transaction commands (Trans, Trans2, NT Transact) the exploit chain sends as the
+      first SMB1 message. A plain SMBv1 negotiate (or session setup) is not tagged.
+    when:
+      all:
+        - {field: sensor, equals: smb}
+        - any:
+            - {field: data.flags, has: [eternalblue, ms17_010]}
+            - all:
+                - {field: type, equals: scan}
+                - {field: data.kind, equals: smb1_command}
+                - {field: data.smb1_command_name, in: [trans, trans2, nt_transact]}
+
+  - id: sip-fraud
+    tag: sip-fraud
+    description: SIP REGISTER or INVITE aimed at placing calls (toll fraud).
+    when:
+      all:
+        - {field: sensor, equals: sip}
+        - {field: data.flags, has: [invite, register, toll_fraud]}
+
+  - id: sip-options-scan
+    tag: scanner
+    description: SIP OPTIONS probing (sipvicious style discovery).
+    when:
+      all:
+        - {field: sensor, equals: sip}
+        - {field: data.flags, has: [options_scan, scanner_ua]}

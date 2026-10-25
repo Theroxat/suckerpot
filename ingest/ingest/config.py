@@ -8,7 +8,22 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_STREAMS = "events:ssh,events:telnet,events:web,events:rdp"
+DEFAULT_STREAMS = ",".join(
+    f"events:{name}"
+    for name in (
+        "ssh",
+        "telnet",
+        "web",
+        "rdp",
+        "redis",
+        "docker",
+        "mysql",
+        "adb",
+        "mssql",
+        "smb",
+        "sip",
+    )
+)
 _STREAM_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 
 
