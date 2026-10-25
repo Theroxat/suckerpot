@@ -29,8 +29,13 @@ class EnrichmentSettings:
     cve_watch_enabled: bool = True
     cve_nvd_daily_quota: int = 200
     cve_github_daily_quota: int = 100
+    abusech_auth_key: str = field(default="", repr=False)
+    virustotal_api_key: str = field(default="", repr=False)
     abuseipdb_daily_quota: int = 1000
     greynoise_daily_quota: int = 50
+    abusech_daily_quota: int = 1000
+    virustotal_daily_quota: int = 400
+    intel_interval_s: float = 30.0
     reputation_min_events: int = 10
     reputation_interval_s: float = 30.0
     rules_dir: Path = Path("/app/rules")
@@ -71,8 +76,13 @@ class EnrichmentSettings:
             cve_watch_enabled=_flag(e.get("CVE_WATCH_ENABLED", "true")),
             cve_nvd_daily_quota=max(0, int(e.get("CVE_NVD_DAILY_QUOTA", "200"))),
             cve_github_daily_quota=max(0, int(e.get("CVE_GITHUB_DAILY_QUOTA", "100"))),
+            abusech_auth_key=e.get("ABUSECH_AUTH_KEY", "").strip(),
+            virustotal_api_key=e.get("VIRUSTOTAL_API_KEY", "").strip(),
             abuseipdb_daily_quota=max(0, int(e.get("ABUSEIPDB_DAILY_QUOTA", "1000"))),
             greynoise_daily_quota=max(0, int(e.get("GREYNOISE_DAILY_QUOTA", "50"))),
+            abusech_daily_quota=max(0, int(e.get("ABUSECH_DAILY_QUOTA", "1000"))),
+            virustotal_daily_quota=max(0, int(e.get("VIRUSTOTAL_DAILY_QUOTA", "400"))),
+            intel_interval_s=max(5.0, float(e.get("INTEL_INTERVAL_S", "30"))),
             reputation_min_events=max(1, int(e.get("REPUTATION_MIN_EVENTS", "10"))),
             reputation_interval_s=max(5.0, float(e.get("REPUTATION_INTERVAL_S", "30"))),
             rules_dir=Path(e.get("RULES_DIR", str(default_rules))),

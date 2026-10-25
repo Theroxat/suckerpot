@@ -16,7 +16,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from sqlalchemy import select, text
@@ -40,28 +40,30 @@ class ProviderInfo:
     error: str | None = None  # "cannot_decrypt" | "no_encryption_key"
 
 
+# Providers with a single key, and the EnrichmentSettings field that holds it.
+KEY_FIELDS = {
+    "abuseipdb": "abuseipdb_api_key",
+    "greynoise": "greynoise_api_key",
+    "nvd": "nvd_api_key",
+    "github": "github_token",
+    "abusech": "abusech_auth_key",
+    "virustotal": "virustotal_api_key",
+}
+
+
 def _env_has(base: EnrichmentSettings, provider: str) -> bool:
-    if provider == "abuseipdb":
-        return bool(base.abuseipdb_api_key)
-    if provider == "greynoise":
-        return bool(base.greynoise_api_key)
-    if provider == "nvd":
-        return bool(base.nvd_api_key)
-    if provider == "github":
-        return bool(base.github_token)
+    field = KEY_FIELDS.get(provider)
+    if field is not None:
+        return bool(getattr(base, field))
     return base.maxmind_enabled
 
 
 def changed_providers(old: EnrichmentSettings, new: EnrichmentSettings) -> set[str]:
-    out: set[str] = set()
-    if old.abuseipdb_api_key != new.abuseipdb_api_key:
-        out.add("abuseipdb")
-    if old.greynoise_api_key != new.greynoise_api_key:
-        out.add("greynoise")
-    if old.nvd_api_key != new.nvd_api_key:
-        out.add("nvd")
-    if old.github_token != new.github_token:
-        out.add("github")
+    out: set[str] = {
+        provider
+        for provider, field in KEY_FIELDS.items()
+        if getattr(old, field) != getattr(new, field)
+    }
     if (old.maxmind_account_id, old.maxmind_license_key) != (
         new.maxmind_account_id,
         new.maxmind_license_key,
@@ -115,14 +117,8 @@ class CredentialSync:
                     info[provider] = ProviderInfo(env_source, "cannot_decrypt")
                     continue
                 info[provider] = ProviderInfo("settings")
-                if provider == "abuseipdb":
-                    eff = replace(eff, abuseipdb_api_key=cred.key)
-                elif provider == "greynoise":
-                    eff = replace(eff, greynoise_api_key=cred.key)
-                elif provider == "nvd":
-                    eff = replace(eff, nvd_api_key=cred.key)
-                elif provider == "github":
-                    eff = replace(eff, github_token=cred.key)
+                if provider in KEY_FIELDS:
+                    eff = replace(eff, **cast(dict[str, Any], {KEY_FIELDS[provider]: cred.key}))
                 else:
                     eff = replace(
                         eff, maxmind_account_id=cred.account_id or "", maxmind_license_key=cred.key
