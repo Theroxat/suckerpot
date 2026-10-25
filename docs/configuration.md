@@ -183,6 +183,11 @@ The geolocation data has a licence that requires credit. See [Data sources and a
 | `ABUSEIPDB_DAILY_QUOTA` | `1000` | Maximum AbuseIPDB checks per day. Enforced, and persisted in the database. |
 | `GREYNOISE_API_KEY` | empty | GreyNoise Community key. Without it, no lookups. |
 | `GREYNOISE_DAILY_QUOTA` | `50` | Maximum GreyNoise checks per day |
+| `CVE_WATCH_ENABLED` | `true` | Daily job that mirrors CISA KEV, recent NVD CVEs and GitHub advisories |
+| `NVD_API_KEY` | empty | NVD key. Optional: raises the rate limit from 5 to 50 requests per 30 s |
+| `GITHUB_TOKEN` | empty | GitHub token, no scope needed. Optional: raises the limit from 60 requests per hour |
+| `CVE_NVD_DAILY_QUOTA` | `200` | Maximum NVD requests per day. Enforced, and persisted in the database |
+| `CVE_GITHUB_DAILY_QUOTA` | `100` | Maximum GitHub advisory requests per day |
 | `REPUTATION_MIN_EVENTS` | `10` | An address is looked up only after this many events |
 | `REPUTATION_INTERVAL_S` | `30` | Seconds between reputation cycles (at least 5) |
 | `RULES_DIR` | `ingest/rules` (`/app/rules` in the image) | Folder with the tagging rules (`*.yaml`) |
