@@ -61,6 +61,7 @@ FAILURE_DELAY_S = 0.3
 RATE_WINDOW_S = 60.0
 MAX_TRACKED_IPS = 10_000
 MAX_REVOKED = 1_000
+MAX_REAUTH_FAILURES = 5  # consecutive wrong re-authentication passwords before the session dies
 MAX_VERIFY_CONCURRENCY = 1  # one argon2 verify holds ~64 MiB: more would risk the memory limit
 MAX_VERIFY_PENDING = 3  # running + queued; beyond this login answers 429 immediately
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "[::1]")
@@ -195,7 +196,7 @@ class AuthService:
         self._revoked: dict[str, int] = {}
         self._per_ip: dict[str, _Window] = {}
         self._global = _Window()
-        self._scoped_global: dict[str, _Window] = {}
+        self._reauth_failures: dict[str, int] = {}
         self._verify_sem = asyncio.Semaphore(MAX_VERIFY_CONCURRENCY)
         self._pending = 0
 
@@ -238,6 +239,21 @@ class AuthService:
         if self.clock() >= expires_at or parts[3] in self._revoked:
             return None
         return SessionInfo(self.settings.username, issued_at, expires_at, parts[3])
+
+    def reauth_failed(self, info: SessionInfo) -> bool:
+        """Count a wrong re-authentication password. True once the session was revoked."""
+        n = self._reauth_failures.get(info.nonce, 0) + 1
+        if n >= MAX_REAUTH_FAILURES:
+            self._reauth_failures.pop(info.nonce, None)
+            self.revoke(info)
+            return True
+        if len(self._reauth_failures) >= MAX_REVOKED:
+            self._reauth_failures.clear()
+        self._reauth_failures[info.nonce] = n
+        return False
+
+    def reauth_ok(self, info: SessionInfo) -> None:
+        self._reauth_failures.pop(info.nonce, None)
 
     def revoke(self, info: SessionInfo) -> None:
         now = self.clock()
@@ -297,14 +313,14 @@ class AuthService:
     def rate_limited(self, ip: str, scope: str = "") -> int | None:
         """Record an attempt. Returns Retry-After seconds when over the limit, else None.
 
-        ``scope`` gives another action (e.g. password re-authentication) its own budget, with the
-        same limits as login, so it cannot be used to guess the password around the login limit.
+        ``scope`` gives another action (e.g. password re-authentication) its own per-address
+        window, but every attempt is also charged to the same global window as login, so
+        re-authentication cannot be used to guess the password around the login limit.
         """
         ip = rate_key(ip)
         glob = self._global
         if scope:
             ip = f"{scope}|{ip}"
-            glob = self._scoped_global.setdefault(scope, _Window())
         now = self.clock()
         glob.prune(now)
         win = self._per_ip.get(ip)
