@@ -36,6 +36,8 @@ class SessionOut(BaseModel):
     known_scanner: bool | None
     tags: list[str]
     client_tool: str | None = None
+    techniques: list[str] = []
+    campaign_id: int | None = None
 
 
 class EventOut(BaseModel):

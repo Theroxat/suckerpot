@@ -57,6 +57,7 @@ Cursor = Annotated[str | None, Query(max_length=512)]
 TagFilter = Annotated[str, Query(pattern=r"^[a-z0-9-]{1,32}$")]
 CountryFilter = Annotated[str, Query(pattern=r"^[A-Za-z]{2}$")]
 AsnFilter = Annotated[int, Query(ge=0, le=4294967295)]
+TechniqueFilter = Annotated[str, Query(pattern=r"^T[0-9]{4}(\.[0-9]{3})?$")]
 ValueFilter = Annotated[str, Query(min_length=1, max_length=256)]
 
 
@@ -110,8 +111,14 @@ async def list_sessions(
     password: ValueFilter | None = None,
     command: ValueFilter | None = None,
     url: ValueFilter | None = None,
+    technique: TechniqueFilter | None = None,
+    campaign_id: Annotated[int | None, Query(ge=1, le=2**62)] = None,
 ) -> SessionPage:
     stmt = select(SessionRow)
+    if technique is not None:
+        stmt = stmt.where(SessionRow.techniques.contains([technique]))
+    if campaign_id is not None:
+        stmt = stmt.where(SessionRow.campaign_id == campaign_id)
     if sensor is not None:
         stmt = stmt.where(SessionRow.sensor.in_(sensor))
     if src_ip is not None:
