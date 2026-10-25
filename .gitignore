@@ -8,8 +8,8 @@ ENVIRONMENT.local.md
 **/host_keys/
 
 # --- Captured data, payloads, databases ---
-data/
-quarantine/
+/data/
+/quarantine/
 *.mmdb
 *.sqlite
 *.sqlite3
