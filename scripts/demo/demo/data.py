@@ -166,6 +166,8 @@ WEB_USER_AGENTS_SCANNERS = [
     ("libwww-perl/6.67", 2),
     ("Apache-HttpClient/4.5.13 (Java/11.0.22)", 2),
     ("okhttp/4.12.0", 2),
+    # A research crawler: ingest labels these sessions benign and the dashboard hides them (M19).
+    ("Mozilla/5.0 (compatible; CensysInspect/1.1; +https://about.censys.io/)", 5),
 ]
 WEB_USER_AGENTS_BROWSERS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "

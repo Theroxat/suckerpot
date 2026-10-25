@@ -34,6 +34,7 @@ from ingest.bruteforce import TAG as BRUTE_TAG
 from ingest.diskguard import DiskGuard
 from ingest.enrichment.enricher import Enricher
 from ingest.indicator_store import store_indicators
+from ingest.scanners import SEVERE_TAGS, stays_benign
 
 log = logging.getLogger(__name__)
 
@@ -94,6 +95,8 @@ def delta_to_row(d: SessionDelta) -> dict[str, Any]:
         "tags": sorted(d.tags),
         "client_tool": d.client_tool,
         "techniques": sorted(d.techniques),
+        "benign": d.benign,
+        "scanner_name": d.scanner_name,
     }
 
 
@@ -131,12 +134,25 @@ def _enrich_rows(
             abuse_score=score, known_scanner=noise, tags=tags,
         )  # fmt: skip
         d = by_session[ev.session_id]
+        scanner = enricher.scanners.match(
+            asn=geo.asn, org=geo.org, user_agent=row["data"].get("user_agent")
+        )
+        if scanner is not None:
+            d.benign, d.scanner_name = True, d.scanner_name or scanner
         d.tags.update(tags)
         d.techniques.update(techniques)
         if d.country is None and geo.country is not None:
             d.country, d.city, d.asn, d.org = geo.country, geo.city, geo.asn, geo.org
         d.abuse_score = score if score is not None else d.abuse_score
         d.known_scanner = noise if noise is not None else d.known_scanner
+    # Events of a scanner session carry the flag (new rows only), except the ones that did more
+    # than look around; the session itself is re-checked after the upsert (_apply_session_rules).
+    for row, ev in zip(rows, events, strict=True):
+        row["benign"] = (
+            by_session[ev.session_id].benign
+            and str(ev.type) not in ("command", "download_attempt")
+            and SEVERE_TAGS.isdisjoint(row["tags"])
+        )
 
 
 async def write_batch(
@@ -187,11 +203,13 @@ async def write_batch(
                 "tags": _UNION_TAGS,
                 "client_tool": func.coalesce(ex.client_tool, t.c.client_tool),
                 "techniques": _UNION_TECHNIQUES,
+                "benign": t.c.benign | ex.benign,
+                "scanner_name": func.coalesce(t.c.scanner_name, ex.scanner_name),
             },
         ).returning(
             t.c.session_id, t.c.sensor, t.c.event_count, t.c.login_attempts, t.c.login_success,
             t.c.commands, t.c.downloads, t.c.http_requests, t.c.known_scanner, t.c.abuse_score,
-            t.c.tags,
+            t.c.tags, t.c.benign,
         )  # fmt: skip
         result = await session.execute(upsert, [delta_to_row(d) for d in deltas])
         if enricher is not None:
@@ -207,6 +225,7 @@ async def _apply_session_rules(
 ) -> None:
     """Evaluate session-scope rules on the upserted counters and add any new tags."""
     updates: list[dict[str, Any]] = []
+    demote: list[str] = []
     for r in rows:
         facts = {
             "session.sensor": r.sensor,
@@ -224,6 +243,22 @@ async def _apply_session_rules(
         if new:
             techniques = enricher.attack.for_tags(sorted(new)) if enricher.attack else []
             updates.append({"sid": r.session_id, "t": sorted(new), "x": sorted(techniques)})
+        # A research scanner that signed in, ran a command, downloaded or sent an exploit is not
+        # one any more, whatever its user-agent or network says.
+        if r.benign and not stays_benign(
+            commands=r.commands,
+            downloads=r.downloads,
+            login_success=r.login_success,
+            tags={*(r.tags or []), *new},
+        ):
+            demote.append(r.session_id)
+    if demote:
+        await session.execute(
+            text("UPDATE sessions SET benign = false WHERE session_id = ANY(:ids)").bindparams(
+                bindparam("ids", type_=ARRAY(Text))
+            ),
+            {"ids": demote},
+        )
     if updates:
         await session.execute(
             text(

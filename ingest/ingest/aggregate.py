@@ -36,6 +36,9 @@ class SessionDelta:
     known_scanner: bool | None = None
     client_tool: str | None = None
     techniques: set[str] = field(default_factory=set)
+    # A known research scanner (M19), set by the writer's enrichment step.
+    benign: bool = False
+    scanner_name: str | None = None
 
 
 _TOOL_MAX = 24
