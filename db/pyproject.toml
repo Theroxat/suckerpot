@@ -4,8 +4,8 @@ version = "0.1.0"
 description = "SuckerPot database models, engine helpers and Alembic migrations"
 requires-python = ">=3.13"
 dependencies = [
-    "sqlalchemy[asyncio]>=2.0.36,<2.1",
-    "asyncpg>=0.30,<0.32",
+    "sqlalchemy[asyncio]>=2.0.36,<2.2",
+    "asyncpg>=0.30,<0.33",
     "alembic>=1.14,<2",
     "cryptography>=44",
 ]
