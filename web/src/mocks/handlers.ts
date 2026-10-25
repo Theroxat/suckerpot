@@ -11,6 +11,12 @@ import { cveHandlers } from "./cves"
 import { m7Handlers } from "./m7"
 import { intelHandlers } from "./intel"
 import { userHandlers } from "./users"
+import { campaignsHandlers } from "./campaigns"
+import { defendHandlers } from "./defend"
+import { scriptsHandlers } from "./scripts"
+import { alertsHandlers } from "./alerts"
+import { searchHandlers } from "./search"
+import { todayHandlers } from "./today"
 
 const fixtures = [...buildReplayFixtures(), ...buildFixtures()].sort((a, b) =>
   b.session.started_at.localeCompare(a.session.started_at),
@@ -74,6 +80,12 @@ const authHandlers = [
 
 export const handlers = [
   ...authHandlers,
+  ...campaignsHandlers,
+  ...defendHandlers,
+  ...scriptsHandlers,
+  ...alertsHandlers,
+  ...searchHandlers,
+  ...todayHandlers,
   ...userHandlers,
   ...liveHandlers,
   ...siteHandlers,

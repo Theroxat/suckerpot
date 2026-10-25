@@ -191,3 +191,13 @@ Lists scroll with the window. The Live page has no scrolling list: its ticker an
 | LiveIndicator, ThemeToggle | `live-indicator.tsx`, `theme-toggle.tsx` | shell chrome                                                                                                                                    |
 
 Primitives (button, card, badge, tooltip, dropdown-menu, sheet, separator, skeleton, scroll-area, tabs, toggle, toggle-group, command, dialog, popover, input) come from shadcn/ui via the CLI and live in `src/components/ui/`. They read our tokens through the shadcn variable contract mapped in `index.css`. Do not edit them for one page: add a variant here instead.
+
+## Structure for feature work
+
+- **Navigation**: `src/app/nav.ts` lists every item with its `space` (Observe, Understand, Defend, footer) and an optional `badge`. The old Overview is shown as "Activity"; its route is still `/overview`.
+- **Pages**: one file per page in `src/pages/`. Unbuilt pages are a "Coming soon" `EmptyState`; replace the file, the route already exists in `src/app/router.tsx`.
+- **API clients**: one `src/lib/<feature>-api.ts` per feature, exporting its own `<feature>QueryKeys`. Do not extend `api.ts` or its `queryKeys`.
+- **Mocks**: one `src/mocks/<feature>.ts` per feature (campaigns, defend, scripts, alerts, search, today), already imported by `handlers.ts`.
+- **Styleguide**: add `src/pages/styleguide/<feature>.tsx` exporting `section: FeatureSection` (see `registry.ts`); it is picked up automatically, listed in the table of contents and cropped by the screenshot run.
+- **Screenshot specs**: `e2e/screenshots.spec.ts` covers the original pages. New specs go in `e2e/<feature>.spec.ts` and import `settle`, `shoot`, `shootTall`, `h1` from `e2e/helpers.ts`.
+- **Settings** is a tab layout driven by `?tab=` (general, keys, users, audit, alerts, feeds). Add content to a tab, not a new section above it.

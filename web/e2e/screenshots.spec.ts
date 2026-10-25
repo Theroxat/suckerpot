@@ -1,57 +1,5 @@
-import { expect, test, type Page } from "@playwright/test"
-
-const OUT = "screenshots"
-
-async function settle(page: Page, { skeletons = false } = {}) {
-  await page.waitForLoadState("networkidle")
-  await page.evaluate(() => document.fonts.ready)
-  // Skeletons are gone once data is in (the styleguide shows them on purpose).
-  await expect(page.locator('[role="status"][aria-label="Loading page"]')).toHaveCount(0)
-  if (!skeletons) await expect(page.locator('[role="status"][aria-label="Loading"]')).toHaveCount(0)
-  // No horizontal page scroll, at any width.
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  )
-  expect(overflow, "page scrolls horizontally").toBeLessThanOrEqual(0)
-}
-
-const h1 = (page: Page, name: string) => page.getByRole("heading", { level: 1, name, exact: true })
-
-async function shoot(page: Page, name: string, projectName: string, fullPage = false) {
-  // Focusing controls may have scrolled the window; full-page shots start from the top
-  // so the sticky mobile header is not painted mid-page.
-  if (fullPage) await page.evaluate(() => window.scrollTo(0, 0))
-  await page.screenshot({ path: `${OUT}/${name}-${projectName}.png`, fullPage })
-}
-
-/**
- * Full-page shot of a page with a window-virtualized list: grow the viewport to the page height
- * first, so every row is really rendered (a plain full-page capture only paints the rows the
- * virtualizer drew for the original viewport, leaving blank space below them).
- */
-async function shootTall(page: Page, name: string, projectName: string) {
-  const original = page.viewportSize()
-  if (!original) throw new Error("no viewport")
-  await page.evaluate(() => window.scrollTo(0, 0))
-  let height = original.height
-  for (let i = 0; i < 6; i++) {
-    const next = await page.evaluate(() => document.documentElement.scrollHeight)
-    if (next <= height) break
-    height = next
-    await page.setViewportSize({ width: original.width, height })
-    await page.evaluate(
-      () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
-    )
-  }
-  // Chromium repeats content past about 8,192 device pixels: very tall phone shots are taken at
-  // CSS pixel scale instead.
-  const dpr = await page.evaluate(() => window.devicePixelRatio)
-  await page.screenshot({
-    path: `${OUT}/${name}-${projectName}.png`,
-    scale: height * dpr > 8000 ? "css" : "device",
-  })
-  await page.setViewportSize(original)
-}
+import { expect, test } from "@playwright/test"
+import { h1, settle, shoot, shootTall } from "./helpers"
 
 test("styleguide", async ({ page }, info) => {
   // A very long page plus one crop per section: slow on software-rendered mobile runs.
@@ -75,8 +23,13 @@ test("styleguide", async ({ page }, info) => {
     "states",
   ]) {
     await page.locator(`section#${id}`).screenshot({
-      path: `${OUT}/sections/styleguide-${id}-${info.project.name}.png`,
+      path: `screenshots/sections/styleguide-${id}-${info.project.name}.png`,
     })
+  }
+  // Sections added by features (pages/styleguide/<feature>.tsx).
+  for (const el of await page.locator("[data-feature-section]").all()) {
+    const id = await el.getAttribute("data-feature-section")
+    await el.screenshot({ path: `screenshots/sections/styleguide-${id}-${info.project.name}.png` })
   }
 })
 
@@ -269,7 +222,7 @@ test("overview charts", async ({ page }, info) => {
   await page
     .getByRole("img", { name: /Stacked bar chart/ })
     .locator("xpath=ancestor::*[@data-slot='card'][1]")
-    .screenshot({ path: `${OUT}/sections/overview-split-sensor-${info.project.name}.png` })
+    .screenshot({ path: `screenshots/sections/overview-split-sensor-${info.project.name}.png` })
 })
 
 test("attackers", async ({ page }, info) => {
@@ -430,7 +383,7 @@ test("settings", async ({ page }, info) => {
 
 // Settings (M11): enrichment API keys. Mock data only: the typed key and password are fake.
 test("settings keys", async ({ page }, info) => {
-  await page.goto("/settings")
+  await page.goto("/settings?tab=keys")
   const keys = page.getByRole("list", { name: "API keys" })
   await expect(keys).toBeVisible()
   await settle(page)
@@ -467,7 +420,7 @@ test("settings keys", async ({ page }, info) => {
 })
 
 test("settings keys disabled", async ({ page }, info) => {
-  await page.goto("/settings?keys=off")
+  await page.goto("/settings?tab=keys&keys=off")
   const keys = page.getByRole("list", { name: "API keys" })
   await expect(keys).toBeVisible()
   await expect(page.getByRole("button", { name: "Set the AbuseIPDB key" })).toBeDisabled()
@@ -478,7 +431,7 @@ test("settings keys disabled", async ({ page }, info) => {
 
 // M14: users and roles. Mock data only: every name, address and password is fake.
 test("settings users", async ({ page }, info) => {
-  await page.goto("/settings")
+  await page.goto("/settings?tab=users")
   const users = page.getByRole("list", { name: "Users", exact: true })
   await expect(users).toBeVisible()
   await expect(users.getByRole("listitem")).toHaveCount(6)
@@ -510,7 +463,7 @@ test("settings users", async ({ page }, info) => {
 })
 
 test("settings audit", async ({ page }, info) => {
-  await page.goto("/settings")
+  await page.goto("/settings?tab=audit")
   const audit = page.getByRole("list", { name: "Audit log" })
   await expect(audit).toBeVisible()
   await settle(page)

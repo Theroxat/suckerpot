@@ -51,6 +51,8 @@ import { FAMILY_META, SENSOR_FAMILIES, SENSOR_META } from "@/lib/sensors"
 import { SEVERITIES } from "@/lib/severity"
 import { cn } from "@/lib/utils"
 import tokensCss from "@/styles/tokens.css?raw"
+import { Section, Specimen } from "./styleguide/parts"
+import { featureSections } from "./styleguide/registry"
 
 /* ----------------------------------------------------------------------------
  * Sample data (documentation addresses only).
@@ -346,51 +348,6 @@ const TERMINAL_COLOURS = [
  * Layout helpers
  * ------------------------------------------------------------------------- */
 
-function Section({
-  id,
-  title,
-  description,
-  children,
-}: {
-  id: string
-  title: string
-  description: string
-  children: React.ReactNode
-}) {
-  return (
-    <section
-      id={id}
-      aria-labelledby={`${id}-title`}
-      className="scroll-mt-20 border-t py-10 first:border-t-0 first:pt-2"
-    >
-      <div className="mb-6 max-w-2xl space-y-1">
-        <h2 id={`${id}-title`} className="text-lg font-semibold tracking-tight text-fg">
-          {title}
-        </h2>
-        <p className="text-sm text-fg-muted">{description}</p>
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function Specimen({
-  label,
-  children,
-  className,
-}: {
-  label: string
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <div className={cn("rounded-lg border bg-surface shadow-sm", className)}>
-      <div className="border-b px-4 py-2 font-mono text-2xs text-fg-subtle">{label}</div>
-      <div className="flex flex-wrap items-center gap-3 p-4">{children}</div>
-    </div>
-  )
-}
-
 /** Token values come straight from tokens.css, so this page cannot drift from it. */
 const THEME_TOKENS = {
   dark: readTokenBlock(tokensCss, ':root,\n[data-theme="dark"]'),
@@ -477,6 +434,15 @@ export function StyleguidePage() {
 
       <nav aria-label="Sections" className="-mx-1 mb-4 flex flex-wrap gap-1">
         {TOC.map(([id, label]) => (
+          <a
+            key={id}
+            href={`#${id}`}
+            className="rounded-md px-2 py-1 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+          >
+            {label}
+          </a>
+        ))}
+        {featureSections.map(({ id, label }) => (
           <a
             key={id}
             href={`#${id}`}
@@ -1128,6 +1094,12 @@ export function StyleguidePage() {
           />
         </div>
       </Section>
+
+      {featureSections.map(({ id, Component }) => (
+        <div key={id} data-feature-section={id}>
+          <Component />
+        </div>
+      ))}
     </>
   )
 }
