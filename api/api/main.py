@@ -32,6 +32,7 @@ from api.feeds import router as feeds_router
 from api.indicators import router as indicators_router
 from api.insights import router as insights_router
 from api.live import LiveHub, LivePoller, live_router
+from api.live_window import router as live_window_router
 from api.malware import router as malware_router
 from api.provider_keys import install as install_provider_keys
 from api.provider_keys import router as provider_keys_router
@@ -129,6 +130,7 @@ def create_app(
         reports_router,
         search_router,
         today_router,
+        live_window_router,
     ):
         include(api_router)
     if os.environ.get("FEEDS_ENABLED", "false").strip().lower() in TRUE_VALUES:
