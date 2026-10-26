@@ -1,4 +1,4 @@
-import { SENSORS, type LiveEvent, type LiveStats, type Sensor } from "@/lib/api"
+import { SENSORS, type LiveEvent, type LiveStats, type LiveWindow, type Sensor } from "@/lib/api"
 import { countryName, formatNumber, formatPercent, maskIp, plural } from "@/lib/format"
 import { SENSOR_META } from "@/lib/sensors"
 
@@ -29,6 +29,16 @@ export function deriveStats(events: readonly LiveEvent[], now = Date.now()): Liv
     events_last_minute: total,
     sessions_last_minute: sessions.size,
     by_sensor,
+  }
+}
+
+/** The last-minute counts of the API's window, in the shape the WebSocket stats use. */
+export function statsFromWindow(w: LiveWindow): LiveStats {
+  return {
+    window_seconds: 60,
+    events_last_minute: w.events_last_minute,
+    sessions_last_minute: w.sessions_last_minute,
+    by_sensor: w.last_minute_by_sensor,
   }
 }
 

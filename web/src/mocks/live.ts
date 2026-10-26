@@ -5,7 +5,13 @@
  * api/api/live.py: backfill, stats, then one event at a time.
  */
 import { ws } from "msw"
-import { SENSORS, type LiveEvent, type LiveStats, type SensorEvent } from "@/lib/api"
+import {
+  SENSORS,
+  type LiveEvent,
+  type LiveStats,
+  type LiveWindow,
+  type SensorEvent,
+} from "@/lib/api"
 import { buildFixtures } from "./fixtures"
 
 const pool: SensorEvent[] = buildFixtures().flatMap((f) => f.events)
@@ -143,4 +149,135 @@ export const liveHandlers = [
 
 export function recentEvents(limit: number): LiveEvent[] {
   return backfill(Math.min(limit, 200))
+}
+
+interface CountryAcc {
+  events: number
+  ips: Set<string>
+  perIp: Record<string, number>
+  last: string
+  s: Record<string, number>
+}
+interface KeyAcc {
+  e: LiveEvent
+  events: number
+  ips: Set<string>
+  s: Record<string, number>
+}
+
+/**
+ * Mock of `GET /live/window`: the last `minutes` of a busy sensor farm, aggregated like the API
+ * does. The ids stop at the newest one handed out so far, so the live events that follow add on top.
+ */
+export function liveWindow(minutes: number, sensors: readonly string[]): LiveWindow {
+  let seed = 23
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0
+    return seed / 4294967296
+  }
+  const now = Date.now()
+  const count = 100 * minutes
+  const events: LiveEvent[] = []
+  for (let i = 0; i < count; i++) {
+    const ts = now - (count - i) * ((minutes * 60_000) / count) + 500
+    events.push(toLive(sample(rand), ts))
+  }
+  const lastEventId = nextId - 1
+  const picked = sensors.length ? events.filter((e) => sensors.includes(e.sensor)) : events
+  const minuteAgo = now - 60_000
+
+  const bump = (m: Record<string, number>, k: string) => {
+    m[k] = (m[k] ?? 0) + 1
+  }
+  const by_sensor: Record<string, number> = {}
+  const lastMinute: Record<string, { events: number; sessions: Set<string> }> = {}
+  const countries = new Map<string, CountryAcc>()
+  const addrs = new Map<string, KeyAcc>()
+  const nets = new Map<number, KeyAcc>()
+  let unlocated = 0
+  for (const e of picked) {
+    bump(by_sensor, e.sensor)
+    if (Date.parse(e.ts) > minuteAgo) {
+      const m = (lastMinute[e.sensor] ??= { events: 0, sessions: new Set() })
+      m.events += 1
+      m.sessions.add(e.session_id)
+    }
+    if (e.country) {
+      const c = countries.get(e.country) ?? {
+        events: 0,
+        ips: new Set(),
+        perIp: {},
+        last: e.ts,
+        s: {},
+      }
+      c.events += 1
+      c.ips.add(e.src_ip)
+      bump(c.perIp, e.src_ip)
+      bump(c.s, e.sensor)
+      if (e.ts > c.last) c.last = e.ts
+      countries.set(e.country, c)
+    } else {
+      unlocated += 1
+    }
+    const a = addrs.get(e.src_ip) ?? { e, events: 0, ips: new Set<string>(), s: {} }
+    a.events += 1
+    bump(a.s, e.sensor)
+    addrs.set(e.src_ip, a)
+    if (e.asn != null) {
+      const n = nets.get(e.asn) ?? { e, events: 0, ips: new Set<string>(), s: {} }
+      n.events += 1
+      n.ips.add(e.src_ip)
+      bump(n.s, e.sensor)
+      nets.set(e.asn, n)
+    }
+  }
+  const lm = Object.entries(lastMinute)
+  return {
+    as_of: new Date(now).toISOString(),
+    window_minutes: minutes,
+    last_event_id: lastEventId,
+    events: picked.length,
+    unlocated,
+    events_last_minute: lm.reduce((n, [, m]) => n + m.events, 0),
+    sessions_last_minute: new Set(lm.flatMap(([, m]) => [...m.sessions])).size,
+    last_minute_by_sensor: Object.fromEntries(
+      lm.map(([s, m]) => [s, { events: m.events, sessions: m.sessions.size }]),
+    ),
+    by_sensor,
+    countries: [...countries.entries()]
+      .sort((x, y) => y[1].events - x[1].events)
+      .slice(0, 80)
+      .map(([country, c]) => ({
+        country,
+        events: c.events,
+        ips: c.ips.size,
+        top_ip: Object.entries(c.perIp).sort((x, y) => y[1] - x[1])[0]?.[0] ?? "",
+        last_ts: c.last,
+        by_sensor: c.s,
+      })),
+    addresses: [...addrs.entries()]
+      .sort((x, y) => y[1].events - x[1].events)
+      .slice(0, 10)
+      .map(([ip, a]) => ({
+        ip,
+        events: a.events,
+        country: a.e.country,
+        asn: a.e.asn,
+        org: a.e.org,
+        last_ts: a.e.ts,
+        by_sensor: a.s,
+      })),
+    networks: [...nets.entries()]
+      .sort((x, y) => y[1].events - x[1].events)
+      .slice(0, 10)
+      .map(([asn, n]) => ({
+        asn,
+        events: n.events,
+        ips: n.ips.size,
+        country: n.e.country,
+        org: n.e.org,
+        last_ts: n.e.ts,
+        by_sensor: n.s,
+      })),
+  }
 }

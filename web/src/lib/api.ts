@@ -117,6 +117,53 @@ export interface LiveStats {
   by_sensor: Record<string, SensorCounts>
 }
 
+/** One country of the live window (`GET /live/window`). */
+export interface LiveWindowCountry {
+  country: string
+  events: number
+  ips: number
+  top_ip: string
+  last_ts: string
+  by_sensor: Record<string, number>
+}
+
+export interface LiveWindowAddress {
+  ip: string
+  events: number
+  country: string | null
+  asn: number | null
+  org: string | null
+  last_ts: string
+  by_sensor: Record<string, number>
+}
+
+export interface LiveWindowNetwork {
+  asn: number
+  events: number
+  ips: number
+  country: string | null
+  org: string | null
+  last_ts: string
+  by_sensor: Record<string, number>
+}
+
+/** What the sensors saw in the last N minutes, aggregated by the API. */
+export interface LiveWindow {
+  as_of: string
+  window_minutes: number
+  /** Newest event id at `as_of`; live events with a higher id are not counted in here. */
+  last_event_id: number
+  events: number
+  unlocated: number
+  events_last_minute: number
+  sessions_last_minute: number
+  last_minute_by_sensor: Record<string, SensorCounts>
+  by_sensor: Record<string, number>
+  countries: LiveWindowCountry[]
+  addresses: LiveWindowAddress[]
+  networks: LiveWindowNetwork[]
+}
+
 export interface Page<T> {
   items: T[]
   next_cursor: string | null
@@ -330,6 +377,7 @@ const BENIGN_AWARE = [
   "/asns",
   "/stats/",
   "/events/",
+  "/live/window",
   "/insights",
   "/trends",
   "/today",
@@ -418,6 +466,8 @@ export const api = {
   attacker: (ip: string) => getJson<AttackerDetail>(`/attackers/${encodeURIComponent(ip)}`),
   asns: (sort: "sessions" | "ips" | "events" = "sessions", limit = 100) =>
     getJson<{ items: AsnItem[] }>("/asns", { sort, limit }),
+  liveWindow: (sensors: readonly string[] = [], minutes = 15) =>
+    getJson<LiveWindow>("/live/window", { minutes, sensor: sensors.length ? sensors : undefined }),
   recentEvents: (limit = 50) => getJson<{ items: LiveEvent[] }>("/events/recent", { limit }),
   // M7: insights, trends and malware.
   insights: (range: StatsRange = {}) => getJson<InsightsResponse>("/insights", { ...range }),

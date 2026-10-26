@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query"
 import { Pause, Play, Radio, SearchX, WifiOff } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router"
@@ -6,18 +7,26 @@ import { useLiveFeed } from "@/app/use-live-feed"
 import { SensorFilter } from "@/components/filter-bar"
 import { LiveLeaders } from "@/components/live-leaders"
 import { LiveTicker } from "@/components/live-ticker"
-import { aggregateSources, rankLeaders } from "@/components/map/activity"
+import {
+  ACTIVITY_WINDOW_MS,
+  MAX_SOURCES,
+  aggregateSources,
+  rankLeaders,
+} from "@/components/map/activity"
 import { LiveMap } from "@/components/map/live-map"
 import { PageHeader } from "@/components/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { useSensorFilter } from "@/hooks/use-sensor-filter"
+import { api, getIncludeBenign } from "@/lib/api"
 import { maskIpsInText } from "@/lib/format"
-import { deriveStats, liveHeadline } from "@/lib/live-stats"
+import { deriveStats, liveHeadline, statsFromWindow } from "@/lib/live-stats"
 import { sensorSetPhrase } from "@/lib/sensors"
 
 /** How long a freshly arrived event keeps its fade-in marker. */
 const FRESH_MS = 1_000
+/** How often the window aggregate is refetched; live events fill the gaps in between. */
+const WINDOW_REFRESH_MS = 30_000
 
 /** A clock for fading and windows: ticks every few seconds, not every frame. */
 function useTick(ms: number) {
@@ -40,13 +49,24 @@ export function LivePage() {
   const [sensors] = useSensorFilter()
   const { masked } = useIpMask()
 
-  const stats = useMemo(
-    () => feed.stats ?? (feed.events.length ? deriveStats(feed.events) : null),
-    [feed.stats, feed.events],
-  )
-
   // --- Hold: Pause freezes everything; hovering the ticker holds only the ticker.
   const [paused, setPaused] = useState(false)
+
+  // The whole last 15 minutes, aggregated by the API; the WebSocket buffer adds only what is newer.
+  const windowQuery = useQuery({
+    queryKey: ["live-window", sensors, getIncludeBenign()],
+    queryFn: () => api.liveWindow(sensors),
+    refetchInterval: paused ? false : WINDOW_REFRESH_MS,
+  })
+  const base = windowQuery.data ?? null
+
+  const stats = useMemo(
+    () =>
+      feed.stats ??
+      (base ? statsFromWindow(base) : feed.events.length ? deriveStats(feed.events) : null),
+    [feed.stats, feed.events, base],
+  )
+
   const [hovering, setHovering] = useState(false)
   const newest = feed.events[0]?.id ?? 0
   const [pauseAt, setPauseAt] = useState<number | null>(null)
@@ -88,8 +108,14 @@ export function LivePage() {
   // --- The last 15 minutes: map sources and rankings, recomputed on new events and on the tick.
   const tick = useTick(5_000)
   const now = Math.max(tick, Date.parse(shown[0]?.ts ?? "") || 0)
-  const activity = useMemo(() => aggregateSources(shown, now), [shown, now])
-  const leaders = useMemo(() => rankLeaders(shown, now), [shown, now])
+  const activity = useMemo(
+    () => aggregateSources(shown, now, ACTIVITY_WINDOW_MS, MAX_SOURCES, base),
+    [shown, now, base],
+  )
+  const leaders = useMemo(
+    () => rankLeaders(shown, now, ACTIVITY_WINDOW_MS, 8, base),
+    [shown, now, base],
+  )
 
   // Hovering a row, a chip or a dot lights that country everywhere.
   const [focus, setFocus] = useState<string | null>(null)
