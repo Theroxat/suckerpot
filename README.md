@@ -25,7 +25,7 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 
 ## Status
 
-`v0.1.0` is released with four sensors, enrichment, tagging, the dashboard, login, retention and backups. Since then, milestones M9 to M19 have added seven more sensors, users and roles, CVE watch, indicators, campaigns, ATT&CK, Defend, scripts, alerts, the weekly report, Today and search. The new analysis features are off until you turn them on, with an `*_ENABLED` variable each (see [configuration](docs/configuration.md)). Every sensor and feature goes through adversarial security review before it is accepted. See the [roadmap](docs/ROADMAP.md).
+The current release is `v0.2.0`. `v0.1.0` shipped four sensors, enrichment, tagging, the dashboard, login, retention and backups. Milestones M9 to M19, released in `v0.2.0`, added seven more sensors, users and roles, CVE watch, indicators, campaigns, ATT&CK, Defend, scripts, alerts, the weekly report, Today and search. The new analysis features are off until you turn them on, with an `*_ENABLED` variable each (see [configuration](docs/configuration.md)). Every sensor and feature goes through adversarial security review before it is accepted. See the [roadmap](docs/ROADMAP.md).
 
 ## Features
 
@@ -43,8 +43,14 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 | Windows and VoIP | RDP, SMB, SIP | A Windows Server with NLA; a Windows file service (observation only); an Asterisk-style PBX on UDP and TCP |
 
 Each sensor records what the attacker does and never runs it. SIP answers are capped so that the sensor cannot be used to amplify a flood.
-- **Enrichment and tags.** GeoIP and ASN from DB-IP Lite (no key needed) or MaxMind GeoLite2, optional AbuseIPDB and GreyNoise Community reputation with a 24 h cache and enforced daily quotas, and a declarative YAML rules engine (no regular expressions) for tags such as `recon`, `mirai`, `crypto-miner`, `malware-drop` and `php2shell`.
-- **Dashboard.** Live (a flat world map of the last 15 minutes, with a stats strip, a ticker and rankings), Overview (KPIs and auto-written insights), Attacks, Session detail with a terminal replay at real speed, Attackers (by IP and by ASN), Trends, Malware (defanged URLs) and Settings (sensor health, quotas, retention, storage). Dark and light, desktop and mobile. An owner login plus optional administrator and read-only viewer accounts (argon2, CSRF protection, lockout, audit log) guard it, and a screenshot mode (`?mask=1`) masks addresses.
+- **Enrichment and tags.** GeoIP and ASN from DB-IP Lite (no key needed) or MaxMind GeoLite2, optional AbuseIPDB and GreyNoise Community reputation with a 24 h cache and enforced daily quotas, and every key is optional (see [Provider API keys](docs/api-keys.md)), and a declarative YAML rules engine (no regular expressions) for tags such as `recon`, `mirai`, `crypto-miner`, `malware-drop` and `php2shell`.
+- **Dashboard.** Pages are grouped in three spaces plus Settings, so you always know where you are:
+  - **Observe:** Today, Live (a flat world map of the last 15 minutes), Attacks, Attackers (by IP and by ASN) and Activity.
+  - **Understand:** Campaigns, Techniques, Scripts, Malware, Infrastructure, Trends and CVE watch.
+  - **Defend:** Blocklists, Detections, Your exposure, and Alerts and reports.
+  - **System:** Settings (sensor health, API keys, quotas, retention, storage, users).
+
+  A session page has a terminal replay at real speed. `Ctrl+K` opens a search box that finds an IP, hash, domain, CVE or campaign. Security words have a glossary tooltip. Known research scanners are hidden by default. Dark and light, desktop and mobile. An owner login plus optional administrator and read-only viewer accounts (argon2, CSRF protection, lockout, audit log) guard it, and a screenshot mode (`?mask=1`) masks addresses.
 - **Campaigns.** Sessions that share a script, a payload host, a file hash, a malware family, an exploit or a credential list are grouped into one campaign, with a plain-English story. A campaign needs at least two sources, and research scanners are never grouped.
 - **Techniques.** Each session is labelled with the MITRE ATT&CK techniques it used. The Techniques page shows them as a heatmap per day.
 - **Scripts.** The command sequences that attackers type are fingerprinted into a library. Each script has a plain-English explanation from a rules base. An optional LLM explainer is off by default, and when on it sees only the normalised script text.
@@ -55,17 +61,28 @@ Each sensor records what the attacker does and never runs it. SIP answers are ca
 - **Hardened by default.** Non-root, read-only containers with all capabilities dropped and `no-new-privileges`; isolated networks with an internal backend; one Redis ACL user per sensor, limited to `XADD` on its own stream; least-privilege database roles; no outbound route for the API; and an nftables [host firewall template](scripts/host/firewall.nft).
 
 <p>
-  <img src="docs/screenshots/overview.png" alt="The Overview page: four KPIs, activity per sensor, three insights, top countries, usernames and passwords" width="49%">
-  <img src="docs/screenshots/session.png" alt="A session detail page with the terminal replay of an SSH session and its timeline" width="49%">
+  <img src="docs/screenshots/today.png" alt="The Today page: a few plain-English cards on what changed in the last 24 hours, new campaigns and what to block" width="49%">
+  <img src="docs/screenshots/live.png" alt="The Live page: a world map with attack arcs, a stats strip, a ticker of new events and rankings of addresses, countries and networks" width="49%">
+</p>
+<p>
+  <img src="docs/screenshots/campaigns.png" alt="The Campaigns page: groups of sessions that share a script, payload host or exploit, each with a short story" width="49%">
+  <img src="docs/screenshots/techniques.png" alt="The Techniques page: a heatmap of MITRE ATT&CK techniques per day" width="49%">
+</p>
+<p>
+  <img src="docs/screenshots/scripts.png" alt="The Scripts page: a library of attacker command scripts, each with a plain-English explanation" width="49%">
+  <img src="docs/screenshots/defend.png" alt="The Defend page: a scored blocklist with a reason for every point and export options for firewalls" width="49%">
 </p>
 <p>
   <img src="docs/screenshots/attacks.png" alt="The Attacks page: one line per session, such as 'tried 93 SSH passwords and got in, then ran 10 commands'" width="49%">
-  <img src="docs/screenshots/settings.png" alt="The Settings page: sensor health, enrichment quotas, storage and retention" width="49%">
+  <img src="docs/screenshots/session.png" alt="A session detail page with the terminal replay of an SSH session and its timeline" width="49%">
+</p>
+<p>
+  <img src="docs/screenshots/settings.png" alt="The Settings page: sensor health, API keys, enrichment quotas, storage and retention" width="49%">
+  <img src="docs/screenshots/attacks-light.png" alt="The Attacks page in light mode" width="49%">
 </p>
 <p>
   <img src="docs/screenshots/live-mobile.png" alt="The Live page on a phone, in dark mode" width="30%">
   <img src="docs/screenshots/attacks-mobile.png" alt="The Attacks page on a phone, in dark mode" width="30%">
-  <img src="docs/screenshots/attacks-light.png" alt="The Attacks page in light mode" width="38%">
 </p>
 
 ## Architecture

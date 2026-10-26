@@ -2,15 +2,18 @@
 
 The dashboard is a single-page web app in `web/`. The API serves the built files, so there is one port to publish and one thing to put behind the tunnel. The design rules are in `web/DESIGN.md`. Colour tokens, the type scale and every component are shown on the `/styleguide` page of a running dashboard.
 
-```{admonition} Build status
-:class: note
+## Navigation
 
-**Built:** the app shell, the design system, the login page, **Live** (feed), **Overview** (with insights), **Attacks**, **Session detail**, **Attackers** (list and profile), **Trends** and **Malware**.
+The sidebar (the drawer on a phone) groups the pages in three spaces, plus Settings at the bottom.
 
-**In progress:** the terminal replay (M5).
+| Space | Pages | Question it answers |
+| --- | --- | --- |
+| Observe | Today, Live, Attacks, Attackers, Activity | What is happening now? |
+| Understand | Campaigns, Techniques, Scripts, Malware, Infrastructure, Trends, CVE watch | Who is behind it, and how do they work? |
+| Defend | Blocklists, Detections, Your exposure, Alerts and reports | What should I do about it? |
+| System | Settings (and the Styleguide) | How is the system set up? |
 
-The pages read the endpoints described in [API](api.md).
-```
+`Ctrl+K` opens search from anywhere. The pages read the endpoints described in [API](api.md).
 
 ## Principles
 
@@ -23,20 +26,34 @@ The pages read the endpoints described in [API](api.md).
 
 ## Pages
 
-| Page | Path | Status | What it shows |
-| --- | --- | --- | --- |
-| Sign in | `/login` | Built | The login form. Any other page sends you here when there is no session. |
-| Today | `/` | Built | The home page: three to five cards, each one plain-English sentence, up to three items that open a filtered view, and one action. What happened in 24 hours, new campaigns, what to block now, what is new this week, and (once a service inventory exists) your exposure. See [Today, search and the glossary](#today-search-and-the-glossary). |
-| Live | `/live` | Built | A flat world map of the last 15 minutes of attacks, with arcs landing at the home point, a stats strip, a ticker of the newest events and rankings of addresses, countries and networks. See [The Live page](#the-live-page). |
-| Overview | `/overview` | Built | KPIs for the last 24 hours, activity per sensor, the sensor mix, the latest events and up to three insights (see below). |
-| Attacks | `/attacks` | Built | Sessions, newest first, one line each, as a short story. Filters: sensor, source address and period in the app today. The API also filters by tag, country and network. Pages of 50, virtualised. |
-| Session detail | `/attacks/<session id>` | Built (replay in progress) | The attack timeline, with long runs of the same event folded, and a source panel. |
-| Attackers | `/attackers`, `/attackers/<ip>` | Built | Profiles by address and by network: first and last seen, sensors targeted, reputation. |
-| Trends | `/trends` | Built | Top usernames, passwords, commands and URLs, tags over time, a day by hour heatmap, and "new this week" (values never seen in the 90 days before). |
-| Infrastructure | `/infrastructure` | Built | A finding first ("40 scanning IPs fetched payloads from 2 shared hosts this week"), a flow diagram from source addresses through indicators to malware families (a list on narrow screens), a filterable indicator table, a detail panel with threat-intelligence answers, and CSV or STIX 2.1 export buttons. Indicators are defanged text, never links. |
-| Malware | `/malware` | Built | Download URLs, defanged, with how often, from how many addresses and with which tool. File hashes and VirusTotal links appear only if payload fetching exists, which it does not yet. |
-| Settings | `/settings` | Built | Sensor status, enrichment quotas, retention, the disk guard and the database size. The enrichment API keys (AbuseIPDB, GreyNoise, MaxMind) can be set, replaced, removed and tested here: write-only, with a password prompt for every change (see [Enrichment keys in Settings](configuration.md#enrichment-keys-in-settings)). Administrators also see **Users** (add a person, change a role, disable, reset a password, unlock, sign out everywhere, delete) and the **Audit log**; viewers see neither, and no control that changes anything (see [Users and roles](#users-and-roles)). It uses `GET /api/v1/settings/system`, `/settings/enrichment`, `/settings/providers/{provider}`, `/users` and `/audit`. |
-| Styleguide | `/styleguide` | Built | Every token and component, in every state. |
+| Page | Path | What it shows |
+| --- | --- | --- |
+| Sign in | `/login` | The login form. Any other page sends you here when there is no session. `/set-password` asks for a new password on first sign-in. |
+| **Observe** | | |
+| Today | `/` | The home page: three to five cards, each one plain-English sentence, up to three items that open a filtered view, and one action. What happened in 24 hours, new campaigns, what to block now, what is new this week, and (once a service inventory exists) your exposure. See [Today, search and the glossary](#today-search-and-the-glossary). |
+| Live | `/live` | A flat world map of the last 15 minutes of attacks, with arcs landing at the home point, a stats strip, a ticker of the newest events and rankings of addresses, countries and networks. See [The Live page](#the-live-page). |
+| Attacks | `/attacks` | Sessions, newest first, one line each, as a short story. Filters: sensor, source address, period, tag, country and network. Pages of 50, virtualised. |
+| Session detail | `/attacks/<session id>` | The attack timeline, with long runs of the same event folded, a terminal replay for shell sessions, and a source panel. |
+| Attackers | `/attackers`, `/attackers/<ip>` | Profiles by address and by network: first and last seen, sensors targeted, reputation. |
+| Activity | `/overview` | KPIs for the last 24 hours, activity per sensor, the sensor mix, the latest events and up to three insights (see [Insights](#insights)). |
+| **Understand** | | |
+| Campaigns | `/campaigns`, `/campaigns/<id>` | Sessions that share a script, payload host, file hash, malware family, exploit or credential list, grouped into one campaign with a plain-English story. |
+| Techniques | `/techniques` | The MITRE ATT&CK techniques seen, as a heatmap per day. |
+| Scripts | `/scripts`, `/scripts/<id>` | The library of command scripts that attackers typed, each with an explanation and the sessions that used it. |
+| Malware | `/malware` | Download URLs, defanged, with how often, from how many addresses and with which tool. File hashes and VirusTotal links appear when payload fetching is on. |
+| Infrastructure | `/infrastructure` | A finding first ("40 scanning IPs fetched payloads from 2 shared hosts this week"), a flow diagram from source addresses through indicators to malware families (a list on narrow screens), a filterable indicator table, a detail panel with threat-intelligence answers, and CSV or STIX 2.1 export buttons. Indicators are defanged text, never links. |
+| Trends | `/trends` | Top usernames, passwords, commands and URLs, tags over time, a day by hour heatmap, and "new this week" (values never seen in the 90 days before). |
+| CVE watch | `/cves` | New and known-exploited vulnerabilities ranked by how much they matter to the services you emulate, with "seen in our traffic" counts. |
+| **Defend** | | |
+| Blocklists | `/defend/blocklists` | Scored blocklists with a reason for every point, overrides, and exports for firewalls. See [Defend](defend.md). |
+| Detections | `/defend/detections` | Sigma and Suricata rules marked "review before deploying". |
+| Your exposure | `/defend/exposure` | Your own service inventory compared with what was recorded. |
+| Alerts and reports | `/defend/alerts`, `/reports/<week>` | Alert rules and channels (all off until you switch them on), and the weekly report with a printable view. |
+| **System** | | |
+| Settings | `/settings` | Sensor status, enrichment quotas, retention, the disk guard and the database size. The provider API keys can be set, replaced, removed and tested here: write-only, with a password prompt for every change (see [Provider API keys](api-keys.md)). Administrators also see **Users** and the **Audit log**; viewers see neither, and no control that changes anything (see [Users and roles](#users-and-roles)). |
+| Styleguide | `/styleguide` | Every token and component, in every state. |
+
+Any other address shows a "page not found" screen.
 
 ## Sign in
 
@@ -137,7 +154,7 @@ README and documentation screenshots must use demo data only, even with the mask
 ```{admonition} Status
 :class: warning
 
-The terminal replay is **planned for M5**. It is not in the app yet. The contract below is a requirement for it.
+The contract below applies to the terminal replay on the Session detail page.
 ```
 
 SSH sessions are recorded with the bytes the attacker typed and the bytes the server sent back. An attacker controls those bytes, and a terminal emulator interprets escape sequences. The replay must therefore be built under the rules in [Security](SECURITY.md#terminal-replay-safety-contract).
