@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { LiveEvent } from "@/lib/api"
+import type { LiveEvent, LiveWindow } from "@/lib/api"
 import { ageOpacity, aggregateSources, countWeight, rankLeaders } from "./activity"
 import { COUNTRY_CENTROIDS } from "./data/centroids"
 
@@ -135,5 +135,84 @@ describe("country centroids", () => {
     expect(lat).toBeLessThan(54)
     expect(lon).toBeGreaterThan(7)
     expect(lon).toBeLessThan(14)
+  })
+})
+
+describe("with the API's window as the base", () => {
+  const base: LiveWindow = {
+    as_of: new Date(NOW).toISOString(),
+    window_minutes: 15,
+    last_event_id: 1_000_000,
+    events: 100,
+    unlocated: 4,
+    events_last_minute: 10,
+    sessions_last_minute: 3,
+    last_minute_by_sensor: {},
+    by_sensor: { ssh: 90, web: 10 },
+    countries: [
+      {
+        country: "BR",
+        events: 60,
+        ips: 5,
+        top_ip: "192.0.2.50",
+        last_ts: new Date(NOW - 12 * 60_000).toISOString(),
+        by_sensor: { ssh: 60 },
+      },
+      {
+        country: "FR",
+        events: 36,
+        ips: 2,
+        top_ip: "192.0.2.1",
+        last_ts: new Date(NOW - 60_000).toISOString(),
+        by_sensor: { ssh: 30, web: 6 },
+      },
+    ],
+    addresses: [
+      {
+        ip: "192.0.2.50",
+        events: 40,
+        country: "BR",
+        asn: 64501,
+        org: "Brasil Net",
+        last_ts: new Date(NOW - 12 * 60_000).toISOString(),
+        by_sensor: { ssh: 40 },
+      },
+    ],
+    networks: [
+      {
+        asn: 64501,
+        events: 60,
+        ips: 5,
+        country: "BR",
+        org: "Brasil Net",
+        last_ts: new Date(NOW - 12 * 60_000).toISOString(),
+        by_sensor: { ssh: 60 },
+      },
+    ],
+  }
+
+  it("keeps countries whose bursts are older than the live buffer", () => {
+    const a = aggregateSources([], NOW, undefined, undefined, base)
+    expect(a.sources.map((s) => [s.country, s.events, s.ips])).toEqual([
+      ["BR", 60, 5],
+      ["FR", 36, 2],
+    ])
+    expect(a.events).toBe(100)
+    expect(a.unlocated).toBe(4)
+    expect(a.sources[0]?.topIp).toBe("192.0.2.50")
+  })
+
+  it("adds only live events newer than the snapshot, never counting one twice", () => {
+    const old = { ...ev("FR", "192.0.2.1", "ssh", 1_000), id: 999_999 }
+    const fresh = { ...ev("FR", "192.0.2.9", "web", 1_000), id: 1_000_001 }
+    const a = aggregateSources([fresh, old], NOW, undefined, undefined, base)
+    const fr = a.sources.find((s) => s.country === "FR")
+    expect(fr?.events).toBe(37)
+    expect(fr?.ips).toBe(3)
+    expect(a.events).toBe(101)
+    const l = rankLeaders([fresh, old], NOW, undefined, undefined, base)
+    expect(l.events).toBe(101)
+    expect(l.addresses[0]).toMatchObject({ key: "192.0.2.50", events: 40, org: "Brasil Net" })
+    expect(l.networks[0]).toMatchObject({ key: "64501", events: 60, ips: 5 })
   })
 })

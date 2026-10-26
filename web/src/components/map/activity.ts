@@ -4,7 +4,7 @@
  * minutes instead of flashes that vanish. Also the "top attackers right now"
  * rankings (addresses, networks) shown under the map. Pure: events in, ranks out.
  */
-import type { LiveEvent } from "@/lib/api"
+import type { LiveEvent, LiveWindow } from "@/lib/api"
 import { SENSOR_META, SENSORS, isSensor, type Sensor, type SensorFamily } from "@/lib/sensors"
 import { COUNTRY_CENTROIDS } from "./data/centroids"
 
@@ -47,17 +47,25 @@ export interface Activity {
   unlocated: number
 }
 
-/** `events` newest first (the live buffer). */
+/**
+ * `events` newest first (the live buffer). With a `base` (the API's aggregate for the whole
+ * window), the buffer only adds what is newer than the base: events with an id above
+ * `base.last_event_id`. Without one, the buffer is the whole picture.
+ */
 export function aggregateSources(
   events: readonly LiveEvent[],
   now: number,
   windowMs = ACTIVITY_WINDOW_MS,
   limit = MAX_SOURCES,
+  base?: LiveWindow | null,
 ): Activity {
   interface Acc {
     country: string
     events: number
     ips: Map<string, number>
+    /** Addresses counted by the base, and its busiest one. */
+    baseIps: number
+    baseTop: string
     sensors: Map<string, number>
     last: number
     lastId: number
@@ -65,7 +73,29 @@ export function aggregateSources(
   const byCountry = new Map<string, Acc>()
   let total = 0
   let unlocated = 0
+  if (base) {
+    total = base.events
+    unlocated = base.unlocated
+    for (const c of base.countries) {
+      const country = c.country.toUpperCase()
+      if (!(country in COUNTRY_CENTROIDS)) {
+        unlocated += c.events
+        continue
+      }
+      byCountry.set(country, {
+        country,
+        events: c.events,
+        ips: new Map(),
+        baseIps: c.ips,
+        baseTop: c.top_ip,
+        sensors: new Map(Object.entries(c.by_sensor)),
+        last: Date.parse(c.last_ts) || 0,
+        lastId: base.last_event_id,
+      })
+    }
+  }
   for (const e of events) {
+    if (base && e.id <= base.last_event_id) continue
     const ts = Date.parse(e.ts)
     if (!(now - ts <= windowMs)) continue
     total += 1
@@ -76,7 +106,16 @@ export function aggregateSources(
     }
     let a = byCountry.get(country)
     if (!a) {
-      a = { country, events: 0, ips: new Map(), sensors: new Map(), last: ts, lastId: e.id }
+      a = {
+        country,
+        events: 0,
+        ips: new Map(),
+        baseIps: 0,
+        baseTop: "",
+        sensors: new Map(),
+        last: ts,
+        lastId: e.id,
+      }
       byCountry.set(country, a)
     }
     a.events += 1
@@ -91,12 +130,15 @@ export function aggregateSources(
     const c = COUNTRY_CENTROIDS[a.country]
     if (!c) continue
     const { sensors, family } = sensorsAndFamily(a.sensors)
-    const topIp = [...a.ips.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? ""
+    const topIp = a.baseTop || ([...a.ips.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? "")
+    // Only the base's busiest address is known by name, so a live address it already counted
+    // can add one until the next refetch.
+    const liveIps = [...a.ips.keys()].filter((ip) => ip !== a.baseTop).length
     sources.push({
       country: a.country,
       point: { lat: c[0], lon: c[1] },
       events: a.events,
-      ips: a.ips.size,
+      ips: a.baseIps + liveIps,
       topIp,
       sensors,
       family,
@@ -161,12 +203,16 @@ export interface Leaders {
   events: number
 }
 
-/** The busiest addresses and networks (AS numbers) of the window, `events` newest first. */
+/**
+ * The busiest addresses and networks (AS numbers) of the window, `events` newest first.
+ * With a `base`, see `aggregateSources`: the buffer adds only what is newer than the base.
+ */
 export function rankLeaders(
   events: readonly LiveEvent[],
   now: number,
   windowMs = ACTIVITY_WINDOW_MS,
   limit = 8,
+  base?: LiveWindow | null,
 ): Leaders {
   interface Acc {
     key: string
@@ -175,6 +221,9 @@ export function rankLeaders(
     org: string | null
     asn: number | null
     ips: Set<string>
+    /** Distinct addresses counted by the base, and how many of them `ips` already names. */
+    baseIps: number
+    seeded: number
     sensors: Map<string, number>
     last: number
   }
@@ -191,6 +240,8 @@ export function rankLeaders(
         org: null,
         asn: null,
         ips: new Set(),
+        baseIps: 0,
+        seeded: 0,
         sensors: new Map(),
         last: ts,
       }
@@ -205,7 +256,41 @@ export function rankLeaders(
     a.sensors.set(e.sensor, (a.sensors.get(e.sensor) ?? 0) + 1)
     if (ts > a.last) a.last = ts
   }
+  if (base) {
+    total = base.events
+    for (const x of base.addresses) {
+      byIp.set(x.ip, {
+        key: x.ip,
+        events: x.events,
+        countries: new Map(x.country ? [[x.country.toUpperCase(), x.events]] : []),
+        org: x.org,
+        asn: x.asn,
+        ips: new Set([x.ip]),
+        baseIps: 1,
+        seeded: 1,
+        sensors: new Map(Object.entries(x.by_sensor)),
+        last: Date.parse(x.last_ts) || 0,
+      })
+    }
+    for (const x of base.networks) {
+      // The base's top addresses of this network are known by name.
+      const named = new Set(base.addresses.filter((a) => a.asn === x.asn).map((a) => a.ip))
+      byAsn.set(String(x.asn), {
+        key: String(x.asn),
+        events: x.events,
+        countries: new Map(x.country ? [[x.country.toUpperCase(), x.events]] : []),
+        org: x.org,
+        asn: x.asn,
+        ips: named,
+        baseIps: x.ips,
+        seeded: named.size,
+        sensors: new Map(Object.entries(x.by_sensor)),
+        last: Date.parse(x.last_ts) || 0,
+      })
+    }
+  }
   for (const e of events) {
+    if (base && e.id <= base.last_event_id) continue
     const ts = Date.parse(e.ts)
     if (!(now - ts <= windowMs)) continue
     total += 1
@@ -223,7 +308,7 @@ export function rankLeaders(
         country: [...a.countries.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? null,
         org: a.org,
         asn: a.asn,
-        ips: a.ips.size,
+        ips: a.baseIps ? a.baseIps + (a.ips.size - a.seeded) : a.ips.size,
         ...sensorsAndFamily(a.sensors),
         last: a.last,
       }))

@@ -5,7 +5,7 @@ import { analyticsHandlers } from "./analytics"
 import { buildBenignFixtures } from "./benign"
 import { buildFixtures } from "./fixtures"
 import { buildReplayFixtures } from "./replay-fixture"
-import { liveHandlers, recentEvents } from "./live"
+import { liveHandlers, liveWindow, recentEvents } from "./live"
 import { settingsHandlers } from "./settings"
 import { siteHandlers } from "./site"
 import { cveHandlers } from "./cves"
@@ -103,6 +103,17 @@ export const handlers = [
     const limit = parseLimit(new URL(request.url).searchParams.get("limit"), 50)
     if (limit === null) return HttpResponse.json({ detail: "invalid limit" }, { status: 422 })
     return HttpResponse.json({ items: recentEvents(limit) })
+  }),
+
+  http.get("/api/v1/live/window", async ({ request }) => {
+    await delay(LATENCY_MS)
+    const params = new URL(request.url).searchParams
+    const minutes = Number(params.get("minutes") ?? 15)
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) {
+      return HttpResponse.json({ detail: "invalid minutes" }, { status: 422 })
+    }
+    const sensors = params.getAll("sensor").flatMap((s) => s.split(",").filter(Boolean))
+    return HttpResponse.json(liveWindow(minutes, sensors))
   }),
 
   http.get("/api/v1/sessions", async ({ request }) => {

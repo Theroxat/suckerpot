@@ -1,10 +1,11 @@
-import { act, render, screen, within } from "@testing-library/react"
+import { act, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { LiveFeedProvider } from "@/app/live-feed"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import type { LiveEvent } from "@/lib/api"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { api, type LiveEvent, type LiveWindow } from "@/lib/api"
 import { liveEvent } from "@/lib/live-messages.test"
 import { LivePage } from "./live"
 
@@ -41,20 +42,56 @@ class Socket {
 }
 
 function mount(path = "/live") {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <TooltipProvider>
-        <LiveFeedProvider
-          options={{
-            createSocket: () => new Socket() as unknown as WebSocket,
-            fetchRecent: () => Promise.resolve([]),
-          }}
-        >
-          <LivePage />
-        </LiveFeedProvider>
-      </TooltipProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[path]}>
+        <TooltipProvider>
+          <LiveFeedProvider
+            options={{
+              createSocket: () => new Socket() as unknown as WebSocket,
+              fetchRecent: () => Promise.resolve([]),
+            }}
+          >
+            <LivePage />
+          </LiveFeedProvider>
+        </TooltipProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
+}
+
+/** The API's window for the last 15 minutes: Brazil bursted 12 minutes ago, past the live buffer. */
+const WINDOW: LiveWindow = {
+  as_of: new Date().toISOString(),
+  window_minutes: 15,
+  last_event_id: 50,
+  events: 80,
+  unlocated: 0,
+  events_last_minute: 5,
+  sessions_last_minute: 2,
+  last_minute_by_sensor: { ssh: { events: 5, sessions: 2 } },
+  by_sensor: { ssh: 80 },
+  countries: [
+    {
+      country: "BR",
+      events: 70,
+      ips: 4,
+      top_ip: "198.51.100.77",
+      last_ts: new Date(Date.now() - 12 * 60_000).toISOString(),
+      by_sensor: { ssh: 70 },
+    },
+    {
+      country: "FR",
+      events: 10,
+      ips: 1,
+      top_ip: "203.0.113.5",
+      last_ts: new Date(Date.now() - 30_000).toISOString(),
+      by_sensor: { ssh: 10 },
+    },
+  ],
+  addresses: [],
+  networks: [],
 }
 
 /** A recent event (inside the 15-minute window). */
@@ -78,9 +115,29 @@ const STATS = {
 afterEach(() => vi.restoreAllMocks())
 beforeEach(() => {
   Socket.current = null
+  // No window by default: the page falls back to the live buffer alone.
+  vi.spyOn(api, "liveWindow").mockRejectedValue(new Error("offline"))
 })
 
 describe("LivePage", () => {
+  it("seeds the map from the API window and adds only newer live events", async () => {
+    vi.spyOn(api, "liveWindow").mockResolvedValue(WINDOW)
+    mount()
+    await act(() => Promise.resolve())
+    await waitFor(() => expect(screen.getByTestId("map")).toHaveAttribute("data-sources", "2"))
+    act(() => {
+      Socket.current?.push({
+        kind: "backfill",
+        events: [
+          recent(51, { country: "DE", src_ip: "198.51.100.23" }),
+          recent(49, { country: "DE", src_ip: "198.51.100.24" }),
+        ],
+      })
+    })
+    // Event 49 is older than the snapshot, so only 51 adds a third country.
+    expect(screen.getByTestId("map")).toHaveAttribute("data-sources", "3")
+  })
+
   it("shows a waiting note, then the headline, the ticker and the rankings", async () => {
     mount()
     await act(() => Promise.resolve())
