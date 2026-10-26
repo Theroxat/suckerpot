@@ -155,6 +155,7 @@ describe("with the API's window as the base", () => {
         events: 60,
         ips: 5,
         top_ip: "192.0.2.50",
+        top_ip_events: 40,
         last_ts: new Date(NOW - 12 * 60_000).toISOString(),
         by_sensor: { ssh: 60 },
       },
@@ -163,6 +164,7 @@ describe("with the API's window as the base", () => {
         events: 36,
         ips: 2,
         top_ip: "192.0.2.1",
+        top_ip_events: 20,
         last_ts: new Date(NOW - 60_000).toISOString(),
         by_sensor: { ssh: 30, web: 6 },
       },
@@ -200,6 +202,21 @@ describe("with the API's window as the base", () => {
     expect(a.events).toBe(100)
     expect(a.unlocated).toBe(4)
     expect(a.sources[0]?.topIp).toBe("192.0.2.50")
+  })
+
+  it("picks the busiest address from base and live counts together", () => {
+    const live = Array.from({ length: 25 }, (_, i) => ({
+      ...ev("FR", "192.0.2.9", "web", 1_000),
+      id: 1_000_001 + i,
+    }))
+    const fr = aggregateSources(live, NOW, undefined, undefined, base).sources.find(
+      (s) => s.country === "FR",
+    )
+    expect(fr?.topIp).toBe("192.0.2.9") // 25 live events beat the base's 20
+    const few = aggregateSources(live.slice(0, 3), NOW, undefined, undefined, base).sources.find(
+      (s) => s.country === "FR",
+    )
+    expect(few?.topIp).toBe("192.0.2.1")
   })
 
   it("adds only live events newer than the snapshot, never counting one twice", () => {

@@ -252,6 +252,7 @@ export function liveWindow(minutes: number, sensors: readonly string[]): LiveWin
         events: c.events,
         ips: c.ips.size,
         top_ip: Object.entries(c.perIp).sort((x, y) => y[1] - x[1])[0]?.[0] ?? "",
+        top_ip_events: Object.values(c.perIp).reduce((m, n) => Math.max(m, n), 0),
         last_ts: c.last,
         by_sensor: c.s,
       })),

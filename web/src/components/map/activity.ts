@@ -66,6 +66,7 @@ export function aggregateSources(
     /** Addresses counted by the base, and its busiest one. */
     baseIps: number
     baseTop: string
+    baseTopEvents: number
     sensors: Map<string, number>
     last: number
     lastId: number
@@ -88,6 +89,7 @@ export function aggregateSources(
         ips: new Map(),
         baseIps: c.ips,
         baseTop: c.top_ip,
+        baseTopEvents: c.top_ip_events,
         sensors: new Map(Object.entries(c.by_sensor)),
         last: Date.parse(c.last_ts) || 0,
         lastId: base.last_event_id,
@@ -112,6 +114,7 @@ export function aggregateSources(
         ips: new Map(),
         baseIps: 0,
         baseTop: "",
+        baseTopEvents: 0,
         sensors: new Map(),
         last: ts,
         lastId: e.id,
@@ -130,7 +133,10 @@ export function aggregateSources(
     const c = COUNTRY_CENTROIDS[a.country]
     if (!c) continue
     const { sensors, family } = sensorsAndFamily(a.sensors)
-    const topIp = a.baseTop || ([...a.ips.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? "")
+    // The base's busiest address counts with its live events; a live address wins on a strict lead.
+    const counts = new Map(a.ips)
+    if (a.baseTop) counts.set(a.baseTop, (counts.get(a.baseTop) ?? 0) + a.baseTopEvents)
+    const topIp = [...counts.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? ""
     // Only the base's busiest address is known by name, so a live address it already counted
     // can add one until the next refetch.
     const liveIps = [...a.ips.keys()].filter((ip) => ip !== a.baseTop).length

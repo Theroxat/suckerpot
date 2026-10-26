@@ -123,6 +123,8 @@ export interface LiveWindowCountry {
   events: number
   ips: number
   top_ip: string
+  /** Events that address sent in the window. */
+  top_ip_events: number
   last_ts: string
   by_sensor: Record<string, number>
 }
