@@ -427,7 +427,7 @@ Details in [Architecture](ARCHITECTURE.md#analysis-workers-m15-to-m19). Both swi
 
 ## Script library and LLM explainer (M17)
 
-Details in [Architecture](ARCHITECTURE.md#analysis-workers-m15-to-m19). The explainer is off by default. When it is on, it sends the **normalised** command text of one script (addresses, host names and URLs are replaced by placeholders) to the Anthropic API, and nothing else. Set the key here or in Settings, under provider `anthropic`. A key set in Settings overrides `ANTHROPIC_API_KEY`.
+Details in [Architecture](ARCHITECTURE.md#analysis-workers-m15-to-m19). The explainer is off by default. When it is on, it sends the **normalised** command text of one script (addresses, host names and URLs are replaced by placeholders) to the Anthropic API, and nothing else. Set the key with `ANTHROPIC_API_KEY`. The API also accepts it as provider `anthropic` (`PUT /api/v1/settings/providers/anthropic`), which overrides the variable, but the Settings page does not show a card for it yet.
 
 | Variable | Default | Description |
 | --- | --- | --- |

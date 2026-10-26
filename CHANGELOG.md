@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Docs
+
+- A "Provider API keys" guide: what each optional key adds and how to get it, step by step.
+- A Troubleshooting section in the deployment guide, and the upgrade command.
+- Refreshed screenshots and a new README gallery for the three-space navigation.
+
 ## [0.2.0] - 2026-10-26
 
 ### Added

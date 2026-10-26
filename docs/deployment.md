@@ -390,6 +390,22 @@ Then check the logs for new events:
 docker compose logs --tail=50 ingest
 ```
 
+## Upgrading
+
+```bash
+git pull --ff-only && docker compose up -d --build
+```
+
+Migrations run on start. Read the [changelog](https://github.com/Theroxat/suckerpot/blob/main/CHANGELOG.md) first for anything that needs a change in `.env`.
+
+## Troubleshooting
+
+| Symptom | Likely cause and fix |
+| --- | --- |
+| After an upgrade the browser shows only the dark background. | The browser kept old app files. Close every tab of the dashboard, then hard-reload with `Ctrl+Shift+R`. |
+| The dashboard is very slow through a tunnel, but the server is idle. | Usually the uplink is saturated. Compare a ping to your gateway with a ping to an internet host (for example `ping -c 10 192.0.2.1` for the gateway and `ping -c 10 example.com`). High loss or delay on both points at the uplink, not at SuckerPot. |
+| The first image build fails with a DNS error. | A transient name-resolution failure while pulling a base image or package. Run `docker compose build` again. |
+
 ## After go-live
 
 - Watch the disk usage. Attackers can send a lot of data. Check it every day for the first week.
