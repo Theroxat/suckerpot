@@ -12,13 +12,16 @@ a LIMIT. Result sizes are capped (countries, addresses, networks), whatever the 
 
 from __future__ import annotations
 
+import time
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import ColumnElement, and_, func, select
+from sqlalchemy import ColumnElement, and_, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db.models import EventRow
 
 from api.benign import IncludeBenign, visible_events
@@ -31,6 +34,10 @@ DEFAULT_MINUTES = 15
 MAX_MINUTES = 60
 MAX_COUNTRIES = 80
 MAX_LEADERS = 10
+STATEMENT_TIMEOUT_MS = 3000
+CACHE_SECONDS = 10.0
+MAX_CACHED = 64
+CacheKey = tuple[int, tuple[str, ...], bool]
 
 
 class WindowCountry(BaseModel):
@@ -96,12 +103,47 @@ def _split(
     return out
 
 
+def _cache(request: Request) -> dict[CacheKey, tuple[float, LiveWindow]]:
+    cache: dict[CacheKey, tuple[float, LiveWindow]] | None = getattr(
+        request.app.state, "live_window_cache", None
+    )
+    if cache is None:
+        cache = {}
+        request.app.state.live_window_cache = cache
+    return cache
+
+
 @router.get("/live/window", response_model=LiveWindow)
 async def live_window(
+    request: Request,
     session: DbSession,
     minutes: Annotated[int, Query(ge=1, le=MAX_MINUTES)] = DEFAULT_MINUTES,
     sensor: SensorFilter = None,
     include_benign: IncludeBenign = False,
+) -> LiveWindow:
+    """The window for every open Live page, computed at most once per few seconds per variant."""
+    key: CacheKey = (minutes, tuple(sorted(sensor or ())), include_benign)
+    cache = _cache(request)
+    hit = cache.get(key)
+    if hit is not None and time.monotonic() - hit[0] < CACHE_SECONDS:
+        return hit[1]
+    # One snapshot and one time limit for the whole route (must be the first statements).
+    await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+    await session.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
+    result = await _compute(session, minutes, sensor, include_benign)
+    now = time.monotonic()
+    for k in [k for k, (t, _) in cache.items() if now - t >= CACHE_SECONDS]:
+        del cache[k]
+    if len(cache) < MAX_CACHED:
+        cache[key] = (now, result)
+    return result
+
+
+async def _compute(
+    session: AsyncSession,
+    minutes: int,
+    sensor: Sequence[str] | None,
+    include_benign: bool,
 ) -> LiveWindow:
     now = datetime.now(UTC)
     since = now - timedelta(minutes=minutes)
@@ -111,41 +153,36 @@ async def live_window(
     if sensor:
         where.append(e.sensor.in_(sensor))
     ip = func.host(e.src_ip)
+    in_minute = e.ts > minute_ago
 
-    last_id = (
-        await session.execute(select(func.max(e.id)).where(e.ts > since, e.ts <= now))
-    ).scalar_one_or_none() or 0
-
-    total, unlocated = (
-        await session.execute(
-            select(
-                func.count(),
-                func.count().filter(e.country.is_(None)),
-            ).where(*where)
-        )
-    ).one()
-
+    # Per sensor: window events, and events and sessions of the last minute.
     sensor_rows = (
         await session.execute(
-            select(e.sensor, func.count()).where(*where).group_by(e.sensor).limit(32)
-        )
-    ).all()
-    by_sensor = {s: n for s, n in sensor_rows}
-
-    minute_rows = (
-        await session.execute(
-            select(e.sensor, func.count(), func.count(func.distinct(e.session_id)))
-            .where(*where, e.ts > minute_ago)
+            select(
+                e.sensor,
+                func.count(),
+                func.count().filter(in_minute),
+                func.count(func.distinct(e.session_id)).filter(in_minute),
+            )
+            .where(*where)
             .group_by(e.sensor)
             .limit(32)
         )
     ).all()
-    last_minute = {s: WindowSensorCounts(events=n, sessions=q) for s, n, q in minute_rows}
-    sessions_last_minute = (
+    by_sensor = {s: n for s, n, _, _ in sensor_rows}
+    last_minute = {s: WindowSensorCounts(events=m, sessions=q) for s, _, m, q in sensor_rows if m}
+    total = sum(by_sensor.values())
+
+    # The rest of the totals, and the newest id, in the same statement and snapshot.
+    unlocated, sessions_last_minute, last_id = (
         await session.execute(
-            select(func.count(func.distinct(e.session_id))).where(*where, e.ts > minute_ago)
+            select(
+                func.count().filter(e.country.is_(None)),
+                func.count(func.distinct(e.session_id)).filter(in_minute),
+                select(func.max(e.id)).where(e.ts > since, e.ts <= now).scalar_subquery(),
+            ).where(*where)
         )
-    ).scalar_one()
+    ).one()
 
     # --- countries
     country_rows = (
@@ -298,7 +335,7 @@ async def live_window(
     return LiveWindow(
         as_of=now,
         window_minutes=minutes,
-        last_event_id=int(last_id),
+        last_event_id=int(last_id or 0),
         events=total,
         unlocated=unlocated,
         events_last_minute=sum(c.events for c in last_minute.values()),

@@ -79,6 +79,9 @@ def test_window_aggregates_the_whole_window() -> None:
         assert [n["asn"] for n in w["networks"]] == [64500, 64501]
         assert w["networks"][0]["ips"] == 2
 
+        # A repeat inside a few seconds is served from the cache; other variants are not.
+        assert client.get("/api/v1/live/window").json()["as_of"] == w["as_of"]
+
         # Research scanners come back with include_benign.
         both = client.get("/api/v1/live/window", params={"include_benign": "true"}).json()
         assert both["events"] == 6
