@@ -46,6 +46,8 @@ class WindowCountry(BaseModel):
     ips: int
     #: The busiest address of this country in the window.
     top_ip: str
+    #: How many events that address sent in the window.
+    top_ip_events: int
     last_ts: datetime
     by_sensor: dict[str, int]
 
@@ -218,6 +220,7 @@ async def _compute(
             select(
                 e.country.label("country"),
                 ip.label("ip"),
+                func.count().label("n"),
                 func.row_number()
                 .over(partition_by=e.country, order_by=(func.count().desc(), ip))
                 .label("rn"),
@@ -227,9 +230,11 @@ async def _compute(
             .subquery()
         )
         top_ips = {
-            c: i
-            for c, i in (
-                await session.execute(select(per_ip.c.country, per_ip.c.ip).where(per_ip.c.rn == 1))
+            c: (i, n)
+            for c, i, n in (
+                await session.execute(
+                    select(per_ip.c.country, per_ip.c.ip, per_ip.c.n).where(per_ip.c.rn == 1)
+                )
             ).all()
         }
         countries = [
@@ -237,7 +242,8 @@ async def _compute(
                 country=str(c),
                 events=n,
                 ips=ips,
-                top_ip=str(top_ips.get(c, "")),
+                top_ip=str(top_ips.get(c, ("", 0))[0]),
+                top_ip_events=top_ips.get(c, ("", 0))[1],
                 last_ts=last,
                 by_sensor=c_sensor.get(c, {}),
             )

@@ -74,6 +74,7 @@ def test_window_aggregates_the_whole_window() -> None:
         assert set(by_country) == {"NL", "BR"}
         assert by_country["NL"]["events"] == 3 and by_country["NL"]["ips"] == 2
         assert by_country["NL"]["top_ip"] == "203.0.113.7"
+        assert by_country["NL"]["top_ip_events"] == 2
         assert by_country["NL"]["by_sensor"] == {"ssh": 2, "web": 1}
         assert w["addresses"][0]["ip"] == "203.0.113.7" and w["addresses"][0]["events"] == 2
         assert [n["asn"] for n in w["networks"]] == [64500, 64501]
