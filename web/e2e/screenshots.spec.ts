@@ -237,7 +237,7 @@ test("attackers", async ({ page }, info) => {
   await settle(page)
   await shoot(page, "attackers-sorted", info.project.name)
 
-  await page.goto("/attackers?view=asns")
+  await page.goto("/networks")
   await expect(page.getByRole("list", { name: "Networks" })).toBeVisible()
   await settle(page)
   await shoot(page, "attackers-asns", info.project.name)

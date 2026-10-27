@@ -24,9 +24,22 @@ test("nav spaces and placeholder routes", async ({ page }, info) => {
       page.getByRole("group", { name: space }).locator("visible=true").first(),
     ).toBeVisible()
   }
-  await expect(
-    page.getByRole("link", { name: "Activity", exact: true }).locator("visible=true").first(),
-  ).toBeVisible()
+  // Hubs are one entry each; their pages are tabs at the top of every page of the hub.
+  for (const hub of ["Attacks", "Campaigns", "Tools", "Trends", "Protection", "Exposure"]) {
+    await expect(
+      page.getByRole("link", { name: hub, exact: true }).locator("visible=true").first(),
+    ).toBeVisible()
+  }
+  if (info.project.name.startsWith("mobile")) await page.keyboard.press("Escape")
+  await page.goto("/attacks")
+  const tabs = page.getByRole("navigation", { name: "Attacks pages" })
+  await expect(tabs.getByRole("link")).toHaveText(["Sessions", "Attackers", "Networks"])
+  await tabs.getByRole("link", { name: "Networks" }).click()
+  await expect(page).toHaveURL(/\/networks$/)
+  await expect(page.getByRole("list", { name: "Networks" })).toBeVisible()
+  // The old address keeps working.
+  await page.goto("/attackers?view=asns")
+  await expect(page).toHaveURL(/\/networks$/)
   await shoot(page, "nav-spaces", info.project.name)
 })
 

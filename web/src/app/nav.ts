@@ -60,7 +60,7 @@ export const NAV_ITEMS: NavItem[] = [
     tabs: [
       { to: "/attacks", label: "Sessions" },
       { to: "/attackers", label: "Attackers" },
-      { to: "/infrastructure", label: "Networks" },
+      { to: "/networks", label: "Networks" },
     ],
   },
 
@@ -77,11 +77,12 @@ export const NAV_ITEMS: NavItem[] = [
   {
     space: "understand",
     to: "/scripts",
-    label: "Payloads",
+    label: "Tools",
     icon: FileCode2,
     tabs: [
       { to: "/scripts", label: "Scripts" },
       { to: "/malware", label: "Malware" },
+      { to: "/infrastructure", label: "Infrastructure" },
     ],
   },
   {
