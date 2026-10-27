@@ -120,7 +120,7 @@ def trend_phrase(current: int, previous: int) -> str:
 
 def happened_sentence(sessions: int, sources: int, with_commands: int, previous: int) -> str:
     if sessions == 0:
-        return "No attacks reached the honeypot in the last 24 hours."
+        return "No attacks reached your sensors in the last 24 hours."
     head = (
         f"{plural(sessions, 'attack')} came from {plural(sources, 'address', 'addresses')} "
         f"in the last 24 hours{trend_phrase(sessions, previous)}."
@@ -145,7 +145,7 @@ def campaigns_sentence(new: int, active: int) -> str:
 def act_sentence(hosts: int, severe: int, blocklist_ips: int) -> str:
     if hosts:
         base = (
-            f"{plural(hosts, 'server')} tried to hand malware to the honeypot today. "
+            f"{plural(hosts, 'server')} tried to hand malware to your sensors today. "
             "Block them on your firewall or web proxy."
         )
         if blocklist_ips:
