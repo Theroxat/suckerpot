@@ -38,7 +38,7 @@ The Styleguide page is routable everywhere but listed in the sidebar only in dev
 | --- | --- | --- |
 | Sign in | `/login` | The login form. Any other page sends you here when there is no session. `/set-password` asks for a new password on first sign-in. |
 | **Observe** | | |
-| Today | `/` | The home page: three to five cards, each one plain-English sentence, up to three items that open a filtered view, and one action. What happened in 24 hours, new campaigns, what to block now, what is new this week, and (once a service inventory exists) your exposure. See [Today, search and the glossary](#today-search-and-the-glossary). |
+| Today | `/` | The home page: the last 24 hours as a visual story. A plain headline and five big numbers, a flow diagram (country, door, how far they got), an hour-by-hour strip, a few "stories of the day", then what to do about it. See [Today, search and the glossary](#today-search-and-the-glossary). |
 | Live | `/live` | A flat world map of the last 15 minutes of attacks, with arcs landing at the home point, a stats strip, a ticker of the newest events and rankings of addresses, countries and networks. See [The Live page](#the-live-page). |
 | Attacks | `/attacks` | Sessions, newest first, one line each, as a short story. Filters: sensor, source address, period, tag, country and network. Pages of 50, virtualised. |
 | Session detail | `/attacks/<session id>` | The attack timeline, with long runs of the same event folded, a terminal replay for shell sessions, and a source panel. |
@@ -129,7 +129,15 @@ The Live page and the status dot in the header share one connection per browser 
 
 ## Today, search and the glossary
 
-**Today** is the page you land on. Its sentences are written by the API (`GET /api/v1/today`), so they match the numbers on the other pages. A card with nothing to report keeps its place and says so.
+**Today** is the page you land on. It tells the last 24 hours in plain words first, and keeps the technical detail one click away.
+
+- **Headline and numbers.** One sentence, then visits, machines, countries, how many got in and how many tried to install something.
+- **The flow.** A diagram from the country, to the door (the sensor), to how far the visitor got: only looked, guessed passwords, got in, ran commands, tried to install something, sent an exploit. Hover for the plain label and the count. Click a block or ribbon to open the Attacks list filtered the same way (`/attacks?stage=…`). A legend explains each stage in one sentence. On a phone it becomes one bar per door.
+- **Hour by hour.** Drag, click or use the arrow keys to pick an hour; one sentence says what happened in it.
+- **Stories of the day.** Three to five notable visits, each with a plain title, a step-by-step path that plays once, a severity badge, the country and address, and a **Technical details** button (raw lines, tags, ATT&CK techniques, campaign and a link to the full session).
+- **What you can do about it.** The cards from `GET /api/v1/today`: new campaigns, what to block, what is new this week, your exposure.
+
+The story comes from `GET /api/v1/story`. Underlined words (brute force, malware, exploit, scanner and more) show a one-sentence definition. A card with nothing to report keeps its place and says so.
 
 **Search** is the box at the top of every page on a computer, and the magnifier in the top bar on a phone. `Ctrl+K` (`Cmd+K` on a Mac) opens the same search from anywhere. Type an address, the start of an address ending in a dot such as `203.0.113.`, a CVE id, a file hash, a domain or a URL, or the start of a campaign name. Results are grouped, at most five per group, and Enter opens the first one: an attacker profile, a campaign, the CVE watch, or the Infrastructure page. Indicators are shown defanged and never as links.
 

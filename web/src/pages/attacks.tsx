@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { api, queryKeys, type SessionFilters } from "@/lib/api"
 import { useIpMask } from "@/app/ip-mask"
 import { formatNumber, maskIp, plural } from "@/lib/format"
+import { STAGE_META, parseStage } from "@/lib/story"
 import { SENSOR_META, parseSensors, sensorSetPhrase } from "@/lib/sensors"
 import { cn } from "@/lib/utils"
 
@@ -36,6 +37,7 @@ function useFilters(): SessionFilters {
     asn: /^\d{1,10}$/.test(asn ?? "") ? (asn ?? undefined) : undefined,
     technique: /^T\d{4}(\.\d{3})?$/.test(technique ?? "") ? (technique ?? undefined) : undefined,
     campaign_id: /^\d{1,15}$/.test(campaign ?? "") ? (campaign ?? undefined) : undefined,
+    stage: parseStage(params.get("stage")),
   }
 }
 
@@ -49,7 +51,14 @@ function useHeadline(filters: SessionFilters, loaded: number, complete: boolean)
       ? `${formatNumber(loaded)} ${loaded === 1 ? "session" : "sessions"} from ${ip}.`
       : `Every session from ${ip}, newest first.`
   }
-  if (filters.tag ?? filters.country ?? filters.asn ?? filters.technique ?? filters.campaign_id) {
+  if (
+    filters.tag ??
+    filters.stage ??
+    filters.country ??
+    filters.asn ??
+    filters.technique ??
+    filters.campaign_id
+  ) {
     return complete
       ? `${formatNumber(loaded)} matching ${loaded === 1 ? "session" : "sessions"}, newest first.`
       : "Matching sessions, newest first."
@@ -123,6 +132,14 @@ export function AttacksPage() {
             param: "src_ip",
             label: "IP",
             render: (v) => <span className="font-mono">{masked ? maskIp(v) : v}</span>,
+          },
+          {
+            param: "stage",
+            label: "How far",
+            render: (v) => {
+              const stage = parseStage(v)
+              return <span>{stage ? STAGE_META[stage].label : v}</span>
+            },
           },
           { param: "tag", label: "Tag", render: (v) => <span className="font-mono">{v}</span> },
           {

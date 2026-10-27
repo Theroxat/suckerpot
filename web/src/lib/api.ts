@@ -77,6 +77,8 @@ export interface Session extends Enrichment {
   techniques?: string[]
   /** The campaign the session belongs to, once ingest has grouped it. */
   campaign_id?: number | null
+  /** The deepest step reached (looked ... exploit); absent on older API versions. */
+  stage?: string
   /** A known research scanner (harmless crawler); only present when scanners are shown. */
   benign?: boolean
   scanner_name?: string | null
@@ -304,6 +306,8 @@ export interface SessionFilters {
   until?: string | undefined
   technique?: string | undefined
   campaign_id?: string | undefined
+  /** How far the session got: looked, guessed, got_in, commands, download or exploit. */
+  stage?: string | undefined
 }
 
 export class ApiError extends Error {

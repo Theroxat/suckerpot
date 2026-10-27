@@ -19,6 +19,7 @@ import { getJson } from "./api"
 import { formatNumber, plural } from "./format"
 import type { TermId } from "./glossary"
 import { SENSORS, sensorMeta } from "./sensors"
+import { EXPLOIT_TAGS, type Severity } from "./severity"
 
 export const STAGES = ["looked", "guessed", "got_in", "commands", "download", "exploit"] as const
 export type Stage = (typeof STAGES)[number]
@@ -177,6 +178,40 @@ export const STAGE_META: Record<Stage, StageMeta> = {
 
 export function isStage(v: string): v is Stage {
   return (STAGES as readonly string[]).includes(v)
+}
+
+/** Parse a `?stage=` value; anything but one of the six stages is ignored. */
+export function parseStage(raw: string | null | undefined): Stage | undefined {
+  return raw && isStage(raw) ? raw : undefined
+}
+
+/** The stage of a session from its counters, for sessions the API did not label. */
+export function sessionStage(s: {
+  stage?: string | undefined
+  tags: readonly string[]
+  downloads: number
+  commands: number
+  login_success: boolean
+  login_attempts: number
+}): Stage {
+  if (s.stage && isStage(s.stage)) return s.stage
+  if (s.tags.some((t) => EXPLOIT_TAGS.has(t))) return "exploit"
+  if (s.downloads > 0 || s.tags.includes("malware-drop")) return "download"
+  if (s.commands > 0) return "commands"
+  if (s.login_success) return "got_in"
+  if (s.login_attempts > 0) return "guessed"
+  return "looked"
+}
+
+/** The API's story severity on the UI scale. Unknown values read as "info". */
+export function storySeverity(v: string): Severity {
+  const map: Record<string, Severity> = {
+    info: "info",
+    low: "notice",
+    medium: "warning",
+    high: "severe",
+  }
+  return map[v] ?? "info"
 }
 
 export function stageRank(key: string): number {

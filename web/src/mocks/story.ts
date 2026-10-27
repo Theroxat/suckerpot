@@ -77,12 +77,12 @@ const DEPTH: Record<string, Record<Stage, number>> = {
 }
 
 const STAGE_HREF: Record<Stage, string> = {
-  looked: "/attacks?period=24h",
-  guessed: "/attacks?period=24h&tag=brute-force",
-  got_in: "/attacks?period=24h&login_success=true",
-  commands: "/attacks?period=24h&has_commands=true",
-  download: "/attacks?period=24h&tag=malware-drop",
-  exploit: "/attacks?period=24h&tag=php2shell",
+  looked: "/attacks?stage=looked",
+  guessed: "/attacks?stage=guessed",
+  got_in: "/attacks?stage=got_in",
+  commands: "/attacks?stage=commands",
+  download: "/attacks?stage=download",
+  exploit: "/attacks?stage=exploit",
 }
 
 function buildFlow(): { flow: StoryResponse["flow"]; totals: StoryResponse["totals"] } {
@@ -120,7 +120,7 @@ function buildFlow(): { flow: StoryResponse["flow"]; totals: StoryResponse["tota
           ? `${o.ips} IPs · 31 countries`
           : `ISO ${o.key} · ${o.ips} IPs · top ${o.asn}`,
       sessions: originTotal.get(o.key) ?? 0,
-      href: o.key === "other" ? "/attacks?period=24h" : `/attacks?country=${o.key}`,
+      href: o.key === "other" ? "/attacks" : `/attacks?country=${o.key}`,
     })),
     ...doorKeys.map((d): FlowNode => ({
       id: `door:${d}`,

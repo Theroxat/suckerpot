@@ -10,7 +10,10 @@ import {
   linkHref,
   orderFlow,
   originRows,
+  parseStage,
   sankeyData,
+  sessionStage,
+  storySeverity,
   type FlowNode,
   type StoryResponse,
 } from "./story"
@@ -109,6 +112,46 @@ describe("linkHref", () => {
     const origin = node({ id: "origin:NL", key: "NL", href: "/attacks?country=NL" })
     expect(linkHref(door, stage)).toBe("/attacks?tag=php2shell&sensor=ssh")
     expect(linkHref(origin, door)).toBe("/attacks?country=NL&sensor=ssh")
+  })
+})
+
+describe("stage filter and severity", () => {
+  it("accepts only the six stages", () => {
+    expect(parseStage("got_in")).toBe("got_in")
+    expect(parseStage("nope")).toBeUndefined()
+    expect(parseStage(null)).toBeUndefined()
+  })
+
+  it("keeps stage hrefs valid when a door is added", () => {
+    const door = node({ id: "door:web", column: "door", key: "web", href: "/attacks?sensor=web" })
+    const stage = node({
+      id: "stage:got_in",
+      column: "stage",
+      key: "got_in",
+      href: "/attacks?stage=got_in",
+    })
+    expect(linkHref(door, stage)).toBe("/attacks?stage=got_in&sensor=web")
+  })
+
+  it("labels sessions the API did not", () => {
+    const base = { tags: [], downloads: 0, commands: 0, login_success: false, login_attempts: 0 }
+    expect(sessionStage(base)).toBe("looked")
+    expect(sessionStage({ ...base, login_attempts: 3 })).toBe("guessed")
+    expect(sessionStage({ ...base, login_success: true })).toBe("got_in")
+    expect(sessionStage({ ...base, commands: 2 })).toBe("commands")
+    expect(sessionStage({ ...base, downloads: 1 })).toBe("download")
+    expect(sessionStage({ ...base, tags: ["php2shell"] })).toBe("exploit")
+    expect(sessionStage({ ...base, stage: "guessed", commands: 2 })).toBe("guessed")
+  })
+
+  it("maps story severity to the UI scale", () => {
+    expect(["info", "low", "medium", "high", "?"].map(storySeverity)).toEqual([
+      "info",
+      "notice",
+      "warning",
+      "severe",
+      "info",
+    ])
   })
 })
 
