@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
@@ -744,7 +745,7 @@ async def _flow(
                 label=country_name(c),
                 technical=tech,
                 sessions=origin_counts[f"origin:{c}"],
-                href=f"/attacks?country={c}",
+                href=f"/attacks?country={quote(c, safe='')}",
             )
         )
     if origin_counts.get("origin:other"):
@@ -771,7 +772,7 @@ async def _flow(
                 label=door_label(sensor),
                 technical=f"sensor {sensor} · {plural(n, 'session')}",
                 sessions=n,
-                href=f"/attacks?sensor={sensor}",
+                href=f"/attacks?sensor={quote(sensor, safe='')}",
             )
         )
     for st in STAGES:
@@ -905,7 +906,7 @@ async def _stories(session: AsyncSession, where: list[Any], now: datetime) -> li
                 country=r.country,
                 country_name=country_name(r.country) if r.country else None,
                 asn=r.asn,
-                org=r.org,
+                org=clip(r.org, 60) if r.org else None,
                 sensor=r.sensor,
                 stage=st,
                 severity=SEVERITY_BY_STAGE[st],  # type: ignore[arg-type]
@@ -931,7 +932,7 @@ async def _stories(session: AsyncSession, where: list[Any], now: datetime) -> li
                     StoryTechnique(id=t, name=names[t]) for t in r.techniques if t in names
                 ],
                 campaign=campaigns.get(r.campaign_id) if r.campaign_id else None,
-                href=f"/attacks/{r.session_id}",
+                href=f"/attacks/{quote(r.session_id, safe='')}",
             )
         )
     return out
