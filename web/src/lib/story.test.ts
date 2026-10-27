@@ -10,8 +10,13 @@ import {
   linkHref,
   orderFlow,
   originRows,
+  parseInstant,
   parseStage,
   sankeyData,
+  scopeFlow,
+  windowLabel,
+  windowSince,
+  withWindow,
   sessionStage,
   storySeverity,
   type FlowNode,
@@ -152,6 +157,48 @@ describe("stage filter and severity", () => {
       "severe",
       "info",
     ])
+  })
+})
+
+describe("time window", () => {
+  const asOf = "2026-10-27T12:00:00.000Z"
+
+  it("starts the window at as_of minus the hours", () => {
+    expect(windowSince(asOf, 24)).toBe("2026-10-26T12:00:00.000Z")
+  })
+
+  it("adds the window to every node link and keeps the other params", () => {
+    const since = windowSince(asOf, 24)
+    const scoped = scopeFlow(flow, since)
+    for (const n of scoped.nodes) {
+      expect(new URL(n.href, "http://x").searchParams.get("since")).toBe(since)
+    }
+    const stage = scoped.nodes.find((n) => n.id === "stage:got_in")
+    expect(stage?.href).toBe(`/attacks?stage=got_in&since=${encodeURIComponent(since)}`)
+    const door = scoped.nodes.find((n) => n.id === "door:ssh")
+    if (!stage || !door) throw new Error("missing node")
+    const href = new URL(linkHref(door, stage), "http://x")
+    expect(href.searchParams.get("since")).toBe(since)
+    expect(href.searchParams.get("sensor")).toBe("ssh")
+  })
+
+  it("adds until for a bucket", () => {
+    const h = withWindow("/attacks", "2026-10-27T10:00:00.000Z", "2026-10-27T11:00:00.000Z")
+    expect(new URL(h, "http://x").searchParams.get("until")).toBe("2026-10-27T11:00:00.000Z")
+  })
+
+  it("validates dates from the URL", () => {
+    expect(parseInstant("2026-10-27T10:00:00Z")).toBe("2026-10-27T10:00:00.000Z")
+    expect(parseInstant("yesterday")).toBeUndefined()
+    expect(parseInstant("")).toBeUndefined()
+  })
+
+  it("writes a plain label", () => {
+    const now = Date.parse(asOf)
+    expect(windowLabel(windowSince(asOf, 24), undefined, now)).toBe("Last 24 hours")
+    expect(windowLabel("2026-10-27T10:00:00Z", "2026-10-27T11:00:00Z", now)).toMatch(
+      /^Between \d\d:\d\d and \d\d:\d\d$/,
+    )
   })
 })
 
