@@ -42,6 +42,7 @@ from api.scripts import router as scripts_router
 from api.search import router as search_router
 from api.settings import router as settings_router
 from api.spa import install_security_headers, install_spa
+from api.story import router as story_router
 from api.today import router as today_router
 from api.trends import router as trends_router
 from api.users import router as users_router
@@ -131,6 +132,7 @@ def create_app(
         search_router,
         today_router,
         live_window_router,
+        story_router,
     ):
         include(api_router)
     if os.environ.get("FEEDS_ENABLED", "false").strip().lower() in TRUE_VALUES:
