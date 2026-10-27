@@ -208,3 +208,58 @@ def test_sessions_can_be_filtered_by_stage() -> None:
             r = client.get("/api/v1/sessions", params={"stage": stage})
             assert r.status_code == 200, r.text
             assert {i["session_id"] for i in r.json()["items"]} == ids
+
+
+def test_stories_are_varied_when_one_door_dominates() -> None:
+    async def seed() -> None:
+        engine = create_engine(pool_size=1)
+        factory = create_session_factory(engine)
+        now = datetime.now(UTC)
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("TRUNCATE events, sessions"))
+            async with factory() as s, s.begin():
+                rows = [
+                    (f"v-sql{i}", "mysql", f"203.0.113.{i}", 0, False, 0, 0, ["sql-rce"], 500 - i)
+                    for i in range(1, 11)
+                ]
+                rows += [
+                    ("v-dl", "telnet", "198.51.100.1", 2, True, 3, 1, ["mirai"], 5),
+                    ("v-guess", "ssh", "198.51.100.2", 9, False, 0, 0, [], 5),
+                    ("v-cmd", "ssh", "198.51.100.3", 2, True, 4, 0, [], 5),
+                    ("v-in", "web", "198.51.100.4", 1, True, 0, 0, [], 5),
+                ]
+                for sid, sensor, ip, att, ok, cmd, dl, tags, n in rows:
+                    started = now - timedelta(minutes=30)
+                    s.add(
+                        SessionRow(
+                            session_id=sid,
+                            sensor=sensor,
+                            src_ip=ip,
+                            src_port=1,
+                            dst_port=2,
+                            started_at=started,
+                            last_event_at=started,
+                            event_count=n,
+                            login_attempts=att,
+                            login_success=ok,
+                            commands=cmd,
+                            downloads=dl,
+                            country="NL",
+                            tags=tags,
+                        )
+                    )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(seed())
+    with TestClient(create_app(None)) as client:
+        stories = client.get("/api/v1/story").json()["stories"]
+        sensors = [st["sensor"] for st in stories]
+        assert sensors.count("mysql") == 1
+        assert {"telnet", "ssh", "web"} <= set(sensors)
+        assert [st["stage"] for st in stories] == [
+            "exploit", "download", "commands", "got_in", "guessed",
+        ]  # fmt: skip
+        assert stories[0]["title"].endswith("(MySQL door)")
+        assert "run its own commands" in stories[0]["title"]
