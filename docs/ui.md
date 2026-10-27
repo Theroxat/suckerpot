@@ -4,14 +4,22 @@ The dashboard is a single-page web app in `web/`. The API serves the built files
 
 ## Navigation
 
-The sidebar (the drawer on a phone) groups the pages in three spaces, plus Settings at the bottom.
+The sidebar (the drawer on a phone) has ten entries in three spaces, plus Settings at the bottom. Related pages are grouped in **hubs**: one sidebar entry, and a row of tabs at the top of each page of the hub. The tabs are plain links between ordinary pages, so every address and filter in the URL keeps working. The entry stays highlighted on detail pages too (a session, an attacker, a campaign, a script).
 
-| Space | Pages | Question it answers |
-| --- | --- | --- |
-| Observe | Today, Live, Attacks, Attackers, Activity | What is happening now? |
-| Understand | Campaigns, Techniques, Scripts, Malware, Infrastructure, Trends, CVE watch | Who is behind it, and how do they work? |
-| Defend | Blocklists, Detections, Your exposure, Alerts and reports | What should I do about it? |
-| System | Settings (and the Styleguide) | How is the system set up? |
+| Space | Entry | Tabs | Question it answers |
+| --- | --- | --- | --- |
+| Observe | Today | | What is happening now? |
+| Observe | Live | | What is happening now? |
+| Observe | Attacks | Sessions, Attackers, Networks | Who is attacking, and from where? |
+| Understand | Campaigns | Campaigns, Techniques | Who is behind it? |
+| Understand | Payloads | Scripts, Malware | What do they drop? |
+| Understand | Trends | Activity, Patterns | How does it change over time? |
+| Defend | Protection | Blocklists, Detections | What should I block or watch? |
+| Defend | Exposure | Your exposure, CVE watch | What of mine is at risk? |
+| Defend | Alerts | | What was I told, and what did the weekly report say? |
+| System | Settings | | How is the system set up? |
+
+The Styleguide page is routable everywhere but listed in the sidebar only in development builds. The whole table lives in `web/src/app/nav.ts`.
 
 `Ctrl+K` opens search from anywhere. The pages read the endpoints described in [API](api.md).
 
