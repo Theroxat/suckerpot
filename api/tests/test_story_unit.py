@@ -194,9 +194,18 @@ def test_technical_text_is_truncated() -> None:
 
 
 def _cand(
-    sid: str, ip: str, rank: int, events: int, minute: int, camp: int | None = None
+    sid: str,
+    ip: str,
+    rank: int,
+    events: int,
+    minute: int,
+    camp: int | None = None,
+    sensor: str | None = None,
 ) -> Candidate:
-    return Candidate(sid, ip, camp, rank, events, T0 + timedelta(minutes=minute))
+    # Each candidate gets its own door unless a test says otherwise.
+    return Candidate(
+        sid, ip, camp, rank, events, T0 + timedelta(minutes=minute), sensor or f"door-{sid}"
+    )
 
 
 def test_selection_orders_by_depth_events_then_recency() -> None:
@@ -266,3 +275,58 @@ def test_sessions_stage_filter_rejects_unknown_values() -> None:
 
     with TestClient(create_app(None)) as client:
         assert client.get("/api/v1/sessions", params={"stage": "nonsense"}).status_code == 422
+
+
+def test_selection_spreads_over_doors_and_stages() -> None:
+    cands = [_cand(f"m{i}", f"192.0.2.{i}", 5, 100 - i, 0, sensor="mysql") for i in range(1, 5)]
+    cands += [_cand("ms", "198.51.100.1", 5, 50, 0, sensor="mssql")]
+    cands += [_cand("dl", "198.51.100.2", 4, 5, 0, sensor="telnet")]
+    cands += [_cand("cm", "198.51.100.3", 3, 5, 0, sensor="ssh")]
+    cands += [_cand("gi", "198.51.100.4", 2, 5, 0, sensor="ssh")]
+    picked = select_stories(cands)
+    assert [c.session_id for c in picked] == ["m1", "ms", "dl", "cm", "gi"]
+
+
+def test_selection_caps_a_door_and_relaxes_only_when_short() -> None:
+    cands = [_cand(f"m{i}", f"192.0.2.{i}", 5, 100 - i, 0, sensor="mysql") for i in range(1, 6)]
+    cands += [_cand("s1", "198.51.100.1", 1, 5, 0, sensor="ssh")]
+    picked = select_stories(cands)
+    # The other door is covered, and the busy door is reused only to fill the slots.
+    assert "s1" in {c.session_id for c in picked}
+    assert len(picked) == 5
+    only_mysql = select_stories(cands[:5])
+    assert len(only_mysql) == 5  # relaxed: nothing else is left
+
+
+def test_exploit_titles_name_the_attack_in_plain_words() -> None:
+    def title(tag: str) -> str:
+        return story_title(
+            stage="exploit", sensor="mysql", tags=[tag], login_success=False, login_attempts=0
+        )
+
+    assert title("db-ransom") == (
+        "A robot tried to wipe a database and leave a ransom note (MySQL door)"
+    )
+    assert "run its own commands" in title("sql-rce")
+    assert "flaw in PHP" in title("php2shell")
+    assert "EternalBlue" in title("eternalblue")
+    assert "Redis" in title("redis-rogue-master")
+    assert "container" in title("container-escape")
+    generic = story_title(
+        stage="exploit", sensor="mssql", tags=["recon"], login_success=False, login_attempts=0
+    )
+    assert generic == "A robot sent an exploit to the MSSQL door"
+
+
+def test_exploit_summary_uses_the_same_words() -> None:
+    summary = story_summary(
+        stage="exploit",
+        country="NL",
+        login_attempts=0,
+        login_success=False,
+        commands=0,
+        downloads=0,
+        seconds=3,
+        tags=["sql-rce"],
+    )
+    assert summary == "From Netherlands. It tried to make the database run its own commands."

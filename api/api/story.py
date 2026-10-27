@@ -51,7 +51,8 @@ TOP_ORIGINS = 6
 MAX_STORIES = 5
 MIN_STORIES = 3
 MAX_STEPS = 12
-MAX_CANDIDATES = 60
+MAX_CANDIDATES = 120
+CANDIDATES_PER_GROUP = 3
 MAX_EVENTS_PER_SESSION = 500
 GUESS_PAIRS = 3
 MAX_TECHNICAL = 200
@@ -338,12 +339,33 @@ def door_label(sensor: str) -> str:
     return SENSOR_LABELS.get(sensor, sensor.upper())
 
 
+#: What a known attack was, as a verb phrase. Only templates, never attacker text.
+WHAT_BY_TAG: tuple[tuple[str, str], ...] = (
+    ("db-ransom", "tried to wipe a database and leave a ransom note"),
+    ("sql-rce", "tried to make the database run its own commands"),
+    ("php2shell", "tried to take over the web server through a flaw in PHP"),
+    ("eternalblue", "tried to break in through EternalBlue, a Windows file-sharing flaw"),
+    ("redis-rogue-master", "tried to make the Redis server load a malicious module"),
+    ("container-escape", "tried to break out of a container"),
+)
+
+
+def what_for(tags: Sequence[str]) -> str | None:
+    for tag, what in WHAT_BY_TAG:
+        if tag in tags:
+            return what
+    return None
+
+
 def story_title(
     *, stage: str, sensor: str, tags: Sequence[str], login_success: bool, login_attempts: int
 ) -> str:
     actor = actor_for(tags)
     door = door_label(sensor)
     if stage == "exploit":
+        what = what_for(tags)
+        if what is not None:
+            return f"{actor} {what} ({door} door)"
         return f"{actor} sent an exploit to the {door} door"
     if stage == "download":
         if login_success:
@@ -367,6 +389,7 @@ def story_summary(
     commands: int,
     downloads: int,
     seconds: float,
+    tags: Sequence[str] = (),
 ) -> str:
     where = f"From {country_name(country)}. " if country else ""
     parts: list[str] = []
@@ -380,7 +403,7 @@ def story_summary(
         n = max(downloads, 1)
         parts.append(f"tried to download {plural(n, 'program')}")
     if stage == "exploit":
-        parts.append("sent an exploit")
+        parts.append(what_for(tags) or "sent an exploit")
     if not parts:
         return f"{where}It only looked around, then left."
     if len(parts) == 1:
@@ -545,26 +568,66 @@ class Candidate:
     stage_rank: int
     event_count: int
     started_at: datetime
+    #: The door (sensor) the session knocked on.
+    sensor: str = ""
+
+
+MAX_PER_DOOR = 2
+
+
+def _interest(c: Candidate) -> tuple[int, int, float]:
+    return (-c.stage_rank, -c.event_count, -c.started_at.timestamp())
 
 
 def select_stories(candidates: Sequence[Candidate], limit: int = MAX_STORIES) -> list[Candidate]:
-    """Deepest stage first, then most events, then most recent; one per address and campaign."""
-    ordered = sorted(
-        candidates, key=lambda c: (-c.stage_rank, -c.event_count, -c.started_at.timestamp())
-    )
+    """A varied handful, the most interesting first.
+
+    Deepest stage first, then most events, then most recent; one per address and campaign always.
+    Variety comes first: one story per stage (deepest first), at most one per (door, stage) and
+    two per door. Free slots are then filled in order of interest, relaxing the door and stage
+    rules only when nothing else is left.
+    """
+    ordered = sorted(candidates, key=_interest)
     seen_ips: set[str] = set()
     seen_campaigns: set[int] = set()
-    out: list[Candidate] = []
-    for c in ordered:
-        if c.src_ip in seen_ips or (c.campaign_id is not None and c.campaign_id in seen_campaigns):
-            continue
+    per_door: Counter[str] = Counter()
+    door_stage: set[tuple[str, int]] = set()
+    chosen: list[Candidate] = []
+
+    def eligible(c: Candidate, strict: bool) -> bool:
+        if c in chosen or c.src_ip in seen_ips:
+            return False
+        if c.campaign_id is not None and c.campaign_id in seen_campaigns:
+            return False
+        if strict and (
+            per_door[c.sensor] >= MAX_PER_DOOR or (c.sensor, c.stage_rank) in door_stage
+        ):
+            return False
+        return True
+
+    def take(c: Candidate) -> None:
+        chosen.append(c)
         seen_ips.add(c.src_ip)
         if c.campaign_id is not None:
             seen_campaigns.add(c.campaign_id)
-        out.append(c)
-        if len(out) == limit:
+        per_door[c.sensor] += 1
+        door_stage.add((c.sensor, c.stage_rank))
+
+    # 1. One story per stage, deepest first.
+    for rank in sorted({c.stage_rank for c in ordered}, reverse=True):
+        if len(chosen) == limit:
             break
-    return out
+        pick = next((c for c in ordered if c.stage_rank == rank and eligible(c, True)), None)
+        if pick is not None:
+            take(pick)
+    # 2. Fill with the next most interesting, still varied; 3. then without the variety rules.
+    for strict in (True, False):
+        for c in ordered:
+            if len(chosen) == limit:
+                break
+            if eligible(c, strict):
+                take(c)
+    return sorted(chosen, key=_interest)
 
 
 def bucket_seconds(hours: int) -> int:
@@ -834,36 +897,50 @@ async def _timeline(
 
 async def _stories(session: AsyncSession, where: list[Any], now: datetime) -> list[StoryItem]:
     s = SessionRow
+    rank = stage_rank_expr()
+    pool = (
+        select(
+            s.session_id,
+            func.host(s.src_ip).label("ip"),
+            s.campaign_id,
+            rank.label("rank"),
+            s.event_count,
+            s.started_at,
+            s.ended_at,
+            s.last_event_at,
+            s.sensor,
+            s.country,
+            s.asn,
+            s.org,
+            s.login_attempts,
+            s.login_success,
+            s.commands,
+            s.downloads,
+            s.tags,
+            s.techniques,
+            func.row_number()
+            .over(
+                partition_by=(s.sensor, rank),
+                order_by=(s.event_count.desc(), s.started_at.desc()),
+            )
+            .label("k"),
+        )
+        .where(*where)
+        .subquery()
+    )
     rows = (
         await session.execute(
-            select(
-                s.session_id,
-                func.host(s.src_ip).label("ip"),
-                s.campaign_id,
-                stage_rank_expr().label("rank"),
-                s.event_count,
-                s.started_at,
-                s.ended_at,
-                s.last_event_at,
-                s.sensor,
-                s.country,
-                s.asn,
-                s.org,
-                s.login_attempts,
-                s.login_success,
-                s.commands,
-                s.downloads,
-                s.tags,
-                s.techniques,
-            )
-            .where(*where)
-            .order_by(stage_rank_expr().desc(), s.event_count.desc(), s.started_at.desc())
+            select(pool)
+            .where(pool.c.k <= CANDIDATES_PER_GROUP)
+            .order_by(pool.c.rank.desc(), pool.c.event_count.desc(), pool.c.started_at.desc())
             .limit(MAX_CANDIDATES)
         )
     ).all()
     chosen = select_stories(
         [
-            Candidate(r.session_id, r.ip, r.campaign_id, r.rank, r.event_count, r.started_at)
+            Candidate(
+                r.session_id, r.ip, r.campaign_id, r.rank, r.event_count, r.started_at, r.sensor
+            )
             for r in rows
         ]
     )
@@ -925,6 +1002,7 @@ async def _stories(session: AsyncSession, where: list[Any], now: datetime) -> li
                     commands=r.commands,
                     downloads=r.downloads,
                     seconds=seconds,
+                    tags=r.tags,
                 ),
                 steps=build_steps(events.get(r.session_id, []), guesses.get(r.session_id)),
                 tags=list(r.tags),
