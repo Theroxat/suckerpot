@@ -52,6 +52,22 @@ function asFlowNode(payload: unknown): FlowNode | null {
   return p && typeof p.id === "string" && typeof p.href === "string" ? (p as FlowNode) : null
 }
 
+const MIN_NODE = 6
+const MIN_LABEL_GAP = 14
+
+/**
+ * Keeps labels of one column MIN_LABEL_GAP apart. recharts draws the nodes of a column top to
+ * bottom, so each label only has to clear the one before it. One nudger lives for one pass.
+ */
+function labelNudger() {
+  const last = new Map<string, number>()
+  return (column: string, ideal: number): number => {
+    const y = Math.max(ideal, (last.get(column) ?? -Infinity) + MIN_LABEL_GAP)
+    last.set(column, y)
+    return y
+  }
+}
+
 const COLUMN_TITLES = ["Where they come from", "Which door they knock on", "How far they got"]
 
 interface FlowProps {
@@ -84,14 +100,18 @@ function FlowSankey({ flow }: FlowProps) {
     hover === null ||
     (hover.kind === "node" ? hover.id === id : hover.source === id || hover.target === id)
 
+  const nudge = labelNudger()
   const renderNode = (props: NodeProps) => {
     const node = asFlowNode(props.payload)
     if (!node) return <g />
     const { x, y, width, height, index } = props
     const color = nodeColor(node)
     const open = () => void navigate(node.href)
-    const right = node.column !== "stage"
-    const textX = right ? x + width + 8 : x - 8
+    const labelled = node.column !== "origin" || height >= 12
+    const drawn = Math.max(height, MIN_NODE)
+    // Labels of one column are nudged apart so tiny neighbours stay readable.
+    const ly = labelled ? nudge(node.column, y + height / 2) : y + height / 2
+    const textX = x + width + (node.column === "stage" ? 6 : 8)
     const label = `${node.label}, ${plural(node.sessions, "visit")}`
     return (
       <g
@@ -117,22 +137,25 @@ function FlowSankey({ flow }: FlowProps) {
           x={x}
           y={y}
           width={width}
-          height={Math.max(height, 2)}
+          height={drawn}
           rx={2}
           fill={color}
           opacity={touches(node.id) ? 1 : 0.4}
         />
-        {height >= 12 ? (
+        {labelled ? (
           <text
             x={textX}
-            y={y + height / 2}
+            y={ly}
             dy="0.35em"
-            textAnchor={right ? "start" : "end"}
+            textAnchor="start"
             className="fill-fg stroke-surface text-xs"
             strokeWidth={3}
             paintOrder="stroke"
           >
             {node.label}
+            {node.column !== "origin" ? (
+              <tspan className="fill-fg-muted tabular-nums">{` · ${formatNumber(node.sessions)}`}</tspan>
+            ) : null}
           </text>
         ) : null}
       </g>
@@ -194,7 +217,7 @@ function FlowSankey({ flow }: FlowProps) {
             nodePadding={14}
             sort={false}
             iterations={32}
-            margin={{ top: 8, right: 150, bottom: 8, left: 8 }}
+            margin={{ top: 8, right: 200, bottom: 8, left: 8 }}
           />
         </ResponsiveContainer>
       </div>

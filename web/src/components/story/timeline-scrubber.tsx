@@ -41,7 +41,6 @@ export function TimelineScrubber({ timeline, className }: TimelineScrubberProps)
 
   const sentence = bucket ? bucketSentence(bucket, ms) : ""
   const first = timeline[0]
-  const end = timeline[last]
 
   return (
     <div className={className}>
@@ -113,7 +112,7 @@ export function TimelineScrubber({ timeline, className }: TimelineScrubberProps)
               <div
                 className={cn(
                   "flex w-full flex-col justify-end overflow-hidden rounded-t-xs transition-opacity duration-150",
-                  i === index ? "opacity-100 ring-1 ring-fg" : "opacity-60",
+                  i === index ? "opacity-100" : "opacity-60",
                 )}
                 style={{ height: `${h}%` }}
                 data-selected={i === index || undefined}
@@ -121,22 +120,39 @@ export function TimelineScrubber({ timeline, className }: TimelineScrubberProps)
                 {severeShare > 0 ? (
                   <div className="min-h-0.5 bg-sev-severe" style={{ flexGrow: severeShare }} />
                 ) : null}
-                <div className="bg-fg-subtle" style={{ flexGrow: 1 - severeShare }} />
+                <div
+                  className={i === index ? "bg-fg" : "bg-fg-subtle"}
+                  style={{ flexGrow: 1 - severeShare }}
+                />
               </div>
             </div>
           )
         })}
       </div>
-      {first && end ? (
-        <div
-          className="mt-1.5 flex justify-between text-xs text-fg-subtle tabular-nums"
-          aria-hidden
-        >
-          <span>{hhmm(first.start)}</span>
-          <span>peak {formatNumber(max)} visits per bar</span>
-          <span>{hhmm(new Date(Date.parse(end.start) + ms))}</span>
+      {first ? (
+        <div className="relative mt-1.5 h-4 text-xs text-fg-subtle tabular-nums" aria-hidden>
+          {timeline.map((b, i) => {
+            const d = new Date(b.start)
+            if (d.getMinutes() !== 0 || d.getHours() % 6 !== 0) return null
+            return (
+              <span
+                key={b.start}
+                className="absolute -translate-x-1/2 first:translate-x-0"
+                style={{ left: `${((i + 0.5) / timeline.length) * 100}%` }}
+              >
+                {hhmm(d)}
+              </span>
+            )
+          })}
         </div>
       ) : null}
+      <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted tabular-nums">
+        <span>Busiest hour: {formatNumber(max)} visits</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="size-2 shrink-0 rounded-full bg-sev-severe" />
+          Red: tried to install something or sent an exploit
+        </span>
+      </p>
     </div>
   )
 }

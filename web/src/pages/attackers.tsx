@@ -13,7 +13,6 @@ import { RelativeTime } from "@/components/relative-time"
 import { SkeletonList, SkeletonRow } from "@/components/skeletons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { SegmentedControl } from "@/components/segmented-control"
 import { useUrlParam } from "@/hooks/use-url-param"
 import {
@@ -324,7 +323,7 @@ function Metric({ label, value, className }: { label: string; value: number; cla
 }
 
 export function AttackersPage() {
-  const [view, setView] = useUrlParam("view")
+  const [view] = useUrlParam("view")
   const [rawSort, setSort] = useUrlParam("sort")
   const { filters, sort } = useIpFilters()
   const asns = view === "asns"
@@ -347,24 +346,6 @@ export function AttackersPage() {
   return (
     <>
       <PageHeader title="Attackers" description={description} />
-
-      <Tabs
-        value={asns ? "asns" : "ips"}
-        onValueChange={(v) => {
-          setView(v === "asns" ? "asns" : null)
-          setSort(null)
-        }}
-        className="mb-4"
-      >
-        <TabsList aria-label="Group attackers by">
-          <TabsTrigger value="ips" className="gap-1.5 px-3">
-            <Users aria-hidden /> Addresses
-          </TabsTrigger>
-          <TabsTrigger value="asns" className="gap-1.5 px-3">
-            <Network aria-hidden /> Networks
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
 
       {asns ? (
         <>
