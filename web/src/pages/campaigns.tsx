@@ -1,8 +1,7 @@
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { useWindowVirtualizer } from "@tanstack/react-virtual"
-import { Flag, Grid3x3, Search, SearchX } from "lucide-react"
+import { Flag, Search, SearchX } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { Link } from "react-router"
 import { CAMPAIGN_GRID, CampaignRow } from "@/components/campaigns/campaign-row"
 import { EmptyState } from "@/components/empty-state"
 import { FilterBar, SensorFilter } from "@/components/filter-bar"
@@ -142,18 +141,7 @@ export function CampaignsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Campaigns"
-        description={headline}
-        actions={
-          <Button asChild variant="outline" size="sm">
-            <Link to="/techniques">
-              <Grid3x3 aria-hidden />
-              Techniques
-            </Link>
-          </Button>
-        }
-      />
+      <PageHeader title="Campaigns" description={headline} />
 
       <FilterBar
         className="mb-4"

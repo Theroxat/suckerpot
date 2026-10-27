@@ -65,6 +65,7 @@ function Numbers({ story }: { story: StoryResponse }) {
         value={t.sessions}
         href={withWindow("/attacks", windowSince(story.as_of, story.hours))}
         hint="Doors knocked on"
+        className="col-span-2 sm:col-span-1"
       />
       <StatTile label="Machines" value={t.sources} href="/attackers" hint="Different senders" />
       <StatTile label="Countries" value={t.countries} hint="They came from" />
@@ -74,7 +75,6 @@ function Numbers({ story }: { story: StoryResponse }) {
         value={t.downloads}
         href={hrefOf("download")}
         hint="A program, usually malware"
-        className="col-span-2 sm:col-span-1"
       />
     </div>
   )
@@ -245,7 +245,7 @@ export function TodayPage() {
               title="Stories of the day"
               finding={`${plural(story.stories.length, "visit")} worth a closer look, the most serious first.`}
             >
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
                 {story.stories.map((s, i) => (
                   <StoryCard key={s.session_id} story={s} index={i} />
                 ))}

@@ -16,7 +16,8 @@ import {
 import { maskIpsInText } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-export const ATTACKER_GRID = "md:grid-cols-[9.5rem_minmax(0,1fr)_auto_6rem] md:gap-x-4"
+export const ATTACKER_GRID =
+  "md:grid-cols-[9.5rem_minmax(22rem,1fr)_minmax(0,auto)_6rem] md:gap-x-4"
 
 /** One attacker as one line. The row opens the profile; chips and flags open filtered lists. */
 export function AttackerRow({
@@ -79,10 +80,18 @@ export function AttackerRow({
         {story}
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 md:justify-end">
-        {a.sensors.map((s) => (
-          <SensorBadge key={s} sensor={s} variant="dot" />
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 md:flex-nowrap md:justify-end md:overflow-hidden">
+        {a.sensors.slice(0, 3).map((s) => (
+          <SensorBadge key={s} sensor={s} variant="dot" className="shrink-0" />
         ))}
+        {a.sensors.length > 3 ? (
+          <span
+            className="shrink-0 text-xs text-fg-subtle tabular-nums"
+            title={a.sensors.slice(3).join(", ")}
+          >
+            +{a.sensors.length - 3}
+          </span>
+        ) : null}
         {a.tags.slice(0, 2).map((t) => (
           <TagBadge
             key={t}

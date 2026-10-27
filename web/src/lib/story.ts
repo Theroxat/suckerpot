@@ -137,14 +137,14 @@ export const STAGE_META: Record<Stage, StageMeta> = {
   looked: {
     label: "Only looked",
     sentence: "Knocked on the door, looked around and left without trying anything.",
-    cssVar: "var(--sev-info)",
+    cssVar: "var(--fg-subtle)",
     icon: Eye,
     term: "scanner",
   },
   guessed: {
     label: "Guessed passwords",
     sentence: "Tried passwords one after another, but none of them worked.",
-    cssVar: "var(--sev-notice)",
+    cssVar: "var(--fg-muted)",
     icon: KeyRound,
     term: "brute-force",
   },

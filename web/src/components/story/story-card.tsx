@@ -155,12 +155,13 @@ export function StoryCard({ story, index = 0 }: { story: StoryItem; index?: numb
       className="motion-stagger h-full animate-card-in gap-0 rounded-lg py-0 shadow-sm"
     >
       <div className="flex flex-1 flex-col px-4 pt-4 pb-4 sm:px-5 sm:pt-5">
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
-          <SensorBadge sensor={story.sensor} />
-          <SeverityBadge severity={storySeverity(story.severity)} />
-          {stage ? <span>{stage.label}</span> : null}
-          <span aria-hidden>·</span>
-          <time dateTime={story.started_at}>{formatRelative(story.started_at)}</time>
+        <p className="flex items-center gap-x-2 text-xs text-fg-muted">
+          <SensorBadge sensor={story.sensor} className="shrink-0" />
+          <SeverityBadge severity={storySeverity(story.severity)} className="shrink-0" />
+          {stage ? <span className="min-w-0 truncate">{stage.label}</span> : null}
+          <time dateTime={story.started_at} className="ml-auto shrink-0">
+            {formatRelative(story.started_at)}
+          </time>
         </p>
         <h3 className="mt-2 text-base font-medium text-pretty text-fg">
           <TermText text={story.title} terms={["botnet", "brute-force", "exploit", "malware"]} />
