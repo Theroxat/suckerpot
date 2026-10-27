@@ -118,7 +118,7 @@ def test_every_analytics_statement_can_leave_scanners_out() -> None:
 
 def test_happened_sentence() -> None:
     assert today.happened_sentence(0, 0, 0, 0) == (
-        "No attacks reached the honeypot in the last 24 hours."
+        "No attacks reached your sensors in the last 24 hours."
     )
     assert today.happened_sentence(1204, 312, 41, 870) == (
         "1,204 attacks came from 312 addresses in the last 24 hours, 38% more than the day before. "
