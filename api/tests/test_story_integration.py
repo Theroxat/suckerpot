@@ -130,3 +130,64 @@ def test_sql_and_python_classifiers_agree() -> None:
         )
         expected[st] = expected.get(st, 0) + 1
     assert stages == expected
+
+
+def test_download_step_survives_hundreds_of_login_attempts() -> None:
+    async def seed() -> None:
+        engine = create_engine(pool_size=1)
+        factory = create_session_factory(engine)
+        now = datetime.now(UTC)
+        start = now - timedelta(minutes=20)
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("TRUNCATE events, sessions"))
+            async with factory() as s, s.begin():
+                s.add(
+                    SessionRow(
+                        session_id="st-mirai",
+                        sensor="telnet",
+                        src_ip="203.0.113.50",
+                        src_port=1,
+                        dst_port=2,
+                        started_at=start,
+                        last_event_at=now,
+                        event_count=605,
+                        login_attempts=600,
+                        login_success=True,
+                        commands=2,
+                        downloads=1,
+                        country="NL",
+                        tags=["mirai"],
+                    )
+                )
+
+                def ev(sec: int, type_: str, data: dict[str, Any]) -> EventRow:
+                    return EventRow(
+                        ts=start + timedelta(seconds=sec),
+                        sensor="telnet",
+                        session_id="st-mirai",
+                        type=type_,
+                        src_ip="203.0.113.50",
+                        src_port=1,
+                        dst_port=2,
+                        data=data,
+                    )
+
+                s.add(ev(0, "connect", {}))
+                for i in range(600):
+                    data = {"username": "root", "password": f"pw{i % 7}", "success": False}
+                    s.add(ev(1 + i // 10, "login_attempt", data))
+                ok = {"username": "root", "password": "x", "success": True}
+                s.add(ev(100, "login_attempt", ok))
+                s.add(ev(101, "command", {"input": "busybox"}))
+                s.add(ev(102, "download_attempt", {"url": "http://198.51.100.2/m"}))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(seed())
+    with TestClient(create_app(None)) as client:
+        story = client.get("/api/v1/story").json()["stories"][0]
+        kinds = [st["kind"] for st in story["steps"]]
+        assert kinds == ["connect", "guess", "login", "command", "download"]
+        guess = story["steps"][1]
+        assert guess["count"] == 600 and "root/pw" in guess["technical"]

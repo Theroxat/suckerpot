@@ -6,6 +6,7 @@ from api.story import (
     EXPLOIT_TAGS,
     MAX_STEPS,
     Candidate,
+    GuessAggregate,
     RawEvent,
     Totals,
     bucket_seconds,
@@ -234,3 +235,25 @@ def test_buckets() -> None:
     starts = bucket_starts(since, T0, 3600)
     assert starts[0] == datetime(2026, 10, 26, 11, 0, tzinfo=UTC)
     assert starts[-1] == T0 and len(starts) == 26
+
+
+def test_failed_logins_come_as_one_aggregate_step() -> None:
+    events = [
+        _ev(0, "connect"),
+        _ev(700, "login_attempt", username="root", password="admin", success=True),
+        _ev(701, "command", command="uname -a"),
+        _ev(702, "download_attempt", url="http://203.0.113.9/m.sh"),
+    ]
+    guesses = GuessAggregate(
+        count=600,
+        first_ts=T0 + timedelta(seconds=1),
+        last_ts=T0 + timedelta(seconds=699),
+        top=[("root/123456", 40), ("admin/admin", 30), ("x" * 500, 20)],
+    )
+    steps = build_steps(events, guesses)
+    assert [s.kind for s in steps] == ["connect", "guess", "login", "command", "download"]
+    guess = steps[1]
+    assert guess.count == 600 and guess.plain == "Tried 600 passwords"
+    assert guess.technical.startswith("600 login_attempt · top root/123456, admin/admin")
+    assert len(guess.technical) <= 200
+    assert steps[-1].plain == "Tried to download a program"
