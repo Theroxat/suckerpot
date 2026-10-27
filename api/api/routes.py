@@ -8,7 +8,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
 from pydantic import AfterValidator, AwareDatetime
-from sqlalchemy import func, or_, select, tuple_
+from sqlalchemy import func, or_, select, text, tuple_
 from suckerpot_db.models import (
     CampaignRow,
     EnrichmentQuotaRow,
@@ -48,7 +48,7 @@ from api.schemas import (
     StatsSummary,
 )
 from api.sensors import SensorFilter
-from api.story import Stage, stage_expr
+from api.story import STATEMENT_TIMEOUT_MS, Stage, stage_expr
 
 router = APIRouter()
 health_router = APIRouter()
@@ -163,6 +163,9 @@ async def list_sessions(
     stmt = stmt.order_by(SessionRow.started_at.desc(), SessionRow.session_id.desc()).limit(
         limit + 1
     )
+    if stage is not None:
+        # The stage CASE cannot use an index, so bound the scan like the other computed queries.
+        await session.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
     rows = list((await session.scalars(stmt)).all())
     page, more = rows[:limit], len(rows) > limit
     return SessionPage(
