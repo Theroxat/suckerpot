@@ -110,6 +110,36 @@ export const GLOSSARY = {
     short:
       "A list of addresses or domains that your firewall or proxy should refuse. SuckerPot builds one from what it saw.",
   },
+  malware: {
+    term: "Malware",
+    short:
+      "A harmful program, such as a virus or a crypto-miner, that an attacker tries to put on a machine that is not theirs.",
+  },
+  scanner: {
+    term: "Scanner",
+    short:
+      "A robot that knocks on every address and every door of the internet to see what answers. Most visits are just this.",
+  },
+  ssh: {
+    term: "SSH",
+    short:
+      "Secure Shell: the usual way to log in to a server and type commands from far away. Attackers love to guess its passwords.",
+  },
+  telnet: {
+    term: "Telnet",
+    short:
+      "An old, unprotected way to log in to a device remotely. Cheap cameras and routers still use it, which is why robots target it.",
+  },
+  rdp: {
+    term: "RDP",
+    short:
+      "Remote Desktop Protocol: the way to control a Windows computer's screen from far away. A common way in for ransomware gangs.",
+  },
+  "ip-address": {
+    term: "IP address",
+    short:
+      "The number that identifies a machine on the internet, a bit like a phone number. Here it is the machine that knocked on your doors.",
+  },
 } as const satisfies Record<string, GlossaryEntry>
 
 export type TermId = keyof typeof GLOSSARY

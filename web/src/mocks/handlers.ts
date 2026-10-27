@@ -18,6 +18,7 @@ import { scriptsHandlers } from "./scripts"
 import { alertsHandlers } from "./alerts"
 import { searchHandlers } from "./search"
 import { todayHandlers } from "./today"
+import { storyHandlers } from "./story"
 
 const fixtures = [...buildReplayFixtures(), ...buildFixtures()].sort((a, b) =>
   b.session.started_at.localeCompare(a.session.started_at),
@@ -89,6 +90,7 @@ export const handlers = [
   ...alertsHandlers,
   ...searchHandlers,
   ...todayHandlers,
+  ...storyHandlers,
   ...userHandlers,
   ...liveHandlers,
   ...siteHandlers,

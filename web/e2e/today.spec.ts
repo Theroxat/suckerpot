@@ -15,7 +15,8 @@ async function freezeMotion(page: Page) {
 async function openToday(page: Page, path = "/") {
   await page.goto(path)
   await expect(h1(page, "Today")).toBeVisible()
-  await expect(page.getByRole("group").filter({ hasText: "What happened" })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Stories of the day" })).toBeVisible()
+  await expect(page.locator("[data-card]").first()).toBeVisible()
   await settle(page)
 }
 
@@ -23,24 +24,24 @@ test("today", async ({ page }, info) => {
   await freezeMotion(page)
   await openToday(page)
 
-  // Four or five cards, each one sentence, at most three items and one action.
-  const cards = page.locator("[data-card]")
-  expect(await cards.count()).toBeGreaterThanOrEqual(3)
-  expect(await cards.count()).toBeLessThanOrEqual(5)
-  for (const card of await cards.all()) {
-    await expect(card.getByRole("heading", { level: 2 })).toHaveCount(1)
-    expect(await card.getByRole("listitem").count()).toBeLessThanOrEqual(3)
-    await expect(card.getByRole("link").last()).toBeVisible()
-  }
+  // A headline, five numbers, the flow, the hour strip, 3 to 5 stories, then the to-do cards.
+  await expect(page.getByText(/knocked on your decoy doors/)).toBeVisible()
+  await expect(page.getByRole("slider", { name: /hour of the last day/i })).toBeVisible()
+  const stories = page.locator("[data-story]")
+  expect(await stories.count()).toBeGreaterThanOrEqual(3)
+  expect(await stories.count()).toBeLessThanOrEqual(5)
   await expect(page.getByText(/left out\./)).toBeVisible()
   await shoot(page, "today", info.project.name, true)
 
+  // Technical details are one click away.
+  const first = stories.first()
+  await first.getByRole("button", { name: "Technical details" }).click()
+  await expect(first.getByText(/login_attempt/)).toBeVisible()
+  await shoot(page, "today-story-technical", info.project.name)
+
   // Everything opens a filtered view.
-  await page
-    .locator('[data-card="happened"]')
-    .getByRole("link", { name: /Most targeted/ })
-    .click()
-  await expect(page).toHaveURL(/\/attacks\?sensor=/)
+  await first.getByRole("link", { name: "Open the full session" }).click()
+  await expect(page).toHaveURL(/\/attacks\/demo-story-/)
 })
 
 test("today in the navigation", async ({ page }, info) => {
@@ -96,14 +97,14 @@ test("search palette", async ({ page }, info) => {
 test("glossary term", async ({ page }, info) => {
   await freezeMotion(page)
   await openToday(page)
-  const term = page.locator('[data-card="campaigns"] [data-term="campaign"]').first()
+  const term = page.locator('dl [data-term="exploit"]').first()
   await term.scrollIntoViewIfNeeded()
   await term.focus()
   await page.keyboard.press("Enter")
-  await expect(page.getByText(/Several attacks that share the same tools/)).toBeVisible()
+  await expect(page.getByText(/A request or program built to abuse a specific flaw/)).toBeVisible()
   await shoot(page, "term-open", info.project.name)
   await page.keyboard.press("Escape")
-  await expect(page.getByText(/Several attacks that share the same tools/)).toHaveCount(0)
+  await expect(page.getByText(/A request or program built to abuse a specific flaw/)).toHaveCount(0)
 })
 
 test("hide research scanners", async ({ page }, info) => {
