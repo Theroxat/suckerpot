@@ -92,6 +92,7 @@ def test_story_funnel_conserves_sessions() -> None:
         assert nodes["stage:exploit"]["sessions"] == 1
         assert nodes["stage:download"]["sessions"] == 1
         assert nodes["origin:NL"]["href"] == "/attacks?country=NL"
+        assert nodes["stage:download"]["href"] == "/attacks?stage=download"
         assert nodes["origin:NL"]["label"] == "Netherlands"
         for node_id, node in nodes.items():
             if node["column"] == "stage":
@@ -191,3 +192,19 @@ def test_download_step_survives_hundreds_of_login_attempts() -> None:
         assert kinds == ["connect", "guess", "login", "command", "download"]
         guess = story["steps"][1]
         assert guess["count"] == 600 and "root/pw" in guess["technical"]
+
+
+def test_sessions_can_be_filtered_by_stage() -> None:
+    asyncio.run(_seed())
+    with TestClient(create_app(None)) as client:
+        for stage, ids in {
+            "looked": {"st-look"},
+            "guessed": {"st-guess", "st-old"},
+            "got_in": {"st-in"},
+            "commands": {"st-cmd"},
+            "download": {"st-dl"},
+            "exploit": {"st-exp"},
+        }.items():
+            r = client.get("/api/v1/sessions", params={"stage": stage})
+            assert r.status_code == 200, r.text
+            assert {i["session_id"] for i in r.json()["items"]} == ids

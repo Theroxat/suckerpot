@@ -48,6 +48,7 @@ from api.schemas import (
     StatsSummary,
 )
 from api.sensors import SensorFilter
+from api.story import Stage, stage_expr
 
 router = APIRouter()
 health_router = APIRouter()
@@ -117,6 +118,7 @@ async def list_sessions(
     url: ValueFilter | None = None,
     technique: TechniqueFilter | None = None,
     campaign_id: Annotated[int | None, Query(ge=1, le=2**62)] = None,
+    stage: Annotated[Stage | None, Query(description="The deepest step a session reached.")] = None,
     include_benign: IncludeBenign = False,
 ) -> SessionPage:
     # Asking for one address by name is on purpose: its sessions are shown whatever the switch says.
@@ -128,6 +130,8 @@ async def list_sessions(
         stmt = stmt.where(
             or_(SessionRow.campaign_id == campaign_id, SessionRow.campaign_id.in_(absorbed))
         )
+    if stage is not None:
+        stmt = stmt.where(stage_expr() == stage)
     if sensor is not None:
         stmt = stmt.where(SessionRow.sensor.in_(sensor))
     if src_ip is not None:
