@@ -1,74 +1,152 @@
 import { useQuery } from "@tanstack/react-query"
-import { SearchX } from "lucide-react"
+import { Radar, SearchX } from "lucide-react"
 import { useScannerFilter } from "@/app/scanner-filter"
 import { EmptyState } from "@/components/empty-state"
 import { PageHeader } from "@/components/page-header"
-import { Term } from "@/components/term"
+import { StageLegend } from "@/components/story/stage-legend"
+import { StoryCard, StoryCardSkeleton } from "@/components/story/story-card"
+import { StoryFlow } from "@/components/story/story-flow"
+import { TimelineScrubber } from "@/components/story/timeline-scrubber"
+import { StatTile } from "@/components/stat-tile"
+import { Term, TermText } from "@/components/term"
 import { TodayCard, TodayCardSkeleton } from "@/components/today/today-card"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { plural } from "@/lib/format"
+import { flowFinding, storyApi, storyKeys, type StoryResponse } from "@/lib/story"
 import { todayApi, todayKeys } from "@/lib/today"
 
-/** "17:22": the page refreshes every two minutes, so seconds would be false precision. */
+const HOURS = 24
+
 const time = new Intl.DateTimeFormat("en-US", {
   hour: "2-digit",
   minute: "2-digit",
   hourCycle: "h23",
 })
-function formatTime(iso: string): string {
-  return time.format(new Date(iso))
+
+function Section({
+  id,
+  title,
+  finding,
+  children,
+}: {
+  id: string
+  title: string
+  finding: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section aria-labelledby={id} className="mt-10">
+      <h2 id={id} className="text-xs font-medium text-fg-muted">
+        {title}
+      </h2>
+      <p className="mt-1.5 mb-4 max-w-3xl text-base text-pretty text-fg">{finding}</p>
+      {children}
+    </section>
+  )
 }
 
-/**
- * Today: the home page. Three to five cards, each one sentence, up to three items and one
- * action, so the first screen answers "what happened, is anything urgent, what should I do".
- */
-export function TodayPage() {
+function Numbers({ story }: { story: StoryResponse }) {
+  const t = story.totals
+  const hrefOf = (key: string) => story.flow.nodes.find((n) => n.id === `stage:${key}`)?.href
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <StatTile label="Visits" value={t.sessions} href="/attacks" hint="Doors knocked on" />
+      <StatTile label="Machines" value={t.sources} href="/attackers" hint="Different senders" />
+      <StatTile label="Countries" value={t.countries} hint="They came from" />
+      <StatTile label="Got in" value={t.got_in} href={hrefOf("got_in")} hint="A password worked" />
+      <StatTile
+        label="Tried to install"
+        value={t.downloads}
+        href={hrefOf("download")}
+        hint="A program, usually malware"
+        className="col-span-2 sm:col-span-1"
+      />
+    </div>
+  )
+}
+
+function StoryLoading() {
+  return (
+    <div role="status" aria-label="Loading" className="space-y-8">
+      <Skeleton className="h-6 w-3/4" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {Array.from({ length: 5 }, (_, i) => (
+          <Skeleton key={i} className="h-24" />
+        ))}
+      </div>
+      <Skeleton className="h-80 w-full" />
+      <Skeleton className="h-36 w-full" />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <StoryCardSkeleton />
+        <StoryCardSkeleton />
+      </div>
+    </div>
+  )
+}
+
+/** What to do about it: the cards of GET /today that are about action, not about the past. */
+function ToDo() {
   const query = useQuery({
     queryKey: todayKeys.today,
     queryFn: todayApi.today,
     refetchInterval: 120_000,
   })
+  if (query.isError) return null
+  const cards = query.data?.cards.filter((c) => c.id !== "happened") ?? []
+  if (query.data && cards.length === 0) return null
+  return (
+    <Section
+      id="todo"
+      title="What you can do about it"
+      finding="The short list: what to block, what is new, and what you expose."
+    >
+      {query.isPending ? (
+        <div role="status" aria-label="Loading" className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <TodayCardSkeleton />
+          <TodayCardSkeleton />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {cards.map((card, i) => (
+            <TodayCard
+              key={card.id}
+              card={card}
+              index={i}
+              className={
+                i === cards.length - 1 && cards.length % 2 === 1 ? "lg:col-span-2" : undefined
+              }
+            />
+          ))}
+        </div>
+      )}
+    </Section>
+  )
+}
+
+/**
+ * Today: the last 24 hours as a story. A plain sentence first, then the numbers, the flow from
+ * country to door to how far they got, an hour-by-hour strip, a few stories, and what to do.
+ * Each technical detail is one click away.
+ */
+export function TodayPage() {
   const { hide, setHide } = useScannerFilter()
-  const data = query.data
+  const query = useQuery({
+    queryKey: [...storyKeys.story(HOURS), hide],
+    queryFn: () => storyApi.story(HOURS),
+    refetchInterval: 120_000,
+  })
+  const story = query.data
 
   return (
     <>
       <PageHeader
         title="Today"
-        description="What happened in the last 24 hours, what is new, and what to do about it."
+        description="The last 24 hours on your decoy servers, in plain words. Click anything to dig deeper."
       />
 
-      {/* One quiet meta line: freshness, and what the scanner switch leaves out. */}
-      {data ? (
-        <p className="-mt-3 mb-5 text-xs text-fg-muted">
-          Updated <time dateTime={data.generated_at}>{formatTime(data.generated_at)}</time>
-          {hide && data.hidden_benign > 0 ? (
-            <>
-              <span aria-hidden className="px-1.5 text-fg-subtle">
-                ·
-              </span>
-              {plural(data.hidden_benign, "session")} from{" "}
-              <Term id="research-scanner">research scanners</Term>{" "}
-              {data.hidden_benign === 1 ? "is" : "are"} left out.{" "}
-              <button
-                type="button"
-                onClick={() => setHide(false)}
-                className="rounded-xs text-fg underline underline-offset-4 hover:text-fg-muted"
-              >
-                Show them
-              </button>
-            </>
-          ) : null}
-        </p>
-      ) : null}
-
-      {query.isPending ? (
-        <div role="status" aria-label="Loading" className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {Array.from({ length: 4 }, (_, i) => (
-            <TodayCardSkeleton key={i} />
-          ))}
-        </div>
+      {query.isPending || !story ? (
+        <StoryLoading />
       ) : query.isError ? (
         <EmptyState
           icon={SearchX}
@@ -80,22 +158,84 @@ export function TodayPage() {
             </Button>
           }
         />
+      ) : story.totals.sessions === 0 ? (
+        <>
+          <EmptyState
+            icon={Radar}
+            title="A quiet day"
+            description="Nobody knocked on your decoy servers in the last 24 hours."
+          />
+          <ToDo />
+        </>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {query.data.cards.map((card, i) => (
-            <TodayCard
-              key={card.id}
-              card={card}
-              index={i}
-              // An odd last card takes the whole row instead of leaving a hole.
-              className={
-                i === query.data.cards.length - 1 && query.data.cards.length % 2 === 1
-                  ? "lg:col-span-2"
-                  : undefined
-              }
+        <>
+          <p className="max-w-3xl text-lg font-medium text-pretty text-fg">
+            <TermText
+              text={story.headline}
+              terms={["botnet", "brute-force", "exploit", "malware", "research-scanner"]}
             />
-          ))}
-        </div>
+          </p>
+          <p className="mt-2 text-xs text-fg-muted">
+            Updated <time dateTime={story.as_of}>{time.format(new Date(story.as_of))}</time>
+            {hide ? (
+              <>
+                <span aria-hidden className="px-1.5 text-fg-subtle">
+                  ·
+                </span>
+                <Term id="research-scanner">Research scanners</Term> are left out.{" "}
+                <button
+                  type="button"
+                  onClick={() => setHide(false)}
+                  className="rounded-xs text-fg underline underline-offset-4 hover:text-fg-muted"
+                >
+                  Show them
+                </button>
+              </>
+            ) : null}
+          </p>
+          <div className="mt-6">
+            <Numbers story={story} />
+          </div>
+
+          <Section
+            id="flow"
+            title="Where they come from, which door they knock on, how far they got"
+            finding={flowFinding(story.totals)}
+          >
+            <div className="rounded-lg border bg-surface p-4 shadow-sm sm:p-5">
+              <StoryFlow flow={story.flow} />
+              <div className="mt-6 border-t pt-4">
+                <StageLegend />
+              </div>
+            </div>
+          </Section>
+
+          <Section
+            id="hours"
+            title="Hour by hour"
+            finding={`The busiest hour is picked below. Drag, click or use the arrow keys to look at another one.`}
+          >
+            <div className="rounded-lg border bg-surface p-4 shadow-sm sm:p-5">
+              <TimelineScrubber timeline={story.timeline} />
+            </div>
+          </Section>
+
+          {story.stories.length > 0 ? (
+            <Section
+              id="stories"
+              title="Stories of the day"
+              finding={`${plural(story.stories.length, "visit")} worth a closer look, the most serious first.`}
+            >
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {story.stories.map((s, i) => (
+                  <StoryCard key={s.session_id} story={s} index={i} />
+                ))}
+              </div>
+            </Section>
+          ) : null}
+
+          <ToDo />
+        </>
       )}
     </>
   )

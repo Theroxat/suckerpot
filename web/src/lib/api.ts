@@ -383,6 +383,7 @@ const BENIGN_AWARE = [
   "/insights",
   "/trends",
   "/today",
+  "/story",
 ]
 
 export function setIncludeBenign(on: boolean) {
