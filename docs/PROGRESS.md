@@ -86,3 +86,10 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - **M19 Today, search and research scanners.** A Today home page, a global search box, a glossary, and research scanners (for example known internet crawlers) labelled benign by the network that owns them. Benign is an allowlist of harmless behaviour, decided on what the session did, never on its user agent. Migration 0015.
 - **Security reviews.** Each milestone went through a security review. The first pass of each one returned FAIL or findings, which were fixed. A second pass returned PASS.
 - **Left open.** The campaign cap per network and ASN, commit per chunk in clustering, and payload analysis in quarantine (to be framed with the owner). See the [roadmap](ROADMAP.md) "Later" list. The M14 security and UI reviews are still unticked.
+
+## 2026-10-27 — Simpler navigation and a story-style Today
+
+- Navigation: 18 sidebar entries became 10 hubs with an underline tab strip above the page title, defined once in `web/src/app/nav.ts`. Detail pages light up their hub; the Styleguide shows only in dev builds; a new `/networks` route holds the ASN view.
+- Today: rewritten around `GET /api/v1/story` (bounded queries on `sessions`, 3 s statement timeout, 30 s cache). A Sankey of origin, door and deepest stage reached, an hour strip that links to the matching sessions, and story cards whose plain sentences come from templates while attacker text stays in the technical details, clipped. The previous "what you can do" cards remain at the bottom.
+- Attacks: new `stage`, `since` and `until` filters, so every number on Today opens the sessions behind it.
+- Reviews: security review PASS (three low findings fixed: statement timeout on the stage filter, quoted hrefs, clipped org names); design review fixes applied (Sankey labels, stage colours, underline tabs, no duplicated navigation, attacker row width, hour strip key and ticks).
