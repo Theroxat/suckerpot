@@ -52,6 +52,7 @@ MIN_STORIES = 3
 MAX_STEPS = 12
 MAX_CANDIDATES = 60
 MAX_EVENTS_PER_SESSION = 500
+GUESS_PAIRS = 3
 MAX_TECHNICAL = 200
 SHORT_BUCKET_HOURS = 6
 MAX_GROUP_ROWS = 20000
@@ -474,15 +475,32 @@ def _technical(step: _Step) -> str:
         "disconnect": "disconnect",
     }[step.kind]
     base = f"{step.count:,} {event_name}"
-    top = [s for s, _ in step.samples.most_common(2 if step.kind == "guess" else 3) if s]
+    top = [s for s, _ in step.samples.most_common(3) if s]
     if not top:
         return base
     label = "top " if step.kind == "guess" else ""
     return clip(f"{base} · {label}{', '.join(top)}")
 
 
-def build_steps(events: Sequence[RawEvent]) -> list[StoryStep]:
-    """Merge consecutive events of one kind, then keep at most ``MAX_STEPS`` steps."""
+@dataclass
+class GuessAggregate:
+    """The failed login attempts of one session, summed up instead of listed."""
+
+    count: int
+    first_ts: datetime
+    last_ts: datetime
+    #: ``user/password`` pairs with how often they were tried (already truncated).
+    top: Sequence[tuple[str, int]] = ()
+
+
+def build_steps(
+    events: Sequence[RawEvent], guesses: GuessAggregate | None = None
+) -> list[StoryStep]:
+    """Merge consecutive events of one kind, then keep at most ``MAX_STEPS`` steps.
+
+    ``events`` holds everything but the failed login attempts, which come in as ``guesses`` and
+    become one "guess" step placed at their first attempt.
+    """
     steps: list[_Step] = []
     for ev in events:
         kind = step_kind(ev)
@@ -493,6 +511,12 @@ def build_steps(events: Sequence[RawEvent]) -> list[StoryStep]:
         sample = _sample(ev, kind)
         if sample:
             cur.samples[sample] += 1
+    if guesses is not None and guesses.count > 0:
+        agg = _Step(ts=guesses.first_ts, kind="guess", count=guesses.count)
+        for pair, n in guesses.top:
+            agg.samples[pair] += n
+        at = next((i for i, st in enumerate(steps) if st.ts > guesses.first_ts), len(steps))
+        steps.insert(at, agg)
     for drop in DROP_ORDER:
         while len(steps) > MAX_STEPS and any(s.kind == drop for s in steps):
             steps.pop(next(i for i, s in enumerate(steps) if s.kind == drop))
@@ -846,7 +870,7 @@ async def _stories(session: AsyncSession, where: list[Any], now: datetime) -> li
         return []
     by_id = {r.session_id: r for r in rows}
     picked = [by_id[c.session_id] for c in chosen]
-    events = await _events(session, picked, now)
+    events, guesses = await _events(session, picked, now)
     technique_ids = sorted({t for r in picked for t in r.techniques})
     names: dict[str, str] = {}
     if technique_ids:
@@ -901,7 +925,7 @@ async def _stories(session: AsyncSession, where: list[Any], now: datetime) -> li
                     downloads=r.downloads,
                     seconds=seconds,
                 ),
-                steps=build_steps(events.get(r.session_id, [])),
+                steps=build_steps(events.get(r.session_id, []), guesses.get(r.session_id)),
                 tags=list(r.tags),
                 techniques=[
                     StoryTechnique(id=t, name=names[t]) for t in r.techniques if t in names
@@ -915,11 +939,24 @@ async def _stories(session: AsyncSession, where: list[Any], now: datetime) -> li
 
 async def _events(
     session: AsyncSession, picked: Sequence[Any], now: datetime
-) -> dict[str, list[RawEvent]]:
-    """The first events of each chosen session, with only the fields the steps need."""
+) -> tuple[dict[str, list[RawEvent]], dict[str, GuessAggregate]]:
+    """Per chosen session: its events except failed logins, and those logins as an aggregate.
+
+    A bot may try hundreds of passwords before the steps that matter, so the failed attempts are
+    summed in SQL and never take room from the other events. When a session has more than
+    ``MAX_EVENTS_PER_SESSION`` other events, the newest are kept (the deepest steps come last).
+    """
     e = EventRow
+    ids = [r.session_id for r in picked]
     first = min(r.started_at for r in picked) - timedelta(minutes=1)
-    rn = func.row_number().over(partition_by=e.session_id, order_by=(e.ts, e.id)).label("rn")
+    window = (e.session_id.in_(ids), e.ts >= first, e.ts <= now)
+    ok = e.data["success"].astext
+    failed_login = (e.type == "login_attempt") & (ok.is_distinct_from("true"))
+    rn = (
+        func.row_number()
+        .over(partition_by=e.session_id, order_by=(e.ts.desc(), e.id.desc()))
+        .label("rn")
+    )
     sub = (
         select(
             e.session_id,
@@ -928,17 +965,13 @@ async def _events(
             e.tags,
             func.left(e.data["username"].astext, 80).label("username"),
             func.left(e.data["password"].astext, 80).label("password"),
-            e.data["success"].astext.label("success"),
+            ok.label("success"),
             func.left(e.data["input"].astext, 120).label("command"),
             func.left(e.data["url"].astext, 200).label("url"),
             func.left(e.data["path"].astext, 200).label("path"),
             rn,
         )
-        .where(
-            e.session_id.in_([r.session_id for r in picked]),
-            e.ts >= first,
-            e.ts <= now,
-        )
+        .where(*window, ~failed_login)
         .subquery()
     )
     rows = (
@@ -964,7 +997,51 @@ async def _events(
                 path=r.path,
             )
         )
-    return out
+
+    # The failed attempts: totals per session, then the most tried pairs.
+    totals = (
+        await session.execute(
+            select(e.session_id, func.count(), func.min(e.ts), func.max(e.ts))
+            .where(*window, failed_login)
+            .group_by(e.session_id)
+            .limit(MAX_STORIES * 2)
+        )
+    ).all()
+    pairs = (
+        select(
+            e.session_id.label("sid"),
+            func.left(e.data["username"].astext, 80).label("u"),
+            func.left(e.data["password"].astext, 80).label("p"),
+            func.count().label("n"),
+        )
+        .where(*window, failed_login)
+        .group_by(e.session_id, text("u"), text("p"))
+        .subquery()
+    )
+    ranked = select(
+        pairs.c.sid,
+        pairs.c.u,
+        pairs.c.p,
+        pairs.c.n,
+        func.row_number()
+        .over(partition_by=pairs.c.sid, order_by=(pairs.c.n.desc(), pairs.c.u, pairs.c.p))
+        .label("k"),
+    ).subquery()
+    top_rows = (
+        await session.execute(
+            select(ranked.c.sid, ranked.c.u, ranked.c.p, ranked.c.n)
+            .where(ranked.c.k <= GUESS_PAIRS)
+            .order_by(ranked.c.sid, ranked.c.k)
+        )
+    ).all()
+    top: dict[str, list[tuple[str, int]]] = defaultdict(list)
+    for sid, u, p, n in top_rows:
+        top[sid].append((clip(f"{u or ''}/{p or ''}", 80), n))
+    guesses = {
+        sid: GuessAggregate(count=n, first_ts=lo, last_ts=hi, top=top.get(sid, []))
+        for sid, n, lo, hi in totals
+    }
+    return out, guesses
 
 
 async def _campaigns(session: AsyncSession, ids: list[int]) -> dict[int, StoryCampaign]:
