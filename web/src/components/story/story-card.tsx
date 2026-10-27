@@ -4,6 +4,7 @@ import { Link } from "react-router"
 import { CountryFlag } from "@/components/country-flag"
 import { IPChip } from "@/components/ip-chip"
 import { SensorBadge } from "@/components/sensor-badge"
+import { SeverityBadge } from "@/components/severity-badge"
 import { TagBadge } from "@/components/tag-badge"
 import { TermText } from "@/components/term"
 import { Button } from "@/components/ui/button"
@@ -12,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
 import { formatRelative } from "@/lib/format"
 import { motionFrozen } from "@/lib/motion"
-import { STAGE_META, stepMeta, type StoryItem } from "@/lib/story"
+import { STAGE_META, stepMeta, storySeverity, type StoryItem } from "@/lib/story"
 import { cn } from "@/lib/utils"
 
 /** True once the element has been on screen; stays true (the path plays once). */
@@ -156,6 +157,7 @@ export function StoryCard({ story, index = 0 }: { story: StoryItem; index?: numb
       <div className="flex flex-1 flex-col px-4 pt-4 pb-4 sm:px-5 sm:pt-5">
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
           <SensorBadge sensor={story.sensor} />
+          <SeverityBadge severity={storySeverity(story.severity)} />
           {stage ? <span>{stage.label}</span> : null}
           <span aria-hidden>·</span>
           <time dateTime={story.started_at}>{formatRelative(story.started_at)}</time>

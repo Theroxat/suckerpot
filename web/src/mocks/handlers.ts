@@ -18,6 +18,7 @@ import { scriptsHandlers } from "./scripts"
 import { alertsHandlers } from "./alerts"
 import { searchHandlers } from "./search"
 import { todayHandlers } from "./today"
+import { parseStage, sessionStage } from "@/lib/story"
 import { storyHandlers } from "./story"
 
 const fixtures = [...buildReplayFixtures(), ...buildFixtures()].sort((a, b) =>
@@ -138,6 +139,8 @@ export const handlers = [
     const country = url.searchParams.get("country")
     const asn = url.searchParams.get("asn")
     if (tag) items = items.filter((s) => s.tags.includes(tag))
+    const stage = parseStage(url.searchParams.get("stage"))
+    if (stage) items = items.filter((s) => sessionStage(s) === stage)
     const technique = url.searchParams.get("technique")
     const campaignId = url.searchParams.get("campaign_id")
     if (technique) items = items.filter((s) => s.techniques?.includes(technique))

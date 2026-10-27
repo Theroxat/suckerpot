@@ -125,7 +125,7 @@ const CAMPAIGNS: TodayCardData = {
 const ACT: TodayCardData = {
   id: "act",
   sentence:
-    "2 servers tried to hand malware to the honeypot today. Block them on your firewall or web proxy.",
+    "2 servers tried to hand malware to your sensors today. Block them on your firewall or web proxy.",
   items: [
     {
       kind: "host",
