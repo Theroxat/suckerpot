@@ -361,7 +361,7 @@ function AttackersView({ asns }: { asns: boolean }) {
 
   return (
     <>
-      <PageHeader title="Attackers" description={description} />
+      <PageHeader title={asns ? "Networks" : "Attackers"} description={description} />
 
       {asns ? (
         <>
