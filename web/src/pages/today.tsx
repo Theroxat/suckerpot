@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Radar, SearchX } from "lucide-react"
 import { useScannerFilter } from "@/app/scanner-filter"
@@ -13,7 +14,15 @@ import { TodayCard, TodayCardSkeleton } from "@/components/today/today-card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { plural } from "@/lib/format"
-import { flowFinding, storyApi, storyKeys, type StoryResponse } from "@/lib/story"
+import {
+  flowFinding,
+  scopeFlow,
+  storyApi,
+  storyKeys,
+  windowSince,
+  withWindow,
+  type StoryResponse,
+} from "@/lib/story"
 import { todayApi, todayKeys } from "@/lib/today"
 
 const HOURS = 24
@@ -51,7 +60,12 @@ function Numbers({ story }: { story: StoryResponse }) {
   const hrefOf = (key: string) => story.flow.nodes.find((n) => n.id === `stage:${key}`)?.href
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      <StatTile label="Visits" value={t.sessions} href="/attacks" hint="Doors knocked on" />
+      <StatTile
+        label="Visits"
+        value={t.sessions}
+        href={withWindow("/attacks", windowSince(story.as_of, story.hours))}
+        hint="Doors knocked on"
+      />
       <StatTile label="Machines" value={t.sources} href="/attackers" hint="Different senders" />
       <StatTile label="Countries" value={t.countries} hint="They came from" />
       <StatTile label="Got in" value={t.got_in} href={hrefOf("got_in")} hint="A password worked" />
@@ -136,7 +150,12 @@ export function TodayPage() {
     queryFn: () => storyApi.story(HOURS),
     refetchInterval: 120_000,
   })
-  const story = query.data
+  const raw = query.data
+  const story = useMemo(
+    () =>
+      raw ? { ...raw, flow: scopeFlow(raw.flow, windowSince(raw.as_of, raw.hours)) } : undefined,
+    [raw],
+  )
 
   return (
     <>

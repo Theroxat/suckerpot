@@ -10,6 +10,8 @@ export interface FilterChipDef {
   label: string
   /** Render the value (mono for IPs, flag for countries…). */
   render?: (value: string) => React.ReactNode
+  /** Other params removed together with this one (a period is `since` and `until`). */
+  alsoRemove?: string[]
 }
 
 export { SensorFilter } from "@/components/sensor-filter"
@@ -55,7 +57,7 @@ export function FilterBar({ children, chips, alsoClears = [], className }: Filte
           <span className="font-medium text-fg">{c.render ? c.render(c.value) : c.value}</span>
           <button
             type="button"
-            onClick={() => remove([c.param])}
+            onClick={() => remove([c.param, ...(c.alsoRemove ?? [])])}
             className="ml-0.5 inline-flex size-6 items-center justify-center rounded-sm text-fg-subtle transition-colors hover:bg-surface-hover hover:text-fg"
             aria-label={`Remove ${c.label} filter`}
           >
@@ -68,7 +70,9 @@ export function FilterBar({ children, chips, alsoClears = [], className }: Filte
           variant="ghost"
           size="sm"
           className="h-8 text-xs text-fg-muted"
-          onClick={() => remove([...chips.map((c) => c.param), ...alsoClears])}
+          onClick={() =>
+            remove([...chips.flatMap((c) => [c.param, ...(c.alsoRemove ?? [])]), ...alsoClears])
+          }
         >
           Clear filters
         </Button>

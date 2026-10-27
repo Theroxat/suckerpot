@@ -1,6 +1,14 @@
 import { useRef, useState } from "react"
+import { Link } from "react-router"
 import { formatNumber } from "@/lib/format"
-import { hhmm, bucketMs, bucketSentence, busiestBucket, type TimelineBucket } from "@/lib/story"
+import {
+  hhmm,
+  bucketMs,
+  withWindow,
+  bucketSentence,
+  busiestBucket,
+  type TimelineBucket,
+} from "@/lib/story"
 import { cn } from "@/lib/utils"
 
 interface TimelineScrubberProps {
@@ -40,6 +48,18 @@ export function TimelineScrubber({ timeline, className }: TimelineScrubberProps)
       <p className="min-h-10 text-sm text-pretty text-fg tabular-nums" aria-live="polite">
         {sentence}
       </p>
+      {bucket ? (
+        <Link
+          to={withWindow(
+            "/attacks",
+            bucket.start,
+            new Date(Date.parse(bucket.start) + ms).toISOString(),
+          )}
+          className="mt-1 inline-block text-sm text-fg underline underline-offset-4 hover:text-fg-muted"
+        >
+          See these visits
+        </Link>
+      ) : null}
       <div
         ref={strip}
         role="slider"

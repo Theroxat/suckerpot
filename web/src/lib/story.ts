@@ -347,6 +347,48 @@ export function flowFinding(t: StoryTotals): string {
   return `${share}% of visits never got past the door.${t.got_in > 0 ? ` ${formatNumber(t.got_in)} guessed a password and got in.` : ""}${worst}`
 }
 
+// --- Time window -------------------------------------------------------------------------
+
+/** A `since`/`until` URL value as an ISO instant, or undefined when it is not a date. */
+export function parseInstant(raw: string | null | undefined): string | undefined {
+  if (!raw || raw.length > 40) return undefined
+  const t = Date.parse(raw)
+  return Number.isNaN(t) ? undefined : new Date(t).toISOString()
+}
+
+/** Start of the story's window: `as_of` minus `hours`. */
+export function windowSince(asOf: string, hours: number): string {
+  return new Date(Date.parse(asOf) - hours * 3_600_000).toISOString()
+}
+
+/** `href` limited to a time window, so the list counts what the story counted. */
+export function withWindow(href: string, since: string, until?: string): string {
+  const url = new URL(href, "http://local")
+  url.searchParams.set("since", since)
+  if (until) url.searchParams.set("until", until)
+  return `${url.pathname}${url.search}`
+}
+
+/** The whole flow with every node link limited to the story's window. */
+export function scopeFlow(flow: StoryResponse["flow"], since: string): StoryResponse["flow"] {
+  return { ...flow, nodes: flow.nodes.map((n) => ({ ...n, href: withWindow(n.href, since) })) }
+}
+
+/** The chip text for a window: "Last 24 hours", "Between 14:00 and 15:00", "Since ...". */
+export function windowLabel(
+  since: string | undefined,
+  until: string | undefined,
+  now = Date.now(),
+) {
+  if (since && until) return `Between ${hhmm(since)} and ${hhmm(until)}`
+  if (since) {
+    const hours = Math.round((now - Date.parse(since)) / 3_600_000)
+    if (hours >= 1 && hours <= 168) return `Last ${plural(hours, "hour")}`
+    return `Since ${hhmm(since)}`
+  }
+  return until ? `Before ${hhmm(until)}` : ""
+}
+
 // --- Timeline -----------------------------------------------------------------------------
 
 const clockFmt = new Intl.DateTimeFormat("en-US", {

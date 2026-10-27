@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button"
 import { api, queryKeys, type SessionFilters } from "@/lib/api"
 import { useIpMask } from "@/app/ip-mask"
 import { formatNumber, maskIp, plural } from "@/lib/format"
-import { STAGE_META, parseStage } from "@/lib/story"
+import { STAGE_META, parseInstant, parseStage, windowLabel } from "@/lib/story"
 import { SENSOR_META, parseSensors, sensorSetPhrase } from "@/lib/sensors"
 import { cn } from "@/lib/utils"
 
@@ -38,6 +38,8 @@ function useFilters(): SessionFilters {
     technique: /^T\d{4}(\.\d{3})?$/.test(technique ?? "") ? (technique ?? undefined) : undefined,
     campaign_id: /^\d{1,15}$/.test(campaign ?? "") ? (campaign ?? undefined) : undefined,
     stage: parseStage(params.get("stage")),
+    since: parseInstant(params.get("since")),
+    until: parseInstant(params.get("until")),
   }
 }
 
@@ -54,6 +56,8 @@ function useHeadline(filters: SessionFilters, loaded: number, complete: boolean)
   if (
     filters.tag ??
     filters.stage ??
+    filters.since ??
+    filters.until ??
     filters.country ??
     filters.asn ??
     filters.technique ??
@@ -78,7 +82,7 @@ function useHeadline(filters: SessionFilters, loaded: number, complete: boolean)
 export function AttacksPage() {
   const { masked } = useIpMask()
   const filters = useFilters()
-  const [, setParams] = useSearchParams()
+  const [params, setParams] = useSearchParams()
 
   const query = useInfiniteQuery({
     queryKey: queryKeys.sessions(filters),
@@ -133,6 +137,23 @@ export function AttacksPage() {
             label: "IP",
             render: (v) => <span className="font-mono">{masked ? maskIp(v) : v}</span>,
           },
+          {
+            param: "since",
+            label: "Period",
+            alsoRemove: ["until"],
+            render: (v) => (
+              <span>{windowLabel(parseInstant(v), parseInstant(params.get("until")))}</span>
+            ),
+          },
+          ...(params.get("since")
+            ? []
+            : [
+                {
+                  param: "until",
+                  label: "Period",
+                  render: (v: string) => <span>{windowLabel(undefined, parseInstant(v))}</span>,
+                },
+              ]),
           {
             param: "stage",
             label: "How far",
