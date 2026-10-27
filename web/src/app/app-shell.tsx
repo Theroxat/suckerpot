@@ -1,6 +1,6 @@
 import { Menu } from "lucide-react"
 import { useState } from "react"
-import { NavLink, Outlet, ScrollRestoration, useLocation } from "react-router"
+import { Link, Outlet, ScrollRestoration, useLocation } from "react-router"
 import { LiveIndicator } from "@/components/live-indicator"
 import { MaskToggle } from "@/components/mask-toggle"
 import { ReadOnlyBadge } from "@/components/read-only-badge"
@@ -18,13 +18,17 @@ import {
 import { cn } from "@/lib/utils"
 import { AccountMenu } from "./account-menu"
 import { Logo } from "./logo"
-import { NAV } from "./nav"
+import { HubTabs } from "@/components/hub-tabs"
+import { NAV, NAV_ITEMS, hubForPath, itemForPath } from "./nav"
 import { useLiveStatus } from "./use-live-status"
 
 const MOCK = import.meta.env.VITE_MOCK === "1"
 
 /** The three spaces, then System (Settings and Styleguide). */
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
+  const { pathname } = useLocation()
+  // A hub entry lights up on all of its routes, detail pages included.
+  const activeTo = itemForPath(pathname)?.to
   return (
     <nav aria-label="Main" className="flex flex-col gap-5 lg:gap-4">
       {NAV.map((group) => (
@@ -40,42 +44,42 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
           >
             {group.label}
           </div>
-          {group.items.map(({ to, label, icon: Icon, badge }) => (
-            <NavLink
-              key={to}
-              to={to}
-              // "/" is the home page: without `end` it would light up on every route.
-              end={to === "/"}
-              onClick={onNavigate}
-              className={({ isActive }) =>
-                cn(
+          {group.items.map(({ to, label, icon: Icon, badge }) => {
+            const isActive = to === activeTo
+            return (
+              <Link
+                key={to}
+                to={to}
+                onClick={onNavigate}
+                aria-current={isActive ? "page" : undefined}
+                className={cn(
                   "group flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors duration-150 lg:h-7",
                   isActive
                     ? "bg-surface-hover text-fg"
                     : "text-fg-muted hover:bg-surface-hover/60 hover:text-fg",
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <Icon
-                    aria-hidden
-                    className={cn(
-                      "size-4",
-                      isActive ? "text-fg" : "text-fg-subtle group-hover:text-fg-muted",
-                    )}
-                    strokeWidth={1.85}
-                  />
-                  {label}
-                  {badge ? (
-                    <span className="ml-auto rounded-full border px-1.5 text-2xs font-medium text-fg-muted">
-                      {badge}
-                    </span>
-                  ) : null}
-                </>
-              )}
-            </NavLink>
-          ))}
+                )}
+              >
+                {
+                  <>
+                    <Icon
+                      aria-hidden
+                      className={cn(
+                        "size-4",
+                        isActive ? "text-fg" : "text-fg-subtle group-hover:text-fg-muted",
+                      )}
+                      strokeWidth={1.85}
+                    />
+                    {label}
+                    {badge ? (
+                      <span className="ml-auto rounded-full border px-1.5 text-2xs font-medium text-fg-muted">
+                        {badge}
+                      </span>
+                    ) : null}
+                  </>
+                }
+              </Link>
+            )
+          })}
         </div>
       ))}
     </nav>
@@ -119,16 +123,16 @@ function StatusFooter({ drawer = false }: { drawer?: boolean }) {
 }
 
 function currentLabel(pathname: string): string {
-  for (const g of NAV)
-    for (const i of g.items) {
-      if (i.to === "/" ? pathname === "/" : pathname.startsWith(i.to)) return i.label
-    }
-  return ""
+  const item = itemForPath(pathname, NAV_ITEMS)
+  if (!item) return ""
+  const tab = item.tabs?.find((t) => pathname === t.to || pathname.startsWith(`${t.to}/`))
+  return tab?.label ?? item.label
 }
 
 export function AppShell() {
   const [open, setOpen] = useState(false)
   const { pathname } = useLocation()
+  const hub = hubForPath(pathname)
   const { status, detail: liveDetail } = useLiveStatus()
 
   return (
@@ -207,6 +211,7 @@ export function AppShell() {
             )}
           >
             {/* A new route fades in softly (off under reduced motion and for screenshots). */}
+            {hub ? <HubTabs hub={hub} pathname={pathname} /> : null}
             <div key={pathname} className="animate-page-in">
               <Outlet />
             </div>
