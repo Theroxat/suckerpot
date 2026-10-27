@@ -257,3 +257,12 @@ def test_failed_logins_come_as_one_aggregate_step() -> None:
     assert guess.technical.startswith("600 login_attempt · top root/123456, admin/admin")
     assert len(guess.technical) <= 200
     assert steps[-1].plain == "Tried to download a program"
+
+
+def test_sessions_stage_filter_rejects_unknown_values() -> None:
+    from starlette.testclient import TestClient
+
+    from api.main import create_app
+
+    with TestClient(create_app(None)) as client:
+        assert client.get("/api/v1/sessions", params={"stage": "nonsense"}).status_code == 422

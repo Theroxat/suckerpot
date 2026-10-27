@@ -784,7 +784,7 @@ async def _flow(
                     label=STAGE_LABELS[st],
                     technical=STAGE_TECHNICAL[st],
                     sessions=stage_counts[st],
-                    href="/attacks",
+                    href=f"/attacks?stage={st}",
                 )
             )
     links = [
