@@ -19,6 +19,7 @@ describe("navigation", () => {
       "/live",
       "/attacks",
       "/attackers",
+      "/networks",
       "/infrastructure",
       "/campaigns",
       "/techniques",
@@ -40,7 +41,8 @@ describe("navigation", () => {
   it.each([
     ["/attacks/abc", "/attacks"],
     ["/attackers/192.0.2.1", "/attacks"],
-    ["/infrastructure", "/attacks"],
+    ["/networks", "/attacks"],
+    ["/infrastructure", "/scripts"],
     ["/campaigns/7", "/campaigns"],
     ["/scripts/deadbeef", "/scripts"],
     ["/malware", "/scripts"],

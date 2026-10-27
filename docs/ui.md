@@ -12,7 +12,7 @@ The sidebar (the drawer on a phone) has ten entries in three spaces, plus Settin
 | Observe | Live | | What is happening now? |
 | Observe | Attacks | Sessions, Attackers, Networks | Who is attacking, and from where? |
 | Understand | Campaigns | Campaigns, Techniques | Who is behind it? |
-| Understand | Payloads | Scripts, Malware | What do they drop? |
+| Understand | Tools | Scripts, Malware, Infrastructure | What do they drop, and from where? |
 | Understand | Trends | Activity, Patterns | How does it change over time? |
 | Defend | Protection | Blocklists, Detections | What should I block or watch? |
 | Defend | Exposure | Your exposure, CVE watch | What of mine is at risk? |
@@ -42,7 +42,8 @@ The Styleguide page is routable everywhere but listed in the sidebar only in dev
 | Live | `/live` | A flat world map of the last 15 minutes of attacks, with arcs landing at the home point, a stats strip, a ticker of the newest events and rankings of addresses, countries and networks. See [The Live page](#the-live-page). |
 | Attacks | `/attacks` | Sessions, newest first, one line each, as a short story. Filters: sensor, source address, period, tag, country and network. Pages of 50, virtualised. |
 | Session detail | `/attacks/<session id>` | The attack timeline, with long runs of the same event folded, a terminal replay for shell sessions, and a source panel. |
-| Attackers | `/attackers`, `/attackers/<ip>` | Profiles by address and by network: first and last seen, sensors targeted, reputation. |
+| Attackers | `/attackers`, `/attackers/<ip>` | Profiles by address: first and last seen, sensors targeted, reputation. |
+| Networks | `/networks` | The hosting providers and networks (ASNs) the attacks come from. The old `/attackers?view=asns` address redirects here. |
 | Activity | `/overview` | KPIs for the last 24 hours, activity per sensor, the sensor mix, the latest events and up to three insights (see [Insights](#insights)). |
 | **Understand** | | |
 | Campaigns | `/campaigns`, `/campaigns/<id>` | Sessions that share a script, payload host, file hash, malware family, exploit or credential list, grouped into one campaign with a plain-English story. |

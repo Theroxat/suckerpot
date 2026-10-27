@@ -21,6 +21,9 @@ const SessionDetailPage = lazy(() =>
 const AttackersPage = lazy(() =>
   import("@/pages/attackers").then((m) => ({ default: m.AttackersPage })),
 )
+const NetworksPage = lazy(() =>
+  import("@/pages/attackers").then((m) => ({ default: m.NetworksPage })),
+)
 const AttackerDetailPage = lazy(() =>
   import("@/pages/attacker-detail").then((m) => ({ default: m.AttackerDetailPage })),
 )
@@ -124,6 +127,14 @@ function appRoutes(): RouteObject {
         element: (
           <Lazy>
             <AttackersPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "networks",
+        element: (
+          <Lazy>
+            <NetworksPage />
           </Lazy>
         ),
       },
