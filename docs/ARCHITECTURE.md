@@ -225,6 +225,8 @@ PostgreSQL 17 with TimescaleDB, managed by Alembic migrations in `db/`.
 | `indicators` | Regular table | One row per URL, domain, IP or file hash seen in events: first and last seen, sightings, sensors, role guess (payload source, contacted, hash) |
 | `indicator_sessions` | Regular table | Bounded links from an indicator to the sessions that showed it |
 | `indicator_intel` | Regular table | 24 h cache of URLhaus, ThreatFox and VirusTotal answers per indicator |
+| `indicator_contacts` | Regular table | Probable C2 addresses of known hashes, read from VirusTotal and ThreatFox, at most 40 per hash (migration 0016) |
+| `indicator_contact_checks` | Regular table | 24 h cache of those lookups, one row per hash and source (ingest only) |
 | `attack_techniques` | Regular table | The MITRE ATT&CK catalogue from `ingest/rules/attack/techniques.yaml` (migration 0011) |
 | `technique_daily` | Regular table | Sessions per technique and day, for the heatmap |
 | `campaigns` | Regular table | One row per campaign: first and last seen, sources, sessions, the story facts (0011) |
