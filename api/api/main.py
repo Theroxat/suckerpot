@@ -23,6 +23,7 @@ from api.attack import router as attack_router
 from api.audit_routes import router as audit_router
 from api.auth import AuthMiddleware, AuthService, AuthSettings, allowed_hosts_from_env
 from api.auth import router as auth_router
+from api.c2 import router as c2_router
 from api.campaigns import router as campaigns_router
 from api.cves import router as cves_router
 from api.defend import router as defend_router
@@ -116,6 +117,7 @@ def create_app(
         trends_router,
         cves_router,
         malware_router,
+        c2_router,  # before indicators_router: /indicators/c2 must not match /indicators/{id}
         indicators_router,
         settings_router,
         provider_keys_router,
