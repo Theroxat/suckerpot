@@ -94,7 +94,8 @@ async def engine(migrated: None) -> AsyncIterator[AsyncEngine]:
                 "TRUNCATE events, sessions, ip_reputation, enrichment_quota, "
                 "enrichment_status, sessions_daily, system_status, maintenance_log, "
                 "provider_secrets, provider_test_requests, cve, cve_sync_state, "
-                "indicators, indicator_sessions, indicator_intel"
+                "indicators, indicator_sessions, indicator_intel, indicator_contacts, "
+                "indicator_contact_checks"
             )
         )
     yield eng

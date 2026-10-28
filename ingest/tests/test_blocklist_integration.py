@@ -29,7 +29,7 @@ async def clean(engine: AsyncEngine) -> None:
         await conn.execute(
             text(
                 "TRUNCATE blocklist_entries, blocklist_overrides, indicator_intel, "
-                "indicator_sessions, indicators"
+                "indicator_sessions, indicator_contacts, indicator_contact_checks, indicators"
             )
         )
 
