@@ -186,7 +186,7 @@ class IntelWorker:
     ) -> tuple[int, Any]:
         """One request to a fixed host. Returns ``(status, parsed JSON or None)``."""
         if urlsplit(url).hostname not in ALLOWED_HOSTS:  # defence in depth: never a free host
-            raise ProviderError("error")
+            raise ProviderError("error", "host not allowed")
         gap = MIN_GAP_S.get(provider, 0.0) - (
             time.monotonic() - self.state.last_call.get(provider, 0.0)
         )
@@ -209,27 +209,27 @@ class IntelWorker:
                 async for chunk in resp.aiter_bytes():
                     size += len(chunk)
                     if size > MAX_BODY:
-                        raise ProviderError("error")
+                        raise ProviderError("error", "body too large")
                     chunks.append(chunk)
-        except httpx.HTTPError:
-            raise ProviderError("error") from None
+        except httpx.HTTPError as exc:
+            raise ProviderError("error", f"http error {type(exc).__name__}") from None
         if status == 429:
             raise ProviderError("rate_limited")
         if status in (401, 403):
             raise ProviderError("auth")
         if 300 <= status < 400:
-            raise ProviderError("error")
+            raise ProviderError("error", f"redirect {status}")
         if status == 404:
             return status, None
         if status != 200:
-            raise ProviderError("error")
+            raise ProviderError("error", f"status {status}")
         raw = b"".join(chunks)
         if exceeds_depth(raw):
-            raise ProviderError("error")
+            raise ProviderError("error", "json too deep")
         try:
             return status, json.loads(raw)
         except (ValueError, RecursionError):
-            raise ProviderError("error") from None
+            raise ProviderError("error", "bad json") from None
 
     def _abusech_headers(self) -> dict[str, str]:
         return {"Auth-Key": self.s.abusech_auth_key}
@@ -366,7 +366,11 @@ class IntelWorker:
         return await self.virustotal(value)
 
     async def virustotal_contacts(self, sha: str) -> list[contacts_mod.Contact]:
-        """Addresses and domains VirusTotal's sandboxes saw the file contact (two requests)."""
+        """Addresses and domains VirusTotal's sandboxes saw the file contact (two requests).
+
+        Uses the descriptor-only relationship endpoints (``{type, id}`` items), whose answers are
+        small; the full-object endpoints carry whole analysis results and exceed ``MAX_BODY``.
+        """
         if not (len(sha) in (32, 40, 64) and set(sha) <= set("0123456789abcdef")):
             raise ProviderError("error")
         answers: list[Any] = []
@@ -379,7 +383,7 @@ class IntelWorker:
             _, payload = await self._request(
                 "virustotal",
                 "GET",
-                f"{VIRUSTOTAL_API}{sha}/{relation}?limit={contacts_mod.VT_PAGE}",
+                f"{VIRUSTOTAL_API}{sha}/relationships/{relation}?limit={contacts_mod.VT_PAGE}",
                 headers={"x-apikey": self.s.virustotal_api_key},
             )
             answers.append(payload)
@@ -457,7 +461,12 @@ class IntelWorker:
                         st.paused_until[provider] = time.monotonic() + RATE_LIMIT_PAUSE_S
                         log.warning("%s rate limited: paused for an hour", provider)
                     else:
-                        log.warning("%s contact lookup failed", provider)
+                        log.warning(
+                            "%s contact lookup failed: %s (%s)",
+                            provider,
+                            exc.kind,
+                            exc.reason or "no detail",
+                        )
                     break
         return made
 

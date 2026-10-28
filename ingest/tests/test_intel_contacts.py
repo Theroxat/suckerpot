@@ -39,7 +39,12 @@ STRICT = IndicatorSettings()
 
 
 def vt(*ids: Any) -> dict[str, Any]:
-    return {"data": [{"id": i, "type": "x", "attributes": {}} for i in ids]}
+    """A descriptor-only relationship answer: items are ``{type, id}``, nothing else."""
+    return {
+        "data": [{"type": "ip_address", "id": i} for i in ids],
+        "meta": {"cursor": "abc", "count": len(ids)},
+        "links": {"self": "https://www.virustotal.com/api/v3/files/x/relationships/contacted_ips"},
+    }
 
 
 def tf_entry(**kw: Any) -> dict[str, Any]:
@@ -236,8 +241,8 @@ async def test_virustotal_contacts_make_two_get_requests_to_the_fixed_host(
     got = await remote.worker().virustotal_contacts(SHA)
     assert [c.address for c in got] == ["203.0.113.5", "c2.example.net"]
     assert [r.url.path for r in remote.requests] == [
-        f"/api/v3/files/{SHA}/contacted_ips",
-        f"/api/v3/files/{SHA}/contacted_domains",
+        f"/api/v3/files/{SHA}/relationships/contacted_ips",
+        f"/api/v3/files/{SHA}/relationships/contacted_domains",
     ]
     assert all(r.url.host == "www.virustotal.com" and r.method == "GET" for r in remote.requests)
     assert all(r.url.params["limit"] == "20" for r in remote.requests)
@@ -443,3 +448,22 @@ def test_merge_precedence_for_demo_and_benign() -> None:
     only_contact = cand("ip", "203.0.113.7", 75, ["probable-c2"], benign=False)
     (solo,) = merge_duplicates([only_contact, cand("ip", "203.0.113.7", 45, ["probable-c2"])])
     assert solo.benign is False and solo.score == 75
+
+
+async def test_a_failed_contact_lookup_logs_kind_and_reason_but_never_the_body(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    Cycle(monkeypatch)
+    secret = "SECRET-BODY-MARKER"
+    big = Remote(lambda _r: httpx.Response(200, content=secret.encode() * intel_mod.MAX_BODY))
+    with caplog.at_level("WARNING", logger="ingest.enrichment.intel"):
+        await big.worker().run_contacts()
+    text_ = " ".join(r.getMessage() for r in caplog.records)
+    assert "virustotal contact lookup failed: error (body too large)" in text_
+    assert secret not in text_
+
+    caplog.clear()
+    bad = Remote(lambda _r: httpx.Response(200, content=b"{not json"))
+    with caplog.at_level("WARNING", logger="ingest.enrichment.intel"):
+        await bad.worker().run_contacts()
+    assert "(bad json)" in " ".join(r.getMessage() for r in caplog.records)
