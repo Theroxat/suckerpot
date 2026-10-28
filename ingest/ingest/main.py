@@ -123,7 +123,7 @@ async def run() -> None:
     appliers.append(reputation.apply_settings)
     cve_watch = CveWatch(factory, enrich, relevance=load_relevance(enrich.rules_dir))
     appliers.append(cve_watch.apply_settings)
-    intel = IntelWorker(factory, enrich, indicator_settings=indicator_settings)
+    intel = IntelWorker(factory, enrich, indicator_settings=indicator_settings, resolver=resolver)
     appliers.append(intel.apply_settings)
 
     async def rep_status(detail: dict[str, Any]) -> None:

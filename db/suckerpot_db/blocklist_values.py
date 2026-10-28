@@ -93,6 +93,25 @@ SHARED_HOSTS: frozenset[str] = frozenset(
         "python.org",
         "mozilla.org",
         "cloudflare-ipfs.com",
+        # CDN and update hosts of Google, Cloudflare, Microsoft, Akamai, Meta and Apple.
+        "gvt1.com",
+        "gvt2.com",
+        "1e100.net",
+        "googlevideo.com",
+        "ggpht.com",
+        "google-analytics.com",
+        "cloudflare.net",
+        "msftncsi.com",
+        "msedge.net",
+        "microsoftonline.com",
+        "trafficmanager.net",
+        "akadns.net",
+        "edgekey.net",
+        "edgesuite.net",
+        "cdn-apple.com",
+        "mzstatic.com",
+        "fbcdn.net",
+        "facebook.com",
     }
 )
 

@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ingest.enrichment import contacts as contacts_mod
 from ingest.enrichment.config import EnrichmentSettings
+from ingest.enrichment.geo import GeoResolver
 from ingest.enrichment.reputation import RATE_LIMIT_PAUSE_S, ProviderError, reserve_quota
 from ingest.enrichment.textutil import clean as clean  # re-exported for the tests
 from ingest.enrichment.textutil import parse_when as parse_when
@@ -136,8 +137,12 @@ class IntelWorker:
         settings: EnrichmentSettings,
         client: httpx.AsyncClient | None = None,
         indicator_settings: IndicatorSettings | None = None,
+        resolver: GeoResolver | None = None,
     ) -> None:
         self.factory = factory
+        self.resolver = resolver  # the local ASN database; None: no network filter
+        self._shared_asns = contacts_mod.shared_asns()
+        self._contacts_cleaned = False
         self.s = settings
         self.ind = indicator_settings or IndicatorSettings.from_env()
         self._last_mark: float | None = None  # None: mark on the first cycle
@@ -388,8 +393,14 @@ class IntelWorker:
             )
             answers.append(payload)
         return contacts_mod.virustotal_contacts(
-            answers[0], answers[1], self.ind, VIRUSTOTAL_LINK.format(h=sha)
+            answers[0], answers[1], self.ind, VIRUSTOTAL_LINK.format(h=sha), self.is_shared_ip
         )
+
+    def is_shared_ip(self, ip: str) -> bool:
+        """True when the local ASN database puts the address in big shared infrastructure."""
+        if self.resolver is None:
+            return False
+        return self.resolver.lookup(ip).asn in self._shared_asns
 
     async def threatfox_contacts(self, sha: str) -> list[contacts_mod.Contact]:
         """``botnet_cc`` IOCs ThreatFox links to the hash (one request)."""
@@ -423,6 +434,17 @@ class IntelWorker:
         """Look up contacted addresses of known hashes. Returns how many requests were made."""
         st = self.state
         made = 0
+        if not self._contacts_cleaned:  # once per start: rows stored under older, looser filters
+            self._contacts_cleaned = True
+            try:
+                removed = await contacts_mod.cleanup_stored(
+                    self.factory, self.ind, self.is_shared_ip
+                )
+                if removed:
+                    log.info("removed %d stored contact rows that fail the filters", removed)
+            except Exception:
+                log.warning("contact clean-up failed", exc_info=True)
+                self._contacts_cleaned = False
         providers = {"virustotal": "virustotal", "threatfox": "abusech"}
         sources = tuple(
             s

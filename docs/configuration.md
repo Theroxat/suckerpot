@@ -410,6 +410,7 @@ Details in [Defend](defend.md). Ingest scores indicators into blocklists when `B
 | `BLOCKLIST_ENABLED` | `false` | Score addresses, hosts, URLs and hashes into the blocklists (ingest, every 15 minutes) |
 | `BLOCKLIST_WINDOW_DAYS` | `30` | How many days of sessions and indicators to score (1 to 365) |
 | `BLOCKLIST_MAX_ROWS` | `20000` | Most entries kept, best score first (100 to 1,000,000) |
+| `CONTACTS_SHARED_ASNS` | Google, Cloudflare, Microsoft, Akamai, Fastly, Meta, Apple | Comma-separated AS numbers whose addresses are dropped from VirusTotal-sourced probable-C2 contacts (read from the local ASN database, no lookup). Replaces the default list. ThreatFox C2 entries are never filtered by network. Pass it to the `ingest` service in `docker-compose.yml` to use it. |
 | `BLOCKLIST_NEVER` | empty | Addresses, networks and names never listed (also read: `AUTH_TRUSTED_PROXIES`, `API_ALLOWED_HOSTS`, `INDICATORS_IGNORE`) |
 | `FEEDS_ENABLED` | `false` | Serve `/feeds/*` with bearer tokens made in Settings. The only part of the API outside the dashboard login |
 
