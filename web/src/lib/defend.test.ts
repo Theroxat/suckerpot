@@ -19,6 +19,7 @@ import {
   parseDays,
   previousComparison,
   reasonLabel,
+  reasonSentence,
   REASON_LABELS,
   scoreBand,
   validateInventory,
@@ -82,9 +83,16 @@ describe("reasons and scores", () => {
       "malware-family",
       "seen-from-many-sources",
       "file-hash",
+      "probable-c2",
       "manual-block",
     ]
     for (const c of codes) expect(REASON_LABELS[c]?.label, c).toBeTruthy()
+  })
+  it("words the probable C2 reason", () => {
+    expect(reasonLabel("probable-c2")).toBe("Probable C2")
+    expect(reasonSentence("probable-c2")).toBe(
+      "Malware dropped on your decoys is said to contact this address.",
+    )
   })
   it("falls back to the code without dashes", () => {
     expect(reasonLabel("some-new-reason")).toBe("some new reason")

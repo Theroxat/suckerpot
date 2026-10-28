@@ -58,7 +58,7 @@ export const GLOSSARY = {
   c2: {
     term: "C2 server",
     short:
-      "Command and control: the server a hacked machine calls home to, to get orders or download more malware. Blocking it cuts the attacker off.",
+      "Command and control: the server that remote-controls infected machines. They call home to it for orders or more malware. Blocking it cuts the attacker off.",
   },
   campaign: {
     term: "Campaign",
