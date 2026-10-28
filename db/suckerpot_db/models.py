@@ -327,6 +327,40 @@ class IndicatorIntelRow(Base):
     )
 
 
+class IndicatorContactRow(Base):
+    """An address a hash's malware is said to contact (read from a provider, never contacted)."""
+
+    __tablename__ = "indicator_contacts"
+
+    hash_indicator_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    address: Mapped[str] = mapped_column(Text, primary_key=True)
+    source: Mapped[str] = mapped_column(Text, primary_key=True)  # virustotal | threatfox
+    kind: Mapped[str] = mapped_column(Text)  # ip | domain
+    port: Mapped[int | None] = mapped_column(Integer)
+    confidence: Mapped[str] = mapped_column(Text)  # high | medium | low
+    family: Mapped[str | None] = mapped_column(Text)
+    provider_score: Mapped[int | None] = mapped_column(SmallInteger)
+    reference: Mapped[str | None] = mapped_column(Text)
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
+class IndicatorContactCheckRow(Base):
+    """The 24 h cache of contact lookups, one row per hash and source."""
+
+    __tablename__ = "indicator_contact_checks"
+
+    indicator_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
 class UserRow(Base):
     """An additional dashboard account. The owner account lives in ``.env`` and has no row."""
 
