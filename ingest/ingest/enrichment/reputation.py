@@ -35,9 +35,10 @@ TEST_IP = "8.8.8.8"  # a well-known public resolver: any routable address would 
 
 
 class ProviderError(Exception):
-    def __init__(self, kind: str) -> None:
+    def __init__(self, kind: str, reason: str = "") -> None:
         super().__init__(kind)
         self.kind = kind  # rate_limited | auth | error
+        self.reason = reason  # short fixed text for logs, never part of a body
 
 
 @dataclass(frozen=True, slots=True)
