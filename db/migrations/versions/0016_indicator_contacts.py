@@ -44,7 +44,7 @@ def upgrade() -> None:
         )
         """
     )
-    op.execute("CREATE INDEX ix_indicator_contacts_address ON indicator_contacts (address)")
+    op.execute("CREATE INDEX ix_indicator_contacts_address ON indicator_contacts (kind, address)")
     op.execute(
         """
         CREATE TABLE indicator_contact_checks (

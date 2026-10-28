@@ -33,8 +33,9 @@ CONTACTS: list[tuple[str, str, str, int | None, str, str, str | None, str | None
     (H1, "203.0.113.5", "ip", None, "virustotal", "medium", None, VT),
     (H2, "203.0.113.5", "ip", None, "virustotal", "medium", None, "https://evil.test/x"),
     (H1, "198.51.100.7", "ip", None, "virustotal", "medium", None, VT),
-    (H2, "c2.badhost.ru", "domain", None, "virustotal", "medium", None, VT),
+    (H2, "c2.example.net", "domain", None, "virustotal", "medium", None, VT),
     (H_OLD, "192.0.2.50", "ip", None, "threatfox", "high", "Gafgyt", TF),
+    (H_OLD, "198.51.100.7", "ip", None, "virustotal", "medium", None, VT),
     (H1, "192.0.2.60", "ip", None, "virustotal", "low", None, None),  # never shown
 ]
 
@@ -101,7 +102,7 @@ async def test_list_shape_order_and_aggregation(client: httpx.AsyncClient) -> No
     assert body["next_cursor"] is None
     items = body["items"]
     # High confidence first; the 60-day-old hash is outside the default 30-day window.
-    assert [i["address"] for i in items] == ["203.0.113.5", "198.51.100.7", "c2.badhost.ru"]
+    assert [i["address"] for i in items] == ["203.0.113.5", "198.51.100.7", "c2.example.net"]
     top = items[0]
     assert top["defanged"] == "203[.]0[.]113[.]5" and top["kind"] == "ip"
     assert top["port"] == 4444 and top["confidence"] == "high"
@@ -119,18 +120,25 @@ async def test_list_shape_order_and_aggregation(client: httpx.AsyncClient) -> No
     assert medium["confidence"] == "medium" and medium["sources"] == ["virustotal"]
     assert medium["port"] is None and medium["families"] == [] and medium["sessions"] == 3
     domain = items[2]
-    assert domain["kind"] == "domain" and domain["defanged"] == "c2[.]badhost[.]ru"
+    assert domain["kind"] == "domain" and domain["defanged"] == "c2[.]example[.]net"
 
 
 async def test_filters(client: httpx.AsyncClient) -> None:
     high = await c2(client, min_confidence="high")
     assert [i["address"] for i in high["items"]] == ["203.0.113.5"]
-    assert [i["address"] for i in (await c2(client, kind="domain"))["items"]] == ["c2.badhost.ru"]
+    assert [i["address"] for i in (await c2(client, kind="domain"))["items"]] == ["c2.example.net"]
     wide = await c2(client, hours=24 * 90)
     assert [i["address"] for i in wide["items"]] == [
-        "203.0.113.5", "192.0.2.50", "198.51.100.7", "c2.badhost.ru"
+        "203.0.113.5", "192.0.2.50", "198.51.100.7", "c2.example.net"
     ]  # fmt: skip
     assert (await c2(client, hours=1))["items"] == []
+    # The old hash (and its two sessions) counts only inside its window.
+    by_window = {
+        h: {i["address"]: i for i in (await c2(client, hours=h))["items"]}["198.51.100.7"]
+        for h in (24 * 30, 24 * 90)
+    }
+    assert (by_window[24 * 30]["sessions"], by_window[24 * 30]["hash_count"]) == (3, 1)
+    assert (by_window[24 * 90]["sessions"], by_window[24 * 90]["hash_count"]) == (5, 2)
 
 
 async def test_keyset_pagination_covers_everything_once(client: httpx.AsyncClient) -> None:
@@ -143,7 +151,7 @@ async def test_keyset_pagination_covers_everything_once(client: httpx.AsyncClien
         cursor = body["next_cursor"]
         if cursor is None:
             break
-    assert seen == ["203.0.113.5", "192.0.2.50", "198.51.100.7", "c2.badhost.ru"]
+    assert seen == ["203.0.113.5", "192.0.2.50", "198.51.100.7", "c2.example.net"]
 
 
 async def test_bad_parameters_are_rejected(client: httpx.AsyncClient) -> None:

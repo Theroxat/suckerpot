@@ -8,7 +8,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from ingest.blocklist import BlocklistWorker
-from ingest.enrichment.contacts import PER_SOURCE, Contact, Source, candidates, store
+from ingest.enrichment.contacts import (
+    CONTACTS_PER_SOURCE_PER_DAY,
+    PER_SOURCE,
+    Contact,
+    Source,
+    candidates,
+    store,
+)
 from ingest.features import FeatureSettings
 
 from .db_fixtures import ROLE_ENV
@@ -98,6 +105,67 @@ async def test_only_known_real_hashes_without_a_fresh_check_are_candidates(
     assert [c.value for c in await candidates(factory, SOURCES, 10)] == [H_KNOWN]
 
 
+async def link(engine: AsyncEngine, hash_id: int, ips: list[str], tag: str) -> None:
+    async with engine.begin() as conn:
+        for n, ip in enumerate(ips):
+            await conn.execute(
+                text(
+                    "INSERT INTO indicator_sessions VALUES (:i, :s, CAST(:ip AS inet), 'ssh', "
+                    "now())"
+                ),
+                {"i": hash_id, "s": f"{tag}-{n}", "ip": ip},
+            )
+
+
+async def test_a_planted_hash_needs_three_independent_networks(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    ids = await seed(engine)
+    async with engine.begin() as conn:  # same hash, but typed in a command: not sensor-computed
+        await conn.execute(text("UPDATE indicators SET trusted = false"))
+    assert await candidates(factory, SOURCES, 10) == []
+    h = ids[H_KNOWN]
+    # Many addresses in two /24 networks are still two sources.
+    await link(engine, h, ["203.0.113.1", "203.0.113.2", "198.51.100.1"], "a")
+    assert await candidates(factory, SOURCES, 10) == []
+    await link(engine, h, ["192.0.2.1"], "b")
+    assert [c.value for c in await candidates(factory, SOURCES, 10)] == [H_KNOWN]
+
+
+async def test_one_source_address_cannot_spend_the_contact_budget(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    ids = await seed(engine)
+    await link(engine, ids[H_KNOWN], ["203.0.113.1"], "one")
+    assert [c.value for c in await candidates(factory, SOURCES, 10)] == [H_KNOWN]
+    async with engine.begin() as conn:
+        for n in range(CONTACTS_PER_SOURCE_PER_DAY):
+            other = int(
+                await conn.scalar(
+                    text(
+                        "INSERT INTO indicators (type, value, role, first_seen, last_seen, "
+                        "sensors, trusted) VALUES ('hash', :v, 'hash', now(), now(), '{ssh}', "
+                        "true) RETURNING id"
+                    ),
+                    {"v": f"{n:02x}" * 32},
+                )
+                or 0
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO indicator_sessions VALUES (:i, :s, CAST('203.0.113.1' AS inet), "
+                    "'ssh', now())"
+                ),
+                {"i": other, "s": f"o-{n}"},
+            )
+            await conn.execute(
+                text("INSERT INTO indicator_contact_checks (indicator_id, source) VALUES (:i, "
+                     "'virustotal')"),
+                {"i": other},
+            )  # fmt: skip
+    assert await candidates(factory, SOURCES, 10) == []
+
+
 async def test_store_replaces_one_source_keeps_first_seen_and_is_bounded(
     engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -139,7 +207,7 @@ async def test_store_replaces_one_source_keeps_first_seen_and_is_bounded(
     )
     assert old[0] is True  # an address seen before keeps its first_seen
 
-    many = [contact(f"c{i}.badhost.ru", kind="domain") for i in range(100)]
+    many = [contact(f"c{i}.example.net", kind="domain") for i in range(100)]
     await store(factory, h, "virustotal", many)
     (n,) = await rows(engine, "SELECT count(*) FROM indicator_contacts WHERE source = 'virustotal'")
     assert n[0] == PER_SOURCE
@@ -184,7 +252,7 @@ async def test_the_blocklist_lists_probable_c2_addresses(
         factory,
         h,
         "virustotal",
-        [contact("198.51.100.7"), contact("c2.badhost.ru", kind="domain"), contact("203.0.113.5")],
+        [contact("198.51.100.7"), contact("c2.example.net", kind="domain"), contact("203.0.113.5")],
     )
     async with engine.begin() as conn:
         # An attacker that also happens to be a medium-confidence C2 address.
@@ -210,6 +278,25 @@ async def test_the_blocklist_lists_probable_c2_addresses(
             ),
             {"i": ids[H_DEMO]},
         )
+    async with engine.begin() as conn:  # a planted (not sensor-computed) hash with one source
+        planted = int(
+            await conn.scalar(
+                text(
+                    "INSERT INTO indicators (type, value, role, first_seen, last_seen, sensors, "
+                    "trusted) VALUES ('hash', :v, 'hash', now(), now(), '{ssh}', false) "
+                    "RETURNING id"
+                ),
+                {"v": "e5" * 32},
+            )
+            or 0
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO indicator_contacts (hash_indicator_id, address, kind, source, "
+                "confidence) VALUES (:i, '203.0.113.88', 'ip', 'threatfox', 'high')"
+            ),
+            {"i": planted},
+        )
     w = BlocklistWorker(FeatureSettings(blocklist_enabled=True), factory)
     await w.run_once()
     async with engine.connect() as conn:
@@ -221,8 +308,9 @@ async def test_the_blocklist_lists_probable_c2_addresses(
     }
     high = got[("ip", "203.0.113.5")]
     assert high[0] == 75 and high[1] == ["probable-c2"]
-    domain = got[("domain", "c2.badhost.ru")]
+    domain = got[("domain", "c2.example.net")]
     assert domain[0] == 40 and domain[1] == ["probable-c2"]
     merged = got[("ip", "198.51.100.7")]
     assert "probable-c2" in merged[1] and "dropped-malware" in merged[1]
     assert ("ip", "192.0.2.99") not in got
+    assert got[("ip", "203.0.113.88")][0] == 45  # unconfirmed: capped even for ThreatFox

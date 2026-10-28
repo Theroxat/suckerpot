@@ -259,9 +259,19 @@ async def _contact_candidates(db: AsyncSession, cutoff: datetime) -> list[Candid
                            bool_or(c.confidence = 'high') AS high,
                            count(DISTINCT c.hash_indicator_id) AS hashes,
                            min(c.first_seen) AS first_seen, max(h.last_seen) AS last_seen,
+                           bool_or(h.trusted OR (
+                               SELECT count(DISTINCT network(set_masklen(l.src_ip,
+                                   CASE WHEN family(l.src_ip) = 4 THEN 24 ELSE 48 END)))
+                               FROM indicator_sessions l WHERE l.indicator_id = h.id) >= 3
+                           ) AS confirmed,
                            (SELECT count(DISTINCT l.session_id) FROM indicator_sessions l
                             WHERE l.indicator_id = ANY(array_agg(DISTINCT c.hash_indicator_id))
-                           ) AS sessions
+                           ) AS sessions,
+                           (SELECT count(DISTINCT network(set_masklen(l.src_ip,
+                                CASE WHEN family(l.src_ip) = 4 THEN 24 ELSE 48 END)))
+                            FROM indicator_sessions l
+                            WHERE l.indicator_id = ANY(array_agg(DISTINCT c.hash_indicator_id))
+                           ) AS sources
                     FROM indicator_contacts c
                     JOIN indicators h ON h.id = c.hash_indicator_id
                     WHERE c.confidence IN ('high', 'medium') AND h.last_seen >= :cutoff
@@ -282,7 +292,7 @@ async def _contact_candidates(db: AsyncSession, cutoff: datetime) -> list[Candid
         value = normalize_value(str(r["kind"]), str(r["address"]))  # the never-list may have grown
         if value is None:
             continue
-        scored = score_contact(bool(r["high"]), int(r["hashes"]))
+        scored = score_contact(bool(r["high"]), int(r["hashes"]), bool(r["confirmed"]))
         out.append(
             Candidate(
                 str(r["kind"]),
@@ -292,31 +302,44 @@ async def _contact_candidates(db: AsyncSession, cutoff: datetime) -> list[Candid
                 r["first_seen"],
                 r["last_seen"],
                 int(r["sessions"] or 0),
-                int(r["hashes"]),
+                int(r["sources"] or 0),
             )
         )
     return out
 
 
+def _contact_only(c: Candidate) -> bool:
+    return c.reasons == ["probable-c2"]
+
+
 def merge_duplicates(candidates: list[Candidate]) -> list[Candidate]:
-    """One candidate per (kind, value): the best score, the union of reasons and campaigns."""
-    by_key: dict[tuple[str, str], Candidate] = {}
+    """One candidate per (kind, value).
+
+    Precedence: the best score wins; reasons and campaigns are the union; ``demo`` is true if any
+    part is demo. ``benign`` (a harmless research scanner) is decided by the address's own sessions
+    only: a probable-C2 contact never clears it, and never sets it.
+    """
+    groups: dict[tuple[str, str], list[Candidate]] = {}
     for c in candidates:
-        kept = by_key.get((c.kind, c.value))
-        if kept is None:
-            by_key[(c.kind, c.value)] = c
+        groups.setdefault((c.kind, c.value), []).append(c)
+    out: list[Candidate] = []
+    for group in groups.values():
+        if len(group) == 1:
+            out.append(group[0])
             continue
-        best, other = (c, kept) if c.score > kept.score else (kept, c)
-        best.reasons = list(dict.fromkeys([*best.reasons, *other.reasons]))[:16]
-        best.first_seen = min(best.first_seen, other.first_seen)
-        best.last_seen = max(best.last_seen, other.last_seen)
-        best.sessions = max(best.sessions, other.sessions)
-        best.sources = max(best.sources, other.sources)
-        best.campaign_ids = list(dict.fromkeys([*best.campaign_ids, *other.campaign_ids]))[:64]
-        best.benign = best.benign and other.benign
-        best.demo = best.demo and other.demo
-        by_key[(c.kind, c.value)] = best
-    return list(by_key.values())
+        group.sort(key=lambda c: -c.score)
+        best = group[0]
+        own = [c for c in group if not _contact_only(c)]
+        best.reasons = list(dict.fromkeys(r for c in group for r in c.reasons))[:16]
+        best.first_seen = min(c.first_seen for c in group)
+        best.last_seen = max(c.last_seen for c in group)
+        best.sessions = max(c.sessions for c in group)
+        best.sources = max(c.sources for c in group)
+        best.campaign_ids = list(dict.fromkeys(i for c in group for i in c.campaign_ids))[:64]
+        best.benign = bool(own) and all(c.benign for c in own)
+        best.demo = any(c.demo for c in group)
+        out.append(best)
+    return out
 
 
 async def _overrides(db: AsyncSession, now: datetime) -> list[dict[str, Any]]:

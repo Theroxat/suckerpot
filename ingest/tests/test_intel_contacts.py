@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from ingest.blocklist.scoring import REASONS, score_contact
+from ingest.blocklist.scoring import REASONS, UNCONFIRMED_CAP, score_contact
 from ingest.blocklist.worker import Candidate, merge_duplicates
 from ingest.enrichment import EnrichmentSettings
 from ingest.enrichment import contacts as contacts_mod
@@ -68,8 +68,12 @@ def test_documentation_private_and_reserved_addresses_are_dropped() -> None:
 
 def test_public_addresses_pass_when_they_are_not_on_the_never_list() -> None:
     assert accept_address("203.0.113.5", DOC) == ("ip", "203.0.113.5")
-    assert accept_address("C2.Badhost.RU.", STRICT) == ("domain", "c2.badhost.ru")
-    assert accept_address("2001:db8::1", DOC) is None or True  # documentation v6: owner's choice
+    assert accept_address("C2.Example.NET.", DOC) == ("domain", "c2.example.net")
+    assert accept_address("C2.Example.NET.", STRICT) is None  # example names are documentation
+    assert accept_address("Files.Not-Real-Host.XYZ.", STRICT) == (
+        "domain",
+        "files.not-real-host.xyz",
+    )
 
 
 def test_resolvers_and_big_saas_names_are_never_candidates() -> None:
@@ -87,7 +91,7 @@ def test_the_owner_ignore_list_applies() -> None:
 def test_split_host_port() -> None:
     assert split_host_port("203.0.113.5:443") == ("203.0.113.5", 443)
     assert split_host_port("203.0.113.5") == ("203.0.113.5", None)
-    assert split_host_port("c2.badhost.ru:8080") == ("c2.badhost.ru", 8080)
+    assert split_host_port("c2.example.net:8080") == ("c2.example.net", 8080)
     assert split_host_port("[2001:db8::1]:443") == ("2001:db8::1", 443)
     assert split_host_port("2001:db8::1") == ("2001:db8::1", None)
     assert split_host_port("203.0.113.5:99999")[1] is None
@@ -101,14 +105,14 @@ def test_split_host_port() -> None:
 def test_virustotal_contacts_are_medium_and_filtered() -> None:
     got = virustotal_contacts(
         vt("203.0.113.5", PRIV10, "8.8.8.8", "203.0.113.5", "198.51.100.7:8080"),
-        vt("c2.badhost.ru", "google.com", "<script>", 42, None),
+        vt("c2.example.net", "google.com", "<script>", 42, None),
         DOC,
         "https://www.virustotal.com/gui/file/x/relations",
     )
     assert [(c.address, c.kind, c.port) for c in got] == [
         ("203.0.113.5", "ip", None),
         ("198.51.100.7", "ip", 8080),
-        ("c2.badhost.ru", "domain", None),
+        ("c2.example.net", "domain", None),
     ]
     assert {c.confidence for c in got} == {"medium"} and {c.source for c in got} == {"virustotal"}
     assert all(c.reference and c.reference.startswith("https://www.virustotal.com/") for c in got)
@@ -119,7 +123,7 @@ def test_virustotal_in_strict_mode_drops_documentation_ranges() -> None:
 
 
 def test_virustotal_is_bounded_and_survives_junk() -> None:
-    many = vt(*[f"c{i}.badhost.ru" for i in range(500)])
+    many = vt(*[f"c{i}.example.net" for i in range(500)])
     got = virustotal_contacts(vt(), many, DOC, None)
     assert len(got) == PER_SOURCE // 2
     junks: list[Any] = [
@@ -143,7 +147,7 @@ def test_threatfox_keeps_only_botnet_cc_and_reads_family_score_and_link() -> Non
         "data": [
             tf_entry(),
             tf_entry(id="2", ioc="203.0.113.6:80", threat_type="payload_delivery"),
-            tf_entry(id="3", ioc="c2.badhost.ru", ioc_type="domain", malware_printable="Gafgyt"),
+            tf_entry(id="3", ioc="c2.example.net", ioc_type="domain", malware_printable="Gafgyt"),
             tf_entry(id="4", ioc="http://198.51.100.9:8443/gate.php", ioc_type="url"),
             tf_entry(id="5", ioc=SHA, ioc_type="sha256_hash"),
             tf_entry(id="6", ioc=PRIV10 + ":22"),
@@ -154,7 +158,7 @@ def test_threatfox_keeps_only_botnet_cc_and_reads_family_score_and_link() -> Non
     got = threatfox_contacts(payload, DOC)
     assert [(c.address, c.port, c.family) for c in got] == [
         ("203.0.113.5", 4444, "Mirai"),
-        ("c2.badhost.ru", None, "Gafgyt"),
+        ("c2.example.net", None, "Gafgyt"),
         ("198.51.100.9", 8443, "Mirai"),
     ]
     first = got[0]
@@ -179,7 +183,7 @@ def test_threatfox_never_takes_a_link_or_unbounded_text_from_the_answer() -> Non
 
 
 def test_threatfox_is_bounded_and_survives_junk() -> None:
-    many = {"data": [tf_entry(id=str(i), ioc=f"c{i}.badhost.ru", ioc_type="domain")
+    many = {"data": [tf_entry(id=str(i), ioc=f"c{i}.example.net", ioc_type="domain")
                      for i in range(500)]}  # fmt: skip
     assert len(threatfox_contacts(many, DOC)) == PER_SOURCE
     junks: list[Any] = [
@@ -215,7 +219,7 @@ class Remote:
 def vt_handler(req: httpx.Request) -> httpx.Response:
     if req.url.path.endswith("/contacted_ips"):
         return httpx.Response(200, json=vt("203.0.113.5", PRIV10))
-    return httpx.Response(200, json=vt("c2.badhost.ru"))
+    return httpx.Response(200, json=vt("c2.example.net"))
 
 
 async def test_virustotal_contacts_make_two_get_requests_to_the_fixed_host(
@@ -230,7 +234,7 @@ async def test_virustotal_contacts_make_two_get_requests_to_the_fixed_host(
     monkeypatch.setattr(intel_mod, "reserve_quota", reserve)
     remote = Remote(vt_handler)
     got = await remote.worker().virustotal_contacts(SHA)
-    assert [c.address for c in got] == ["203.0.113.5", "c2.badhost.ru"]
+    assert [c.address for c in got] == ["203.0.113.5", "c2.example.net"]
     assert [r.url.path for r in remote.requests] == [
         f"/api/v3/files/{SHA}/contacted_ips",
         f"/api/v3/files/{SHA}/contacted_domains",
@@ -239,7 +243,7 @@ async def test_virustotal_contacts_make_two_get_requests_to_the_fixed_host(
     assert all(r.url.params["limit"] == "20" for r in remote.requests)
     assert all(r.headers["x-apikey"] == VT_KEY for r in remote.requests)
     assert all(r.content == b"" for r in remote.requests)  # nothing else is sent
-    assert spent == [("virustotal", int(400 * 0.7))]  # the first unit is spent by the caller
+    assert spent == [("virustotal:contacts", int(400 * 0.3)), ("virustotal", 400)]
 
 
 async def test_a_hash_unknown_to_virustotal_gives_no_contacts(
@@ -251,6 +255,7 @@ async def test_a_hash_unknown_to_virustotal_gives_no_contacts(
     monkeypatch.setattr(intel_mod, "reserve_quota", reserve)
     remote = Remote(lambda _r: httpx.Response(404, json={"error": {"code": "NotFoundError"}}))
     assert await remote.worker().virustotal_contacts(SHA) == []
+    assert [r.url.path.rsplit("/", 1)[-1] for r in remote.requests] == ["contacted_ips"]
 
 
 async def test_virustotal_contacts_refuse_a_malformed_hash() -> None:
@@ -326,7 +331,11 @@ async def test_a_cycle_spends_three_quota_units_per_hash_and_stores_both_sources
     cycle = Cycle(monkeypatch)
     made = await Remote(both).worker().run_contacts()
     assert made == 2  # one VirusTotal pass (two requests, counted by the quota) + one ThreatFox
-    assert sorted(cycle.spent) == ["abusech", "virustotal", "virustotal"]
+    # Each request takes a unit from the contact share and one from the provider's real quota.
+    assert sorted(cycle.spent) == [
+        "abusech", "abusech:contacts", "virustotal", "virustotal", "virustotal:contacts",
+        "virustotal:contacts",
+    ]  # fmt: skip
     assert sorted(s for _, s, _ in cycle.stored) == ["threatfox", "virustotal"]
     by_source = {s: found for _, s, found in cycle.stored}
     assert by_source["threatfox"][0].confidence == "high"
@@ -345,7 +354,7 @@ async def test_an_exhausted_quota_makes_no_request_and_stores_nothing(
 async def test_quota_running_out_between_the_two_virustotal_requests_stores_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    cycle = Cycle(monkeypatch, units=1)
+    cycle = Cycle(monkeypatch, units=3)
     await Remote(both).worker().run_contacts()
     assert cycle.stored == []  # a half answer is never cached as complete
 
@@ -389,10 +398,16 @@ def test_only_the_fixed_hosts_are_ever_used() -> None:
 
 def test_probable_c2_scoring_keeps_medium_below_the_default_feed_threshold() -> None:
     assert "probable-c2" in REASONS
-    high, medium = score_contact(True, 1), score_contact(False, 1)
+    high, medium = score_contact(True, 1, True), score_contact(False, 1, True)
     assert high.score >= 50 and medium.score < 50
-    assert score_contact(False, 3).score < 50 and score_contact(True, 3).score <= 100
+    assert score_contact(False, 3, True).score < 50 and score_contact(True, 3, True).score <= 100
     assert high.reasons == medium.reasons == ["probable-c2"]
+
+
+def test_a_planted_hash_cannot_push_a_contact_past_the_unconfirmed_cap() -> None:
+    # Not trusted and fewer than three source networks: capped, even for ThreatFox.
+    assert score_contact(True, 5, False).score == UNCONFIRMED_CAP
+    assert score_contact(False, 1, False).score < UNCONFIRMED_CAP
 
 
 def cand(kind: str, value: str, score: int, reasons: list[str], **kw: Any) -> Candidate:
@@ -414,4 +429,17 @@ def test_a_known_attacker_that_is_also_a_c2_keeps_both_reasons() -> None:
     assert len(merged) == 2
     top = by_value["203.0.113.5"]
     assert top.score == 75 and set(top.reasons) == {"probable-c2", "ran-commands"}
-    assert top.sessions == 4 and top.benign is False
+    assert top.sessions == 4
+    # A contact never clears the benign flag of the address's own sessions.
+    assert top.benign is True
+    assert by_value["203.0.113.6"].benign is False
+
+
+def test_merge_precedence_for_demo_and_benign() -> None:
+    own_real = cand("ip", "203.0.113.5", 30, ["repeat-visitor"], benign=False, demo=False)
+    own_demo = cand("ip", "203.0.113.5", 50, ["ran-commands"], benign=False, demo=True)
+    (merged,) = merge_duplicates([own_real, own_demo])
+    assert merged.demo is True and merged.benign is False
+    only_contact = cand("ip", "203.0.113.7", 75, ["probable-c2"], benign=False)
+    (solo,) = merge_duplicates([only_contact, cand("ip", "203.0.113.7", 45, ["probable-c2"])])
+    assert solo.benign is False and solo.score == 75

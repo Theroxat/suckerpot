@@ -371,10 +371,11 @@ class IntelWorker:
             raise ProviderError("error")
         answers: list[Any] = []
         for relation in ("contacted_ips", "contacted_domains"):
-            if relation == "contacted_domains" and not await reserve_quota(
-                self.factory, "virustotal", self._contacts_limit("virustotal")
-            ):
-                raise ProviderError("quota")
+            if relation == "contacted_domains":
+                if answers[0] is None:  # 404 on the addresses: VirusTotal does not know the file
+                    return []
+                if not await self._reserve_contacts("virustotal"):
+                    raise ProviderError("quota")
             _, payload = await self._request(
                 "virustotal",
                 "GET",
@@ -405,8 +406,14 @@ class IntelWorker:
         return contacts_mod.threatfox_contacts(payload, self.ind)
 
     def _contacts_limit(self, provider: str) -> int:
-        """Contact lookups may use only a share of the day's quota; hash lookups keep the rest."""
+        """Contact lookups have their own persisted counter (``<provider>:contacts``) and share."""
         return int(self.quota(provider) * contacts_mod.CONTACTS_QUOTA_SHARE)
+
+    async def _reserve_contacts(self, provider: str) -> bool:
+        """One unit from the contact share (30 %) and from the provider's real daily quota."""
+        return await reserve_quota(
+            self.factory, f"{provider}:contacts", self._contacts_limit(provider)
+        ) and await reserve_quota(self.factory, provider, self.quota(provider))
 
     async def run_contacts(self) -> int:
         """Look up contacted addresses of known hashes. Returns how many requests were made."""
@@ -428,7 +435,7 @@ class IntelWorker:
                 key = (f"{provider}:contacts", cand.id)
                 if time.monotonic() < st.retry_after.get(key, 0.0):
                     continue
-                if not await reserve_quota(self.factory, provider, self._contacts_limit(provider)):
+                if not await self._reserve_contacts(provider):
                     log.info("%s quota share for contact lookups exhausted", provider)
                     break
                 made += 1
