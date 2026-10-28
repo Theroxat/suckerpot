@@ -38,7 +38,11 @@ PER_SOURCE = 20  # rows kept per hash and source: at most 40 per hash
 VT_PAGE = 20  # ``limit`` sent to each VirusTotal relationship
 THREATFOX_SCAN = 100  # answer entries examined
 CACHE_HOURS = 24
-CONTACTS_QUOTA_SHARE = 0.7  # of each provider's daily quota; the rest stays for hash lookups
+CONTACTS_QUOTA_SHARE = (
+    0.3  # of each provider's daily quota, counted apart (``<provider>:contacts``)
+)
+CONTACTS_PER_SOURCE_PER_DAY = 20  # contact lookups a day for hashes one source address used
+MIN_NETWORKS = 3  # independent source networks that confirm a hash that no sensor computed
 PER_CYCLE_CONTACTS = 2
 
 THREATFOX_LINK = "https://threatfox.abuse.ch/ioc/{id}/"
@@ -183,7 +187,10 @@ async def candidates(
     """Known hashes without a fresh contact lookup at each wanted source, best evidence first.
 
     A hash is "known" when VirusTotal, URLhaus or ThreatFox already recognise it (an
-    ``indicator_intel`` row with ``known``). Demo hashes are never looked up.
+    ``indicator_intel`` row with ``known``). Demo hashes are never looked up. A hash that no
+    sensor computed (text typed in a command can plant any hash) needs sessions from at least
+    ``MIN_NETWORKS`` distinct source networks. One source address cannot spend more than
+    ``CONTACTS_PER_SOURCE_PER_DAY`` contact lookups a day.
     """
     if not sources:
         return []
@@ -194,17 +201,32 @@ async def candidates(
                    WHERE c.source = ANY(:srcs)
                      AND c.checked_at > now() - make_interval(hours => :hours)), '{}') AS fresh
         FROM indicators i
+        CROSS JOIN LATERAL (
+            SELECT count(DISTINCT network(set_masklen(s.src_ip,
+                       CASE WHEN family(s.src_ip) = 4 THEN 24 ELSE 48 END))) AS nets,
+                   count(DISTINCT s.src_ip) AS ips, min(s.src_ip) AS one
+            FROM indicator_sessions s WHERE s.indicator_id = i.id
+        ) l
+        CROSS JOIN LATERAL (
+            SELECT CASE WHEN l.ips = 1 THEN (
+                SELECT count(DISTINCT k.indicator_id)
+                FROM indicator_sessions s2
+                JOIN indicator_contact_checks k ON k.indicator_id = s2.indicator_id
+                WHERE s2.src_ip = l.one AND k.checked_at > date_trunc('day', now())
+            ) ELSE 0 END AS used
+        ) u
         LEFT JOIN indicator_contact_checks c ON c.indicator_id = i.id
         WHERE i.type = 'hash' AND NOT i.demo AND i.last_seen > now() - interval '7 days'
+          AND (i.trusted OR l.nets >= :min_nets)
+          AND u.used < :per_ip
           AND EXISTS (SELECT 1 FROM indicator_intel n
                       WHERE n.indicator_id = i.id AND n.known
                         AND NOT ('not-checked' = ANY (n.tags)))
-        GROUP BY i.id
+        GROUP BY i.id, l.nets, l.ips, u.used
         HAVING count(*) FILTER (
                    WHERE c.source = ANY(:srcs)
                      AND c.checked_at > now() - make_interval(hours => :hours)) < :n
-        ORDER BY (SELECT count(DISTINCT s.src_ip) FROM indicator_sessions s
-                  WHERE s.indicator_id = i.id) DESC, i.sightings DESC, i.id
+        ORDER BY l.ips DESC, i.sightings DESC, i.id
         LIMIT :k
         """
     )
@@ -217,6 +239,8 @@ async def candidates(
                     "hours": CACHE_HOURS,
                     "n": len(sources),
                     "k": limit,
+                    "min_nets": MIN_NETWORKS,
+                    "per_ip": CONTACTS_PER_SOURCE_PER_DAY,
                 },
             )
         ).all()

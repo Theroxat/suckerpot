@@ -30,6 +30,7 @@ MAX_WINDOW_HOURS = 24 * 90
 DEFAULT_WINDOW_HOURS = 24 * 30
 MAX_HASHES = 10
 MAX_REFERENCES = 5
+STATEMENT_TIMEOUT_MS = 3000
 
 
 class C2Hash(BaseModel):
@@ -110,6 +111,8 @@ _SESSIONS = """
 SELECT k.kind, k.address, count(DISTINCT l.session_id) AS sessions
 FROM unnest(CAST(:kinds AS text[]), CAST(:addrs AS text[])) AS k(kind, address)
 JOIN indicator_contacts c ON c.kind = k.kind AND c.address = k.address
+                         AND c.confidence IN ('high', 'medium')
+JOIN indicators h ON h.id = c.hash_indicator_id AND h.last_seen >= :since
 JOIN indicator_sessions l ON l.indicator_id = c.hash_indicator_id
 GROUP BY k.kind, k.address
 """
@@ -124,6 +127,7 @@ async def list_c2(
     kind: Literal["ip", "domain"] | None = None,
     hours: Annotated[int, Query(ge=1, le=MAX_WINDOW_HOURS)] = DEFAULT_WINDOW_HOURS,
 ) -> C2Page:
+    await db.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
     since = datetime.now(UTC) - timedelta(hours=hours)
     params: dict[str, Any] = {"since": since, "lim": limit + 1}
     kind_filter = ""
@@ -153,7 +157,7 @@ async def list_c2(
             await db.execute(text(_HASHES), {**pair, "since": since, "max_hashes": MAX_HASHES})
         ).all():
             hashes.setdefault((h.kind, h.address), []).append(C2Hash(sha256=h.sha, family=h.family))
-        for s in (await db.execute(text(_SESSIONS), pair)).all():
+        for s in (await db.execute(text(_SESSIONS), {**pair, "since": since})).all():
             sessions[(s.kind, s.address)] = s.sessions
     items = [
         C2Address(
