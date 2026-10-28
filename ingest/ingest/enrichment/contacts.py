@@ -20,6 +20,8 @@ Confidence:
 from __future__ import annotations
 
 import ipaddress
+import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
@@ -47,6 +49,28 @@ PER_CYCLE_CONTACTS = 2
 
 THREATFOX_LINK = "https://threatfox.abuse.ch/ioc/{id}/"
 VIRUSTOTAL_LINK = "https://www.virustotal.com/gui/file/{h}/relations"
+
+
+# Big shared infrastructure: a sandbox that talks to Google, Cloudflare, Microsoft, Akamai,
+# Fastly, Meta or Apple addresses says nothing about the malware, and blocking them would break
+# normal work. VirusTotal contacts in these networks are dropped (ThreatFox ``botnet_cc`` never is).
+SHARED_INFRA_ASNS: frozenset[int] = frozenset(
+    {15169, 13335, 8075, 20940, 16625, 54113, 32934, 714, 6185}
+)  # Google, Cloudflare, Microsoft, Akamai (x2), Fastly, Meta, Apple (x2)
+SHARED_ASNS_ENV = "CONTACTS_SHARED_ASNS"  # comma separated AS numbers; replaces the default list
+
+
+def shared_asns(env: Mapping[str, str] | None = None) -> frozenset[int]:
+    """The shared-infrastructure AS numbers (``CONTACTS_SHARED_ASNS`` replaces the default)."""
+    raw = (os.environ if env is None else env).get(SHARED_ASNS_ENV, "").strip()
+    if not raw:
+        return SHARED_INFRA_ASNS
+    out = {
+        int(t.upper().removeprefix("AS"))
+        for t in raw.replace(";", ",").replace(" ", ",").split(",")
+        if t.upper().removeprefix("AS").isdigit() and len(t) <= 12
+    }
+    return frozenset(n for n in out if 0 < n < 2**32) or SHARED_INFRA_ASNS
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,9 +135,17 @@ def split_host_port(raw: str) -> tuple[str, int | None]:
 
 
 def virustotal_contacts(
-    ips: Any, domains: Any, settings: IndicatorSettings, reference: str | None
+    ips: Any,
+    domains: Any,
+    settings: IndicatorSettings,
+    reference: str | None,
+    is_shared_ip: Callable[[str], bool] | None = None,
 ) -> list[Contact]:
-    """Medium-confidence contacts from the two relationship answers (``data[].id``)."""
+    """Medium-confidence contacts from the two relationship answers (``data[].id``).
+
+    ``is_shared_ip`` tells whether an address belongs to big shared infrastructure (local ASN
+    database); such addresses are dropped.
+    """
     out: list[Contact] = []
     seen: set[str] = set()
     for payload, cap in ((ips, PER_SOURCE // 2), (domains, PER_SOURCE // 2)):
@@ -126,6 +158,8 @@ def virustotal_contacts(
             host, port = split_host_port(ident)
             accepted = accept_address(host, settings)
             if accepted is None or accepted[1] in seen:
+                continue
+            if accepted[0] == "ip" and is_shared_ip is not None and is_shared_ip(accepted[1]):
                 continue
             seen.add(accepted[1])
             taken += 1
@@ -303,3 +337,53 @@ async def store(
             ),
             {"i": indicator_id, "s": source},
         )
+
+
+async def cleanup_stored(
+    factory: async_sessionmaker[AsyncSession],
+    settings: IndicatorSettings,
+    is_shared_ip: Callable[[str], bool] | None,
+    limit: int = 100_000,
+) -> int:
+    """Delete stored rows that no longer pass today's filters. Returns how many were removed.
+
+    Every row is re-validated (the never-list and shared names grow over time); VirusTotal IPs are
+    also checked against the shared-infrastructure networks. ThreatFox rows are never dropped for
+    their network.
+    """
+    async with factory() as session:
+        rows = (
+            await session.execute(
+                text("SELECT DISTINCT kind, address, source FROM indicator_contacts LIMIT :k"),
+                {"k": limit},
+            )
+        ).all()
+    bad: list[tuple[str, str, str]] = []
+    for r in rows:
+        accepted = accept_address(r.address, settings)
+        shared = (
+            r.source == "virustotal"
+            and r.kind == "ip"
+            and is_shared_ip is not None
+            and is_shared_ip(r.address)
+        )
+        if accepted is None or accepted[1] != r.address or shared:
+            bad.append((r.kind, r.address, r.source))
+    removed = 0
+    for start in range(0, len(bad), 1000):
+        chunk = bad[start : start + 1000]
+        async with factory() as session, session.begin():
+            result = await session.execute(
+                text(
+                    "DELETE FROM indicator_contacts WHERE (kind, address, source) IN "
+                    "(SELECT * FROM unnest(CAST(:k AS text[]), CAST(:a AS text[]), "
+                    "CAST(:s AS text[])))"
+                ),
+                {
+                    "k": [b[0] for b in chunk],
+                    "a": [b[1] for b in chunk],
+                    "s": [b[2] for b in chunk],
+                },
+            )
+            removed += int(getattr(result, "rowcount", 0) or 0)
+    return removed

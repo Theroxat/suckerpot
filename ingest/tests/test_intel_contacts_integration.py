@@ -14,9 +14,11 @@ from ingest.enrichment.contacts import (
     Contact,
     Source,
     candidates,
+    cleanup_stored,
     store,
 )
 from ingest.features import FeatureSettings
+from ingest.indicators import IndicatorSettings
 
 from .db_fixtures import ROLE_ENV
 
@@ -314,3 +316,33 @@ async def test_the_blocklist_lists_probable_c2_addresses(
     assert "probable-c2" in merged[1] and "dropped-malware" in merged[1]
     assert ("ip", "192.0.2.99") not in got
     assert got[("ip", "203.0.113.88")][0] == 45  # unconfirmed: capped even for ThreatFox
+
+
+async def test_stored_rows_that_fail_todays_filters_are_removed(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    ids = await seed(engine)
+    h = ids[H_KNOWN]
+    keep = IndicatorSettings(keep_documentation=True)
+    await store(
+        factory,
+        h,
+        "virustotal",
+        [
+            contact("203.0.113.5"),  # in a shared network: goes
+            contact("203.0.113.6"),  # stays
+            contact("edgedl.me.gvt1.com", kind="domain"),  # CDN name: goes
+            contact("c9.example.net", kind="domain"),  # stays
+        ],
+    )
+    # ThreatFox rows are never dropped for their network, only if the address itself is invalid.
+    await store(factory, h, "threatfox", [contact("203.0.113.5", "threatfox")])
+    removed = await cleanup_stored(factory, keep, lambda ip: ip == "203.0.113.5")
+    assert removed == 2
+    got = await rows(engine, "SELECT address, source FROM indicator_contacts ORDER BY 1, 2")
+    assert got == [
+        ("203.0.113.5", "threatfox"),
+        ("203.0.113.6", "virustotal"),
+        ("c9.example.net", "virustotal"),
+    ]
+    assert await cleanup_stored(factory, keep, None) == 0  # idempotent

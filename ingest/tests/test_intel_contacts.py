@@ -16,10 +16,12 @@ from ingest.enrichment import contacts as contacts_mod
 from ingest.enrichment import intel as intel_mod
 from ingest.enrichment.contacts import (
     PER_SOURCE,
+    SHARED_INFRA_ASNS,
     Contact,
     ContactCandidate,
     Source,
     accept_address,
+    shared_asns,
     split_host_port,
     threatfox_contacts,
     virustotal_contacts,
@@ -319,6 +321,10 @@ class Cycle:
             self.spent.append(provider)
             return True
 
+        async def cleanup(*_a: Any, **_k: Any) -> int:
+            return 0
+
+        monkeypatch.setattr(contacts_mod, "cleanup_stored", cleanup)
         monkeypatch.setattr(contacts_mod, "candidates", candidates)
         monkeypatch.setattr(contacts_mod, "store", store)
         monkeypatch.setattr(intel_mod, "reserve_quota", reserve)
@@ -467,3 +473,58 @@ async def test_a_failed_contact_lookup_logs_kind_and_reason_but_never_the_body(
     with caplog.at_level("WARNING", logger="ingest.enrichment.intel"):
         await bad.worker().run_contacts()
     assert "(bad json)" in " ".join(r.getMessage() for r in caplog.records)
+
+
+# ---- shared infrastructure ---------------------------------------------------------------------
+
+
+class FakeAsn:
+    """Stands in for the local ASN database: documentation addresses mapped to AS numbers."""
+
+    def __init__(self, table: dict[str, int]) -> None:
+        self.table = table
+
+    def lookup(self, ip: str) -> Any:
+        return MagicMock(asn=self.table.get(ip))
+
+
+def test_the_default_shared_asns_cover_the_big_networks() -> None:
+    assert {15169, 13335, 8075, 20940, 16625, 54113, 32934, 714, 6185} <= SHARED_INFRA_ASNS
+
+
+def test_the_shared_asn_list_can_be_replaced_from_the_environment() -> None:
+    assert shared_asns({}) == SHARED_INFRA_ASNS
+    assert shared_asns({"CONTACTS_SHARED_ASNS": "AS64500, 64501;x;99999999999"}) == {64500, 64501}
+    assert shared_asns({"CONTACTS_SHARED_ASNS": "nonsense"}) == SHARED_INFRA_ASNS
+
+
+def test_virustotal_ips_in_shared_networks_are_dropped_but_others_stay() -> None:
+    table = {"203.0.113.5": 15169, "203.0.113.6": 13335, "203.0.113.7": 64500}
+    worker = IntelWorker(MagicMock(), SETTINGS, None, DOC, resolver=FakeAsn(table))  # type: ignore[arg-type]
+    got = virustotal_contacts(
+        vt("203.0.113.5", "203.0.113.6", "203.0.113.7", "203.0.113.8"),
+        vt(),
+        DOC,
+        None,
+        worker.is_shared_ip,
+    )
+    assert [c.address for c in got] == ["203.0.113.7", "203.0.113.8"]  # unknown ASN stays
+
+
+def test_without_an_asn_database_nothing_is_dropped_for_its_network() -> None:
+    worker = IntelWorker(MagicMock(), SETTINGS, None, DOC)
+    assert worker.is_shared_ip("203.0.113.5") is False
+
+
+def test_threatfox_botnet_cc_is_never_filtered_by_network() -> None:
+    # threatfox_contacts takes no network filter at all: a C2 inside a cloud AS stays high.
+    (c,) = threatfox_contacts({"data": [tf_entry(ioc="203.0.113.5:443")]}, DOC)
+    assert c.confidence == "high"
+
+
+def test_cdn_and_update_domains_are_never_candidates() -> None:
+    for raw in ["edgedl.me.gvt1.com", "r3.sn-abc.googlevideo.com", "lh3.googleusercontent.com",
+                "fonts.gstatic.com", "x.1e100.net", "www.msftncsi.com", "ctldl.windowsupdate.com",
+                "a.cdn-apple.com", "gateway.icloud.com", "x.cloudflare.net", "dns.cloudflare.com"]:  # fmt: skip
+        assert accept_address(raw, DOC) is None, raw
+    assert accept_address("files.not-real-host.xyz", STRICT) is not None
