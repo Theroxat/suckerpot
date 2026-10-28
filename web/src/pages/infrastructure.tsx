@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { EmptyState } from "@/components/empty-state"
 import { FilterBar } from "@/components/filter-bar"
 import { FindingCard } from "@/components/finding-card"
+import { C2Section } from "@/components/infrastructure/c2-section"
 import { FlowDiagram } from "@/components/infrastructure/flow-diagram"
 import { FlowList } from "@/components/infrastructure/flow-list"
 import { IndicatorDrawer } from "@/components/infrastructure/indicator-drawer"
@@ -235,6 +236,8 @@ export function InfrastructurePage() {
           </>
         )}
       </FindingCard>
+
+      <C2Section />
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">

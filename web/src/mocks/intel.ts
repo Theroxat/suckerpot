@@ -5,6 +5,7 @@
  */
 import { delay, http, HttpResponse } from "msw"
 import type { Session } from "@/lib/api"
+import type { C2Address } from "@/lib/c2"
 import {
   defangIndicator,
   type GraphEdge,
@@ -265,6 +266,49 @@ function decodeCursor(raw: string | null): number {
   }
 }
 
+const C2_BASE = Date.parse("2026-10-27T09:00:00Z")
+const c2 = (
+  address: string,
+  kind: "ip" | "domain",
+  port: number | null,
+  confidence: "high" | "medium",
+  families: string[],
+  seed: string,
+  sessions: number,
+  ago: number,
+): C2Address => {
+  const hashes = [0, 1].map((i) => ({
+    sha256: hex(`${seed}${i}`, 64),
+    family: families[0] ?? null,
+  }))
+  const vt = `https://www.virustotal.com/gui/file/${hashes[0]?.sha256 ?? ""}`
+  return {
+    address,
+    defanged:
+      kind === "ip" ? address.replaceAll(".", "[.]") : address.replace(/\.(?=[^.]+$)/, "[.]"),
+    kind,
+    port,
+    confidence,
+    sources: confidence === "high" ? ["threatfox", "virustotal"] : ["virustotal"],
+    families,
+    hashes,
+    hash_count: 2 + sessions,
+    sessions,
+    first_seen: iso(C2_BASE - (ago + 40) * HOUR),
+    last_seen: iso(C2_BASE - ago * HOUR),
+    references: confidence === "high" ? [vt, "https://threatfox.abuse.ch/ioc/1234567/"] : [vt],
+  }
+}
+
+/** Synthetic probable C2 addresses: documentation ranges and example domains only. */
+const C2_MOCK: C2Address[] = [
+  c2("203.0.113.45", "ip", 4444, "high", ["Mirai"], "c2a", 6, 5),
+  c2("c2.example.net", "domain", 443, "high", ["Gafgyt"], "c2b", 3, 14),
+  c2("198.51.100.77", "ip", 8080, "medium", ["XMRig"], "c2c", 2, 30),
+  c2("192.0.2.9", "ip", null, "medium", [], "c2d", 0, 52),
+  c2("update.example.org", "domain", 8443, "medium", ["Mirai"], "c2e", 1, 70),
+]
+
 export function intelHandlers(sessions: readonly Session[] = []) {
   const now = Date.now()
   const items = build(now)
@@ -289,6 +333,17 @@ export function intelHandlers(sessions: readonly Session[] = []) {
   }
 
   return [
+    http.get("/api/v1/indicators/c2", async ({ request }) => {
+      await delay(LATENCY_MS)
+      const u = new URL(request.url)
+      const limit = Math.min(200, Number(u.searchParams.get("limit") ?? 50))
+      const offset = decodeCursor(u.searchParams.get("cursor"))
+      return HttpResponse.json({
+        items: C2_MOCK.slice(offset, offset + limit),
+        next_cursor: offset + limit < C2_MOCK.length ? encodeCursor(offset + limit) : null,
+      })
+    }),
+
     http.get("/api/v1/indicators/export", ({ request }) => {
       const u = new URL(request.url)
       const rows = filtered(u).map(strip)

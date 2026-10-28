@@ -13,6 +13,7 @@ import type {
   TagsResponse,
 } from "./trends"
 import type { EnrichmentSettings, SystemSettings } from "./settings"
+import type { C2Page } from "./c2"
 import type { CveDetail, CveFilters, CvePage, CveSync } from "./cves"
 import type {
   Campaign,
@@ -497,6 +498,8 @@ export const api = {
   // M13: indicators and infrastructure (passive: nothing is ever fetched from an indicator).
   indicators: (filters: IndicatorFilters, cursor?: string | null, limit = 50) =>
     getJson<Page<IndicatorItem>>("/indicators", { ...filters, cursor: cursor ?? undefined, limit }),
+  c2: (cursor?: string | null, limit = 10) =>
+    getJson<C2Page>("/indicators/c2", { cursor: cursor ?? undefined, limit }),
   indicator: (id: number) => getJson<IndicatorDetail>(`/indicators/${id}`),
   infrastructureGraph: (hours: number, role?: string) =>
     getJson<InfrastructureGraph>("/infrastructure/graph", { hours, role }),
@@ -544,6 +547,7 @@ export const queryKeys = {
   cves: (filters: object, limit: number) => ["cves", filters, limit] as const,
   cve: (id: string) => ["cves", "detail", id] as const,
   cveSync: ["cves", "sync"] as const,
+  c2: () => ["indicators", "c2"] as const,
   indicators: (filters: object) => ["indicators", filters] as const,
   indicator: (id: number) => ["indicators", "detail", id] as const,
   infrastructureGraph: (hours: number, role: string) =>

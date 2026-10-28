@@ -193,6 +193,10 @@ export const REASON_LABELS: Record<string, { label: string; sentence: string }> 
     sentence: "Used by several different attackers.",
   },
   "file-hash": { label: "File seen", sentence: "A file attackers dropped on our decoys." },
+  "probable-c2": {
+    label: "Probable C2",
+    sentence: "Malware dropped on your decoys is said to contact this address.",
+  },
   "manual-block": { label: "Blocked by you", sentence: "You chose to always block this." },
 }
 
