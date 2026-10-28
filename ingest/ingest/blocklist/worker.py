@@ -29,6 +29,7 @@ from ingest.blocklist.scoring import (
     MIN_LISTED_SCORE,
     IndicatorFacts,
     IpFacts,
+    score_contact,
     score_indicator,
     score_ip,
 )
@@ -38,6 +39,7 @@ log = logging.getLogger(__name__)
 
 IP_CANDIDATES = 100_000
 INDICATOR_CANDIDATES = 50_000
+CONTACT_CANDIDATES = 20_000
 CHUNK = 2_000
 WRITE_CHUNK = 1_000
 STATEMENT_TIMEOUT = "30s"
@@ -246,6 +248,77 @@ async def _indicator_candidates(db: AsyncSession, cutoff: datetime) -> list[Cand
     return out
 
 
+async def _contact_candidates(db: AsyncSession, cutoff: datetime) -> list[Candidate]:
+    """Probable C2 addresses read from intel providers for hashes dropped here (never contacted)."""
+    rows = (
+        (
+            await db.execute(
+                text(
+                    """
+                    SELECT c.kind, c.address,
+                           bool_or(c.confidence = 'high') AS high,
+                           count(DISTINCT c.hash_indicator_id) AS hashes,
+                           min(c.first_seen) AS first_seen, max(h.last_seen) AS last_seen,
+                           (SELECT count(DISTINCT l.session_id) FROM indicator_sessions l
+                            WHERE l.indicator_id = ANY(array_agg(DISTINCT c.hash_indicator_id))
+                           ) AS sessions
+                    FROM indicator_contacts c
+                    JOIN indicators h ON h.id = c.hash_indicator_id
+                    WHERE c.confidence IN ('high', 'medium') AND h.last_seen >= :cutoff
+                      AND NOT h.demo
+                    GROUP BY c.kind, c.address
+                    ORDER BY max(h.last_seen) DESC
+                    LIMIT :n
+                    """
+                ),
+                {"cutoff": cutoff, "n": CONTACT_CANDIDATES},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    out: list[Candidate] = []
+    for r in rows:
+        value = normalize_value(str(r["kind"]), str(r["address"]))  # the never-list may have grown
+        if value is None:
+            continue
+        scored = score_contact(bool(r["high"]), int(r["hashes"]))
+        out.append(
+            Candidate(
+                str(r["kind"]),
+                value,
+                scored.score,
+                scored.reasons,
+                r["first_seen"],
+                r["last_seen"],
+                int(r["sessions"] or 0),
+                int(r["hashes"]),
+            )
+        )
+    return out
+
+
+def merge_duplicates(candidates: list[Candidate]) -> list[Candidate]:
+    """One candidate per (kind, value): the best score, the union of reasons and campaigns."""
+    by_key: dict[tuple[str, str], Candidate] = {}
+    for c in candidates:
+        kept = by_key.get((c.kind, c.value))
+        if kept is None:
+            by_key[(c.kind, c.value)] = c
+            continue
+        best, other = (c, kept) if c.score > kept.score else (kept, c)
+        best.reasons = list(dict.fromkeys([*best.reasons, *other.reasons]))[:16]
+        best.first_seen = min(best.first_seen, other.first_seen)
+        best.last_seen = max(best.last_seen, other.last_seen)
+        best.sessions = max(best.sessions, other.sessions)
+        best.sources = max(best.sources, other.sources)
+        best.campaign_ids = list(dict.fromkeys([*best.campaign_ids, *other.campaign_ids]))[:64]
+        best.benign = best.benign and other.benign
+        best.demo = best.demo and other.demo
+        by_key[(c.kind, c.value)] = best
+    return list(by_key.values())
+
+
 async def _overrides(db: AsyncSession, now: datetime) -> list[dict[str, Any]]:
     rows = (
         (
@@ -369,6 +442,8 @@ class BlocklistWorker(FeatureWorker):
             await db.execute(text(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'"))
             candidates = await _ip_candidates(db, cutoff)
             candidates += await _indicator_candidates(db, cutoff)
+            candidates += await _contact_candidates(db, cutoff)
+            candidates = merge_duplicates(candidates)
             candidates = apply_overrides(candidates, await _overrides(db, now))
             top = select_top(candidates, self.settings.blocklist_max_rows)
             self.removed = await write_entries(db, top, now)

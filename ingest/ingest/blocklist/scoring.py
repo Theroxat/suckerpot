@@ -28,6 +28,7 @@ REASONS = (
     "seen-from-many-sources",
     "file-hash",
     "manual-block",
+    "probable-c2",
 )
 
 MALWARE_TAGS = frozenset({"malware-drop", "mirai", "crypto-miner"})
@@ -177,3 +178,16 @@ def score_indicator(f: IndicatorFacts) -> Scored:
     if not confirmed:
         score = min(score, UNCONFIRMED_CAP)
     return Scored(score, reasons[:16])
+
+
+def score_contact(high: bool, hashes: int) -> Scored:
+    """An address that malware dropped here is said to contact (probable C2).
+
+    ``high``: ThreatFox lists it as a botnet C2. Otherwise a sandbox only saw the malware talk to
+    it, which also happens for legitimate services, so it stays below the default feed
+    threshold (50) until the owner raises it or several dropped files agree.
+    """
+    points = 75 if high else 40
+    if hashes >= 2:
+        points += 5
+    return Scored(_clamp(points), ["probable-c2"])

@@ -55,8 +55,9 @@ REVISIONS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, str], ...]]] = {
         (),
     ),
     "0015": ((), (("sessions", "benign"), ("sessions", "scanner_name"), ("events", "benign"))),
+    "0016": (("indicator_contacts", "indicator_contact_checks"), ()),
 }
-ORDER = ["0011", "0012", "0013", "0014", "0015"]
+ORDER = ["0011", "0012", "0013", "0014", "0015", "0016"]
 PRUNE_JOBS = {
     "0011": "suckerpot_campaign_prune",
     "0013": "suckerpot_script_prune",
@@ -120,7 +121,7 @@ async def assert_state(engine: AsyncEngine, applied: list[str]) -> None:
 
 
 async def test_each_revision_goes_down_and_up(engine: AsyncEngine) -> None:
-    assert await current(engine) == "0015"
+    assert await current(engine) == "0016"
     await assert_state(engine, ORDER)
 
     # Back to 0010 one revision at a time; then raw events with a compressed chunk.
@@ -180,7 +181,7 @@ async def test_each_revision_goes_down_and_up(engine: AsyncEngine) -> None:
         assert await conn.scalar(text("SELECT count(*) FROM events")) == 4
 
     _migrate()  # upgrade head + roles + retention again
-    assert await current(engine) == "0015"
+    assert await current(engine) == "0016"
     await assert_state(engine, ORDER)
     async with engine.connect() as conn:
         jobs = {

@@ -27,8 +27,11 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ingest.enrichment import contacts as contacts_mod
 from ingest.enrichment.config import EnrichmentSettings
 from ingest.enrichment.reputation import RATE_LIMIT_PAUSE_S, ProviderError, reserve_quota
+from ingest.enrichment.textutil import clean as clean  # re-exported for the tests
+from ingest.enrichment.textutil import parse_when as parse_when
 from ingest.indicators import IndicatorSettings, normalize_host, normalize_url
 from ingest.jsondepth import exceeds_depth
 
@@ -52,7 +55,6 @@ TEST_HOST = "example.com"  # fixed, harmless value for "Test key"
 TEST_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"  # empty file
 MAX_TAGS = 8
 _IOC_MATCH_LIMIT = 25
-_SAFE_TEXT = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ._-:+/()#@,")
 _LOOKUP_SETTINGS = IndicatorSettings()  # strict: documentation and reserved names are skipped
 # Quota policy: one source address must not be able to spend the day's quota.
 RESERVED_FOR_SHARED = 0.3  # share of each quota only multi-source indicators may use
@@ -92,33 +94,11 @@ class _State:
     test_result: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
-def clean(value: Any, limit: int) -> str | None:
-    """Printable, bounded text from an answer. Anything else is dropped."""
-    if not isinstance(value, str):
-        return None
-    out = "".join(c for c in value[: limit * 2] if c in _SAFE_TEXT).strip()[:limit]
-    return out or None
-
-
 def clean_tags(value: Any) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
     tags = (clean(v, 32) for v in value[: MAX_TAGS * 2])
     return tuple(dict.fromkeys(t.lower() for t in tags if t))[:MAX_TAGS]
-
-
-def parse_when(value: Any) -> datetime | None:
-    """``2026-10-20 12:00:00 UTC`` (abuse.ch) or epoch seconds (VirusTotal) -> aware UTC."""
-    try:
-        if isinstance(value, int | float) and not isinstance(value, bool):
-            return datetime.fromtimestamp(value, UTC)
-        if isinstance(value, str):
-            return datetime.strptime(value.removesuffix(" UTC")[:19], "%Y-%m-%d %H:%M:%S").replace(
-                tzinfo=UTC
-            )
-    except (ValueError, OverflowError, OSError):
-        return None
-    return None
 
 
 def eligible(kind: str, value: str, settings: IndicatorSettings = _LOOKUP_SETTINGS) -> bool:
@@ -173,7 +153,7 @@ class IntelWorker:
             st.paused_until.pop(provider, None)
             st.last_error.pop(provider, None)
             st.test_result.pop(provider, None)
-            for pair in [k for k in st.retry_after if k[0] == provider]:
+            for pair in [k for k in st.retry_after if k[0].split(":")[0] == provider]:
                 del st.retry_after[pair]
 
     def _key(self, provider: str) -> str:
@@ -385,6 +365,95 @@ class IntelWorker:
             return await self.threatfox(kind, value)
         return await self.virustotal(value)
 
+    async def virustotal_contacts(self, sha: str) -> list[contacts_mod.Contact]:
+        """Addresses and domains VirusTotal's sandboxes saw the file contact (two requests)."""
+        if not (len(sha) in (32, 40, 64) and set(sha) <= set("0123456789abcdef")):
+            raise ProviderError("error")
+        answers: list[Any] = []
+        for relation in ("contacted_ips", "contacted_domains"):
+            if relation == "contacted_domains" and not await reserve_quota(
+                self.factory, "virustotal", self._contacts_limit("virustotal")
+            ):
+                raise ProviderError("quota")
+            _, payload = await self._request(
+                "virustotal",
+                "GET",
+                f"{VIRUSTOTAL_API}{sha}/{relation}?limit={contacts_mod.VT_PAGE}",
+                headers={"x-apikey": self.s.virustotal_api_key},
+            )
+            answers.append(payload)
+        return contacts_mod.virustotal_contacts(
+            answers[0], answers[1], self.ind, VIRUSTOTAL_LINK.format(h=sha)
+        )
+
+    async def threatfox_contacts(self, sha: str) -> list[contacts_mod.Contact]:
+        """``botnet_cc`` IOCs ThreatFox links to the hash (one request)."""
+        if len(sha) not in (32, 64):  # ThreatFox searches MD5 and SHA-256 only
+            return []
+        _, payload = await self._request(
+            "abusech",
+            "POST",
+            THREATFOX_API,
+            headers=self._abusech_headers(),
+            body={"query": "search_hash", "hash": sha},
+        )
+        status = self._check_status(payload)
+        if status in {"no_result", "no_results", "illegal_search_term", "illegal_hash"}:
+            return []
+        if status != "ok":
+            raise ProviderError("error")
+        return contacts_mod.threatfox_contacts(payload, self.ind)
+
+    def _contacts_limit(self, provider: str) -> int:
+        """Contact lookups may use only a share of the day's quota; hash lookups keep the rest."""
+        return int(self.quota(provider) * contacts_mod.CONTACTS_QUOTA_SHARE)
+
+    async def run_contacts(self) -> int:
+        """Look up contacted addresses of known hashes. Returns how many requests were made."""
+        st = self.state
+        made = 0
+        providers = {"virustotal": "virustotal", "threatfox": "abusech"}
+        sources = tuple(
+            s
+            for s in contacts_mod.CONTACT_SOURCES
+            if self.enabled(providers[s]) and not self._paused(providers[s])
+        )
+        for cand in await contacts_mod.candidates(self.factory, sources):
+            if not eligible("hash", cand.value, self.ind):
+                continue
+            for source in cand.missing:
+                provider = providers[source]
+                if not self.enabled(provider) or self._paused(provider):
+                    continue
+                key = (f"{provider}:contacts", cand.id)
+                if time.monotonic() < st.retry_after.get(key, 0.0):
+                    continue
+                if not await reserve_quota(self.factory, provider, self._contacts_limit(provider)):
+                    log.info("%s quota share for contact lookups exhausted", provider)
+                    break
+                made += 1
+                try:
+                    found = (
+                        await self.virustotal_contacts(cand.value)
+                        if source == "virustotal"
+                        else await self.threatfox_contacts(cand.value)
+                    )
+                    await contacts_mod.store(self.factory, cand.id, source, found)
+                    st.last_error.pop(provider, None)
+                except ProviderError as exc:
+                    st.last_error[provider] = exc.kind
+                    st.retry_after[key] = time.monotonic() + 900
+                    if exc.kind == "auth":
+                        st.disabled[provider] = "auth"
+                        log.error("%s rejected the API key: lookups disabled", provider)
+                    elif exc.kind == "rate_limited":
+                        st.paused_until[provider] = time.monotonic() + RATE_LIMIT_PAUSE_S
+                        log.warning("%s rate limited: paused for an hour", provider)
+                    else:
+                        log.warning("%s contact lookup failed", provider)
+                    break
+        return made
+
     async def run_key_test(self, provider: str) -> dict[str, Any]:
         """One real, quota-counted request with a fixed harmless value. Never raises."""
         error: str | None = None
@@ -590,7 +659,7 @@ class IntelWorker:
                         break
                 if stop:
                     break
-        return made
+        return made + await self.run_contacts()
 
     async def status(self) -> dict[str, Any]:
         st = self.state
