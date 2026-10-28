@@ -39,6 +39,8 @@ NEW_TABLES = {
     "alert_cursors",
     "weekly_reports",
     "alert_test_requests",
+    "indicator_contacts",
+    "indicator_contact_checks",
 }
 
 
@@ -53,12 +55,12 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0015() -> None:
+def test_the_chain_is_linear_up_to_0016() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0015"}
-    for n in range(11, 16):
+    assert heads == {"0016"}
+    for n in range(11, 17):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
 
 

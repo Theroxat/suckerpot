@@ -90,7 +90,8 @@ DECLARE
                   'campaign_sessions', 'blocklist_entries', 'blocklist_overrides', 'feed_tokens',
                   'inventory_services', 'scripts', 'script_sessions', 'script_explanations',
                   'llm_requests', 'alert_channels', 'alert_rules', 'watched_cves',
-                  'alert_outbox', 'alert_cursors', 'weekly_reports', 'alert_test_requests']
+                  'alert_outbox', 'alert_cursors', 'weekly_reports', 'alert_test_requests',
+                  'indicator_contacts', 'indicator_contact_checks']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -127,6 +128,12 @@ BEGIN
         EXECUTE format(
             'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.indicators', 'id'),
             r);
+    END IF;
+    IF to_regclass('public.indicator_contacts') IS NOT NULL THEN
+        -- Probable C2 addresses read from intel providers: ingest is the only writer.
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE, DELETE ON indicator_contacts, '
+            'indicator_contact_checks TO %I', r);
     END IF;
     IF to_regclass('public.campaigns') IS NOT NULL THEN
         -- M15: ingest is the only writer of the ATT&CK catalogue, counters and campaigns.
@@ -179,7 +186,8 @@ DECLARE
                   'campaign_sessions', 'blocklist_entries', 'blocklist_overrides', 'feed_tokens',
                   'inventory_services', 'scripts', 'script_sessions', 'script_explanations',
                   'llm_requests', 'alert_channels', 'alert_rules', 'watched_cves',
-                  'alert_outbox', 'alert_cursors', 'weekly_reports', 'alert_test_requests']
+                  'alert_outbox', 'alert_cursors', 'weekly_reports', 'alert_test_requests',
+                  'indicator_contacts', 'indicator_contact_checks']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -207,6 +215,9 @@ BEGIN
     END IF;
     IF to_regclass('public.indicators') IS NOT NULL THEN
         EXECUTE format('GRANT SELECT ON indicators, indicator_sessions, indicator_intel TO %I', r);
+    END IF;
+    IF to_regclass('public.indicator_contacts') IS NOT NULL THEN
+        EXECUTE format('GRANT SELECT ON indicator_contacts TO %I', r);
     END IF;
     IF to_regclass('public.users') IS NOT NULL THEN
         -- Dashboard accounts: the API manages them (deleting a user is allowed). The audit log
