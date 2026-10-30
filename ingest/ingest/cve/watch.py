@@ -33,8 +33,11 @@ RUN_EVERY = timedelta(hours=24)
 RETRY_AFTER_ERROR = timedelta(hours=1)
 CHECK_INTERVAL_S = 900.0
 KEV_DAILY_QUOTA = 6  # one download per run; a few retries
-FIRST_LOOKBACK = timedelta(days=30)
-MAX_LOOKBACK = timedelta(days=30)
+# A vendor advisory is often published weeks before it is exploited, so the first fetch (and a
+# repair of a shallow history) reaches back two months. NVD allows 120 days per range.
+FIRST_LOOKBACK = timedelta(days=60)
+MAX_LOOKBACK = timedelta(days=60)
+WATCHED_LOOKUPS_PER_RUN = 10
 OVERLAP = timedelta(days=1)
 RETENTION_DAYS = 180  # irrelevant, non-KEV CVEs older than this are pruned
 
@@ -117,6 +120,7 @@ class CveWatch:
         self._retry_at: dict[str, datetime] = {}
         self.last_error: dict[str, str] = {}
         self.test_result: dict[str, dict[str, Any]] = {}
+        self._watched_tried: dict[str, datetime] = {}  # id -> last lookup, not repeated for 24 h
 
     def apply_settings(self, settings: EnrichmentSettings, changed: set[str]) -> None:
         """Hot-swap the optional keys. A changed key clears backoff and the last error."""
@@ -151,24 +155,32 @@ class CveWatch:
             first = row.first()
             return first[0] if first else None
 
-    async def _record_run(self, source: str, *, ok: bool, items: int, error: str | None) -> None:
+    async def _record_run(
+        self,
+        source: str,
+        *,
+        ok: bool,
+        items: int,
+        error: str | None,
+        success_at: datetime | None = None,
+    ) -> None:
         async with self.factory() as session, session.begin():
             await session.execute(
                 text(
                     """
                     INSERT INTO cve_sync_state
                         (source, last_run_at, last_success_at, last_error, items_last_run)
-                    VALUES (:s, now(), CASE WHEN :ok THEN now() END, :e, :n)
+                    VALUES (:s, now(), CASE WHEN :ok THEN COALESCE(:at, now()) END, :e, :n)
                     ON CONFLICT (source) DO UPDATE SET
                         last_run_at = now(),
-                        last_success_at = CASE WHEN :ok THEN now()
+                        last_success_at = CASE WHEN :ok THEN COALESCE(:at, now())
                                                ELSE cve_sync_state.last_success_at END,
                         last_error = :e,
                         items_last_run = CASE WHEN :ok THEN :n
                                               ELSE cve_sync_state.items_last_run END
                     """
                 ),
-                {"s": source, "ok": ok, "e": error, "n": items},
+                {"s": source, "ok": ok, "e": error, "n": items, "at": success_at},
             )
 
     async def store(self, source: str, batch: Batch) -> int:
@@ -285,6 +297,7 @@ class CveWatch:
         return await sources.fetch_github(
             self.client,
             since=start.date(),
+            until=now.date(),
             token=self.s.github_token,
             reserve=self._reserve("github"),
         )
@@ -311,9 +324,85 @@ class CveWatch:
             return 0
         self.last_error.pop(source, None)
         self._retry_at.pop(source, None)
-        await self._record_run(source, ok=True, items=count, error=None)
-        log.info("cve %s: %d stored, %d skipped as invalid", source, count, batch.skipped)
+        # A partial fetch moves the cursor only as far as it got, so the next cycle resumes there.
+        success_at = None if batch.complete else batch.covered_until
+        await self._record_run(source, ok=True, items=count, error=None, success_at=success_at)
+        log.info(
+            "cve %s: %d stored, %d skipped as invalid%s",
+            source,
+            count,
+            batch.skipped,
+            "" if batch.complete else " (partial, resumes next cycle)",
+        )
         return count
+
+    async def rewind_shallow_history(self) -> None:
+        """Re-open the window of a feed whose stored history starts later than it should.
+
+        Feeds used to look back 30 days and silently stopped at a page cap, so rows could be
+        missing both before and inside the window. When the oldest stored row of a dated feed is
+        younger than the lookback, the cursor goes back to the start of the lookback; the
+        windowed fetch then re-reads it (upserts are idempotent) and the oldest row moves back.
+        """
+        target = datetime.now(UTC) - FIRST_LOOKBACK
+        for source in ("nvd", "github"):
+            async with self.factory() as session:
+                oldest = await session.scalar(
+                    text("SELECT min(published_at) FROM cve WHERE :s = ANY(sources)"),
+                    {"s": source},
+                )
+            last = await self._last_success(source)
+            if oldest is None or last is None or last <= target:
+                continue
+            if oldest > target + timedelta(days=3):
+                async with self.factory() as session, session.begin():
+                    await session.execute(
+                        text("UPDATE cve_sync_state SET last_success_at = :t WHERE source = :s"),
+                        {"t": target, "s": source},
+                    )
+                log.info(
+                    "cve %s: history is shallow, re-reading the last %d days",
+                    source,
+                    FIRST_LOOKBACK.days,
+                )
+
+    async def sync_watched(self) -> int:
+        """Fetch watched CVEs that are not in the table yet (any age), by id, from the NVD."""
+        async with self.factory() as session:
+            res = await session.execute(
+                text(
+                    """
+                    SELECT w.cve_id FROM watched_cves w
+                    WHERE NOT EXISTS (SELECT 1 FROM cve c WHERE c.cve_id = w.cve_id)
+                    ORDER BY w.added_at
+                    """
+                )
+            )
+            now = datetime.now(UTC)
+            # The watch list is small; filter out recently tried ids first, then cut, so ids that
+            # never resolve cannot starve the ones behind them.
+            missing = [
+                r[0]
+                for r in res
+                if now - self._watched_tried.get(r[0], now - 2 * RUN_EVERY) >= RUN_EVERY
+            ][:WATCHED_LOOKUPS_PER_RUN]
+        stored = 0
+        for index, cve_id in enumerate(missing):
+            if index:
+                await self._sleep(sources.nvd_interval_s(bool(self.s.nvd_api_key)))
+            self._watched_tried[cve_id] = now
+            try:
+                batch = await sources.fetch_nvd_by_id(
+                    self.client,
+                    cve_id,
+                    api_key=self.s.nvd_api_key,
+                    reserve=self._reserve("nvd"),
+                )
+                stored += await self.store("nvd", batch)
+            except SourceError as exc:
+                log.warning("cve watched lookup failed: %s", exc.kind)
+                break
+        return stored
 
     def _failed(self, source: str, kind: str) -> None:
         self.last_error[source] = kind
@@ -331,6 +420,8 @@ class CveWatch:
             if last is not None and now - last < RUN_EVERY:
                 continue
             total += await self.sync_source(source)
+        if self._retry_at.get("nvd", now) <= now:
+            total += await self.sync_watched()
         if total:
             await self.maintenance()
         return total
@@ -416,6 +507,8 @@ class CveWatch:
                 if first:  # a new relevance mapping applies at once, without waiting for a sync
                     first = False
                     await self.maintenance()
+                    if self.s.cve_watch_enabled:
+                        await self.rewind_shallow_history()
                 if self.s.cve_watch_enabled:
                     await self.run_once()
                 await publish(await self.status())
