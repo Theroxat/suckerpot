@@ -38,12 +38,13 @@ openssl rand -base64 32
 | `REDIS_SENSOR_ADB_PASSWORD` | `redis`, `sensor-adb` | Redis `sensor-adb` user. It can only `XADD` to `events:adb`. |
 | `REDIS_SENSOR_SMB_PASSWORD` | `redis`, `sensor-smb` | Redis `sensor-smb` user. It can only `XADD` to `events:smb`. |
 | `REDIS_SENSOR_SIP_PASSWORD` | `redis`, `sensor-sip` | Redis `sensor-sip` user. It can only `XADD` to `events:sip`. |
+| `REDIS_SENSOR_SYNOLOGY_PASSWORD` | `redis`, `sensor-synology` | Redis `sensor-synology` user. It can only `XADD` to `events:synology`. |
 | `REDIS_DEMO_PASSWORD` | `redis`, `demo` | Redis `demo` user. It can only `XADD` to `events:*`. |
 | `SESSION_SECRET` | `api` | Signs the dashboard session cookie (at least 32 bytes). See [Dashboard authentication](#dashboard-authentication). |
 | `ADMIN_PASSWORD_HASH` | `api` | Argon2 hash of the dashboard password. A hash, not a password, but treat it as a secret. |
 | `SETTINGS_ENCRYPTION_KEY` | `api`, `ingest` | Optional. Encrypts the enrichment API keys you enter on the Settings page. Make it with `openssl rand -base64 32` (at least 32 random bytes). See [Enrichment keys in Settings](#enrichment-keys-in-settings). |
 
-Each of the eleven sensors has its own Redis secret, `REDIS_SENSOR_<NAME>_PASSWORD`, for SSH, Telnet, RDP, web, Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP. To rotate secrets, see [Deployment](deployment.md#rotating-secrets).
+Each of the twelve sensors has its own Redis secret, `REDIS_SENSOR_<NAME>_PASSWORD`, for SSH, Telnet, RDP, web, Redis, Docker, MySQL, MSSQL, ADB, SMB, SIP and Synology. To rotate secrets, see [Deployment](deployment.md#rotating-secrets).
 
 ```{warning}
 The template uses `change-me` as a placeholder. It is too short for the policy, so the stack refuses to start until you replace it. `SUCKERPOT_ALLOW_DEFAULT_SECRETS=1` turns the check off. Set it only in CI or throwaway tests.
@@ -69,6 +70,8 @@ The template uses `change-me` as a placeholder. It is too short for the policy, 
 | `ADB_HOST_PORT` | `5555` | `.env` | Host port of the ADB sensor (IPv4 only) |
 | `SMB_HOST_PORT` | `445` | `.env` | Host port of the SMB sensor (IPv4 only). The sensor listens on container port 4450. |
 | `SIP_HOST_PORT` | `5060` | `.env` | Host port of the SIP sensor, for both UDP and TCP (IPv4 only) |
+| `SYNOLOGY_HTTP_HOST_PORT` | `5000` | `.env` | Host port of the Synology sensor's HTTP listener (IPv4 only) |
+| `SYNOLOGY_HTTPS_HOST_PORT` | `5001` | `.env` | Host port of the Synology sensor's HTTPS listener (IPv4 only) |
 | `SUCKERPOT_ALLOW_DEFAULT_SECRETS` | `0` | `.env` | `1` turns off the secret length and uniqueness checks. CI and throwaway tests only. |
 
 ## Database
@@ -93,7 +96,7 @@ Inside `ingest` and `api`, Compose sets `POSTGRES_USER` and `POSTGRES_PASSWORD` 
 | --- | --- | --- | --- |
 | `REDIS_PASSWORD` and the other `REDIS_*_PASSWORD` secrets | none | `.env`, required | See [Secrets](#secrets) |
 | `EVENTS_MAXLEN` | `10000` | `.env` | Approximate maximum length of each sensor's stream (`XADD MAXLEN ~`) for SSH, Telnet, Web and RDP |
-| `EVENTS_MAXLEN_LOW` | `3000` | `.env` | The same cap for the seven M9 sensors: Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP. Kept short so a burst on seven more streams cannot fill Redis memory. Ingest drains the streams, and a sensor drops an event when `XADD` fails. |
+| `EVENTS_MAXLEN_LOW` | `3000` | `.env` | The same cap for the seven M9 sensors (Redis, Docker, MySQL, MSSQL, ADB, SMB and SIP) and the Synology sensor. Kept short so a burst on seven more streams cannot fill Redis memory. Ingest drains the streams, and a sensor drops an event when `XADD` fails. |
 | `DEMO_EVENTS_MAXLEN` | `100000` | `.env` | The same cap, for the demo generator only. Keep it above the number of events per sensor in a backfill, or entries ingest has not read yet are trimmed. |
 | `EVENTS_MAX_BYTES_PER_SEC` | `200000` | Code default | Publisher backstop for **every** sensor: a token bucket on serialized event bytes per second. Beyond it the publisher drops events and counts them. |
 | `EVENTS_MAX_BYTES_BURST` | `2000000` | Code default | Burst of that bucket, in bytes |
@@ -174,7 +177,7 @@ Defaults are set in code. Compose passes `INGEST_STREAMS` through from `.env`. T
 
 | Variable | Default | Source | Description |
 | --- | --- | --- | --- |
-| `INGEST_STREAMS` | `events:ssh,events:telnet,events:web,events:rdp` | `.env` | Streams to read, comma-separated. Letters, digits and `_ . : -`, up to 64 characters each. The suffix after the last `:` must be the sensor name: events whose `sensor` differs are dropped. |
+| `INGEST_STREAMS` | `events:ssh,events:telnet,events:web,events:rdp,events:redis,events:docker,events:mysql,events:mssql,events:adb,events:smb,events:sip,events:synology` | `.env` | Streams to read, comma-separated. Letters, digits and `_ . : -`, up to 64 characters each. The suffix after the last `:` must be the sensor name: events whose `sensor` differs are dropped. |
 | `INGEST_BATCH_SIZE` | `100` | Code default | Events per database write, 1 to 500 |
 | `INGEST_BLOCK_MS` | `1000` | Code default | How long one stream read waits for new entries, in milliseconds |
 | `INGEST_CLAIM_IDLE_MS` | `60000` | Code default | Pending entries idle for longer than this are reclaimed |
@@ -206,7 +209,7 @@ The geolocation data has a licence that requires credit. See [Data sources and a
 | `ABUSEIPDB_DAILY_QUOTA` | `1000` | Maximum AbuseIPDB checks per day. Enforced, and persisted in the database. |
 | `GREYNOISE_API_KEY` | empty | GreyNoise Community key. Without it, no lookups. |
 | `GREYNOISE_DAILY_QUOTA` | `50` | Maximum GreyNoise checks per day |
-| `CVE_WATCH_ENABLED` | `true` | Daily job that mirrors CISA KEV, recent NVD CVEs and GitHub advisories |
+| `CVE_WATCH_ENABLED` | `true` | Daily job that mirrors CISA KEV, NVD CVEs from the last 60 days and GitHub advisories. The feeds are read in chunks. See [Architecture](ARCHITECTURE.md). |
 | `NVD_API_KEY` | empty | NVD key. Optional: raises the rate limit from 5 to 50 requests per 30 s |
 | `GITHUB_ADVISORY_TOKEN` | empty | Token for the public GitHub advisories API. Optional: raises the limit from 60 requests per hour. Use a fine-grained token for public repositories only, read-only, with no permissions. Never your push token |
 | `CVE_NVD_DAILY_QUOTA` | `200` | Maximum NVD requests per day. Enforced, and persisted in the database |
@@ -383,6 +386,20 @@ For ADB, Docker and SIP, the connection caps that Compose sets (200 and 8) are h
 ```
 
 Each of these sensors needs its own Redis password in `.env` (`REDIS_SENSOR_<NAME>_PASSWORD`). See [Secrets](#secrets). Each host port must differ from the others and from `DASHBOARD_PORT`. The [port guard](deployment.md#port-guard) checks this.
+
+## Sensors added in M20
+
+The Synology sensor (M20) has its own Redis user, stream and network, like the others. Compose sets its public ports, its connection caps and its memory limit. The ports are in [Compose and host](#compose-and-host). The table lists the variables you can set in `.env`. The sensor README has the full list of tunables.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SYNOLOGY_MAX_CONNECTIONS`, `SYNOLOGY_MAX_PER_IP` | `200`, `8` | Connection caps, in total and per source address |
+| `SYNOLOGY_CONN_RATE`, `SYNOLOGY_CONN_BURST` | `5`, `20` | New connections per second per source address, and the burst |
+| `SYNOLOGY_MEMORY_BUDGET_MB` | `80` | Memory for connections and request bodies in flight. Compose sets `SYNOLOGY_MEMORY_LIMIT_MB` to 160, the container limit. |
+| `SYNOLOGY_EVENTS_PER_SEC`, `SYNOLOGY_GLOBAL_EVENTS_PER_SEC` | `20`, `200` | Event caps per source address and for the sensor |
+| `SYNOLOGY_HTTP_REDIRECT` | `false` | Redirect the HTTP login page to HTTPS, as a DSM with forced HTTPS does. Off by default: DSM serves the UI on port 5000. |
+
+The Redis password is `REDIS_SENSOR_SYNOLOGY_PASSWORD`. See [Secrets](#secrets). The [sensor page](sensors/synology.md) describes what the sensor emulates and records.
 
 ## Demo data
 

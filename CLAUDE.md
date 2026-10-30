@@ -59,21 +59,33 @@ Never start routine work on `opus`. If an agent fails twice on the same task, mo
 ## 3. Architecture
 
 ```
-Internet ──► ISP box (DMZ, all ports) ──► VM ──► sensors ──► Redis Streams ──► ingest ──► PostgreSQL + TimescaleDB ──► API (FastAPI) ──► Web UI (React)
-                                                                                                                         ▲
-                                                                     cloudflared (another VM on the LAN) ────────────────┘
+Internet ──► ISP box (DMZ, all ports) ──► VM ──► 12 sensors ──► Redis Streams ──► ingest ──► PostgreSQL + TimescaleDB ──► API (FastAPI) ──► Web UI (React)
+                                                                                                                            ▲
+                                                                        cloudflared (another VM on the LAN) ────────────────┘
 ```
+
+Full detail in `docs/ARCHITECTURE.md`; read it before touching compose, Redis ACLs or the ingest loop.
 
 | Service | Network(s) | Notes |
 | --- | --- | --- |
-| `sensor-ssh`, `sensor-telnet`, `sensor-web`, `sensor-rdp` | `sensors` | The only services published to the internet. They can reach Redis and nothing else |
-| `redis` | `sensors`, `backend` | Password set, and an ACL user for sensors limited to XADD on the events stream |
-| `ingest` | `backend`, `egress` | Enrichment (GeoIP, ASN, reputation) and tagging. The only service with outbound internet |
+| `sensor-{ssh,telnet,adb,web,docker,synology,redis,mysql,mssql,rdp,smb,sip}` | `ingress` (`sp-ingress`) + its own `sensors-<name>` | The only services published to the internet. `sp-ingress` has masquerading and inter-container traffic off; `sensors-<name>` is internal and links that one sensor to Redis. One Redis ACL user per sensor, limited to `XADD events:<name>` |
+| `redis` | every `sensors-<name>`, `tools`, `backend` | One stream per sensor (`events:<name>`), AOF on `redis-data` |
+| `migrate` | `backend` | Runs Alembic as the DB owner and (re)sets the `suckerpot_ingest` / `suckerpot_api` role passwords on every run |
+| `ingest` | `backend`, `egress` | Enrichment, tagging and the analysis workers. The only service with outbound internet |
 | `db` | `backend` | PostgreSQL + TimescaleDB, on a named volume |
-| `api` | `backend`, `dashboard` | FastAPI: REST + WebSocket, also serves the built web UI |
+| `api` | `backend`, `dashboard` (`sp-dashboard`) | FastAPI: REST + WebSocket, also serves the built web UI |
+| `demo` (profile `tools`) | `tools` | Demo generator; reaches Redis only |
 
-- The `backend` network is `internal: true`.
-- The dashboard is published on ONE port only (set in `.env`), never on 22, 23, 80, 443, 3389 or 22222.
+- `backend`, `tools` and every `sensors-<name>` network are `internal: true`. The host firewall (`scripts/host/`) matches `sp-ingress` and `sp-dashboard` by bridge name.
+- The dashboard is published on ONE port only (set in `.env`), never on a sensor port or 22222. `scripts/check-ports.sh` enforces this and runs before `just up` / `just config`.
+
+### Pipeline invariants (break these and data is lost or forged)
+
+- Sensors build an `Event` (`sensors/common/suckerpot_common/models.py`) and publish through its `publisher.py`, which drops (never buffers) when Redis is unavailable.
+- Ingest is a **single** consumer (group `ingest`) over all streams. It drops events whose `sensor` field does not match the stream suffix, acknowledges only **after** the DB commit, then `XTRIM MINID` per stream. Never run two ingest instances.
+- Each service uses its own DB role: `suckerpot_api` cannot write events/sessions; only `migrate` changes the schema (`db/migrations`, models in `db/suckerpot_db`).
+- Tagging rules are YAML in `ingest/rules/` (`shell`, `web`, `services`, `session`, `scanners`, plus `attack/`, `cve/`, `annotations/` subfolders). Prefer adding a rule over adding code.
+- Ingest background workers (campaigns, blocklist, scripts, LLM explainer, alerts, reports, ATT&CK) are each off until their `*_ENABLED` flag is `true`.
 
 ### Shared Event schema (`sensors/common`, a Pydantic model)
 
@@ -94,7 +106,7 @@ A **session** is the unit the UI tells as a story. **Tags** come from a declarat
 
 | Layer | Choice |
 | --- | --- |
-| Sensors | Python 3.12+, asyncio, asyncssh (SSH), raw asyncio (Telnet, RDP), Starlette (web) |
+| Sensors | Python 3.13, asyncio, asyncssh (SSH), raw asyncio (Telnet, RDP), Starlette (web) |
 | Ingest and API | FastAPI, SQLAlchemy 2 / asyncpg, Alembic |
 | Queue | Redis Streams |
 | Database | PostgreSQL 16+ with TimescaleDB (hypertables + continuous aggregates for trends) |
@@ -126,6 +138,8 @@ The owner chose to build SuckerPot because existing honeypot UIs, T-Pot and Kiba
 - **Accessible.** WCAG AA contrast, keyboard navigation, no meaning carried by colour alone.
 
 ### Pages
+
+The core pages are below. Later milestones added Today, Campaigns, Techniques, Scripts, Infrastructure, Blocklists, Detections, Exposure, CVEs, Alerts and Report (`web/src/pages/`, described in `docs/ui.md`). Design tokens and base components are documented in `web/DESIGN.md`.
 
 1. **Live**: a 3D globe with attack arcs landing on Switzerland, next to a live event feed. The "wow" screen to leave running.
 2. **Overview**: 4 KPIs (attacks in 24 h, unique IPs, sessions with commands, malware attempts), activity per sensor over time, top countries, and 3 auto-written insights.
@@ -173,7 +187,7 @@ suckerpot/
 ├── docker-compose.yml
 ├── justfile
 ├── .env.example
-├── sensors/{common,ssh,telnet,web,rdp}/
+├── sensors/           # common/ (Event schema) + one dir per sensor
 ├── ingest/            # consumer, enrichment, rules/*.yaml
 ├── api/               # FastAPI app, also serves web/dist
 ├── web/               # React app
@@ -181,6 +195,36 @@ suckerpot/
 ├── scripts/demo/      # demo data generator
 └── docs/              # ROADMAP, PROGRESS, ARCHITECTURE, SECURITY
 ```
+
+### Commands
+
+Python, Node and Playwright never run on the host: every `just` recipe runs inside a pinned container (uv image per Python package, Node image for `web/`). Full list: `just` or `docs/development.md`.
+
+| Command | What it does |
+| --- | --- |
+| `just up` / `just down` / `just logs ingest api` | Stack lifecycle (`up` waits for healthy) |
+| `just up-test` | Stack with dashboard auth OFF (`docker-compose.ci.yml`); needed by `ssh-test`, `telnet-test`, `rdp-test`, `http-test` |
+| `just check` | `lint` + `typecheck` (mypy strict) + `test` + `web-build` |
+| `just test` | Unit tests of every Python package (`-m 'not integration'`) then vitest |
+| `just test-integration` | `-m integration` tests in `db`, `ingest`, `api`, against a throwaway compose project (never the live volumes) using the `docker-compose.it.yml` overlay. Needs every `REDIS_SENSOR_*_PASSWORD` set (≥ 24 chars) |
+| `just web-dev` / `just screenshots` | Vite on mock data (`VITE_MOCK=1`, `web/src/mocks`) / Playwright 1440+390, dark+light, into `web/screenshots` |
+| `just demo --sessions 200 --days 3` | Push demo events into Redis |
+
+The package list for Python recipes is the `packages` variable in the `justfile`; a new package must be added there and to the CI `python` job.
+
+Run a single Python test (adapt `-w`):
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -v suckerpot-uv-cache:/cache -w /work/sensors/ssh \
+  -e HOME=/tmp -e UV_CACHE_DIR=/cache -e UV_LINK_MODE=copy -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
+  ghcr.io/astral-sh/uv:0.8.24-python3.13-bookworm-slim uv run pytest -q tests/test_shell.py -k some_name
+```
+
+Run a single web test: `just _web "pnpm exec vitest run src/pages/today.test.tsx"`.
+
+Every sensor has `tests/test_static.py`, which scans the sensor's own source and fails on `subprocess`/`eval`/`exec`, outbound sockets and writes outside its data path: §5 is enforced by tests, keep them passing rather than editing them.
+
+### Conventions
 
 - **Commits**: Conventional Commits (`feat(ssh): ...`, `fix(web): ...`). Small and focused.
 - **Branches**: one `feat/<milestone>` branch per milestone, fast-forward merged into `main` once the Definition of Done is met, then pushed.

@@ -93,3 +93,12 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - Today: rewritten around `GET /api/v1/story` (bounded queries on `sessions`, 3 s statement timeout, 30 s cache). A Sankey of origin, door and deepest stage reached, an hour strip that links to the matching sessions, and story cards whose plain sentences come from templates while attacker text stays in the technical details, clipped. The previous "what you can do" cards remain at the bottom.
 - Attacks: new `stage`, `since` and `until` filters, so every number on Today opens the sessions behind it.
 - Reviews: security review PASS (three low findings fixed: statement timeout on the stage filter, quoted hrefs, clipped org names); design review fixes applied (Sankey labels, stage colours, underline tabs, no duplicated navigation, attacker row width, hour strip key and ticks).
+
+## 2026-10-30 — M20 Synology NAS sensor and CVE watch fixes
+
+- **Synology sensor.** A twelfth sensor that looks like an unpatched Synology NAS on DSM 7.2.1 (Update 11). It serves the DSM login page and the Web API on HTTP 5000 and HTTPS 5001. Logins always fail with real DSM error codes, and the credentials are recorded. Nothing a client sends is run, written or fetched. Documented in [Synology](sensors/synology.md).
+- **Tags for the C3RB3R campaign.** Forged session IDs and SCGI header injections (CVE-2026-13639 and CVE-2026-13684) are tagged `synology-exploit`, and ransomware indicators `c3rb3r`. Both are severe. DSM API calls are tagged `synology-dsm`. ATT&CK mapping: T1190 and T1486. Migration 0017 adds the sensor to the inventory.
+- **Compose and ports.** `sensor-synology` with its own network, Redis user and volume, `SYNOLOGY_*` settings in `.env.example`, and 5000 and 5001 in the port guard.
+- **CVE watch.** The NVD window is 60 days. It is read in one-day chunks, oldest first, with a page budget, so a busy feed no longer loses CVEs silently at 10,000 results. A partial run resumes from its last complete chunk. GitHub advisories are read in seven-day chunks. A one-time start-up rewind refills shallow history, and watched CVEs missing from the table are fetched by id.
+- **Integration tests.** `just test-integration` uses `docker-compose.it.yml`, an overlay that keeps `redis` on the backend network only, so the throwaway project fits next to the live stack.
+- **Left open.** The security review of the Synology sensor and the Compose changes, and a full stack check with the Synology ports reached from outside. See the [roadmap](ROADMAP.md) M20 section.
