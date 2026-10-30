@@ -14,7 +14,7 @@ import re
 import unicodedata
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -33,9 +33,13 @@ KEV_MAX_BYTES = 8 * 1024 * 1024
 NVD_MAX_BYTES = 8 * 1024 * 1024
 GITHUB_MAX_BYTES = 4 * 1024 * 1024
 NVD_PAGE_SIZE = 200
-NVD_MAX_PAGES = 50
+NVD_MAX_PAGES = 50  # per one-day chunk (10,000 CVEs: more than NVD has ever published in a day)
+NVD_MAX_TOTAL_PAGES = 120  # per call; a longer window is finished by the next run
+NVD_CHUNK = timedelta(days=1)
 GITHUB_PAGE_SIZE = 100
-GITHUB_MAX_PAGES = 10
+GITHUB_MAX_PAGES = 10  # per chunk
+GITHUB_MAX_TOTAL_PAGES = 30  # per call
+GITHUB_CHUNK_DAYS = 7
 USER_AGENT = "Mozilla/5.0 (compatible; cve-fetch/1.0)"  # generic: no project name leaves the box
 
 MAX_TITLE = 300
@@ -96,6 +100,10 @@ class CveRecord:
 class Batch:
     records: list[CveRecord]
     skipped: int = 0  # items that failed validation
+    # A windowed fetch can stop early (quota, page budget). ``covered_until`` is then the end of
+    # the last window that was fetched completely, and the caller must resume from there.
+    complete: bool = True
+    covered_until: datetime | None = None
 
 
 # ---- helpers ------------------------------------------------------------------------------
@@ -385,6 +393,11 @@ def nvd_interval_s(has_key: bool) -> float:
     return 0.7 if has_key else 6.5
 
 
+def _nvd_stamp(moment: datetime) -> str:
+    utc = moment.astimezone(UTC)
+    return f"{utc:%Y-%m-%dT%H:%M:%S}.{utc.microsecond // 1000:03d}"
+
+
 async def fetch_nvd(
     client: httpx.AsyncClient,
     *,
@@ -394,32 +407,77 @@ async def fetch_nvd(
     reserve: Reserve,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> Batch:
-    """CVEs published in ``[since, until]`` (NVD allows at most 120 days). One quota unit a page."""
+    """CVEs published in ``[since, until]`` (NVD allows at most 120 days). One quota unit a page.
+
+    The range is fetched in one-day chunks, oldest first, so that running out of quota or of the
+    per-call page budget never loses a window silently: the batch then has ``complete=False`` and
+    ``covered_until`` marks where to resume. Running out before the first chunk is finished
+    raises ``quota_exhausted``.
+    """
     out = Batch([])
     headers = {"apiKey": api_key} if api_key else {}
-    fmt = "%Y-%m-%dT%H:%M:%S.000"
-    start = 0
-    for page in range(NVD_MAX_PAGES):
-        if not await reserve():
-            raise SourceError("quota_exhausted")
-        if page:
-            await sleep(nvd_interval_s(bool(api_key)))
-        params = {
-            "pubStartDate": since.astimezone(UTC).strftime(fmt),
-            "pubEndDate": until.astimezone(UTC).strftime(fmt),
-            "resultsPerPage": str(NVD_PAGE_SIZE),
-            "startIndex": str(start),
-        }
-        doc = await fetch_json(
-            client, NVD_URL, max_bytes=NVD_MAX_BYTES, params=params, headers=headers
-        )
-        batch, total = parse_nvd(doc)
-        out.records.extend(batch.records)
-        out.skipped += batch.skipped
-        start += NVD_PAGE_SIZE
-        if start >= total:
-            break
-    return out
+    pages = 0
+    chunk_start = since
+    while True:
+        chunk_end = min(chunk_start + NVD_CHUNK - timedelta(milliseconds=1), until)
+        if pages >= NVD_MAX_TOTAL_PAGES:
+            out.complete = False
+            return out
+        chunk = Batch([])
+        index = 0
+        out_of_quota = False
+        for _ in range(NVD_MAX_PAGES):
+            if not await reserve():
+                out_of_quota = True
+                break
+            if pages:
+                await sleep(nvd_interval_s(bool(api_key)))
+            pages += 1
+            params = {
+                "pubStartDate": _nvd_stamp(chunk_start),
+                "pubEndDate": _nvd_stamp(chunk_end),
+                "resultsPerPage": str(NVD_PAGE_SIZE),
+                "startIndex": str(index),
+            }
+            doc = await fetch_json(
+                client, NVD_URL, max_bytes=NVD_MAX_BYTES, params=params, headers=headers
+            )
+            page, total = parse_nvd(doc)
+            chunk.records.extend(page.records)
+            chunk.skipped += page.skipped
+            index += NVD_PAGE_SIZE
+            if index >= total:
+                break
+        if out_of_quota:
+            if out.covered_until is None:
+                raise SourceError("quota_exhausted")
+            out.complete = False  # the unfinished chunk is dropped and fetched again later
+            return out
+        out.records.extend(chunk.records)
+        out.skipped += chunk.skipped
+        out.covered_until = chunk_end
+        if chunk_end >= until:
+            return out
+        chunk_start += NVD_CHUNK
+
+
+async def fetch_nvd_by_id(
+    client: httpx.AsyncClient, cve_id: str, *, api_key: str, reserve: Reserve
+) -> Batch:
+    """One CVE by id, whatever its publication date. ``cve_id`` must already be validated."""
+    if not CVE_RE.fullmatch(cve_id):
+        raise SourceError("error")
+    if not await reserve():
+        raise SourceError("quota_exhausted")
+    doc = await fetch_json(
+        client,
+        NVD_URL,
+        max_bytes=NVD_MAX_BYTES,
+        params={"cveId": cve_id},
+        headers={"apiKey": api_key} if api_key else {},
+    )
+    batch, _ = parse_nvd(doc)
+    return batch
 
 
 # ---- GitHub advisories ------------------------------------------------------------------
@@ -483,35 +541,60 @@ def next_github_url(link: str | None) -> str | None:
 
 
 async def fetch_github(
-    client: httpx.AsyncClient, *, since: date, token: str, reserve: Reserve
+    client: httpx.AsyncClient,
+    *,
+    since: date,
+    until: date | None = None,
+    token: str,
+    reserve: Reserve,
 ) -> Batch:
-    """Reviewed advisories published on or after ``since`` (newest first, bounded pages).
+    """Reviewed advisories published in ``[since, until]`` (``until`` defaults to ``since``'s
+    day when it is today, else today), fetched in chunks of a few days, oldest first.
 
     GitHub paginates with cursors: the next page is the ``rel="next"`` Link target, followed only
-    when it is still ``https://api.github.com/advisories``.
+    when it is still ``https://api.github.com/advisories``. A chunk is never kept half-fetched:
+    when the quota or the page budget runs out the batch is ``complete=False`` and
+    ``covered_until`` marks where to resume.
     """
     out = Batch([])
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    url: str | None = GITHUB_URL
-    params: dict[str, str] | None = {
-        "type": "reviewed",
-        "sort": "published",
-        "direction": "desc",
-        "per_page": str(GITHUB_PAGE_SIZE),
-        "published": f">={since.isoformat()}",
-    }
-    for _ in range(GITHUB_MAX_PAGES):
-        if url is None:
-            break
-        if not await reserve():
-            raise SourceError("quota_exhausted")
-        doc, resp_headers = await fetch_json_with_headers(
-            client, url, max_bytes=GITHUB_MAX_BYTES, params=params, headers=headers
-        )
-        page = parse_github(doc)
-        out.records.extend(page.records)
-        out.skipped += page.skipped
-        url, params = next_github_url(resp_headers.get("link")), None
+    last_day = until or max(since, datetime.now(UTC).date())
+    pages = 0
+    day = since
+    while day <= last_day:
+        end = min(day + timedelta(days=GITHUB_CHUNK_DAYS - 1), last_day)
+        if pages >= GITHUB_MAX_TOTAL_PAGES:
+            out.complete = False
+            return out
+        chunk = Batch([])
+        url: str | None = GITHUB_URL
+        params: dict[str, str] | None = {
+            "type": "reviewed",
+            "sort": "published",
+            "direction": "asc",
+            "per_page": str(GITHUB_PAGE_SIZE),
+            "published": f"{day.isoformat()}..{end.isoformat()}",
+        }
+        for _ in range(GITHUB_MAX_PAGES):
+            if url is None:
+                break
+            if not await reserve():
+                if out.covered_until is None:
+                    raise SourceError("quota_exhausted")
+                out.complete = False
+                return out
+            pages += 1
+            doc, resp_headers = await fetch_json_with_headers(
+                client, url, max_bytes=GITHUB_MAX_BYTES, params=params, headers=headers
+            )
+            page = parse_github(doc)
+            chunk.records.extend(page.records)
+            chunk.skipped += page.skipped
+            url, params = next_github_url(resp_headers.get("link")), None
+        out.records.extend(chunk.records)
+        out.skipped += chunk.skipped
+        out.covered_until = datetime(end.year, end.month, end.day, tzinfo=UTC) + timedelta(days=1)
+        day = end + timedelta(days=1)
     return out

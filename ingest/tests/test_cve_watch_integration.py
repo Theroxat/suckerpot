@@ -2,6 +2,7 @@
 
 import json
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -214,4 +215,80 @@ async def test_unexpected_failures_are_recorded_in_the_sync_state(
     async with engine.connect() as conn:
         err = await conn.scalar(text("SELECT last_error FROM cve_sync_state WHERE source = 'kev'"))
     assert err == "error"
+    await w.aclose()
+
+
+async def test_partial_nvd_fetch_moves_the_cursor_only_as_far_as_it_got(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    w = watch(factory, CVE_NVD_DAILY_QUOTA="3")
+    assert await w.sync_source("nvd") > 0
+    async with engine.connect() as conn:
+        last = await conn.scalar(
+            text("SELECT last_success_at FROM cve_sync_state WHERE source='nvd'")
+        )
+    assert last is not None
+    assert datetime.now(UTC) - last > timedelta(days=50)  # resumes the next cycle, not tomorrow
+    await w.aclose()
+
+
+async def test_a_shallow_history_is_rewound_once(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    w = watch(factory)
+    await w.sync_source("nvd")
+    async with engine.begin() as conn:
+        await conn.execute(text("UPDATE cve SET published_at = now() - interval '5 days'"))
+        await conn.execute(text("UPDATE cve_sync_state SET last_success_at = now()"))
+    await w.rewind_shallow_history()
+    async with engine.connect() as conn:
+        last = await conn.scalar(
+            text("SELECT last_success_at FROM cve_sync_state WHERE source='nvd'")
+        )
+    assert last is not None and datetime.now(UTC) - last > timedelta(days=55)
+    await w.aclose()
+
+
+async def test_watched_cves_missing_from_the_table_are_fetched_by_id_once_a_day(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("INSERT INTO watched_cves (cve_id, added_by) VALUES ('CVE-2024-10441', 'test')")
+        )
+    w = watch(factory)
+    assert await w.sync_watched() >= 0
+    assert await w.sync_watched() == 0  # not asked again within 24 h, found or not
+    await w.aclose()
+
+
+async def test_unresolvable_watched_ids_do_not_starve_the_ones_behind_them(
+    engine: AsyncEngine, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    ids = [f"CVE-2099-{i:04d}" for i in range(1, 13)]
+    async with engine.begin() as conn:
+        await conn.execute(text("DELETE FROM watched_cves"))
+        for n, cve_id in enumerate(ids):
+            await conn.execute(
+                text(
+                    "INSERT INTO watched_cves (cve_id, added_by, added_at) "
+                    "VALUES (:i, 'test', now() + make_interval(secs => :n))"
+                ),
+                {"i": cve_id, "n": n},
+            )
+    asked: list[str] = []
+
+    def empty(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url.params["cveId"])
+        return httpx.Response(200, content=json.dumps({"totalResults": 0, "vulnerabilities": []}))
+
+    async def no_sleep(_: float) -> None:
+        return None
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(empty))
+    w = CveWatch(factory, EnrichmentSettings.from_env({}), client, sleep=no_sleep)
+    await w.sync_watched()
+    assert asked == ids[:10]
+    await w.sync_watched()  # the first ten are not retried within 24 h
+    assert asked[10:] == ids[10:]
     await w.aclose()

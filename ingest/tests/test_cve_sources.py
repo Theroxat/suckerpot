@@ -1,7 +1,7 @@
 """CVE feeds: validation, caps and bounded downloads (no network, no database)."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -334,3 +334,146 @@ async def test_advisories_follow_the_link_header_and_stop_on_a_foreign_one() -> 
     assert len(batch.records) == 2 and len(calls) == 2
     assert calls[1].startswith("https://api.github.com/advisories?after=p2")
     assert "type=reviewed" not in calls[1]  # the cursor URL is used as given
+
+
+def _nvd_doc(day: str, n: int = 1) -> str:
+    items = [{"cve": {"id": f"CVE-2026-{day[-2:]}{i:02d}"}} for i in range(n)]
+    return json.dumps({"totalResults": n, "vulnerabilities": items})
+
+
+async def test_fetch_nvd_splits_the_window_into_day_chunks() -> None:
+    seen: list[tuple[str, str]] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        p = req.url.params
+        seen.append((p["pubStartDate"], p["pubEndDate"]))
+        return httpx.Response(200, content=_nvd_doc(p["pubStartDate"][:10]))
+
+    async def reserve() -> bool:
+        return True
+
+    async def sleep(_: float) -> None:
+        return None
+
+    since = datetime(2026, 9, 18, 9, 30, tzinfo=UTC)
+    until = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
+    async with client(handler) as c:
+        batch = await sources.fetch_nvd(
+            c, since=since, until=until, api_key="", reserve=reserve, sleep=sleep
+        )
+    assert seen == [
+        ("2026-09-18T09:30:00.000", "2026-09-19T09:29:59.999"),
+        ("2026-09-19T09:30:00.000", "2026-09-20T09:29:59.999"),
+        ("2026-09-20T09:30:00.000", "2026-09-20T12:00:00.000"),
+    ]
+    assert len(batch.records) == 3 and batch.complete and batch.covered_until == until
+
+
+async def test_fetch_nvd_no_longer_truncates_at_the_old_page_cap() -> None:
+    """12,000 CVEs over three days used to stop silently at 50 pages (10,000 CVEs)."""
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        start = int(req.url.params["startIndex"])
+        n = max(0, min(200, 4000 - start))
+        items = [{"cve": {"id": f"CVE-2026-{start + i:05d}"}} for i in range(n)]
+        return httpx.Response(
+            200, content=json.dumps({"totalResults": 4000, "vulnerabilities": items})
+        )
+
+    async def reserve() -> bool:
+        return True
+
+    async def sleep(_: float) -> None:
+        return None
+
+    since = datetime(2026, 9, 18, tzinfo=UTC)
+    async with client(handler) as c:
+        batch = await sources.fetch_nvd(
+            c, since=since, until=since + timedelta(days=2, hours=1), api_key="",
+            reserve=reserve, sleep=sleep,
+        )  # fmt: skip
+    assert len(batch.records) == 3 * 4000 and batch.complete
+
+
+async def test_fetch_nvd_quota_mid_window_keeps_finished_days_and_marks_the_cursor() -> None:
+    budget = 3
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_nvd_doc(req.url.params["pubStartDate"][:10]))
+
+    async def reserve() -> bool:
+        nonlocal budget
+        budget -= 1
+        return budget >= 0
+
+    async def sleep(_: float) -> None:
+        return None
+
+    since = datetime(2026, 9, 18, tzinfo=UTC)
+    async with client(handler) as c:
+        batch = await sources.fetch_nvd(
+            c, since=since, until=since + timedelta(days=9), api_key="", reserve=reserve,
+            sleep=sleep,
+        )  # fmt: skip
+    assert len(batch.records) == 3 and not batch.complete
+    assert batch.covered_until == datetime(2026, 9, 20, 23, 59, 59, 999000, tzinfo=UTC)
+
+
+async def test_fetch_nvd_page_budget_per_call_returns_a_resumable_partial() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_nvd_doc("2026-09-01"))
+
+    async def reserve() -> bool:
+        return True
+
+    async def sleep(_: float) -> None:
+        return None
+
+    since = datetime(2026, 5, 1, tzinfo=UTC)
+    async with client(handler) as c:
+        batch = await sources.fetch_nvd(
+            c, since=since, until=since + timedelta(days=130), api_key="", reserve=reserve,
+            sleep=sleep,
+        )  # fmt: skip
+    assert not batch.complete and len(batch.records) == sources.NVD_MAX_TOTAL_PAGES
+    assert batch.covered_until is not None and batch.covered_until < since + timedelta(days=130)
+
+
+async def test_fetch_nvd_by_id_asks_for_that_id_only() -> None:
+    seen: list[dict[str, str]] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(dict(req.url.params))
+        return httpx.Response(200, content=_nvd_doc("2026-09-18"))
+
+    async def reserve() -> bool:
+        return True
+
+    async with client(handler) as c:
+        batch = await sources.fetch_nvd_by_id(c, "CVE-2026-13639", api_key="", reserve=reserve)
+        assert len(batch.records) == 1 and seen == [{"cveId": "CVE-2026-13639"}]
+        with pytest.raises(SourceError):
+            await sources.fetch_nvd_by_id(c, "CVE-2026-1&x=1", api_key="", reserve=reserve)
+
+
+async def test_fetch_github_walks_the_range_in_chunks_oldest_first() -> None:
+    windows: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        windows.append(req.url.params["published"])
+        assert req.url.params["direction"] == "asc"
+        return httpx.Response(200, content="[]")
+
+    async def reserve() -> bool:
+        return True
+
+    async with client(handler) as c:
+        batch = await sources.fetch_github(
+            c, since=date(2026, 9, 1), until=date(2026, 9, 16), token="", reserve=reserve
+        )
+    assert windows == [
+        "2026-09-01..2026-09-07",
+        "2026-09-08..2026-09-14",
+        "2026-09-15..2026-09-16",
+    ]
+    assert batch.complete and batch.covered_until == datetime(2026, 9, 17, tzinfo=UTC)
