@@ -36,6 +36,7 @@ class SensorBreakdown(BaseModel):
     mssql: int = 0
     smb: int = 0
     sip: int = 0
+    synology: int = 0
 
 
 class TimeseriesPoint(BaseModel):

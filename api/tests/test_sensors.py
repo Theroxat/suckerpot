@@ -9,9 +9,10 @@ from api.analytics_schemas import SensorBreakdown
 from api.sensors import SENSOR_LABELS, SENSORS
 
 
-def test_eleven_sensors_in_stable_order() -> None:
+def test_twelve_sensors_in_stable_order() -> None:
     assert SENSORS == (
         "ssh", "telnet", "web", "rdp", "redis", "docker", "mysql", "adb", "mssql", "smb", "sip",
+        "synology",
     )  # fmt: skip
 
 

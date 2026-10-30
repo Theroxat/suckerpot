@@ -66,6 +66,7 @@ async def test_timeseries_zero_filled(client: httpx.AsyncClient) -> None:
         "mssql": 0,
         "smb": 0,
         "sip": 0,
+        "synology": 0,
     }
     assert by_ts[hour]["sessions"] == {
         "ssh": 1,
@@ -79,6 +80,7 @@ async def test_timeseries_zero_filled(client: httpx.AsyncClient) -> None:
         "mssql": 0,
         "smb": 0,
         "sip": 0,
+        "synology": 0,
     }
     five = (BASE - timedelta(hours=5)).isoformat().replace("+00:00", "Z")
     assert by_ts[five]["events"]["ssh"] == 3

@@ -197,6 +197,20 @@ updates:
       docker_sensors_sip:
         patterns: ["*"]
   - package-ecosystem: "uv"
+    directory: "/sensors/synology"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_sensors_synology:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/sensors/synology"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_sensors_synology:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
     directory: "/sensors/rdp"
     schedule:
       interval: "weekly"

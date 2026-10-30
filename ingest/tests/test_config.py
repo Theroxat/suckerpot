@@ -15,7 +15,7 @@ def test_defaults() -> None:
     assert (s.redis_host, s.redis_port, s.redis_user) == ("redis", 6379, "ingest")
     assert (s.group, s.consumer) == ("ingest", "c1")
     assert s.streams == tuple(f"events:{n}" for n in SensorName)
-    assert len(s.streams) == 11
+    assert len(s.streams) == 12
     assert (s.batch_size, s.block_ms) == (100, 1000)
     assert s.heartbeat_path == Path("/tmp/ingest-heartbeat")
 

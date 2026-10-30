@@ -21,11 +21,13 @@ SENSORS = (
     SensorName.mssql,
     SensorName.smb,
     SensorName.sip,
+    SensorName.synology,
 )
-# Relative weights of the seven service sensors (redis, docker, mysql, adb, mssql, smb, sip).
-SERVICE_WEIGHTS = (0.18, 0.14, 0.14, 0.12, 0.12, 0.18, 0.12)
+# Relative weights of the eight service sensors (redis, docker, mysql, adb, mssql, smb, sip,
+# synology).
+SERVICE_WEIGHTS = (0.16, 0.13, 0.13, 0.11, 0.11, 0.16, 0.10, 0.10)
 SERVICE_SHARE = 0.25  # share of all sessions that hit the service sensors in a normal period
-Mix = tuple[float, float, float, float, float, float, float, float, float, float, float]
+Mix = tuple[float, float, float, float, float, float, float, float, float, float, float, float]
 
 
 def expand_mix(core: tuple[float, float, float, float], service_share: float) -> Mix:

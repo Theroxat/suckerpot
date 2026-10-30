@@ -12,7 +12,18 @@ from fastapi import Query
 from pydantic import BeforeValidator
 
 SensorName = Literal[
-    "ssh", "telnet", "web", "rdp", "redis", "docker", "mysql", "adb", "mssql", "smb", "sip"
+    "ssh",
+    "telnet",
+    "web",
+    "rdp",
+    "redis",
+    "docker",
+    "mysql",
+    "adb",
+    "mssql",
+    "smb",
+    "sip",
+    "synology",
 ]
 SENSORS: tuple[str, ...] = get_args(SensorName)
 
@@ -28,6 +39,7 @@ SENSOR_LABELS: dict[str, str] = {
     "mssql": "MSSQL",
     "smb": "SMB",
     "sip": "SIP",
+    "synology": "Synology NAS",
 }
 
 

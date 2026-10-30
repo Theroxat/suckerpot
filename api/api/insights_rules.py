@@ -48,6 +48,8 @@ TAG_LABELS: dict[str, str] = {
     "db-ransom": "Database ransom attempts",
     "redis-rogue-master": "Redis rogue-master attempts",
     "sip-fraud": "SIP fraud attempts",
+    "synology-exploit": "Synology NAS exploit attempts",
+    "c3rb3r": "NAS ransomware attempts",
     "persistence": "Persistence attempts",
     "bluekeep": "BlueKeep probes",
     "weak-credentials": "Guessed weak credentials",
@@ -64,6 +66,8 @@ TAG_SEVERITY: dict[str, Severity] = {
     "db-ransom": "warning",
     "redis-rogue-master": "warning",
     "sip-fraud": "warning",
+    "synology-exploit": "severe",
+    "c3rb3r": "severe",
     "persistence": "warning",
     # A BlueKeep probe only shows the scanner looked for the vulnerable channel; no payload is
     # sent, so it is a warning, unlike eternalblue where the exploit transaction itself arrived.
@@ -71,7 +75,7 @@ TAG_SEVERITY: dict[str, Severity] = {
     # A decoy password was guessed: the RDP counterpart of a successful login.
     "weak-credentials": "warning",
 }
-EXPLOIT_TAGS = ("php2shell", "malware-drop")
+EXPLOIT_TAGS = ("php2shell", "malware-drop", "synology-exploit")
 NEW_VALUE_NOUNS = {
     "username": "username",
     "command": "command",

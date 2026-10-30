@@ -43,6 +43,8 @@ EXPLOIT_TAGS = frozenset(
         "db-ransom",
         "exec-attempt",
         "persistence",
+        "synology-exploit",
+        "c3rb3r",
     }
 )
 BRUTE_TAGS = frozenset(

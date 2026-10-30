@@ -135,6 +135,23 @@ def _sip_summary(etype: str, d: Mapping[str, Any], flags: set[str]) -> str:
     return f"SIP {name}{scan}{tail}{code}{ua}"
 
 
+def _synology_summary(etype: str, d: Mapping[str, Any], flags: set[str]) -> str | None:
+    if etype == "login_attempt":
+        outcome = "succeeded" if d.get("success") is True else "failed"
+        return f"Synology DSM login {_clean(d.get('username', ''), 32)} {outcome}"
+    if etype != "http_request":
+        return None
+    if "sid_forge" in flags:
+        return "Synology DSM forged session id (CVE-2026-13639)"
+    if "scgi_injection" in flags:
+        return "Synology DSM SCGI header injection (CVE-2026-13684)"
+    if "ransom_indicator" in flags:
+        return "Synology DSM ransomware indicator"
+    if "dsm_version_probe" in flags:
+        return "Synology DSM version probe"
+    return None
+
+
 def _smb_summary(etype: str, d: Mapping[str, Any], flags: set[str]) -> str:
     if flags & {"eternalblue", "ms17_010"}:
         return "SMB EternalBlue exploit attempt"
@@ -254,6 +271,8 @@ def _service_summary(sensor: str, etype: str, d: Mapping[str, Any]) -> str | Non
             return rdp
     if sensor == "sip" and etype in ("scan", "command", "login_attempt"):
         return _sip_summary(etype, d, flags)
+    if sensor == "synology":
+        return _synology_summary(etype, d, flags)
     if sensor == "smb" and etype in ("scan", "command", "login_attempt"):
         return _smb_summary(etype, d, flags)
     if sensor == "redis" and etype == "scan":

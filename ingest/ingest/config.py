@@ -22,6 +22,7 @@ DEFAULT_STREAMS = ",".join(
         "mssql",
         "smb",
         "sip",
+        "synology",
     )
 )
 _STREAM_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")

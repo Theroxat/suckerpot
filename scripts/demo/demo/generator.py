@@ -17,6 +17,7 @@ from demo.plans_services import (
     build_redis,
     build_sip,
     build_smb,
+    build_synology,
 )
 from demo.schedule import SENSORS, Context, Schedule
 
@@ -29,6 +30,7 @@ SERVICE_BUILDERS = {
     SensorName.mssql: build_mssql,
     SensorName.smb: build_smb,
     SensorName.sip: build_sip,
+    SensorName.synology: build_synology,
 }
 
 

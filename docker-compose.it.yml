@@ -1,0 +1,6 @@
+# Overlay for `just test-integration`: the throwaway project only needs db and redis on the
+# backend network. Dropping redis's per-sensor networks keeps the run within Docker's default
+# address pools while the live stack holds its own networks.
+services:
+  redis:
+    networks: !override [backend]

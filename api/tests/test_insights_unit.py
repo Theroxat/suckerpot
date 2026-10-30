@@ -302,6 +302,13 @@ def test_new_tag_severities() -> None:
         assert r.TAG_SEVERITY[tag] == "warning"
 
 
+def test_synology_tag_severities() -> None:
+    assert r.TAG_SEVERITY["synology-exploit"] == "severe"
+    assert r.TAG_SEVERITY["c3rb3r"] == "severe"
+    assert r.TAG_LABELS["synology-exploit"] and r.TAG_LABELS["c3rb3r"]
+    assert "synology-exploit" in r.EXPLOIT_TAGS
+
+
 def test_rdp_tag_severities() -> None:
     assert r.TAG_SEVERITY["bluekeep"] == "warning"
     assert r.TAG_SEVERITY["weak-credentials"] == "warning"
