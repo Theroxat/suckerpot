@@ -44,6 +44,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          # Same minor as the service images; uv would otherwise pick the newest Python.
+          python-version: "3.13"
       - name: Lint, type-check and test each package
         run: |
           set -euo pipefail
@@ -173,6 +176,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          # Same minor as the service images; uv would otherwise pick the newest Python.
+          python-version: "3.13"
       - name: Migrate the test database
         working-directory: db
         run: |
