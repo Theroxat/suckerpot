@@ -3,7 +3,7 @@
  * are named, grouped, drawn and on which port they listen. Every list, filter,
  * chart, legend and colour in the UI is derived from it.
  *
- * Colour scales by FAMILY, not by sensor: eleven hues would be neither calm nor
+ * Colour scales by FAMILY, not by sensor: twelve hues would be neither calm nor
  * colour-blind safe, so each family has one hue (tokens.css `--family-*`) and
  * each sensor is told apart by its icon and its label, which are always shown.
  * Per-sensor shades (`--sensor-*`) exist only for the per-sensor chart split.
@@ -13,6 +13,7 @@ import {
   Database,
   DatabaseZap,
   FolderOpen,
+  HardDrive,
   Globe,
   Monitor,
   Phone,
@@ -30,6 +31,7 @@ export const SENSORS = [
   "adb",
   "web",
   "docker",
+  "synology",
   "redis",
   "mysql",
   "mssql",
@@ -231,6 +233,16 @@ const DEFS: Record<Sensor, SensorDef> = {
     transport: "udp",
     credential: "login",
   },
+  synology: {
+    label: "Synology",
+    noun: "Synology NAS",
+    description: "Unpatched Synology DSM web interface",
+    icon: HardDrive,
+    family: "web",
+    port: 5000,
+    transport: "tcp",
+    credential: "password",
+  },
 }
 
 // Literal class names, so Tailwind sees every one of them.
@@ -246,6 +258,7 @@ const SHADE_VAR: Record<Sensor, string> = {
   rdp: "var(--sensor-rdp)",
   smb: "var(--sensor-smb)",
   sip: "var(--sensor-sip)",
+  synology: "var(--sensor-synology)",
 }
 
 /** `{ [key]: make(key) }` for a closed list of keys, fully typed. */
@@ -269,7 +282,7 @@ const FAMILY_TEXT: Record<SensorFamily, Pick<FamilyMeta, "label" | "noun" | "des
   web: {
     label: "Web & APIs",
     noun: "web and API sensors",
-    description: "HTTP requests and exposed APIs",
+    description: "HTTP requests, exposed APIs and admin portals",
   },
   data: {
     label: "Databases",

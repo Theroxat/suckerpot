@@ -502,5 +502,173 @@ export function buildFixtures(count = 420, now = Date.now(), seed = 7): Fixture[
     }
     out.push({ session, events })
   }
-  return out
+  return mergeSynology(out, now, seed)
+}
+
+interface SynologySpec {
+  /** Minutes before `now` the session started. */
+  ageMin: number
+  ip: string
+  logins: number
+  success?: boolean
+  tags: string[]
+  /** HTTP requests, in order: [flags, api, method, status]. */
+  requests: [string[], string | null, string | null, number][]
+  downloadUrl?: string
+}
+
+const SYNOLOGY_SPECS: SynologySpec[] = [
+  { ageMin: 7, ip: "198.51.100.7", logins: 24, tags: ["credential-stuffing"], requests: [] },
+  {
+    ageMin: 19,
+    ip: "203.0.113.58",
+    logins: 0,
+    tags: ["recon", "synology-dsm"],
+    requests: [
+      [["dsm_version_probe", "dsm_api"], "SYNO.API.Info", "query", 200],
+      [["dsm_version_probe"], null, null, 200],
+    ],
+  },
+  {
+    ageMin: 44,
+    ip: "192.0.2.131",
+    logins: 0,
+    tags: ["synology-dsm", "synology-exploit"],
+    requests: [
+      [["dsm_version_probe"], null, null, 200],
+      [["dsm_api", "sid_forge"], "SYNO.API.Auth", "login", 200],
+      [["dsm_api", "sid_forge"], "SYNO.FileStation.List", "list_share", 200],
+    ],
+  },
+  {
+    ageMin: 96,
+    ip: "198.51.100.202",
+    logins: 3,
+    tags: ["credential-stuffing", "synology-dsm"],
+    requests: [],
+  },
+  {
+    ageMin: 170,
+    ip: "203.0.113.140",
+    logins: 1,
+    success: true,
+    tags: ["synology-dsm", "synology-exploit", "malware-drop"],
+    requests: [
+      [["dsm_api", "scgi_injection", "file_write"], "SYNO.Core.Upgrade", "upload", 200],
+      [["dsm_api", "file_write", "no_user_agent"], "SYNO.FileStation.Upload", "upload", 200],
+    ],
+    downloadUrl: "http://198.51.100.99/dsm/agent.sh",
+  },
+  {
+    ageMin: 310,
+    ip: "192.0.2.57",
+    logins: 0,
+    tags: ["synology-dsm", "synology-exploit", "c3rb3r"],
+    requests: [
+      [["dsm_api", "sid_forge"], "SYNO.API.Auth", "login", 200],
+      [["dsm_api", "file_write", "oversized_body"], "SYNO.FileStation.Upload", "upload", 200],
+      [["file_write", "ransom_indicator"], "SYNO.FileStation.Upload", "upload", 200],
+    ],
+  },
+  { ageMin: 520, ip: "198.51.100.7", logins: 41, tags: ["credential-stuffing"], requests: [] },
+  {
+    ageMin: 800,
+    ip: "203.0.113.58",
+    logins: 0,
+    tags: ["recon", "synology-dsm"],
+    requests: [[["dsm_version_probe", "no_user_agent"], null, null, 200]],
+  },
+]
+
+/**
+ * A handful of Synology DSM sessions, built from their own generator so the other sensors'
+ * sequence does not move, then merged in by start time (newest first).
+ */
+function mergeSynology(base: Fixture[], now: number, seed: number): Fixture[] {
+  const rand = mulberry32(seed + 5000)
+  let eventId = 900_000
+  const extra: Fixture[] = SYNOLOGY_SPECS.map((spec) => {
+    const t0 = now - spec.ageMin * 60_000
+    const h = ipHash(spec.ip)
+    const enriched = h % 100 < 90
+    const origin = REPEAT_ORIGIN[spec.ip] ?? ORIGINS[h % ORIGINS.length] ?? ORIGINS[0]
+    if (!origin) throw new Error("no origins")
+    const common = {
+      sensor: "synology" as Sensor,
+      session_id: sessionId(rand),
+      src_ip: spec.ip,
+      src_port: int(rand, 32768, 60999),
+      dst_port: SENSOR_META.synology.port,
+      country: enriched ? origin.country : null,
+      city: enriched ? origin.city : null,
+      asn: enriched ? origin.asn : null,
+      org: enriched ? origin.org : null,
+      abuse_score: enriched ? h % 101 : null,
+      known_scanner: enriched ? (h >>> 8) % 5 === 0 : null,
+      tags: spec.tags,
+    }
+    const events: SensorEvent[] = []
+    let ts = t0
+    const push = (type: string, data: Record<string, unknown>, stepMs: number) => {
+      ts += stepMs
+      events.push({ ...common, id: eventId++, ts: iso(ts), type, data })
+    }
+    push("connect", {}, 0)
+    const forged = spec.tags.includes("synology-exploit")
+    spec.requests.forEach(([flags, api, api_method, status], k) => {
+      push(
+        "http_request",
+        {
+          method: api ? "POST" : "GET",
+          path: api ? "/webapi/entry.cgi" : "/webman/login.cgi",
+          user_agent: flags.includes("no_user_agent")
+            ? ""
+            : pick(rand, ["python-requests/2.31.0", "curl/8.5.0", "Go-http-client/1.1"]),
+          status,
+          flags,
+          ...(api ? { api, api_method } : {}),
+          dsm_version: "7.2.1-69057",
+          ...(forged && flags.some((f) => f === "sid_forge" || f === "scgi_injection")
+            ? { cve: flags.includes("scgi_injection") ? "CVE-2026-13684" : "CVE-2026-13639" }
+            : {}),
+        },
+        int(rand, 200, 1800) + k * 300,
+      )
+    })
+    for (let k = 0; k < spec.logins; k++) {
+      const last = k === spec.logins - 1
+      push(
+        "login_attempt",
+        {
+          username: pick(rand, ["admin", "admin", "root", "guest", "diskstation"]),
+          password: pick(rand, PASSWORDS),
+          otp_present: false,
+          success: Boolean(spec.success) && last,
+        },
+        int(rand, 300, 1500),
+      )
+    }
+    if (spec.downloadUrl)
+      push("download_attempt", { url: spec.downloadUrl, tool: "wget", command: "" }, 900)
+    const http_requests = spec.requests.length
+    const downloads = spec.downloadUrl ? 1 : 0
+    push("disconnect", { duration_s: Math.round((ts - t0) / 1000), reason: "eof" }, 400)
+    const session: Session = {
+      ...common,
+      started_at: iso(t0),
+      ended_at: iso(ts),
+      last_event_at: iso(ts),
+      event_count: events.length,
+      login_attempts: spec.logins,
+      login_success: Boolean(spec.success),
+      commands: 0,
+      downloads,
+      http_requests,
+      client_tool: null,
+    }
+    return { session, events }
+  })
+  return [...base, ...extra].sort(
+    (a, b) => Date.parse(b.session.started_at) - Date.parse(a.session.started_at),
+  )
 }

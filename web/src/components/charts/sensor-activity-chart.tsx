@@ -75,7 +75,7 @@ function ChartTooltip({ active, payload, split }: TipProps) {
   if (!active || !row) return null
   const series = seriesFor(split)
   const total = series.reduce((n, s) => n + num(row, s.key), 0)
-  // Per sensor, only the sensors that saw something: eleven zero rows say nothing.
+  // Per sensor, only the sensors that saw something: twelve zero rows say nothing.
   const shown = split === "sensor" ? series.filter((s) => num(row, s.key) > 0) : series
   return (
     <div className="min-w-48 rounded-md border bg-surface-raised p-3 text-xs shadow-md">

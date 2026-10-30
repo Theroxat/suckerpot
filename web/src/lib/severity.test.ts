@@ -3,7 +3,15 @@ import { isSevereEvent, tagSeverity } from "./severity"
 
 describe("tag severity", () => {
   it("marks payload and exploit tags severe, harmful ones warning, the rest neutral", () => {
-    for (const t of ["container-escape", "sql-rce", "eternalblue", "php2shell", "mirai"])
+    for (const t of [
+      "container-escape",
+      "sql-rce",
+      "eternalblue",
+      "php2shell",
+      "mirai",
+      "synology-exploit",
+      "c3rb3r",
+    ])
       expect(tagSeverity(t)).toBe("severe")
     for (const t of ["db-ransom", "redis-rogue-master", "sip-fraud", "persistence"])
       expect(tagSeverity(t)).toBe("warning")

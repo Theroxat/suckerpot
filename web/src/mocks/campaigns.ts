@@ -290,7 +290,7 @@ export function techniquesOf(s: Session): string[] {
   if (s.commands > 0) out.add(shell ? "T1059.004" : "T1059")
   if (s.downloads > 0) out.add("T1105")
   if (s.http_requests > 0 && s.sensor === "web") out.add("T1595.002")
-  if (["smb", "sip"].includes(s.sensor) && s.login_attempts === 0) out.add("T1046")
+  if (["smb", "sip", "synology"].includes(s.sensor) && s.login_attempts === 0) out.add("T1046")
   const byTag: Record<string, string[]> = {
     recon: ["T1082"],
     php2shell: ["T1190", "T1059", "T1505.003"],
@@ -301,6 +301,9 @@ export function techniquesOf(s: Session): string[] {
     bluekeep: ["T1210"],
     "db-ransom": ["T1486"],
     "sip-fraud": ["T1657"],
+    "synology-exploit": ["T1190"],
+    c3rb3r: ["T1486"],
+    "credential-stuffing": ["T1110.004"],
     "container-escape": ["T1611", "T1610"],
     "redis-rogue-master": ["T1190", "T1105"],
     persistence: ["T1053.003"],

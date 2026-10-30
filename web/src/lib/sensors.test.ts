@@ -14,7 +14,7 @@ import {
 } from "./sensors"
 
 describe("sensor registry", () => {
-  it("knows the eleven API sensor names", () => {
+  it("knows the twelve API sensor names", () => {
     expect([...SENSORS].sort()).toEqual(
       [
         "adb",
@@ -26,6 +26,7 @@ describe("sensor registry", () => {
         "sip",
         "smb",
         "ssh",
+        "synology",
         "telnet",
         "web",
       ].sort(),
@@ -71,7 +72,8 @@ describe("selection names", () => {
     expect(sensorSetLabel(["redis", "mysql", "mssql"])).toBe("Databases")
     expect(sensorSetLabel(["ssh", "web", "rdp", "smb"])).toBe("4 sensors")
     expect(sensorSetPhrase(["ssh", "telnet", "adb"])).toBe("the remote shells")
-    expect(exactFamily(["web", "docker"])).toBe("web")
+    expect(exactFamily(["web", "docker", "synology"])).toBe("web")
+    expect(exactFamily(["web", "docker"])).toBeNull()
     expect(exactFamily(["web", "ssh"])).toBeNull()
   })
   it("sums per-sensor counts into families", () => {
