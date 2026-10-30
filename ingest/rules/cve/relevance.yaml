@@ -75,10 +75,17 @@ services:
     sensors: [sip]
     cpes: [digium:asterisk, asterisk:asterisk]
     keywords: [asterisk, sip, "session initiation protocol"]
+  - id: synology-dsm
+    label: Synology DiskStation Manager
+    sensors: [synology]
+    cpes: [synology:diskstation_manager, synology:dsm]
+    keywords: [synology, diskstation, dsm]
 
 # CVE id -> the tags our rules give to sessions that exploit it. The CVE page counts the
 # sessions that carry one of these tags as "seen in our traffic".
 cve_tags:
+  - tag: synology-exploit
+    cves: [CVE-2026-13639, CVE-2026-13684, CVE-2024-10441]
   - tag: php2shell
     cves: [CVE-2026-109618, CVE-2026-109619]
   - tag: bluekeep

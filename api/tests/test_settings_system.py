@@ -83,6 +83,7 @@ async def test_system_settings(client: httpx.AsyncClient) -> None:
         "mssql",
         "smb",
         "sip",
+        "synology",
     ]
     assert by["sip"]["status"] == "silent" and by["redis"]["events_last_hour"] == 0
     assert by["ssh"]["status"] == "quiet" or by["ssh"]["status"] == "active"

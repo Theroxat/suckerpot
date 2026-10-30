@@ -23,6 +23,8 @@ OBJECTIVE_TAGS = (
     "db-ransom",
     "redis-rogue-master",
     "sip-fraud",
+    "synology-exploit",
+    "c3rb3r",
     "credential-stuffing",
     "wordpress-bruteforce",
     "phpmyadmin-bruteforce",
@@ -44,6 +46,8 @@ OBJECTIVE_NAMES = {
     "db-ransom": "Database ransom",
     "redis-rogue-master": "Redis rogue master",
     "sip-fraud": "Phone fraud",
+    "synology-exploit": "Synology NAS exploitation",
+    "c3rb3r": "NAS ransomware",
     "credential-stuffing": "Credential stuffing",
     "wordpress-bruteforce": "WordPress password guessing",
     "phpmyadmin-bruteforce": "phpMyAdmin password guessing",
@@ -63,12 +67,12 @@ FAMILY_NOUNS = {
 SENSOR_LABELS = {
     "ssh": "SSH", "telnet": "Telnet", "web": "HTTP", "rdp": "RDP", "redis": "Redis",
     "docker": "Docker", "mysql": "MySQL", "mssql": "SQL Server", "adb": "ADB", "smb": "SMB",
-    "sip": "SIP",
+    "sip": "SIP", "synology": "Synology NAS",
 }  # fmt: skip
 SEVERE_TAGS = frozenset(
     {
         "php2shell", "crypto-miner", "mirai", "malware-drop", "container-escape", "sql-rce",
-        "eternalblue",
+        "eternalblue", "synology-exploit", "c3rb3r",
     }
 )  # fmt: skip
 WARNING_TAGS = frozenset({"db-ransom", "redis-rogue-master", "sip-fraud", "persistence"})

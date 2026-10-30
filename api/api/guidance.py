@@ -63,6 +63,10 @@ SERVICE_CHECKS: dict[str, list[str]] = {
         "Do not expose your PBX SIP port to the world; restrict it to your providers and users.",
         "Use strong extension passwords and set call limits and country restrictions to stop toll fraud.",
     ],
+    "synology": [
+        "Do not expose the DiskStation Manager login (ports 5000 and 5001) to the internet; use a VPN or the vendor's relay.",
+        "Keep DSM and its packages up to date, turn on two-factor sign-in and automatic blocking, and keep an offline backup of your shares.",
+    ],
 }
 
 TAG_ADVICE: dict[str, TagAdvice] = {
@@ -247,6 +251,28 @@ TAG_ADVICE: dict[str, TagAdvice] = {
         "look": ["PBX logs: many REGISTER failures and international calls at night."],
         "fix": [
             "Restrict SIP to known addresses, use strong secrets and set spending limits with your provider."
+        ],
+    },
+    "synology-exploit": {
+        "title": "Synology NAS exploit attempts",
+        "what": "Attackers send forged session ids or crafted headers to a Synology DiskStation Manager login to take over the NAS.",
+        "look": [
+            "DSM Log Center: sign-ins you do not recognise, new admin users, new scheduled tasks.",
+            "Reverse proxy or firewall logs: requests to /webapi/entry.cgi from unknown addresses.",
+        ],
+        "fix": [
+            "Install the latest DSM update, close ports 5000 and 5001 to the internet and turn on two-factor sign-in."
+        ],
+    },
+    "c3rb3r": {
+        "title": "NAS ransomware",
+        "what": "Ransomware that targets network storage and encrypts the shared folders.",
+        "look": [
+            "Shared folders: files renamed with a new extension or a ransom note in each folder.",
+            "Snapshots and backup jobs that were deleted or changed.",
+        ],
+        "fix": [
+            "Keep offline or immutable backups, turn on snapshots, and do not expose the NAS to the internet."
         ],
     },
     "scanner": {

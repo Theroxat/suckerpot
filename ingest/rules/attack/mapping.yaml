@@ -138,7 +138,7 @@ rules:
     when:
       all:
         - {field: type, equals: connect}
-        - {field: sensor, in: [smb, sip, rdp]}
+        - {field: sensor, in: [smb, sip, rdp, synology]}
 
   - id: attack-db-commands
     technique: T1059
@@ -170,3 +170,5 @@ from_tags:
   bluekeep: [T1210]
   rdp-cleartext: [T1078]
   sip-fraud: [T1657]
+  synology-exploit: [T1190]
+  c3rb3r: [T1486, T1190]

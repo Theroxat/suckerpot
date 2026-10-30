@@ -72,6 +72,8 @@ EXPLOIT_TAGS: tuple[str, ...] = (
     "container-escape",
     "redis-rogue-master",
     "db-ransom",
+    "synology-exploit",
+    "c3rb3r",
 )
 #: Tags that mean a program was fetched or pushed, besides the ``download_attempt`` events.
 DOWNLOAD_TAGS: tuple[str, ...] = ("malware-drop",)
@@ -347,6 +349,8 @@ WHAT_BY_TAG: tuple[tuple[str, str], ...] = (
     ("eternalblue", "tried to break in through EternalBlue, a Windows file-sharing flaw"),
     ("redis-rogue-master", "tried to make the Redis server load a malicious module"),
     ("container-escape", "tried to break out of a container"),
+    ("synology-exploit", "tried to take over a Synology NAS through a flaw in its login"),
+    ("c3rb3r", "tried to plant ransomware on a Synology NAS"),
 )
 
 

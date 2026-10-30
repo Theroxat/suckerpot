@@ -277,6 +277,19 @@ async def test_poller_advances_past_bad_rows(monkeypatch: pytest.MonkeyPatch) ->
         ("sip", "scan", {"method": "INVITE", "to": "+41791234567"}, "SIP INVITE to +41791234567"),
         ("sip", "scan", {"flags": ["options_scan"]}, "SIP OPTIONS scan"),
         (
+            "synology",
+            "http_request",
+            {"method": "POST", "path": "/webapi/entry.cgi", "flags": ["dsm_api", "sid_forge"]},
+            "Synology DSM forged session id (CVE-2026-13639)",
+        ),
+        (
+            "synology",
+            "login_attempt",
+            {"username": "admin", "password": "x", "success": False},
+            "Synology DSM login admin failed",
+        ),
+        ("synology", "http_request", {"method": "GET", "path": "/", "status": 200}, "GET / → 200"),
+        (
             "smb",
             "scan",
             {"kind": "smb1_negotiate", "smb1_outcome": "reset", "flags": ["smbv1"]},

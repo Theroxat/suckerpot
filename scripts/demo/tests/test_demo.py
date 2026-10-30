@@ -84,6 +84,7 @@ def test_ports_match_sensor(events: list[Event]) -> None:
         SensorName.mssql: {1433},
         SensorName.smb: {445},
         SensorName.sip: {5060},
+        SensorName.synology: {5000, 5001},
     }
     assert all(e.dst_port in allowed[e.sensor] for e in events)
 
@@ -561,6 +562,22 @@ def test_sip_content(events: list[Event]) -> None:
     assert dialled and all(d.startswith(("+", "00")) for d in dialled)
     agents = Counter(e.data["user_agent"] for e in sip if e.data.get("user_agent"))
     assert agents["friendly-scanner"] > 0
+
+
+def test_synology_content(events: list[Event]) -> None:
+    syn = of(events, SensorName.synology)
+    flags = flags_of(syn)
+    for f in ("dsm_api", "dsm_login", "dsm_version_probe", "sid_forge", "scgi_injection"):
+        assert flags[f] > 0, f
+    for e in of(events, SensorName.synology, EventType.http_request):
+        exploit = {"sid_forge", "scgi_injection"} & set(e.data["flags"])
+        assert bool(exploit) == ("cve" in e.data), e.data
+    logins = of(events, SensorName.synology, EventType.login_attempt)
+    assert logins and all(e.data["success"] is False for e in logins)
+    assert {"admin", "root"} <= {e.data["username"] for e in logins}
+    assert all("otp_present" in e.data for e in logins)
+    # spraying dominates the exploit-shaped sessions
+    assert flags["dsm_login"] > flags["sid_forge"] + flags["scgi_injection"]
 
 
 def test_service_heavy_hitters_persist(events: list[Event]) -> None:

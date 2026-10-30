@@ -37,6 +37,7 @@ def test_shipped_file_covers_every_sensor(rmap: RelevanceMap) -> None:
     sensors = {s for svc in rmap.services for s in svc.sensors}
     assert sensors == {
         "ssh", "telnet", "web", "rdp", "redis", "docker", "mysql", "adb", "mssql", "smb", "sip",
+        "synology",
     }  # fmt: skip
 
 

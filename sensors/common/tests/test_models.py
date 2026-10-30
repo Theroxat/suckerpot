@@ -153,6 +153,7 @@ def test_raw_event_field_too_large_rejected_before_parse() -> None:
 def test_sensor_names_are_stable_and_ordered() -> None:
     assert [s.value for s in SensorName] == [
         "ssh", "telnet", "web", "rdp", "redis", "docker", "mysql", "adb", "mssql", "smb", "sip",
+        "synology",
     ]  # fmt: skip
     for name in SensorName:
         assert make(sensor=name.value).sensor is name

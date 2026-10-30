@@ -48,7 +48,17 @@ ATTACK_TAGS: dict[str, tuple[str, ...]] = {
     "mirai": ("attack.command-and-control", "attack.t1105"),
 }
 LEVELS = {"notice": "low", "warning": "medium", "severe": "high"}
-SEVERE_TAGS = frozenset({"php2shell", "malware-drop", "mirai", "crypto-miner", "eternalblue"})
+SEVERE_TAGS = frozenset(
+    {
+        "php2shell",
+        "malware-drop",
+        "mirai",
+        "crypto-miner",
+        "eternalblue",
+        "synology-exploit",
+        "c3rb3r",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)

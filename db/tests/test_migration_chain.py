@@ -55,12 +55,12 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0016() -> None:
+def test_the_chain_is_linear_up_to_0017() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0016"}
-    for n in range(11, 17):
+    assert heads == {"0017"}
+    for n in range(11, 18):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
 
 

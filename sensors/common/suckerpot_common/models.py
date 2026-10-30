@@ -47,6 +47,7 @@ class SensorName(StrEnum):
     mssql = "mssql"
     smb = "smb"
     sip = "sip"
+    synology = "synology"
 
 
 class EventType(StrEnum):
