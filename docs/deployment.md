@@ -7,7 +7,7 @@ Read [Getting started](getting-started.md) first, and the [Security](SECURITY.md
 ```{admonition} Build status
 :class: note
 
-All eleven sensors are in `docker-compose.yml`: the SSH, Telnet, ADB, web, Docker API, Redis, MySQL, MSSQL, RDP, SMB and SIP sensors. The web sensor is still under security review. The seven M9 sensors are new: check them before you forward their ports. The dashboard has a login (M8). Keep it behind the tunnel and the upstream filter described below anyway: login is one layer, not the only one.
+All twelve sensors are in `docker-compose.yml`: the SSH, Telnet, ADB, web, Docker API, Redis, MySQL, MSSQL, RDP, SMB, SIP and Synology sensors. The web and Synology sensors are still under security review. The seven M9 sensors and the Synology sensor (M20) are new: check them before you forward their ports. The dashboard has a login (M8). Keep it behind the tunnel and the upstream filter described below anyway: login is one layer, not the only one.
 ```
 
 ## Principles
@@ -68,6 +68,7 @@ openssl rand -base64 32
 | `REDIS_SENSOR_ADB_PASSWORD` | Redis `sensor-adb` user |
 | `REDIS_SENSOR_SMB_PASSWORD` | Redis `sensor-smb` user |
 | `REDIS_SENSOR_SIP_PASSWORD` | Redis `sensor-sip` user |
+| `REDIS_SENSOR_SYNOLOGY_PASSWORD` | Redis `sensor-synology` user |
 | `REDIS_DEMO_PASSWORD` | Redis `demo` user |
 
 Keep `.env` readable by the owner only (`chmod 600 .env`). Never commit it. `SUCKERPOT_ALLOW_DEFAULT_SECRETS=1` turns the checks off. It exists for CI only. Never set it on a real host.
@@ -82,7 +83,7 @@ Rotate every secret before the first exposure, after any suspected leak, and fro
 2. Recreate everything that talks to Redis. Redis rewrites its ACL file on every start.
 
    ```bash
-   docker compose up -d --force-recreate redis ingest sensor-ssh sensor-telnet sensor-adb sensor-web sensor-docker sensor-redis sensor-mysql sensor-mssql sensor-rdp sensor-smb sensor-sip
+   docker compose up -d --force-recreate redis ingest sensor-ssh sensor-telnet sensor-adb sensor-web sensor-docker sensor-redis sensor-mysql sensor-mssql sensor-rdp sensor-smb sensor-sip sensor-synology
    ```
 
    Leave out any sensor you do not run. Events published while Redis restarts are dropped and counted, never buffered without limit.
@@ -353,6 +354,7 @@ Forward the sensor ports to the host, then verify each one. Forward only the por
 | RDP | 3389 | TCP | `RDP_HOST_PORT` |
 | SMB | 445 | TCP | `SMB_HOST_PORT` |
 | SIP | 5060 | UDP **and** TCP | `SIP_HOST_PORT` |
+| Synology DSM | 5000 and 5001 | TCP | `SYNOLOGY_HTTP_HOST_PORT` and `SYNOLOGY_HTTPS_HOST_PORT` |
 
 The dashboard port (`DASHBOARD_PORT`, 8443 by default) and the admin SSH port are **never** forwarded. Keep them off the list.
 

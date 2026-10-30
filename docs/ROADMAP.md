@@ -235,6 +235,21 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 **Acceptance:** a research scanner never raises an alert, a session that does more than probe is never labelled benign, and security review PASS after the fixes.
 
+## M20 — Synology NAS sensor and CVE watch fixes
+
+- [x] Synology NAS sensor (`synology`): a DSM 7.2.1-69057 Update 11 look-alike on HTTP 5000 and HTTPS 5001, with the login page, the Web API (`SYNO.API.Info`, `SYNO.API.Auth` and the other APIs), logins always refused with DSM error codes, and every credential recorded.
+- [x] Flags and tags for the C3RB3R campaign (CVE-2026-13639 and CVE-2026-13684): `synology-dsm`, `synology-exploit` and `c3rb3r`, mapped to ATT&CK T1190 and T1486. Downloads from DSM requests are recorded as `download_attempt`.
+- [x] Compose: `sensor-synology`, network `sensors-synology`, volume `synology-sensor-data`, Redis user `sensor-synology` (`XADD` on `events:synology` only), port guard for 5000 and 5001, and the `.env.example` entries.
+- [x] Migration `0017` adds `synology` to the inventory service list. The sensor belongs to the Web and APIs colour family, so the UI gets no new hue.
+- [x] CVE watch: the NVD window is 60 days (was 30), read in one-day chunks, oldest first, with a page budget. A busy feed no longer loses CVEs silently at 10,000 results.
+- [x] CVE watch: a run that stops early (quota or page budget) resumes from the last complete chunk. GitHub advisories are read in 7-day chunks.
+- [x] CVE watch: a one-time start-up rewind refills a shallow history. Watched CVEs that are missing from the table are fetched by id from the NVD (at most 10 per run, once per id per 24 h).
+- [x] `just test-integration` uses `docker-compose.it.yml`, so the throwaway project fits in Docker's default address pools next to the live stack.
+- [x] Security review of the Synology sensor and of the Compose, port guard and migration changes: passed after fixes (TLS handshake-slot and handshake-rate exhaustion closed with per-IP caps and a full-ClientHello check, nginx error pages and asset sizes made realistic).
+- [ ] Full stack check: `docker compose up -d --build` with every service healthy, and the Synology ports reached from outside a test network.
+
+**Acceptance:** a DSM client gets the DSM answers, every login attempt is recorded and refused, the forged-session and SCGI request shapes are tagged, the CVE watch fills 60 days without a silent gap, and the security review passes.
+
 ## Later (not part of the loop)
 
 - Per-/24 or per-ASN daily cap on new campaigns, so one network cannot create many campaigns in a day.

@@ -65,6 +65,8 @@ All commands are `just` recipes. Run `just` with no arguments to list them.
 | `just test-integration` | Integration tests against a real database and Redis. It uses its own throwaway Compose project (`<project>-it`) and removes its volumes afterwards, so your real data is never touched. |
 | `just check` | Everything: `lint`, `typecheck`, `test` and `web-build` |
 
+`just test-integration` runs `docker-compose.it.yml` on top of `docker-compose.yml`. The overlay keeps `redis` on the `backend` network only, and drops its per-sensor networks. So the throwaway project fits in Docker's default address pools, next to the live stack, which holds its own networks.
+
 ### Web
 
 | Recipe | What it does |
@@ -105,7 +107,8 @@ suckerpot/
 │   ├── mssql/              # MSSQL sensor
 │   ├── rdp/                # RDP sensor
 │   ├── smb/                # SMB sensor
-│   └── sip/                # SIP sensor
+│   ├── sip/                # SIP sensor
+│   └── synology/           # Synology NAS sensor
 ├── ingest/                 # suckerpot-ingest: consumer, writer, enrichment, rules/*.yaml
 ├── api/                    # suckerpot-api: FastAPI app
 ├── db/                     # suckerpot-db: SQLAlchemy models and Alembic migrations
@@ -119,7 +122,7 @@ suckerpot/
 └── docs/                   # this documentation site
 ```
 
-All eleven sensors are in `docker-compose.yml`.
+All twelve sensors are in `docker-compose.yml`.
 
 ## Python packages
 
@@ -143,8 +146,9 @@ Each package has its own `pyproject.toml` and a committed `uv.lock`. The code ta
 | `sensors/rdp` | `suckerpot-sensor-rdp` | `rdp_sensor` | RDP sensor |
 | `sensors/smb` | `suckerpot-sensor-smb` | `smb_sensor` | SMB sensor |
 | `sensors/sip` | `suckerpot-sensor-sip` | `sip_sensor` | SIP sensor |
+| `sensors/synology` | `suckerpot-sensor-synology` | `synology_sensor` | Synology DSM sensor |
 
-The recipes `just lint`, `just typecheck` and `just test` run over every directory in the `packages` variable of the `justfile`: all eleven sensors, `sensors/common`, `scripts/demo`, `db`, `ingest` and `api`. The CI `python` job uses the same list. Each package also has its own `pyproject.toml`, so you can run `uv sync`, `uv run ruff check`, `uv run mypy .` and `uv run python -m pytest` from its directory.
+The recipes `just lint`, `just typecheck` and `just test` run over every directory in the `packages` variable of the `justfile`: all twelve sensors, `sensors/common`, `scripts/demo`, `db`, `ingest` and `api`. The CI `python` job uses the same list. Each package also has its own `pyproject.toml`, so you can run `uv sync`, `uv run ruff check`, `uv run mypy .` and `uv run python -m pytest` from its directory.
 
 Every sensor has a `tests/test_static.py`. It reads the sensor's own code and fails on forbidden calls (`subprocess`, `eval`, `exec` and the like), on outbound sockets and on file writes outside the data folder. Several sensors also ship a `tests/blackbox.sh` script that runs real clients (such as `nmap`) against the sensor. Read the header of the script for the tools it needs.
 

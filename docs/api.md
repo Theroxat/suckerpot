@@ -226,7 +226,7 @@ Lists sessions, newest first. Order: `started_at` descending, then `session_id`.
 | --- | --- | --- |
 | `limit` | `50` | Items per page, 1 to 200 |
 | `cursor` | none | Cursor from the previous page |
-| `sensor` | none | Only sessions from one sensor: `ssh`, `telnet`, `adb`, `web`, `docker`, `redis`, `mysql`, `mssql`, `rdp`, `smb` or `sip`. Repeat the parameter or separate names with commas for several sensors. |
+| `sensor` | none | Only sessions from one sensor: `ssh`, `telnet`, `adb`, `web`, `docker`, `redis`, `mysql`, `mssql`, `rdp`, `smb`, `sip` or `synology`. Repeat the parameter or separate names with commas for several sensors. |
 | `src_ip` | none | Only sessions from one source address |
 | `tag` | none | Only sessions that carry this tag. Lower-case letters, digits and `-`, up to 32 characters (for example `crypto-miner`). |
 | `country` | none | Only sessions from this country. Two letters (ISO 3166-1), case-insensitive. |
@@ -492,7 +492,7 @@ Implemented (M5). Check `/openapi.json` (with `API_ENABLE_DOCS=true`) for the ex
 
 All analytics endpoints are read-only, run as the `suckerpot_api` role with the 5 second statement timeout, and use TimescaleDB `time_bucket` queries. Lists are paginated or capped (`limit` at most 200). Times are ISO 8601 UTC.
 
-Common optional filters: `since` and `until` (with a time zone; the default window is the last 24 hours for stats, with 30 days as the maximum) and `sensor` (any of the eleven sensor names: `ssh`, `telnet`, `adb`, `web`, `docker`, `redis`, `mysql`, `mssql`, `rdp`, `smb`, `sip`).
+Common optional filters: `since` and `until` (with a time zone; the default window is the last 24 hours for stats, with 30 days as the maximum) and `sensor` (any of the twelve sensor names: `ssh`, `telnet`, `adb`, `web`, `docker`, `redis`, `mysql`, `mssql`, `rdp`, `smb`, `sip`, `synology`).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -608,7 +608,7 @@ Read-only and passive: nothing is fetched from an indicator. Values come both ra
 | Endpoint | What it returns |
 | --- | --- |
 | `GET /api/v1/indicators` | Keyset-paginated list (`cursor`, `limit` 1 to 200). Filters: `type` (`url`, `domain`, `ip`, `hash`), `role` (`download_host`, `contacted_host`, `hash`), `known` (true or false), `family`, `since`, `hours` (seen in the last N hours, 1 to 2160, the graph's window), `q` (literal substring). IPv6 values are defanged too (`2001[:]db8[:][:]1`). Each item has sightings, sessions, distinct source addresses, sensors and the intel verdict (`checked`, `known`, `family`). |
-| `GET /api/v1/indicators/c2` | Probable command-and-control addresses of malware dropped here, both roles, read-only. Keyset-paginated (`cursor`, `limit` 1 to 200, default 50). Filters: `min_confidence` (`medium`, the default, or `high`), `kind` (`ip` or `domain`), `hours` (hashes dropped in the last N hours, 1 to 2160, default 720). Each item has `address`, `defanged`, `kind`, `port`, `confidence`, `sources`, `families`, `hashes` (up to 10 of `{sha256, family}`), `hash_count`, `sessions` (our sessions that dropped those hashes), `first_seen`, `last_seen` and `references` (links to VirusTotal and ThreatFox only). Best confidence first, then most recent. See [Probable C2 addresses](SECURITY.md#probable-c2-addresses). |
+| `GET /api/v1/indicators/c2` | Probable command-and-control addresses of malware dropped here, both roles, read-only. Keyset-paginated (`cursor`, `limit` 1 to 200, default 50). Filters: `min_confidence` (`medium`, the default, or `high`), `kind` (`ip` or `domain`), `hours` (hashes dropped in the last N hours, 1 to 2160, default 720). Each item has `address`, `defanged`, `kind`, `port`, `confidence`, `sources`, `families`, `hashes` (up to 10 of `{sha256, family}`), `hash_count`, `sessions` (our sessions that dropped those hashes), `first_seen`, `last_seen` and `references` (links to VirusTotal and ThreatFox only). Best confidence first, then most recent. See {ref}`Probable C2 addresses <probable-c2-addresses>`. |
 | `GET /api/v1/indicators/{id}` | One indicator with the intel answers (source, family, threat type, tags, first reported, reference link), recent sessions, source addresses and indicators seen in the same sessions. |
 | `GET /api/v1/infrastructure/graph` | Nodes and edges linking source addresses, indicators (hosts and hashes) and malware families for the last `hours` (1 to 2160, default 168), with a `summary` and `truncated`. At most 300 nodes. |
 | `GET /api/v1/indicators/export` | A download of up to 5,000 indicators matching the same filters, as `format=csv` or `format=stix` (a STIX 2.1 bundle of `indicator` objects). |

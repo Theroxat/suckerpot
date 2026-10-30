@@ -2,14 +2,14 @@
 
 # SuckerPot
 
-**A self-hosted honeypot with one readable dashboard: eleven realistic sensors for remote shells, web and APIs, databases, and Windows and VoIP services, and a UI that tells each attack as a short story you can click through.**
+**A self-hosted honeypot with one readable dashboard: twelve realistic sensors for remote shells, web and APIs, databases, and Windows and VoIP services, and a UI that tells each attack as a short story you can click through.**
 
 [Documentation](https://suckerpot.readthedocs.io) · [Releases](https://github.com/Theroxat/suckerpot/releases) · [Changelog](CHANGELOG.md)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Theroxat/suckerpot/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/Theroxat/suckerpot/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/readthedocs/suckerpot?logo=readthedocs&logoColor=white&label=docs)](https://suckerpot.readthedocs.io)
 ![Python 3.13](https://img.shields.io/badge/python-3.13-3776ab?logo=python&logoColor=white)
-![Sensors](https://img.shields.io/badge/sensors-11-8b5cf6)
+![Sensors](https://img.shields.io/badge/sensors-12-8b5cf6)
 [![Docker Compose](https://img.shields.io/badge/stack-docker%20compose-2496ed?logo=docker&logoColor=white)](docker-compose.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -33,12 +33,12 @@ The current release is `v0.2.0`. `v0.1.0` shipped four sensors, enrichment, tagg
 - **Telnet sensor.** A BusyBox telnetd look-alike with Mirai-style login and command flows.
 - **Web sensor** (in final security review). A byte-identical fake Apache 2.4.58 with PHP 8.3 (unpatched mod_php), WordPress and phpMyAdmin pages, and detection of PHP2Shell (upload-progress) exploit attempts, tagged `php2shell`.
 - **RDP sensor.** A Windows Server look-alike with NLA. It records NTLM logins, checks decoy passwords, identifies the client tool, and can optionally capture cleartext passwords from clients that skip NLA (owner opt-in).
-- **Eleven sensors in four families.** Each family has its own colour in the dashboard, and each sensor has its own icon and name.
+- **Twelve sensors in four families.** Each family has its own colour in the dashboard, and each sensor has its own icon and name.
 
 | Family | Sensors | What they fake |
 | --- | --- | --- |
 | Remote shells | SSH, Telnet, ADB | An OpenSSH 9.6 server, a BusyBox login, an Android TV box with `adbd` and no authentication |
-| Web and APIs | Web, Docker | Apache 2.4 with unpatched PHP 8.3, WordPress and phpMyAdmin; an exposed Docker Engine API |
+| Web and APIs | Web, Docker, Synology | Apache 2.4 with unpatched PHP 8.3, WordPress and phpMyAdmin; an exposed Docker Engine API; a Synology NAS with unpatched DSM 7.2.1 (login page and Web API) |
 | Databases | Redis, MySQL, MSSQL | Redis 7.2 with no password; MySQL 8.0 and SQL Server with weak logins |
 | Windows and VoIP | RDP, SMB, SIP | A Windows Server with NLA; a Windows file service (observation only); an Asterisk-style PBX on UDP and TCP |
 
@@ -88,7 +88,7 @@ Each sensor records what the attacker does and never runs it. SIP answers are ca
 ## Architecture
 
 ```
-Internet --> sensors (eleven, one stream each) --> Redis Streams --> ingest --> PostgreSQL + TimescaleDB --> API (FastAPI) --> Web UI (React)
+Internet --> sensors (twelve, one stream each) --> Redis Streams --> ingest --> PostgreSQL + TimescaleDB --> API (FastAPI) --> Web UI (React)
              network "sensors"                   (ACL per sensor)  (only service with outbound access)   network "backend" (internal)   also serves the built UI
 ```
 
@@ -168,6 +168,7 @@ SuckerPot runs hostile traffic through containers, so isolation is a feature, no
 | M17 | Script library and optional LLM explainer | Done |
 | M18 | Alerts (Discord, Teams, e-mail) and weekly report | Done |
 | M19 | Today, global search, glossary, research scanners | Done |
+| M20 | Synology NAS sensor (DSM 7.2.1), CVE watch fixes | Done |
 
 Details in [docs/ROADMAP.md](docs/ROADMAP.md).
 

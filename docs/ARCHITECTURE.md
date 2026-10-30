@@ -15,6 +15,8 @@ This page describes how SuckerPot is built: the services, the networks, the queu
 
 **Built since:** retention, compressed storage, kept-forever aggregates and the database disk guard (see [Data retention](retention.md)), and backups (`just backup`).
 
+**Built in M20:** the Synology NAS sensor (a DSM look-alike on ports 5000 and 5001), the CVE watch fixes (a 60-day window in daily chunks, resumable runs, watched-CVE lookups by id) and a separate Compose overlay for `just test-integration`.
+
 **Built since (M10 to M19):** RDP depth, Settings that edit keys, CVE watch, indicators, users and roles, campaigns and ATT&CK, Defend (blocklists, exports, the opt-in feed, detections and exposure), the script library with its optional LLM explainer, alerts and the weekly report, and Today, search and research-scanner labels. The analysis features are in [Analysis workers](#analysis-workers-m15-to-m19).
 ```
 
@@ -31,11 +33,12 @@ Router or hypervisor firewall
    ▼
 Host (nftables table "suckerpot_host", see Deployment)
    │
-   ├─► 11 sensors      ─┐  each sensor: sp-ingress (inbound only)
+   ├─► 12 sensors      ─┐  each sensor: sp-ingress (inbound only)
    │   remote shells:     │  + its own internal network to Redis
    │     ssh, telnet, adb │
    │   web and APIs:      │
-   │     web, docker      │
+   │     web, docker,     │
+   │     synology         │
    │   databases:         │
    │     redis, mysql,    │
    │     mssql            │
@@ -64,7 +67,7 @@ Host (nftables table "suckerpot_host", see Deployment)
 
 | Service | Networks | Role | Status |
 | --- | --- | --- | --- |
-| `redis` | `sensors-ssh`, `sensors-rdp`, `sensors-telnet`, `sensors-web`, `sensors-redis`, `sensors-docker`, `sensors-mysql`, `sensors-mssql`, `sensors-adb`, `sensors-smb`, `sensors-sip`, `tools`, `backend` | Redis Streams queue. Named ACL users (see below). AOF persistence on `redis-data`. | Built |
+| `redis` | `sensors-ssh`, `sensors-rdp`, `sensors-telnet`, `sensors-web`, `sensors-redis`, `sensors-docker`, `sensors-mysql`, `sensors-mssql`, `sensors-adb`, `sensors-smb`, `sensors-sip`, `sensors-synology`, `tools`, `backend` | Redis Streams queue. Named ACL users (see below). AOF persistence on `redis-data`. | Built |
 | `db` | `backend` | PostgreSQL 17 with TimescaleDB 2.22.1, on `db-data`. Runs only as the owner role. | Built |
 | `migrate` | `backend` | One-shot. Checks the secrets policy, runs `alembic upgrade head`, then re-applies the application roles and their passwords, and exits with code 0. | Built |
 | `ingest` | `backend`, `egress` | Reads all sensor streams, validates events, enriches and tags them, writes them to the database. | Built. GeoIP files live on the `geoip-data` volume. |
@@ -80,6 +83,7 @@ Host (nftables table "suckerpot_host", see Deployment)
 | `sensor-rdp` | `ingress`, `sensors-rdp` | RDP sensor (NLA and NTLM). See [RDP](sensors/rdp.md). Stream `events:rdp`. | Built |
 | `sensor-smb` | `ingress`, `sensors-smb` | SMB file service, observation only. See [SMB](sensors/smb.md). Stream `events:smb`. | Built (M9) |
 | `sensor-sip` | `ingress`, `sensors-sip` | Asterisk-style PBX on UDP and TCP 5060. See [SIP](sensors/sip.md). Stream `events:sip`. | Built (M9) |
+| `sensor-synology` | `ingress`, `sensors-synology` | Synology DSM 7.2.1 look-alike on HTTP 5000 and HTTPS 5001. See [Synology](sensors/synology.md). Stream `events:synology`. | Built (M20), under security review |
 | `demo` | `tools` | Synthetic attack generator. Runs only with `--profile tools`. | Built |
 
 Start order: `redis` and `db` first. `migrate` runs once the database is healthy. `ingest` and `api` start after `migrate` has finished with code 0. Sensors start after Redis is healthy.
@@ -141,7 +145,7 @@ The public feed (`/feeds`, see [API](api.md)) is inbound only. It is served by t
 
 ### Streams
 
-Each sensor writes to its own stream: `events:ssh`, `events:telnet`, `events:adb`, `events:web`, `events:docker`, `events:redis`, `events:mysql`, `events:mssql`, `events:rdp`, `events:smb` and `events:sip`. The demo generator writes to the same streams. One stream per sensor means a flood on one sensor cannot hide the events of another, and each stream is trimmed on its own.
+Each sensor writes to its own stream: `events:ssh`, `events:telnet`, `events:adb`, `events:web`, `events:docker`, `events:redis`, `events:mysql`, `events:mssql`, `events:rdp`, `events:smb`, `events:sip` and `events:synology`. The demo generator writes to the same streams. One stream per sensor means a flood on one sensor cannot hide the events of another, and each stream is trimmed on its own.
 
 ### Users and permissions
 
@@ -163,6 +167,7 @@ Redis runs with the `default` user disabled. Each named user has its own passwor
 | `sensor-adb` | `REDIS_SENSOR_ADB_PASSWORD` | `resetkeys ~events:adb -@all +xadd +hello +auth` | `sensor-adb` |
 | `sensor-smb` | `REDIS_SENSOR_SMB_PASSWORD` | `resetkeys ~events:smb -@all +xadd +hello +auth` | `sensor-smb` |
 | `sensor-sip` | `REDIS_SENSOR_SIP_PASSWORD` | `resetkeys ~events:sip -@all +xadd +hello +auth` | `sensor-sip` |
+| `sensor-synology` | `REDIS_SENSOR_SYNOLOGY_PASSWORD` | `resetkeys ~events:synology -@all +xadd +hello +auth` | `sensor-synology` |
 | `demo` | `REDIS_DEMO_PASSWORD` | `resetkeys ~events:* -@all +xadd +hello +auth` | The demo generator |
 | `ingest` | `REDIS_INGEST_PASSWORD` | `resetkeys ~events:* -@all +xreadgroup +xack +xgroup\|create +xautoclaim +xtrim +hello +auth` | `ingest` |
 
@@ -249,6 +254,8 @@ PostgreSQL 17 with TimescaleDB, managed by Alembic migrations in `db/`.
 | `weekly_reports` | Regular table | One stored report per finished week (escaped HTML and the summary, capped at about 512 KiB) |
 | `users`, `audit_log` | Regular tables | Dashboard accounts (0010) and the one-year audit log. Ingest has no access. |
 
+Migration 0017 widens the check on `inventory_services.service` so that it accepts `synology`. No other table lists sensor names.
+
 Migration 0015 adds columns rather than a table: `events.benign`, `sessions.benign` and `sessions.scanner_name` (research-scanner labels). Migration 0011 adds `events.techniques`, `sessions.techniques`, `sessions.campaign_id` and `sessions.clustered_at`.
 
 The row limits `CAMPAIGNS_MAX_ROWS` and `SCRIPTS_MAX_ROWS` apply to the campaign and script tables. The retention job prunes them, the oldest and least seen first. See [Configuration](configuration.md).
@@ -277,7 +284,7 @@ Built (M4) and wired into Compose: ingest gets the provider variables and the `g
 
 - **GeoIP and ASN** are read from local MMDB files, never from a web service per event. The provider is MaxMind GeoLite2 when `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` are set, otherwise DB-IP Lite (no key, CC BY 4.0, attribution shown in the dashboard). Ingest downloads and refreshes the files itself, with a size cap and a check that the file opens. `GEOIP_PROVIDER=off` turns it off.
 - **Reputation** (AbuseIPDB and GreyNoise Community) runs in a background worker, not in the event path. It picks the busiest addresses with no fresh answer, spends one unit of a persisted daily quota per lookup (`ABUSEIPDB_DAILY_QUOTA`, `GREYNOISE_DAILY_QUOTA`), caches the answer for 24 hours, and pauses for an hour after a rate-limit answer. It only reads. Nothing is ever reported to AbuseIPDB.
-- **CVE watch** (`ingest/ingest/cve/`) is a background job. Every 15 minutes it checks which of three feeds is more than 24 hours old, and fetches only those: the CISA KEV catalogue, NVD API 2.0 (CVEs published in the last 30 days, or since the last success) and GitHub reviewed security advisories (only those with a CVE id). Each request spends a persisted daily quota (`CVE_NVD_DAILY_QUOTA`, `CVE_GITHUB_DAILY_QUOTA`; KEV is capped at a few requests a day), a failing feed is retried after an hour and does not stop the others, and the NVD is paced to its rate limit (5 requests per 30 s, 50 with `NVD_API_KEY`). The optional NVD key and GitHub token use the same Settings mechanism as the other provider keys. Records are merged per CVE id: each feed only fills the columns it is authoritative for. After a sync, ingest applies the relevance mapping in `ingest/rules/cve/relevance.yaml` to every row: a service (Apache + PHP, OpenSSH, Redis, ...) matches **high** when a CPE or the vendor or product name matches and **medium** when only the title or description mentions it. The same file maps CVE ids to our tags (for example `php2shell`), and the API counts sessions carrying those tags as "seen in our traffic". CVEs that are neither in KEV nor relevant are deleted after 180 days. The job only reads public data and never deploys or builds anything.
+- **CVE watch** (`ingest/ingest/cve/`) is a background job. Every 15 minutes it checks which of three feeds is more than 24 hours old, and fetches only those: the CISA KEV catalogue, NVD API 2.0 and GitHub reviewed security advisories (only those with a CVE id). The NVD window reaches back 60 days (the first fetch, and the repair described below). It is read in one-day chunks, oldest first, with at most 50 pages per chunk and 120 pages per run, so a busy day is never cut off at 10,000 results. GitHub advisories are read in 7-day chunks the same way, with 30 pages per run. A run that stops early, for quota or for its page budget, keeps the chunks it finished and moves the cursor only as far as the last complete chunk. The next run resumes from there, so nothing is skipped silently. When ingest starts, it checks whether the stored history of a feed begins later than the lookback. If it does, the feed re-reads the lookback window to fill the gap. Upserts make the re-read safe, and once the history is deep enough the check does nothing. CVEs on the watch list (`watched_cves`) that are missing from the table are looked up by id in the NVD, at most 10 per run, and each id at most once every 24 hours. Each request spends a persisted daily quota (`CVE_NVD_DAILY_QUOTA`, `CVE_GITHUB_DAILY_QUOTA`; KEV is capped at a few requests a day), a failing feed is retried after an hour and does not stop the others, and the NVD is paced to its rate limit (5 requests per 30 s, 50 with `NVD_API_KEY`). The optional NVD key and GitHub token use the same Settings mechanism as the other provider keys. Records are merged per CVE id: each feed only fills the columns it is authoritative for. After a sync, ingest applies the relevance mapping in `ingest/rules/cve/relevance.yaml` to every row: a service (Apache + PHP, OpenSSH, Redis, Synology DSM, ...) matches **high** when a CPE or the vendor or product name matches and **medium** when only the title or description mentions it. The same file maps CVE ids to our tags (for example `php2shell` and `synology-exploit`), and the API counts sessions carrying those tags as "seen in our traffic". CVEs that are neither in KEV nor relevant are deleted after 180 days. The job only reads public data and never deploys or builds anything.
 - **Tags** come from a declarative rules engine. Rules are YAML files in `ingest/rules/` (`shell.yaml` for commands, `web.yaml` for HTTP, `services.yaml` for the database, container, mobile, file-sharing and VoIP sensors, and `session.yaml` for session counters). A rule can match URL patterns, typical shell commands, user agents or CVE signatures. Tags include `recon`, `mirai`, `crypto-miner`, `exec-attempt`, `malware-drop`, `credential-stuffing`, `scanner`, `php2shell`, for the M9 sensors `persistence`, `container-escape`, `sql-rce`, `db-ransom`, `eternalblue` and `sip-fraud`, and for the RDP sensor `bluekeep`, `weak-credentials` and `rdp-cleartext`. A broken rule file stops ingest at start-up.
 
 - **Indicators** (M13). While writing a batch, ingest extracts URLs, hosts and file hashes from the events (bounded string scanning, no regular expressions), drops private, documentation and own addresses, and upserts `indicators` and `indicator_sessions` in a savepoint, so a problem there never costs the events. A background worker then asks URLhaus, ThreatFox and (for hashes) VirusTotal about each indicator with the same quota, cache and key mechanism as the reputation worker. It is passive: indicator hosts are never contacted. An hourly job (`suckerpot_indicator_prune`) removes indicators with the raw events and enforces `INDICATORS_MAX_ROWS`. The API serves them at `/api/v1/indicators` and `/api/v1/infrastructure/graph`. See [Security](SECURITY.md#indicators-and-threat-intelligence-passive-by-design).
@@ -354,7 +361,7 @@ The WebSocket checks the `Origin` header. Requests with no `Origin` (non-browser
 
 | Layer | Choice |
 | --- | --- |
-| Sensors | Python 3.13, asyncio, asyncssh (SSH), raw asyncio (Telnet, RDP, ADB, Redis, MySQL, MSSQL, SMB and SIP), hand-written HTTP servers (web and Docker API) |
+| Sensors | Python 3.13, asyncio, asyncssh (SSH), raw asyncio (Telnet, RDP, ADB, Redis, MySQL, MSSQL, SMB and SIP), hand-written HTTP servers (web, Docker API and Synology DSM, the last one over TLS too) |
 | Ingest and API | FastAPI, SQLAlchemy 2 with asyncpg, Alembic |
 | Queue | Redis 7.4 Streams |
 | Database | PostgreSQL 17 with TimescaleDB 2.22.1 |
@@ -386,7 +393,7 @@ When the host runs short of memory, the kernel must pick a victim. `oom_score_ad
 | `redis`, `db` | `-500` | default | The data path. Last to be killed. |
 | `ingest` | `-200` | default | Keeps the events flowing into the database. |
 | `api` | `300` | default | The dashboard. Killed before the data path, after the sensors. |
-| All eleven `sensor-*` services | `800` | `256` | Sensors take attacker load, so they are the first to be killed under memory pressure, and get a smaller CPU share when the host is busy. Docker restarts them. |
+| All twelve `sensor-*` services | `800` | `256` | Sensors take attacker load, so they are the first to be killed under memory pressure, and get a smaller CPU share when the host is busy. Docker restarts them. |
 
 Each sensor has a memory limit (`mem_limit`), no swap, a CPU limit (`cpus`) and a process limit (`pids_limit`). The sensors' combined share can also be capped with an optional systemd slice. See [Deployment](deployment.md#host-safeguards).
 
@@ -400,7 +407,7 @@ suckerpot/
 ├── justfile
 ├── .env.example
 ├── redis/             # Redis image, ACL entrypoint and config
-├── sensors/           # common (Event schema) and the eleven sensors: ssh, telnet, adb, web, docker, redis, mysql, mssql, rdp, smb, sip
+├── sensors/           # common (Event schema) and the twelve sensors: ssh, telnet, adb, web, docker, synology, redis, mysql, mssql, rdp, smb, sip
 ├── ingest/            # consumer, writer, enrichment, tagging, rules/*.yaml
 ├── api/               # FastAPI app: REST, live feed, SPA serving
 ├── db/                # SQLAlchemy models, Alembic migrations, roles, secrets check

@@ -7,7 +7,7 @@ Every sensor sends the same shape of event. The model is `Event` in the `suckerp
 | Field | Type | Constraints | Content |
 | --- | --- | --- | --- |
 | `ts` | datetime | Must include a time zone. Stored in UTC. | When the attacker did it |
-| `sensor` | enum | `ssh`, `telnet`, `adb`, `web`, `docker`, `redis`, `mysql`, `mssql`, `rdp`, `smb`, `sip` | Which sensor saw it |
+| `sensor` | enum | `ssh`, `telnet`, `adb`, `web`, `docker`, `redis`, `mysql`, `mssql`, `rdp`, `smb`, `sip`, `synology` | Which sensor saw it |
 | `session_id` | string | 1 to 64 characters, `A-Z a-z 0-9 _ -` only | Groups all events of one connection |
 | `src_ip` | IP address | IPv4 or IPv6 | Attacker address |
 | `src_port` | integer | 0 to 65535 | Attacker port |
@@ -34,6 +34,16 @@ The `data` object is free-form, but sensors should use these keys. The tagging r
 | `type` | Keys |
 | --- | --- |
 | `login_attempt` | `username`, `password`, `success` (boolean), `method` (`password`, `publickey` or `keyboard-interactive` for SSH and Telnet; `rdp-cookie`, `rdp-ntlm` or `rdp-nla-off` for RDP) |
+
+### Synology DSM keys
+
+The Synology sensor sends HTTP requests, so its `http_request` events carry the usual HTTP keys. On top of them it sets these keys.
+
+| Key | Content |
+| --- | --- |
+| `api`, `api_method`, `api_version` | The DSM Web API call, for example `SYNO.API.Auth`, `login`, version 6. |
+| `flags` | The request shapes the sensor saw, such as `dsm_api`, `sid_forge` or `ransom_indicator`. See the [Synology sensor](sensors/synology.md#flags). |
+| `cve` | `["CVE-2026-13639", "CVE-2026-13684"]`, only with `sid_forge` or `scgi_injection`. |
 
 ### RDP login methods
 
@@ -86,7 +96,7 @@ An SSH login attempt, with documentation addresses only:
 
 ## Stream encoding
 
-Each sensor has its own Redis stream: `events:ssh`, `events:telnet`, `events:adb`, `events:web`, `events:docker`, `events:redis`, `events:mysql`, `events:mssql`, `events:rdp`, `events:smb` and `events:sip`. Each event is one entry in the stream of the sensor that produced it. The `sensor` field of the event must match the stream suffix, or ingest drops the event. The entry has two fields:
+Each sensor has its own Redis stream: `events:ssh`, `events:telnet`, `events:adb`, `events:web`, `events:docker`, `events:redis`, `events:mysql`, `events:mssql`, `events:rdp`, `events:smb`, `events:sip` and `events:synology`. Each event is one entry in the stream of the sensor that produced it. The `sensor` field of the event must match the stream suffix, or ingest drops the event. The entry has two fields:
 
 | Field | Value |
 | --- | --- |
