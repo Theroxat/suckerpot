@@ -86,8 +86,31 @@ function idleClause(s: Session, noun: string): string {
   return `connected to ${noun} and left without logging in`
 }
 
+/** The Synology DSM sensor: a login page, a web API and a few signature exploits. */
+function synologyPredicate(s: Session): string {
+  const nas = "the Synology NAS"
+  const ransom = s.tags.includes("c3rb3r")
+  const forged = s.tags.includes("synology-exploit")
+  const out: string[] = []
+  if (s.login_attempts > 0) {
+    const tried = `tried ${plural(s.login_attempts, "DSM admin password")} on ${nas}`
+    out.push(s.login_success ? `${tried} and got in` : tried)
+  }
+  if (s.http_requests > 0 && !forged && !ransom)
+    out.push(`sent ${plural(s.http_requests, "HTTP request")} to ${nas}`)
+  if (forged) out.push("sent a forged DSM session (CVE-2026-13639)")
+  if (ransom) out.push("dropped a C3RB3R ransom note")
+  else if (s.downloads > 0) out.push(`tried to download ${plural(s.downloads, "file")}`)
+  const [first, ...rest] = out
+  if (first) return rest.length ? `${first}, then ${joinAnd(rest)}` : first
+  if (s.ended_at === null) return `is connected to ${nas}`
+  return `probed ${nas} and left`
+}
+
 /** Build the plain-English story of a session. Pure: no I/O, no clock. */
 export function describeSession(s: Session): SessionStoryParts {
+  if (s.sensor === "synology")
+    return { subject: s.src_ip, origin: sessionOrigin(s), predicate: synologyPredicate(s) }
   const noun = sensorMeta(s.sensor)?.noun ?? s.sensor.toUpperCase()
   const access = accessClause(s, noun)
   const actions = actionClauses(s)

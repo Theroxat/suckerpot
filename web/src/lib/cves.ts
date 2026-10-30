@@ -106,6 +106,7 @@ export const SERVICE_LABELS: Record<string, string> = {
   "android-adb": "Android ADB",
   "windows-smb": "Windows SMB",
   "asterisk-sip": "Asterisk / SIP",
+  "synology-dsm": "Synology DSM",
 }
 
 export function serviceLabel(id: string): string {
@@ -191,6 +192,7 @@ const SENSOR_PORT: Record<string, string> = {
   "android-adb": "adb sensor (5555)",
   "windows-smb": "smb sensor (445)",
   "asterisk-sip": "sip sensor (5060)",
+  "synology-dsm": "synology sensor (5000)",
 }
 
 /** A short, safe tag name for a proposed trap: lowercase letters, digits and dashes. */

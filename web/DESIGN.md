@@ -41,15 +41,16 @@ The primary action is neutral (`--primary` is the text colour, inverted). There 
 
 ### Sensors: one hue per family, one icon per sensor
 
-Eleven sensors cannot each get a hue and stay calm, colour-blind safe and AA. So colour scales by **family** (four hues from the Okabe–Ito set), and each sensor is told apart by its **icon and its name, which are always shown**. Everything comes from one registry, `src/lib/sensors.ts` (name, label, family, icon, default port, story noun): lists, filters, charts, legends and colours are derived from it, never hand-written.
+Twelve sensors cannot each get a hue and stay calm, colour-blind safe and AA. So colour scales by **family** (four hues from the Okabe–Ito set), and each sensor is told apart by its **icon and its name, which are always shown**. Everything comes from one registry, `src/lib/sensors.ts` (name, label, family, icon, default port, story noun): lists, filters, charts, legends and colours are derived from it, never hand-written.
 
 | Family (`--family-*`)    | Hue            | Dark      | Light     | Sensors (icon, port)                                                     |
 | ------------------------ | -------------- | --------- | --------- | ------------------------------------------------------------------------ |
 | Remote shells `shell`    | sky blue       | `#5ea6f7` | `#1c6bc9` | SSH (square terminal, 22), Telnet (router, 23), ADB (smartphone, 5555)   |
-| Web & APIs `web`         | reddish purple | `#d98bcb` | `#a6458f` | Web (globe, 80), Docker (container, 2375)                                |
+| Web & APIs `web`         | reddish purple | `#d98bcb` | `#a6458f` | Web (globe, 80), Docker (container, 2375), Synology (hard drive, 5000)   |
 | Databases `data`         | bluish green   | `#3cc6a4` | `#0a7a62` | Redis (database zap, 6379), MySQL (database, 3306), MSSQL (server, 1433) |
 | Windows & VoIP `windows` | ochre          | `#e0b341` | `#8a6100` | RDP (monitor, 3389), SMB (folder, 445), SIP (phone, 5060/udp)            |
 
+- **No fifth hue.** A new sensor joins the family whose attacks it resembles; it never gets a new hue. Okabe–Ito has no free hue left (vermillion and orange belong to severity), and every candidate tried collapses onto an existing family for deuteranopes and protanopes (a violet such as `#a78bfa` lands on sky blue at ΔE2000 < 1), and the globe arcs carry no icon or name to tell them apart. The Synology NAS is attacked through its DSM web portal, so it is a Web & APIs sensor.
 - Badges, dots, tiles, map arcs and the default charts use the **family** hue. Each family hue is AA (≥ 4.5:1) as text on `--bg`, `--surface` and its own tint (`tint-family-*`: 14 % in dark, 10 % in light).
 - `--sensor-*` are **per-sensor shades** of the family hue (base, lighter, deeper), used only as fills in the "Sensors" chart split. Never text; ≥ 3:1 on `--surface` and `--bg`, and distinct inside a family (tested in `contrast.test.ts`).
 - Stacks always run in registry order, so one family is one contiguous block of its hue.
@@ -64,7 +65,7 @@ Eleven sensors cannot each get a hue and stay calm, colour-blind safe and AA. So
 | warning | Got a shell or ran commands                    | triangle      | `#f0883e` | `#b54708` |
 | severe  | Download attempt, malware tag, exploit payload | octagon       | `#f2555a` | `#c8242b` |
 
-**Red is reserved for severe.** Tags that mean a payload or exploit (`php2shell`, `crypto-miner`, `mirai`, `malware-drop`, `container-escape`, `sql-rce`, `eternalblue`) get a small red diamond. Tags that mean harm short of a payload (`db-ransom`, `redis-rogue-master`, `sip-fraud`, `persistence`) get a small orange triangle and make the session a warning. All other tags are neutral. Each marker has an sr-only word ("severe", "warning"). Deltas on KPIs are never green or red: for a honeypot, "more" is neither good nor bad, so they use an arrow and words.
+**Red is reserved for severe.** Tags that mean a payload or exploit (`php2shell`, `crypto-miner`, `mirai`, `malware-drop`, `container-escape`, `sql-rce`, `eternalblue`, `synology-exploit`, `c3rb3r`) get a small red diamond. Tags that mean harm short of a payload (`db-ransom`, `redis-rogue-master`, `sip-fraud`, `persistence`) get a small orange triangle and make the session a warning. All other tags are neutral. Each marker has an sr-only word ("severe", "warning"). Deltas on KPIs are never green or red: for a honeypot, "more" is neither good nor bad, so they use an arrow and words.
 
 No decorative gradients. The only fills under lines are flat, 8 % opacity.
 

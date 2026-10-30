@@ -93,6 +93,7 @@ function stats(rand: () => number): LiveStats {
     rdp: [6, 3],
     smb: [21, 12],
     sip: [3, 2],
+    synology: [5, 3],
   }
   const by_sensor: LiveStats["by_sensor"] = {}
   let events = 0

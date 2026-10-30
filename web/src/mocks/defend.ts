@@ -488,6 +488,7 @@ const STATS: Record<string, { sessions: number; previous: number; deep: number; 
     redis: { sessions: 64, previous: 70, deep: 9, sources: 23 },
     mysql: { sessions: 92, previous: 61, deep: 4, sources: 31 },
     smb: { sessions: 140, previous: 133, deep: 0, sources: 52 },
+    synology: { sessions: 58, previous: 21, deep: 6, sources: 19 },
   }
 
 const CHECKS: Record<string, string[]> = {
@@ -507,6 +508,10 @@ const CHECKS: Record<string, string[]> = {
   redis: ["Check that Redis requires a password and listens on a private address only."],
   mysql: ["Check that the database port is not reachable from the internet."],
   smb: ["Make sure file sharing is blocked at the firewall and SMBv1 is off."],
+  synology: [
+    "Update DSM to the release fixed in Synology-SA-26:13 and turn on automatic updates.",
+    "Keep the DSM ports (5000 and 5001) off the internet and use the VPN instead.",
+  ],
 }
 
 const TAGS: Record<string, { tag: string; sessions: number }[]> = {

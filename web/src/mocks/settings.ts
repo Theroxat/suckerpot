@@ -26,6 +26,7 @@ export function systemSettings(): SystemSettings {
       { sensor: "rdp", last_event_at: minutesAgo(134), events_last_hour: 0, status: "quiet" },
       { sensor: "smb", last_event_at: minutesAgo(1), events_last_hour: 1_204, status: "active" },
       { sensor: "sip", last_event_at: daysAgo(2), events_last_hour: 0, status: "silent" },
+      { sensor: "synology", last_event_at: minutesAgo(7), events_last_hour: 63, status: "active" },
     ],
     retention: {
       raw_days: 90,

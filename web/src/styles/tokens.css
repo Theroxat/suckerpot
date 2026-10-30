@@ -52,6 +52,7 @@
   --sensor-adb: #3c6a9e;
   --sensor-web: #d98bcb;
   --sensor-docker: #ebc3e4;
+  --sensor-synology: #9a5a8f;
   --sensor-redis: #3cc6a4;
   --sensor-mysql: #9ae1d0;
   --sensor-mssql: #267f69;
@@ -112,6 +113,7 @@
   --sensor-adb: #103e75;
   --sensor-web: #a6458f;
   --sensor-docker: #bd75ac;
+  --sensor-synology: #6b2a5d;
   --sensor-redis: #0a7a62;
   --sensor-mysql: #4a9d8b;
   --sensor-mssql: #064739;

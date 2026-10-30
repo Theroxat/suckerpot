@@ -197,6 +197,37 @@ const SEEDS: Seed[] = [
     ageH: 600,
     description: "A fictional stored cross-site scripting issue in a web database console.",
   },
+  {
+    id: "CVE-2026-13639",
+    title: "Synology DSM: session forgery lets an unauthenticated attacker act as an admin",
+    vendor: "Synology",
+    product: "DiskStation Manager",
+    score: 9.8,
+    severity: "CRITICAL",
+    kev: true,
+    relevance: "high",
+    services: ["synology-dsm"],
+    tags: ["synology-exploit"],
+    seen: 11,
+    ageH: 38,
+    description:
+      "A forged session identifier is accepted by the DSM web API without authentication. Fixed on 2026-09-18 in Synology-SA-26:13.",
+  },
+  {
+    id: "CVE-2026-13684",
+    title: "Synology DSM: request injection in the web API gateway leads to file write",
+    vendor: "Synology",
+    product: "DiskStation Manager",
+    score: 9.8,
+    severity: "CRITICAL",
+    relevance: "high",
+    services: ["synology-dsm"],
+    tags: ["synology-exploit", "c3rb3r"],
+    seen: 4,
+    ageH: 38,
+    description:
+      "An injected request reaches the internal gateway and lets an unauthenticated attacker write files on the NAS. Fixed on 2026-09-18 in Synology-SA-26:13.",
+  },
 ]
 
 const FILLER_VENDORS = ["Acme Labs", "Contoso Soft", "Initech", "Globex", "Umbrella Ltd", "Hooli"]

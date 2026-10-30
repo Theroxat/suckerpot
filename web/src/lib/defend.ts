@@ -477,6 +477,7 @@ export const PRODUCT_EXAMPLE: Record<string, { product: string; version: string 
   rdp: { product: "Windows Server", version: "2022" },
   smb: { product: "Samba", version: "4.19" },
   sip: { product: "Asterisk", version: "20" },
+  synology: { product: "Synology DSM", version: "7.2" },
 }
 
 export function serviceLabel(service: string): string {

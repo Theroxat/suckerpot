@@ -147,6 +147,7 @@
   --color-sensor-adb: var(--sensor-adb);
   --color-sensor-web: var(--sensor-web);
   --color-sensor-docker: var(--sensor-docker);
+  --color-sensor-synology: var(--sensor-synology);
   --color-sensor-redis: var(--sensor-redis);
   --color-sensor-mysql: var(--sensor-mysql);
   --color-sensor-mssql: var(--sensor-mssql);

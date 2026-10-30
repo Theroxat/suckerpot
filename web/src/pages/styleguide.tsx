@@ -225,6 +225,7 @@ const SAMPLE_LIVE: Record<string, { events: number; sessions: number }> = {
   rdp: { events: 4, sessions: 2 },
   smb: { events: 22, sessions: 13 },
   sip: { events: 2, sessions: 1 },
+  synology: { events: 8, sessions: 2 },
 }
 
 const HOUR = 3_600_000
@@ -244,6 +245,7 @@ const SAMPLE_POINTS: TimePoint[] = Array.from({ length: 12 }, (_, i) => {
       rdp: w * 3,
       smb: w * 14,
       sip: w,
+      synology: w * 2,
     },
     sessions: { ssh: w * 3, telnet: w, web: w, redis: w, smb: w * 2, rdp: 1 },
   }
@@ -483,7 +485,7 @@ export function StyleguidePage() {
       <Section
         id="sensors"
         title="Sensors"
-        description="Eleven sensors, four families, one hue per family (Okabe-Ito, colour-blind safe). Inside a family, sensors are told apart by their icon and their name, which are always shown: meaning never rests on colour alone."
+        description="Twelve sensors, four families, one hue per family (Okabe-Ito, colour-blind safe). Inside a family, sensors are told apart by their icon and their name, which are always shown: meaning never rests on colour alone."
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {SENSOR_FAMILIES.map((f) => {
@@ -561,6 +563,7 @@ export function StyleguidePage() {
                 { id: "rdp", value: 41 },
                 { id: "smb", value: 302 },
                 { id: "sip", value: 0 },
+                { id: "synology", value: 74 },
               ]}
             />
           </FindingCard>
@@ -745,6 +748,8 @@ export function StyleguidePage() {
             <TagBadge tag="db-ransom" />
             <TagBadge tag="sip-fraud" />
             <TagBadge tag="eternalblue" />
+            <TagBadge tag="synology-exploit" />
+            <TagBadge tag="c3rb3r" />
             <TagBadge tag="scanner" />
             <TagBadge tag="php2shell" />
             <TagBadge tag="crypto-miner" />

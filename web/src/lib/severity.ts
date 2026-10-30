@@ -12,6 +12,9 @@ export const SEVERE_TAGS = new Set([
   "container-escape",
   "sql-rce",
   "eternalblue",
+  // Synology DSM: a forged session or injected request, and the C3RB3R ransomware dropped by it.
+  "synology-exploit",
+  "c3rb3r",
 ])
 
 /**

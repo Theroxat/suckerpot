@@ -113,6 +113,23 @@ describe("describeSession", () => {
     )
   })
 
+  it("tells the Synology NAS stories", () => {
+    const syn = (o: Partial<Session>) =>
+      describeSession(session({ sensor: "synology", ...o })).predicate
+    expect(syn({ login_attempts: 24 })).toBe("tried 24 DSM admin passwords on the Synology NAS")
+    expect(syn({ login_attempts: 3, login_success: true })).toBe(
+      "tried 3 DSM admin passwords on the Synology NAS and got in",
+    )
+    expect(syn({ http_requests: 3, tags: ["synology-exploit"] })).toBe(
+      "sent a forged DSM session (CVE-2026-13639)",
+    )
+    expect(syn({ http_requests: 3, tags: ["synology-exploit", "c3rb3r"] })).toBe(
+      "sent a forged DSM session (CVE-2026-13639), then dropped a C3RB3R ransom note",
+    )
+    expect(syn({ http_requests: 2 })).toBe("sent 2 HTTP requests to the Synology NAS")
+    expect(syn({})).toBe("probed the Synology NAS and left")
+  })
+
   it("tells the new sensors' stories", () => {
     expect(
       describeSession(session({ sensor: "mysql", login_attempts: 40, login_success: false }))
