@@ -743,8 +743,7 @@ class DockerApi:
         if not self._image_known(st, spec.image):
             return err(404, f"No such image: {self._norm_ref(spec.image)}")
         if not name:
-            r = secrets.randbelow(len(_ADJ) * len(_NOUN))
-            name = f"{_ADJ[r % len(_ADJ)]}_{_NOUN[r // len(_ADJ)]}"
+            name = self._random_name(st)
         clash = self._find_exact(st, name)
         if clash is not None:
             return err(
@@ -781,6 +780,17 @@ class DockerApi:
                     "source": "container_create",
                 }
             )
+
+    def _random_name(self, st: IPState) -> str:
+        # Like dockerd: a generated name never clashes, so retry, then add a digit suffix.
+        for attempt in range(16):
+            r = secrets.randbelow(len(_ADJ) * len(_NOUN))
+            name = f"{_ADJ[r % len(_ADJ)]}_{_NOUN[r // len(_ADJ)]}"
+            if attempt >= 8:
+                name += str(secrets.randbelow(10))
+            if self._find_exact(st, name) is None:
+                return name
+        return f"{name}{secrets.randbelow(10**6)}"
 
     def _find_exact(self, st: IPState, name: str) -> str | None:
         for rec in st.containers.values():
