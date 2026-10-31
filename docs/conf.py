@@ -36,7 +36,7 @@ myst_enable_extensions = [
     "deflist",      # definition lists
     "tasklist",     # - [ ] and - [x] items
 ]
-myst_heading_anchors = 3
+myst_heading_anchors = 4
 
 # Theme: furo follows the reader's light or dark setting.
 html_theme = "furo"
