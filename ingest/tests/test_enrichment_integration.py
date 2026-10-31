@@ -1,6 +1,7 @@
 """Enrichment against a real TimescaleDB: writer, tagging, reputation worker, grants."""
 
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,15 @@ from ingest.tagging import load_rules
 from ingest.writer import write_batch
 
 from .db_fixtures import _role_url
-from .helpers import make_event
+from .helpers import make_event as _make_event
+
+# The reputation worker only looks at sessions from the last 7 days: keep events recent.
+RECENT = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=1)
+
+
+def make_event(*args: Any, **kwargs: Any) -> Any:
+    return _make_event(*args, base=RECENT, **kwargs)
+
 
 pytestmark = [
     pytest.mark.integration,
