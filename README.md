@@ -121,7 +121,7 @@ Everything is set through environment variables in `.env`. The most important on
 | `SSH_HOST_PORT` | `22` | Host port mapped to the SSH sensor (container port 2222). |
 | `SSH_ACCEPT_CREDENTIALS` | a few weak pairs | Logins the SSH sensor lets through. |
 | `SSH_MAX_PER_IP` | `5` | Concurrent SSH connections per source IP. |
-| `FETCH_PAYLOADS` | `false` | Let ingest fetch payloads into quarantine (off by default). |
+| `COLLECTOR_ENABLED` | `false` | Fetch captured download URLs through the VPN into quarantine and analyse them (off by default). Needs `COMPOSE_PROFILES=egress`. |
 | `RETENTION_DAYS` | `90` | How long raw events are kept. |
 | `DEMO_SESSIONS` | `3000` | Sessions created by the demo generator. |
 
@@ -169,6 +169,7 @@ SuckerPot runs hostile traffic through containers, so isolation is a feature, no
 | M18 | Alerts (Discord, Teams, e-mail) and weekly report | Done |
 | M19 | Today, global search, glossary, research scanners | Done |
 | M20 | Synology NAS sensor (DSM 7.2.1), CVE watch fixes | Done |
+| M21 | Anonymous egress (WireGuard VPN), payload collection and static analysis | Built, not deployed yet |
 
 Details in [docs/ROADMAP.md](docs/ROADMAP.md).
 

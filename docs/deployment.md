@@ -28,7 +28,7 @@ Do these in order. Tick each item only after you have checked it.
 3. [ ] Log out of any AI coding assistant, IDE sync and cloud CLI on the host. Revoke or rotate any git or API token that was used on the host. Check that no key sits in a file that other users can read.
 4. [ ] Move the host's admin SSH to a port that no sensor or dashboard uses. Allow it only from your management network.
 5. [ ] Run the [port guard](#port-guard) (`just ports`).
-6. [ ] Install and verify the [host firewall](#host-firewall).
+6. [ ] Install and verify the [host firewall](#host-firewall). If you use the VPN, set up [anonymous egress](#anonymous-egress-vpn) and run `just egress-check`.
 7. [ ] Set [`DASHBOARD_BIND`](#dashboard-bind-and-upstream-filtering) and filter the dashboard port upstream.
 8. [ ] Set [`API_ALLOWED_ORIGINS`](#behind-a-tls-terminating-tunnel) if the tunnel terminates TLS.
 9. [ ] If you will turn on `FEEDS_ENABLED`, set `AUTH_TRUSTED_PROXIES` to the tunnel's address first. Without it every feed client looks like the tunnel, so the rate limits and the failure lockout are shared by everyone (see [Defend](defend.md)).
@@ -169,6 +169,8 @@ Docker's network settings remove the containers' route to the internet, but they
 | `input`, from `sp-ingress` and `sp-dashboard` | Containers on the sensor network and the dashboard network cannot open **new** connections to the host. |
 | `input`, from `docker0`, `br-*` and `sp-*`, to `protected_ports` | No container on any Docker network can reach the host's admin SSH port or the dashboard port. |
 | `forward`, from `sp-ingress` and `sp-dashboard` | These containers cannot start new connections through the host: no LAN scanning, no outbound traffic, no traffic between sensors. Replies to inbound connections still go out. |
+| `input`, from `sp-egress`, `sp-samples` and `sp-vpn` | The proxy network, the sample network and the `vpn` container cannot open new connections to the host. Without this, a request through the proxy to the bridge gateway and a published port would reach the host. |
+| `forward`, from `sp-vpn` | The only new connection allowed is UDP to the WireGuard endpoint (`VPN_ENDPOINT_IP`, `VPN_ENDPOINT_PORT`). Everything else is dropped, so the kill switch holds even if the container's own firewall fails. |
 
 Nothing here affects traffic from the internet to the published sensor ports. Loopback and established connections are always accepted. Docker's own rules are left alone: the table only adds drops, at a priority ahead of Docker's chains.
 
@@ -177,6 +179,7 @@ Nothing here affects traffic from the internet to the published sensor ports. Lo
 1. Copy the template to its permanent place, and edit the **installed copy**, never the tracked file. Your admin port must not end up in git.
 2. Set `ADMIN_SSH_PORT` to the port of your host's admin SSH daemon. The file ships with `CHANGE_ME` on purpose and will not load until you change it.
 3. Check that `DASHBOARD_PORT` matches your `.env`.
+   If you use the [`egress` profile](#anonymous-egress-vpn), also set `VPN_ENDPOINT_IP` and `VPN_ENDPOINT_PORT` to the values of `VPN_WG_ENDPOINT_IP` and `VPN_WG_ENDPOINT_PORT`. The file will not load until you do. Without the profile, any valid values such as `203.0.113.10` and `51820` will do, and the rules match nothing.
 4. Keep a second way into the machine (a hypervisor console) the first time.
 
 ### Install it with the dedicated systemd unit
@@ -229,6 +232,63 @@ sudo systemctl daemon-reload
 ```
 
 Without the table, a compromised sensor can reach the host's admin SSH port. Do not forward ports while it is off.
+
+## Anonymous egress (VPN)
+
+The stack's own outbound traffic (GeoIP downloads, reputation and intel lookups, CVE feeds, alerts, the LLM and the payload collector) leaves through a WireGuard tunnel in the `vpn` service, never from your own address. Sensors and the dashboard keep their current paths, and the host itself is unchanged. Without the `egress` profile these features stay idle. Settings shows "no egress".
+
+You need a WireGuard configuration from any provider that gives you one: an interface private key, interface addresses, the server's public key, and the server address and UDP port.
+
+### 1. Set the variables
+
+Copy the values into `.env` (never into a tracked file). Split the server address in two:
+
+```bash
+COMPOSE_PROFILES=egress
+VPN_WG_PRIVATE_KEY=<interface private key>
+VPN_WG_PEER_PUBLIC_KEY=<server public key>
+VPN_WG_ADDRESSES=<interface address, a /32 from the provider>
+VPN_WG_DNS=<provider DNS address>
+VPN_WG_ENDPOINT_IP=<server IPv4 address, e.g. 203.0.113.10>
+VPN_WG_ENDPOINT_PORT=<server UDP port, e.g. 51820>
+EGRESS_PROXY_PASSWORD=<at least 24 random characters>
+POSTGRES_COLLECTOR_PASSWORD=<at least 24 random characters>
+POSTGRES_ANALYZER_PASSWORD=<at least 24 random characters>
+```
+
+Generate the three passwords like the others (`openssl rand -hex 24`), all different. `just up` and `just config` run `scripts/check-vpn-env.sh`, which names any missing or invalid variable and never prints a value.
+
+The exit address of the tunnel must be inside the expected network. By default that is the /24 of the server address. If your provider exits elsewhere, the gate stays closed with `ip_not_allowed`. Read the observed exit address in Settings (one click reveals it) and set `EGRESS_ALLOWED_CIDRS`.
+
+### 2. Apply the host firewall rules
+
+The kill switch has two layers. The second one is on the host. Set `VPN_ENDPOINT_IP` and `VPN_ENDPOINT_PORT` in your installed copy of the table (see [Host firewall](#host-firewall)), then load it:
+
+```bash
+sudo nft -c -f /etc/suckerpot-firewall.nft      # syntax check, changes nothing
+sudo systemctl restart suckerpot-firewall.service
+sudo nft list table inet suckerpot_host         # look for the sp-vpn, sp-egress and sp-samples rules
+```
+
+### 3. Start it and check it
+
+```bash
+just up                  # waits for healthy; vpn, collector and analyzer start with the profile
+just guardrails          # static test of the compose layout (no stack needed)
+just egress-check        # live proof, see below
+```
+
+`just egress-check` prints PASS or FAIL per line and exits non-zero on any FAIL. It checks that `ingest`, `collector` and `analyzer` cannot reach a public address directly or resolve external names, that the gate is open, that the proxy refuses the bridge gateway and loopback names, and then takes the tunnel down to prove that nothing leaves. It briefly stops `vpn`, so run it when a pause of outbound lookups does not matter. For read-only checks that leave the tunnel alone, run `scripts/egress-check.sh --quick`. It never prints the exit address.
+
+After it, `sudo nft list table inet suckerpot_host` should show the `sp-vpn` accept rule counting the handshake packets and the drop counters at 0.
+
+### 4. Turn the collector on
+
+Set `COLLECTOR_ENABLED=true` and restart. The collector then fetches captured download URLs through the tunnel into the `quarantine` volume, and the analyzer examines them. Files are never executed. Settings has an Egress card with the gate state, the collector quota and the quarantine use. See [Security](SECURITY.md#anonymous-egress-m21) for the guarantees.
+
+### If the tunnel is down
+
+Nothing leaves. Lookups wait with a reason in Settings, events are still stored, and ingest stays healthy. The tunnel restarts itself. Check `docker compose logs vpn`.
 
 ## Host safeguards
 

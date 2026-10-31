@@ -92,6 +92,13 @@ The Overview page opens with up to three insights, each one a plain sentence wit
 - **Defanged URLs.** On the Malware page a URL is shown as `hxxp://example[.]com/x.sh`, as plain text and never as a link, so it cannot be opened by mistake. The copy button copies the defanged form. Do the same wherever you paste these URLs.
 - **Nothing is fetched.** The page lists URLs that attackers tried to download. SuckerPot does not download them.
 
+## Samples and egress (M21)
+
+- **Samples tab.** The Malware page has a Samples tab for files the collector fetched. It opens with a sentence ("12 new binaries this week, 9 of them Mirai builds for ARM and MIPS"), then one row per sample: family (or "Unknown"), kind and architecture, size, number of sources, last seen. Filters live in the URL. Each URL row on the Malware page also shows a fetch status chip with a word and an icon (Fetched, Pending, Failed, Refused, or "TFTP: recorded, not fetched"). A fetched URL links to its sample by short hash.
+- **Sample page** (`/malware/samples/<sha256>`). A header with family, kind and architecture, severity and the hashes with copy buttons, plus a VirusTotal link. Then: **Where it came from** (URLs, sessions, address chips, sensors), **The chain** (session, script, binary, C2) as a vertical step list, **What it matched** (YARA hits as tags), the **deobfuscated script** as plain text with a summary of the steps, and the **strings** in a virtualised list. Red is used only for a sample with a malware-family YARA hit or an executable dropped by a session.
+- **Download as archive.** Administrators only. A dialog explains that the zip uses the password `infected`, and asks for the dashboard password again. Viewers do not see the button. The file is never shown or served raw.
+- **Settings, Egress card.** One sentence first: "Outbound traffic leaves through the VPN" or "Outbound traffic is paused: the VPN tunnel is down". Then the time of the last check, the reason when the gate is closed, a meter for the collector quota and a meter for the quarantine against its cap. The VPN exit address is hidden until you click to reveal it.
+
 ## Sessions as stories
 
 A session row reads like a sentence, for example: "203.0.113.9 tried 37 SSH passwords, then ran 5 commands and tried to download 1 file". The text is written by one pure function in the app and covered by unit tests. The same words are used on the Attacks list, the Live feed and the Session page.
