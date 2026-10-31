@@ -246,7 +246,7 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - [x] CVE watch: a one-time start-up rewind refills a shallow history. Watched CVEs that are missing from the table are fetched by id from the NVD (at most 10 per run, once per id per 24 h).
 - [x] `just test-integration` uses `docker-compose.it.yml`, so the throwaway project fits in Docker's default address pools next to the live stack.
 - [x] Security review of the Synology sensor and of the Compose, port guard and migration changes: passed after fixes (TLS handshake-slot and handshake-rate exhaustion closed with per-IP caps and a full-ClientHello check, nginx error pages and asset sizes made realistic).
-- [ ] Full stack check: `docker compose up -d --build` with every service healthy, and the Synology ports reached from outside a test network.
+- [x] Full stack check: `docker compose up -d --build` with every service healthy, and the Synology ports reached from outside a test network.
 
 **Acceptance:** a DSM client gets the DSM answers, every login attempt is recorded and refused, the forged-session and SCGI request shapes are tagged, the CVE watch fills 60 days without a silent gap, and the security review passes.
 

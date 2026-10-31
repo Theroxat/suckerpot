@@ -28,6 +28,11 @@ DEFAULT_STREAMS = ",".join(
 _STREAM_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 
 
+def missing_default_streams(streams: tuple[str, ...]) -> list[str]:
+    """Built-in sensor streams an INGEST_STREAMS override leaves out (never read)."""
+    return [n for n in DEFAULT_STREAMS.split(",") if n not in streams]
+
+
 def parse_streams(value: str) -> tuple[str, ...]:
     """Comma-separated stream names (deduplicated, order kept)."""
     names = list(dict.fromkeys(n.strip() for n in value.split(",") if n.strip()))
