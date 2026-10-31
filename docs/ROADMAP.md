@@ -250,6 +250,26 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 **Acceptance:** a DSM client gets the DSM answers, every login attempt is recorded and refused, the forged-session and SCGI request shapes are tagged, the CVE watch fills 60 days without a silent gap, and the security review passes.
 
+## M21 — Anonymous egress, payload collection and static analysis
+
+- [ ] `vpn` service: a WireGuard client (settings from `VPN_WG_*` in `.env`) with a kill switch: nothing leaves when the tunnel is down, and DNS goes through the tunnel. The only container with `NET_ADMIN` and `/dev/net/tun`; everything else in it stays hardened.
+- [ ] Every outbound connection of the stack (ingest enrichment, intel and CVE lookups, the collector) goes through `vpn`. Sensors and the dashboard keep their current paths, and the host itself is unchanged. A test proves that no service other than `vpn` has a direct route to the internet.
+- [ ] `collector` service: fetches captured download URLs (HTTP, HTTPS, TFTP) through `vpn` only, soon after capture, with size, time, redirect and per-host caps, a generic client identity, and a bounded follow of the next-stage URLs found in fetched scripts. Files go to a quarantine volume under their sha256, mode 0400, never executed, never served raw by the API.
+- [ ] Static analysis without execution: file type and architecture, sha256 and TLSH, printable strings, YARA rules (Mirai, Gafgyt, miners, Redis modules) kept in the repo, shell deobfuscation (base64, `echo -e` hex, variables), and C2 addresses fed back into the indicators.
+- [ ] Sample pages in the UI: where a sample came from, which sources dropped it, the chain script → binary → C2, YARA hits and the deobfuscated text. Download of a sample only as a password-protected archive, by an admin.
+- [ ] Security review (egress, quarantine, parser safety on hostile files) and UI review.
+
+**Acceptance:** with the tunnel down nothing is fetched and no lookup leaves; captured URLs are fetched through the tunnel only; a hostile file cannot crash or escape the analyser; security review PASS.
+
+## M22 — Anonymous reporting
+
+- [ ] Abuse reports per hosting provider (contact found through RDAP): standard X-ARF and plain-text bodies with UTC times, source addresses, commands, URLs and hashes. They never contain the honeypot's own address, host names or the project name.
+- [ ] Indicator export for national CERTs (STIX 2.1 and MISP JSON) and sample bundles ready for public malware repositories.
+- [ ] A Reports page where the owner reviews each report, copies it and marks it sent. The stack never sends mail and stores no mail credentials.
+- [ ] Security review (nothing identifying in any export) and UI review.
+
+**Acceptance:** a report can be produced, reviewed and marked sent for a real campaign, and an automated check proves no export contains the honeypot's address or the project name.
+
 ## Later (not part of the loop)
 
 - Per-/24 or per-ASN daily cap on new campaigns, so one network cannot create many campaigns in a day.
