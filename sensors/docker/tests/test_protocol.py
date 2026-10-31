@@ -369,3 +369,9 @@ async def test_held_event_streams_are_capped() -> None:
         # Only two of the five were held for the full 3 s; the rest ended at once.
         quick = sum(1 for r in res if r.endswith(b"0\r\n\r\n"))
         assert quick >= 3
+
+
+async def test_unnamed_creates_never_clash_on_the_generated_name(harness: Harness) -> None:
+    spec = {"Image": "alpine", "Cmd": ["true"]}
+    for _ in range(40):
+        assert (await harness.http("POST", "/containers/create", spec))[0] == 201
