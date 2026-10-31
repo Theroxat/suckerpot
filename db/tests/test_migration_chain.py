@@ -14,7 +14,12 @@ from suckerpot_db.retention import (
     campaigns_max_rows,
     scripts_max_rows,
 )
-from suckerpot_db.roles import _GRANTS_API, _GRANTS_INGEST
+from suckerpot_db.roles import (
+    _GRANTS_ANALYZER,
+    _GRANTS_API,
+    _GRANTS_COLLECTOR,
+    _GRANTS_INGEST,
+)
 from suckerpot_db.secretbox import PROVIDERS
 
 VERSIONS = Path(__file__).resolve().parents[1] / "migrations" / "versions"
@@ -41,6 +46,20 @@ NEW_TABLES = {
     "alert_test_requests",
     "indicator_contacts",
     "indicator_contact_checks",
+    "fetch_targets",
+    "fetch_attempts",
+    "samples",
+    "sample_analysis",
+    "sample_sources",
+    "sample_links",
+}
+M21_TABLES = {
+    "fetch_targets",
+    "fetch_attempts",
+    "samples",
+    "sample_analysis",
+    "sample_sources",
+    "sample_links",
 }
 
 
@@ -55,12 +74,12 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0017() -> None:
+def test_the_chain_is_linear_up_to_0018() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0017"}
-    for n in range(11, 18):
+    assert heads == {"0018"}
+    for n in range(11, 19):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
 
 
@@ -112,3 +131,67 @@ def test_max_rows_settings() -> None:
     for bad in ("12", "x", "99999999999"):
         with pytest.raises(RetentionError, match="CAMPAIGNS_MAX_ROWS"):
             campaigns_max_rows({"CAMPAIGNS_MAX_ROWS": bad})
+
+
+def _grants(script: str) -> dict[str, set[str]]:
+    """Map each table to the privileges a role script grants on it."""
+    joined = re.sub(r"'\s+'", "", script)  # adjacent SQL string literals form one statement
+    out: dict[str, set[str]] = {}
+    for privs, tables in re.findall(r"'GRANT ([A-Z, ]+) ON ([a-z_, ]+) TO %I'", joined):
+        for table in (t.strip() for t in tables.split(",")):
+            out.setdefault(table, set()).update(p.strip() for p in privs.split(","))
+    return out
+
+
+def test_the_api_only_reads_the_collector_tables() -> None:
+    granted = _grants(_GRANTS_API)
+    for table in M21_TABLES:
+        assert granted[table] == {"SELECT"}, table
+
+
+def test_ingest_has_no_access_to_the_collector_tables() -> None:
+    flat = _GRANTS_INGEST.replace("\n", " ")
+    granted = " ".join(g for g in re.findall(r"GRANT [A-Z, ]+ ON ([^']*?) TO", flat))
+    assert not any(t in granted for t in M21_TABLES)
+
+
+def test_collector_grants() -> None:
+    g = _grants(_GRANTS_COLLECTOR)
+    assert g["indicators"] == {"SELECT"}
+    for table in ("fetch_targets", "fetch_attempts", "samples", "sample_sources"):
+        assert g[table] >= {"SELECT", "INSERT", "UPDATE"}, table
+    assert g["fetch_attempts"] >= {"DELETE"}
+    assert "DELETE" not in g["samples"] | g["fetch_targets"] | g["sample_sources"]
+    assert g["enrichment_status"] >= {"SELECT", "INSERT", "UPDATE"}
+    for table in ("sample_analysis", "sample_links", "users", "events", "sessions"):
+        assert table not in g, table
+
+
+def test_analyzer_grants() -> None:
+    g = _grants(_GRANTS_ANALYZER)
+    assert g["samples"] == {"SELECT", "UPDATE"}
+    assert g["sample_analysis"] >= {"SELECT", "INSERT", "UPDATE"}
+    assert g["sample_links"] >= {"SELECT", "INSERT", "UPDATE"}
+    assert g["fetch_targets"] == {"SELECT", "INSERT"}
+    assert g["indicators"] == {"SELECT", "INSERT"}  # UPDATE is column-level
+    assert "UPDATE (last_seen, sightings, trusted) ON indicators" in _GRANTS_ANALYZER
+    for table in (
+        "enrichment_status",
+        "enrichment_quota",
+        "fetch_attempts",
+        "events",
+        "sessions",
+        "users",
+        "provider_secrets",
+    ):
+        assert table not in g, table
+    assert not any("DELETE" in p for p in g.values())
+
+
+def test_collector_is_confined_to_its_own_shared_rows() -> None:
+    assert "name IN ('collector', 'egress_collector')" in _GRANTS_COLLECTOR.replace("''", "'")
+    assert "provider = 'collector'" in _GRANTS_COLLECTOR.replace("''", "'")
+    assert "CREATE POLICY sp_collector_status" in _GRANTS_COLLECTOR
+    assert "CREATE POLICY sp_collector_quota" in _GRANTS_COLLECTOR
+    for script in (_GRANTS_INGEST, _GRANTS_API):
+        assert "USING (true) WITH CHECK (true)" in script

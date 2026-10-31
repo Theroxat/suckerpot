@@ -4,7 +4,9 @@
 for the encrypted provider keys it manages (``provider_secrets``) and the dashboard accounts and
 audit log (``users``, ``audit_log``); ingest has no access to those two. From M15 on, the
 campaign, defend, script and alert tables follow the matrix in the migrations' docstrings.
-Names and passwords come from POSTGRES_INGEST_USER/PASSWORD and POSTGRES_API_USER/PASSWORD.
+Names and passwords come from POSTGRES_{INGEST,API,COLLECTOR,ANALYZER}_USER/PASSWORD.
+M21 adds ``suckerpot_collector`` (downloads into quarantine) and ``suckerpot_analyzer`` (static
+analysis, no network); both exist only when their password is set.
 
 Passwords never reach the server as plain text: a SCRAM-SHA-256 verifier is computed here and
 sent instead (PostgreSQL accepts pre-hashed passwords), so server logs and error CONTEXT
@@ -26,6 +28,8 @@ from sqlalchemy.exc import DBAPIError
 
 INGEST_DEFAULT = "suckerpot_ingest"
 API_DEFAULT = "suckerpot_api"
+COLLECTOR_DEFAULT = "suckerpot_collector"
+ANALYZER_DEFAULT = "suckerpot_analyzer"
 SCRAM_ITERATIONS = 4096
 
 
@@ -47,6 +51,28 @@ def scram_verifier(password: str, salt: bytes | None = None) -> str:
         f"SCRAM-SHA-256${SCRAM_ITERATIONS}:{b64(salt).decode()}$"
         f"{b64(stored_key).decode()}:{b64(server_key).decode()}"
     )
+
+
+COLLECTOR_STATUS = "name IN (''collector'', ''egress_collector'')"
+COLLECTOR_QUOTA = "provider = ''collector''"
+
+
+def _rls(tag: str, status: str, quota: str) -> str:
+    """Policies of one role on the two tables shared with other services (RLS is enabled by
+    migration 0018; the table owner, used by migrate, is exempt). ``status`` and ``quota`` are
+    SQL conditions already escaped for use inside a quoted format() argument."""
+    lines = ["IF to_regclass('public.samples') IS NOT NULL THEN"]  # RLS exists from 0018 on
+    for table, kind, cond in (
+        ("enrichment_status", "status", status),
+        ("enrichment_quota", "quota", quota),
+    ):
+        lines += [
+            f"EXECUTE format('DROP POLICY IF EXISTS sp_{tag}_{kind} ON {table}');",
+            f"EXECUTE format('CREATE POLICY sp_{tag}_{kind} ON {table} FOR ALL TO %I '",
+            f"    'USING ({cond}) WITH CHECK ({cond})', r);",
+        ]
+    lines.append("END IF;")
+    return "\n    ".join(lines)
 
 
 _UPSERT_ROLE = """
@@ -91,7 +117,9 @@ DECLARE
                   'inventory_services', 'scripts', 'script_sessions', 'script_explanations',
                   'llm_requests', 'alert_channels', 'alert_rules', 'watched_cves',
                   'alert_outbox', 'alert_cursors', 'weekly_reports', 'alert_test_requests',
-                  'indicator_contacts', 'indicator_contact_checks']
+                  'indicator_contacts', 'indicator_contact_checks', 'fetch_targets',
+                  'fetch_attempts', 'samples', 'sample_analysis', 'sample_sources',
+                  'sample_links']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -165,11 +193,12 @@ BEGIN
             r);
         EXECUTE format('GRANT SELECT, UPDATE ON alert_test_requests TO %I', r);
     END IF;
+    -- @RLS
     EXECUTE format(
         'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.events', 'id'), r);
 END
 $$
-"""
+""".replace("-- @RLS", _rls("ingest", "true", "true"))
 
 _GRANTS_API = """
 DO $$
@@ -187,7 +216,9 @@ DECLARE
                   'inventory_services', 'scripts', 'script_sessions', 'script_explanations',
                   'llm_requests', 'alert_channels', 'alert_rules', 'watched_cves',
                   'alert_outbox', 'alert_cursors', 'weekly_reports', 'alert_test_requests',
-                  'indicator_contacts', 'indicator_contact_checks']
+                  'indicator_contacts', 'indicator_contact_checks', 'fetch_targets',
+                  'fetch_attempts', 'samples', 'sample_analysis', 'sample_sources',
+                  'sample_links']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -250,6 +281,63 @@ BEGIN
         EXECUTE format('GRANT SELECT ON alert_outbox, weekly_reports TO %I', r);
         EXECUTE format('GRANT SELECT, INSERT ON alert_test_requests TO %I', r);
     END IF;
+    IF to_regclass('public.samples') IS NOT NULL THEN
+        -- M21: the collector and analyzer write, the API only reads.
+        EXECUTE format(
+            'GRANT SELECT ON fetch_targets, fetch_attempts, samples, sample_analysis, '
+            'sample_sources, sample_links TO %I', r);
+    END IF;
+    -- @RLS
+END
+$$
+""".replace("-- @RLS", _rls("api", "true", "true"))
+
+_GRANTS_COLLECTOR = """
+DO $$
+DECLARE r text := current_setting('suckerpot.role_name');
+BEGIN
+    EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM %I', r);
+    IF to_regclass('public.samples') IS NOT NULL THEN
+        -- M21: the collector downloads recorded URLs into quarantine and records the result.
+        EXECUTE format('GRANT SELECT ON indicators TO %I', r);
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE ON fetch_targets, fetch_attempts, samples, '
+            'sample_sources TO %I', r);
+        EXECUTE format('GRANT DELETE ON fetch_attempts TO %I', r);
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE ON enrichment_quota, enrichment_status TO %I', r);
+        -- Only its own rows; the policies hide and refuse every other provider and status.
+        -- @RLS
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s, %s TO %I',
+            pg_get_serial_sequence('public.fetch_targets', 'id'),
+            pg_get_serial_sequence('public.fetch_attempts', 'id'), r);
+    END IF;
+END
+$$
+""".replace("-- @RLS", _rls("collector", COLLECTOR_STATUS, COLLECTOR_QUOTA))
+
+_GRANTS_ANALYZER = """
+DO $$
+DECLARE r text := current_setting('suckerpot.role_name');
+BEGIN
+    EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM %I', r);
+    IF to_regclass('public.samples') IS NOT NULL THEN
+        -- M21: the analyzer has no network; it reads samples and writes findings.
+        EXECUTE format('GRANT SELECT, UPDATE ON samples TO %I', r);
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE ON sample_analysis, sample_links TO %I', r);
+        EXECUTE format('GRANT SELECT ON sample_sources TO %I', r);
+        -- Next-stage URLs found in a script become fetch targets (the collector updates them).
+        EXECUTE format('GRANT SELECT, INSERT ON fetch_targets TO %I', r);
+        -- Rows it adds (c2, hash) may only have these columns changed afterwards.
+        EXECUTE format('GRANT SELECT, INSERT ON indicators TO %I', r);
+        EXECUTE format('GRANT UPDATE (last_seen, sightings, trusted) ON indicators TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s, %s TO %I',
+            pg_get_serial_sequence('public.fetch_targets', 'id'),
+            pg_get_serial_sequence('public.indicators', 'id'), r);
+    END IF;
 END
 $$
 """
@@ -285,25 +373,39 @@ def _set(conn: Connection, name: str, verifier: str, timeout: str) -> None:
 
 
 def apply_roles(conn: Connection, env: Mapping[str, str] | None = None) -> None:
-    """Create or update both roles (password, attributes, timeouts, grants). Idempotent."""
+    """Create or update the roles (password, attributes, timeouts, grants). Idempotent.
+
+    Ingest and API are always created. The collector and analyzer roles (M21) are created only
+    when their password is set, so a stack without the ``egress`` profile does not need them.
+    """
     e = os.environ if env is None else env
     owner = e.get("POSTGRES_USER", "")
     roles = {
         "INGEST": _role(e, "INGEST", INGEST_DEFAULT),
         "API": _role(e, "API", API_DEFAULT),
+        "COLLECTOR": _role(e, "COLLECTOR", COLLECTOR_DEFAULT),
+        "ANALYZER": _role(e, "ANALYZER", ANALYZER_DEFAULT),
     }
-    for kind, (name, password) in roles.items():
+    required = ("INGEST", "API")
+    optional = tuple(k for k in ("COLLECTOR", "ANALYZER") if roles[k][1])
+    active = required + optional
+    for kind in active:
+        name, password = roles[kind]
         if not password:
             raise RoleError(f"POSTGRES_{kind}_PASSWORD must be set to create the {kind} role")
         if name == owner:
             raise RoleError(f"POSTGRES_{kind}_USER must differ from POSTGRES_USER")
-    if roles["INGEST"][0] == roles["API"][0]:
-        raise RoleError("POSTGRES_INGEST_USER and POSTGRES_API_USER must differ")
+    names = [roles[k][0] for k in active]
+    if len(set(names)) != len(names):
+        raise RoleError("the database role names must all differ")
 
-    steps = (
+    all_steps = (
         ("INGEST", "30s", _GRANTS_INGEST),
         ("API", "5s", _GRANTS_API),
+        ("COLLECTOR", "30s", _GRANTS_COLLECTOR),
+        ("ANALYZER", "30s", _GRANTS_ANALYZER),
     )
+    steps = [step for step in all_steps if step[0] in active]
     try:
         for kind, timeout, grants in steps:
             name, password = roles[kind]
@@ -317,7 +419,12 @@ def apply_roles(conn: Connection, env: Mapping[str, str] | None = None) -> None:
 
 def drop_roles(conn: Connection, env: Mapping[str, str] | None = None) -> None:
     e = os.environ if env is None else env
-    for kind, default in (("INGEST", INGEST_DEFAULT), ("API", API_DEFAULT)):
+    for kind, default in (
+        ("INGEST", INGEST_DEFAULT),
+        ("API", API_DEFAULT),
+        ("COLLECTOR", COLLECTOR_DEFAULT),
+        ("ANALYZER", ANALYZER_DEFAULT),
+    ):
         name, _ = _role(e, kind, default)
         _set(conn, name, "", "")
         conn.execute(text(_DROP_ROLE))

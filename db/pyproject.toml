@@ -46,3 +46,4 @@ exclude = ["^\\.venv/"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["integration: needs a real TimescaleDB (run by `just test-integration`)"]

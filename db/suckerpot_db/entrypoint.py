@@ -1,8 +1,9 @@
 """Migrate entrypoint: enforce the secrets policy, run the command, then re-apply the roles.
 
 Policy: owner, ingest and api database passwords are at least 24 characters long and pairwise
-distinct, unless SUCKERPOT_ALLOW_DEFAULT_SECRETS=1 (development and CI only). Only variable
-names are ever printed, never values.
+distinct; the optional collector and analyzer passwords (M21) follow the same rules when set,
+unless SUCKERPOT_ALLOW_DEFAULT_SECRETS=1 (development and CI only). Only variable names are ever
+printed, never values.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from suckerpot_db.roles import RoleError, apply_roles
 
 MIN_LENGTH = 24
 SECRET_VARS = ("POSTGRES_PASSWORD", "POSTGRES_INGEST_PASSWORD", "POSTGRES_API_PASSWORD")
+OPTIONAL_SECRET_VARS = ("POSTGRES_COLLECTOR_PASSWORD", "POSTGRES_ANALYZER_PASSWORD")
 
 
 def check_secrets(env: Mapping[str, str]) -> list[str]:
@@ -29,11 +31,12 @@ def check_secrets(env: Mapping[str, str]) -> list[str]:
     problems = [f"{name} is not set" for name in SECRET_VARS if not env.get(name)]
     if env.get("SUCKERPOT_ALLOW_DEFAULT_SECRETS") == "1":
         return problems
-    for name in SECRET_VARS:
+    checked = SECRET_VARS + tuple(n for n in OPTIONAL_SECRET_VARS if env.get(n))
+    for name in checked:
         value = env.get(name)
         if value and len(value) < MIN_LENGTH:
             problems.append(f"{name} must be at least {MIN_LENGTH} characters")
-    values = [(n, env[n]) for n in SECRET_VARS if env.get(n)]
+    values = [(n, env[n]) for n in checked if env.get(n)]
     for i, (a, va) in enumerate(values):
         for b, vb in values[i + 1 :]:
             if va == vb:
