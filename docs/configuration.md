@@ -177,7 +177,7 @@ Defaults are set in code. Compose passes `INGEST_STREAMS` through from `.env`. T
 
 | Variable | Default | Source | Description |
 | --- | --- | --- | --- |
-| `INGEST_STREAMS` | `events:ssh,events:telnet,events:web,events:rdp,events:redis,events:docker,events:mysql,events:mssql,events:adb,events:smb,events:sip,events:synology` | `.env` | Streams to read, comma-separated. Letters, digits and `_ . : -`, up to 64 characters each. The suffix after the last `:` must be the sensor name: events whose `sensor` differs are dropped. |
+| `INGEST_STREAMS` | `events:ssh,events:telnet,events:web,events:rdp,events:redis,events:docker,events:mysql,events:mssql,events:adb,events:smb,events:sip,events:synology` | `.env` | Streams to read, comma-separated. Leave it unset: an override must list every sensor, and ingest logs a warning for a built-in stream it leaves out. Letters, digits and `_ . : -`, up to 64 characters each. The suffix after the last `:` must be the sensor name: events whose `sensor` differs are dropped. |
 | `INGEST_BATCH_SIZE` | `100` | Code default | Events per database write, 1 to 500 |
 | `INGEST_BLOCK_MS` | `1000` | Code default | How long one stream read waits for new entries, in milliseconds |
 | `INGEST_CLAIM_IDLE_MS` | `60000` | Code default | Pending entries idle for longer than this are reclaimed |

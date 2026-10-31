@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from suckerpot_common import SensorName
 
-from ingest.config import Settings
+from ingest.config import DEFAULT_STREAMS, Settings, missing_default_streams, parse_streams
 
 
 def test_stable_default_consumer_name() -> None:
@@ -49,3 +49,9 @@ def test_batch_bounds(value: str) -> None:
 def test_invalid_streams(value: str) -> None:
     with pytest.raises(ValueError, match=r"INGEST_STREAMS|stream"):
         Settings.from_env({"INGEST_STREAMS": value})
+
+
+def test_missing_default_streams_flags_an_outdated_override() -> None:
+    old = parse_streams(DEFAULT_STREAMS.replace(",events:synology", ""))
+    assert missing_default_streams(old) == ["events:synology"]
+    assert missing_default_streams(parse_streams(DEFAULT_STREAMS + ",events:extra")) == []

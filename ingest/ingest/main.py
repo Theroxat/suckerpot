@@ -18,7 +18,7 @@ from ingest.alerts.config import AlertSettings
 from ingest.attack import AttackCatalogWorker, load_attack
 from ingest.blocklist import BlocklistWorker
 from ingest.campaigns import CampaignWorker
-from ingest.config import Settings
+from ingest.config import Settings, missing_default_streams
 from ingest.consumer import Consumer
 from ingest.cve import CveWatch
 from ingest.cve.relevance import load_relevance
@@ -52,6 +52,8 @@ def load_secret_box() -> SecretBox | None:
 
 async def run() -> None:
     settings = Settings.from_env()
+    if missing := missing_default_streams(settings.streams):
+        log.warning("INGEST_STREAMS leaves out %s: those sensors' events are not ingested", missing)
     enrich = EnrichmentSettings.from_env()
     redis = Redis(
         host=settings.redis_host,
