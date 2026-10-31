@@ -28,6 +28,7 @@ from api.campaigns import router as campaigns_router
 from api.cves import router as cves_router
 from api.defend import router as defend_router
 from api.detections import router as detections_router
+from api.egress import router as egress_router
 from api.exposure import router as exposure_router
 from api.feeds import router as feeds_router
 from api.indicators import router as indicators_router
@@ -39,6 +40,7 @@ from api.provider_keys import install as install_provider_keys
 from api.provider_keys import router as provider_keys_router
 from api.reports import router as reports_router
 from api.routes import health_router, router
+from api.samples import router as samples_router
 from api.scripts import router as scripts_router
 from api.search import router as search_router
 from api.settings import router as settings_router
@@ -117,6 +119,8 @@ def create_app(
         trends_router,
         cves_router,
         malware_router,
+        samples_router,
+        egress_router,
         c2_router,  # before indicators_router: /indicators/c2 must not match /indicators/{id}
         indicators_router,
         settings_router,

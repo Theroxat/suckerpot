@@ -31,6 +31,9 @@ COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 # Built SPA, served by the API. Read-only for the app user.
 RUN mkdir -p /app/web
+# Mount point of the quarantine volume (the first container to mount it fixes its owner: keep it
+# the same uid as the collector). The API mounts it read-only.
+RUN mkdir -p /quarantine && chown 10001:10001 /quarantine && chmod 0700 /quarantine
 COPY --from=web-build /web/dist /app/web
 USER 10001:10001
 EXPOSE 8000
