@@ -1,0 +1,45 @@
+[project]
+name = "suckerpot-egress"
+version = "0.1.0"
+description = "SuckerPot egress: HTTP proxy client factory, kill-switch gate and CONNECT tunnel"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.27,<1",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["suckerpot_egress"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S108", "S104", "E501"]
+# The selftest probes that nothing leaves the stack directly: it connects on purpose.
+"suckerpot_egress/selftest.py" = ["S310"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+exclude = ["^\\.venv/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

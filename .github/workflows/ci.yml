@@ -51,7 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           found=0
-          for dir in sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo db ingest api; do
+          for dir in sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo scripts/guardrails egress analysis collector db ingest api; do
             if [ -f "$dir/pyproject.toml" ]; then
               found=1
               echo "::group::$dir"
@@ -188,7 +188,7 @@ jobs:
       - name: Run integration tests
         run: |
           set -euo pipefail
-          for dir in db ingest api; do
+          for dir in db ingest api collector; do
             if [ -f "$dir/pyproject.toml" ]; then
               echo "::group::$dir"
               (

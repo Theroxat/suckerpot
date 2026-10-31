@@ -40,7 +40,7 @@ async def seed(engine: AsyncEngine) -> dict[str, int]:
         await conn.execute(
             text(
                 "TRUNCATE blocklist_entries, indicator_intel, indicator_sessions, "
-                "indicator_contacts, indicator_contact_checks, indicators"
+                "indicator_contacts, indicator_contact_checks, indicators CASCADE"
             )
         )
         ids: dict[str, int] = {}

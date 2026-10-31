@@ -4,3 +4,6 @@
 services:
   redis:
     networks: !override [backend]
+  # Same reason: the "samples" network only matters to the collector and analyzer.
+  db:
+    networks: !override [backend]

@@ -15,6 +15,9 @@ This nftables table closes that gap.
 | input, from `sp-ingress` and `sp-dashboard` | Containers of the sensor network and the dashboard network cannot open new connections to the host. |
 | input, from `docker0`, `br-*` and `sp-*` to `protected_ports` | No container of any Docker network can reach the admin SSH port or the dashboard port of the host. |
 | forward, from `sp-ingress` and `sp-dashboard` | These containers cannot start new connections through the host: no LAN scanning, no outbound traffic, no traffic between sensors. Replies to inbound connections still go out. |
+| input, from `sp-egress` and `sp-samples` | The proxy network and the sample network cannot open new connections to the host. Without this, `CONNECT <bridge gateway>:<published port>` through the proxy would reach the host's published ports. |
+| input, from `sp-vpn` | The `vpn` container (anonymous egress) cannot open new connections to the host. |
+| forward, from `sp-vpn` | The only new connection allowed is UDP to the WireGuard endpoint (`VPN_ENDPOINT_IP`, `VPN_ENDPOINT_PORT`). Everything else is dropped, so the kill switch holds even if the container's own firewall fails. |
 
 Nothing here affects traffic from the internet to the published sensor ports.
 
@@ -24,6 +27,10 @@ Nothing here affects traffic from the internet to the published sensor ports.
    daemon. The file ships with `CHANGE_ME` on purpose: it will not load until you
    change it.
 2. Check `DASHBOARD_PORT` matches your `.env`.
+   If you use the `egress` profile, set `VPN_ENDPOINT_IP` and `VPN_ENDPOINT_PORT` to the
+   values of `VPN_WG_ENDPOINT_IP` and `VPN_WG_ENDPOINT_PORT`. The file will not load until you
+   do (without the profile, any valid values such as the documentation address
+   `203.0.113.10` and port `51820` will do; the rules then never match anything).
 3. Nothing to adjust for Docker address pools: rules match network interfaces, not addresses.
 4. Keep a second way into the machine (hypervisor console) the first time.
 
@@ -73,6 +80,11 @@ tables it did not create. The rules match interface names as text, so they work 
 if the Docker networks are created later.
 
 ## Verify
+
+Egress: with the `egress` profile up, run `just egress-check`, then
+`sudo nft list table inet suckerpot_host`. The `sp-vpn` accept rule counts the tunnel
+handshake packets; the `sp-vpn` drop counters stay at 0 unless something inside `vpn`
+tried to leave outside the tunnel.
 
 1. Start the stack, then from the host run `sudo nft list table inet suckerpot_host`.
    Counters on the `drop` rules stay at 0 in normal operation.
