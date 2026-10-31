@@ -37,3 +37,25 @@ def test_escape_hatch() -> None:
 def test_values_never_in_messages() -> None:
     secret = "supersecretvalue"  # noqa: S105
     assert all(secret not in p for p in check_secrets({**GOOD, "POSTGRES_API_PASSWORD": secret}))
+
+
+def test_collector_and_analyzer_passwords_are_optional() -> None:
+    assert check_secrets(GOOD) == []
+
+
+def test_collector_and_analyzer_follow_the_policy_when_set() -> None:
+    env = {**GOOD, "POSTGRES_COLLECTOR_PASSWORD": "short", "POSTGRES_ANALYZER_PASSWORD": B}
+    assert check_secrets(env) == [
+        "POSTGRES_COLLECTOR_PASSWORD must be at least 24 characters",
+        "POSTGRES_INGEST_PASSWORD and POSTGRES_ANALYZER_PASSWORD must be different",
+    ]
+
+
+def test_collector_and_analyzer_distinct_from_each_other() -> None:
+    d = "d" * 24
+    ok = {**GOOD, "POSTGRES_COLLECTOR_PASSWORD": d, "POSTGRES_ANALYZER_PASSWORD": "e" * 24}
+    assert check_secrets(ok) == []
+    same = {**ok, "POSTGRES_ANALYZER_PASSWORD": d}
+    assert check_secrets(same) == [
+        "POSTGRES_COLLECTOR_PASSWORD and POSTGRES_ANALYZER_PASSWORD must be different"
+    ]

@@ -1,0 +1,46 @@
+[project]
+name = "suckerpot-analysis"
+version = "0.1.0"
+description = "SuckerPot static analysis: pure functions over bytes (never executes a sample)"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.9,<3",
+    "yara-x>=1.22,<2",
+]
+
+[project.optional-dependencies]
+# No cp313 wheel exists; the collector image builds it in its builder stage.
+tlsh = ["py-tlsh"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8.3",
+]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["suckerpot_analysis"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S108", "E501"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+exclude = ["^\\.venv/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

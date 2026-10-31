@@ -281,7 +281,7 @@ class IndicatorRow(Base):
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     type: Mapped[str] = mapped_column(Text)  # url | domain | ip | hash
     value: Mapped[str] = mapped_column(Text)
-    role: Mapped[str] = mapped_column(Text)  # download_host | contacted_host | hash
+    role: Mapped[str] = mapped_column(Text)  # download_host | contacted_host | hash | c2
     host: Mapped[str | None] = mapped_column(Text)
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -787,3 +787,118 @@ class AlertTestRequestRow(Base):
     )
     state: Mapped[str] = mapped_column(Text, server_default=text("'queued'"), nullable=False)
     detail: Mapped[str | None] = mapped_column(Text)
+
+
+class FetchTargetRow(Base):
+    """A URL the collector may download (from an indicator or found inside a fetched script)."""
+
+    __tablename__ = "fetch_targets"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    url: Mapped[str] = mapped_column(Text, unique=True)
+    scheme: Mapped[str] = mapped_column(Text)
+    host: Mapped[str] = mapped_column(Text)
+    indicator_id: Mapped[int | None] = mapped_column(BigInteger)
+    parent_sha256: Mapped[str | None] = mapped_column(Text)
+    depth: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"), nullable=False)
+    # pending | fetched | failed | gone | refused | too_large | unsupported | quarantine_full
+    status: Mapped[str] = mapped_column(Text, server_default=text("'pending'"), nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"), nullable=False)
+    fetches: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"), nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_sha256: Mapped[str | None] = mapped_column(Text)
+
+
+class FetchAttemptRow(Base):
+    """One download attempt of a fetch target (pruned by the collector)."""
+
+    __tablename__ = "fetch_attempts"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    target_id: Mapped[int] = mapped_column(BigInteger)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    http_status: Mapped[int | None] = mapped_column(SmallInteger)
+    bytes: Mapped[int | None] = mapped_column(BigInteger)
+    redirects: Mapped[int | None] = mapped_column(SmallInteger)
+    outcome: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str | None] = mapped_column(Text)
+
+
+class SampleRow(Base):
+    """A file in quarantine, identified by its sha256 (metadata only, never the content)."""
+
+    __tablename__ = "samples"
+
+    sha256: Mapped[str] = mapped_column(Text, primary_key=True)
+    sha1: Mapped[str] = mapped_column(Text)
+    md5: Mapped[str] = mapped_column(Text)
+    tlsh: Mapped[str | None] = mapped_column(Text)
+    size: Mapped[int] = mapped_column(BigInteger)
+    kind: Mapped[str | None] = mapped_column(Text)
+    arch: Mapped[str | None] = mapped_column(Text)
+    bits: Mapped[int | None] = mapped_column(SmallInteger)
+    endian: Mapped[str | None] = mapped_column(Text)
+    linking: Mapped[str | None] = mapped_column(Text)
+    packer: Mapped[str | None] = mapped_column(Text)
+    family: Mapped[str | None] = mapped_column(Text)
+    severity: Mapped[str] = mapped_column(Text, server_default=text("'notice'"), nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    stored: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
+    # pending | done | failed | timeout
+    analysis_status: Mapped[str] = mapped_column(
+        Text, server_default=text("'pending'"), nullable=False
+    )
+    analysis_version: Mapped[int] = mapped_column(
+        SmallInteger, server_default=text("0"), nullable=False
+    )
+
+
+class SampleAnalysisRow(Base):
+    """Static analysis findings of one sample (YARA hits, strings, deobfuscated script)."""
+
+    __tablename__ = "sample_analysis"
+
+    sha256: Mapped[str] = mapped_column(Text, primary_key=True)
+    analyzed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    elapsed_ms: Mapped[int | None] = mapped_column(Integer)
+    yara: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    strings: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    deobfuscated: Mapped[str | None] = mapped_column(Text)
+    deob_steps: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    errors: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+
+
+class SampleSourceRow(Base):
+    """Which fetch target served which sample."""
+
+    __tablename__ = "sample_sources"
+
+    sha256: Mapped[str] = mapped_column(Text, primary_key=True)
+    target_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    first_fetched: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_fetched: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class SampleLinkRow(Base):
+    """An edge out of a sample: the next URL to fetch or a command-and-control address."""
+
+    __tablename__ = "sample_links"
+
+    sha256: Mapped[str] = mapped_column(Text, primary_key=True)
+    # next_url | c2_ip | c2_domain | c2_url
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, primary_key=True)
+    port: Mapped[int | None] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[str] = mapped_column(Text)
+    target_id: Mapped[int | None] = mapped_column(BigInteger)
+    indicator_id: Mapped[int | None] = mapped_column(BigInteger)
