@@ -178,7 +178,8 @@ describe("ChannelsCard", () => {
       .filter((c) => c.method === "POST" && c.url.endsWith("/alerts/channels"))
       .at(-1)
     expect(post?.body).toMatchObject({ kind: "discord", name: "Ops", target: HOOK, mask_ips: true })
-  })
+    // About 140 typed keys: ~3 s alone, past the 5 s default when the whole suite runs in parallel.
+  }, 15_000)
 
   it("is read-only for a viewer", async () => {
     stub({ me: VIEWER })

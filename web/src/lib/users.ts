@@ -170,6 +170,7 @@ export type UserFailure =
   | "session"
   | "invalid"
   | "network"
+  | "unavailable"
 
 export class UserError extends Error {
   constructor(
@@ -190,6 +191,7 @@ export const USER_MESSAGES: Record<UserFailure, string> = {
   session: "Your session has ended. Sign in again.",
   invalid: "Some of the details are not valid.",
   network: "The server could not be reached. Try again in a moment.",
+  unavailable: "This file is no longer stored, so there is nothing to download.",
 }
 
 export function describeUserError(e: unknown): string {
