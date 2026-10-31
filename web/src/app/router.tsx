@@ -49,6 +49,9 @@ const CampaignDetailPage = lazy(() =>
 const TechniquesPage = lazy(() =>
   import("@/pages/techniques").then((m) => ({ default: m.TechniquesPage })),
 )
+const SampleDetailPage = lazy(() =>
+  import("@/pages/sample-detail").then((m) => ({ default: m.SampleDetailPage })),
+)
 const ScriptsPage = lazy(() => import("@/pages/scripts").then((m) => ({ default: m.ScriptsPage })))
 const ScriptDetailPage = lazy(() =>
   import("@/pages/script-detail").then((m) => ({ default: m.ScriptDetailPage })),
@@ -215,6 +218,14 @@ function appRoutes(): RouteObject {
         element: (
           <Lazy>
             <TechniquesPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "malware/samples/:sha256",
+        element: (
+          <Lazy>
+            <SampleDetailPage />
           </Lazy>
         ),
       },

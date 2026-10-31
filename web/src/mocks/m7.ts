@@ -14,6 +14,7 @@ import type {
   TagsResponse,
 } from "@/lib/trends"
 import { NEW_FIELDS } from "@/lib/trends"
+import { mockFetchState } from "./samples"
 
 const LATENCY_MS = 170
 const DAY = 86_400_000
@@ -121,9 +122,7 @@ function malwareItems(now: number): MalwareItem[] {
       sensors: (
         [["ssh", "telnet"], ["telnet"], ["web"], ["redis"], ["adb"], ["docker"], ["mssql"]] as const
       )[i % 7]?.slice() ?? ["ssh"],
-      sha256: null,
-      size: null,
-      virustotal_url: null,
+      ...mockFetchState(i, tools[i % tools.length] ?? []),
     }
   }).sort((a, b) => b.last_seen.localeCompare(a.last_seen))
 }

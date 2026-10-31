@@ -80,6 +80,16 @@ export interface HeatmapResponse {
   cells: HeatmapCell[]
 }
 
+export type FetchStatus =
+  | "fetched"
+  | "pending"
+  | "failed"
+  | "gone"
+  | "refused"
+  | "too_large"
+  | "unsupported"
+  | "quarantine_full"
+
 export interface MalwareItem {
   url: string
   host: string
@@ -93,6 +103,8 @@ export interface MalwareItem {
   sha256: string | null
   size: number | null
   virustotal_url: string | null
+  /** M21: state of the collector's fetch of this URL; null when never queued. */
+  fetch_status?: FetchStatus | null
 }
 
 export interface MalwareDetail {

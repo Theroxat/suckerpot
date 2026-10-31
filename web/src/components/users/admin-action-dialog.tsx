@@ -17,6 +17,8 @@ interface FormProps {
   description: ReactNode
   confirmLabel: string
   pendingLabel: string
+  /** Hint under the password field. */
+  hint?: string
   /** Extra fields above the password (a role picker, say). */
   children?: ReactNode
   /** Runs the change with the administrator's password; resolves when it went through. */
@@ -36,6 +38,7 @@ function ActionForm({
   description,
   confirmLabel,
   pendingLabel,
+  hint = "Changing users asks for your own dashboard password again.",
   children,
   run,
   validate,
@@ -89,12 +92,7 @@ function ActionForm({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       {children}
-      <Field
-        id={ids.pass}
-        label="Your password"
-        hint="Changing users asks for your own dashboard password again."
-        error={passwordError ?? undefined}
-      >
+      <Field id={ids.pass} label="Your password" hint={hint} error={passwordError ?? undefined}>
         <Input
           id={ids.pass}
           name="password"

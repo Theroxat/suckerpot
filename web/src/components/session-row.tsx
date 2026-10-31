@@ -21,6 +21,8 @@ interface SessionRowProps {
   masked?: boolean
   /** Hide the address and origin, e.g. on an attacker profile where they are all the same. */
   showSource?: boolean
+  /** Always the two-line layout, for narrow containers on wide screens (a side sheet). */
+  compact?: boolean
   className?: string
 }
 
@@ -28,7 +30,13 @@ interface SessionRowProps {
  * One session as one line. The whole row opens the session (stretched link);
  * the IP, flag and tags stay independently clickable above it.
  */
-export function SessionRow({ session, masked, showSource = true, className }: SessionRowProps) {
+export function SessionRow({
+  session,
+  masked,
+  showSource = true,
+  compact = false,
+  className,
+}: SessionRowProps) {
   const severity = sessionSeverity(session)
   const flagged = severity === "warning" || severity === "severe"
 
@@ -36,7 +44,7 @@ export function SessionRow({ session, masked, showSource = true, className }: Se
     <div
       className={cn(
         "group/row relative grid grid-cols-1 items-center gap-y-1.5 px-4 py-3 transition-colors duration-150 hover:bg-surface-hover/50 sm:px-5",
-        "md:grid-cols-[5.5rem_minmax(0,1fr)_auto_6rem] md:gap-x-4",
+        !compact && "md:grid-cols-[5.5rem_minmax(0,1fr)_auto_6rem] md:gap-x-4",
         className,
       )}
     >
@@ -46,7 +54,7 @@ export function SessionRow({ session, masked, showSource = true, className }: Se
         aria-label={describeSessionText(session)}
       />
       {/* Mobile (< md): two lines. Badge, address and time first; the story below. */}
-      <div className="flex min-w-0 items-center gap-2.5 md:hidden">
+      <div className={cn("flex min-w-0 items-center gap-2.5", !compact && "md:hidden")}>
         <SensorBadge sensor={session.sensor} />
         {showSource ? (
           <>
@@ -67,8 +75,38 @@ export function SessionRow({ session, masked, showSource = true, className }: Se
           <RelativeTime iso={session.started_at} className="relative z-10 text-xs" />
         </span>
       </div>
-      <p className="line-clamp-2 text-fg md:hidden">{describeSession(session).predicate}</p>
+      <p className={cn("line-clamp-2 text-fg", !compact && "md:hidden")}>
+        {describeSession(session).predicate}
+      </p>
 
+      {compact ? null : (
+        <DesktopLine
+          session={session}
+          masked={masked}
+          showSource={showSource}
+          severity={severity}
+          flagged={flagged}
+        />
+      )}
+    </div>
+  )
+}
+
+function DesktopLine({
+  session,
+  masked,
+  showSource,
+  severity,
+  flagged,
+}: {
+  session: Session
+  masked?: boolean
+  showSource: boolean
+  severity: ReturnType<typeof sessionSeverity>
+  flagged: boolean
+}) {
+  return (
+    <>
       {/* Desktop: one line. */}
       <SensorBadge sensor={session.sensor} className="hidden justify-self-start md:inline-flex" />
       {showSource ? (
@@ -99,6 +137,6 @@ export function SessionRow({ session, masked, showSource = true, className }: Se
       <div className="hidden justify-self-end md:block">
         <RelativeTime iso={session.started_at} className="relative z-10 text-xs" />
       </div>
-    </div>
+    </>
   )
 }

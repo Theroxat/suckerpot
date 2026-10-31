@@ -417,6 +417,28 @@ export async function getJson<T>(path: string, params?: Record<string, Param>) {
   return (await res.json()) as T
 }
 
+/**
+ * POST with credentials and CSRF, resolving to the response body as a Blob (the sample archive).
+ * Errors are the usual ApiError, so `code` ("reauth_failed", ...) is available.
+ */
+export async function sendForBlob(path: string, body: unknown): Promise<Blob> {
+  const attempt = async (refresh: boolean) =>
+    fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/zip, application/json",
+        "Content-Type": "application/json",
+        "X-CSRF-Token": await csrfToken(refresh),
+      },
+      body: JSON.stringify(body),
+    })
+  let res = await attempt(false)
+  if (res.status === 403) res = await attempt(true)
+  if (!res.ok) throw await failure(res, true)
+  return await res.blob()
+}
+
 export interface SendOptions {
   /** Add the X-CSRF-Token header (default true; the login call is exempt). */
   csrf?: boolean

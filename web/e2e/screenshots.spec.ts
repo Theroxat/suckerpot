@@ -280,7 +280,9 @@ test("malware", async ({ page }, info) => {
   await expect(h1(page, "Malware")).toBeVisible()
   await expect(page.getByRole("list", { name: "Download URLs" })).toBeVisible()
   // Malware URLs are text, never links.
-  await expect(page.getByRole("list", { name: "Download URLs" }).locator("a")).toHaveCount(0)
+  await expect(
+    page.getByRole("list", { name: "Download URLs" }).locator('a:not([href^="/malware/samples/"])'),
+  ).toHaveCount(0)
   await settle(page)
   await shoot(page, "malware", info.project.name)
 
@@ -294,10 +296,16 @@ test("malware", async ({ page }, info) => {
   const first = page.getByRole("list", { name: "Download URLs" }).getByRole("button").first()
   await first.click()
   await expect(page.getByRole("dialog")).toBeVisible()
-  await expect(page.getByText("Payload fetching is off").first()).toBeVisible()
+  await expect(page.getByRole("dialog").getByRole("region", { name: "File" })).toBeVisible()
   // The drawer loads its own detail: wait for its skeleton to go.
   await expect(page.getByRole("dialog").getByRole("status", { name: "Loading" })).toHaveCount(0)
   await shoot(page, "malware-detail", info.project.name)
+
+  // TFTP is never fetched: with no hash on the list, the collector note explains why.
+  await page.goto("/malware?tool=tftp")
+  await expect(page.getByRole("heading", { name: /so only URLs are recorded/ })).toBeVisible()
+  await settle(page)
+  await shoot(page, "malware-collector-note", info.project.name)
 })
 
 test("cve watch", async ({ page }, info) => {

@@ -12,6 +12,7 @@ import { Link } from "react-router"
 import { ChannelsCard } from "@/components/alerts/channels-card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUrlParam } from "@/hooks/use-url-param"
+import { EgressCard } from "@/components/egress-card"
 import { FeedsTab } from "@/components/feeds/feeds-tab"
 import { FindingCard } from "@/components/finding-card"
 import { Meter } from "@/components/meter"
@@ -415,6 +416,7 @@ export function SettingsPage() {
             <StorageCard data={q.data} loading={q.isPending} />
             <RetentionCard data={q.data} loading={q.isPending} />
           </div>
+          <EgressCard />
         </TabsContent>
         <TabsContent value="keys" className="grid grid-cols-1 gap-4">
           <EnrichmentCard />

@@ -14,6 +14,7 @@ import { intelHandlers } from "./intel"
 import { userHandlers } from "./users"
 import { campaignsHandlers } from "./campaigns"
 import { defendHandlers } from "./defend"
+import { samplesHandlers } from "./samples"
 import { scriptsHandlers } from "./scripts"
 import { alertsHandlers } from "./alerts"
 import { searchHandlers } from "./search"
@@ -87,6 +88,7 @@ export const handlers = [
   ...authHandlers,
   ...campaignsHandlers(fixtures),
   ...defendHandlers,
+  ...samplesHandlers,
   ...scriptsHandlers,
   ...alertsHandlers,
   ...searchHandlers,
