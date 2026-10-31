@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -34,6 +35,21 @@ ROLE_ENV = {
         "POSTGRES_API_PASSWORD": "api-test-password",
     }.items()
 }
+
+
+async def reset_tables(engine: AsyncEngine, *statements: str) -> None:
+    """Run cleanup statements in one transaction, retrying when Postgres picks it as a
+    deadlock victim (TRUNCATE ... CASCADE can cross a TimescaleDB background job)."""
+    for attempt in range(5):
+        try:
+            async with engine.begin() as conn:
+                for sql in statements:
+                    await conn.execute(text(sql))
+            return
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) != "40P01" or attempt == 4:
+                raise
+            await asyncio.sleep(0.2 * (attempt + 1))
 
 
 def _role_url(kind: str) -> str:
@@ -88,16 +104,14 @@ def migrated() -> None:
 async def engine(migrated: None) -> AsyncIterator[AsyncEngine]:
     """Owner connection (test setup only)."""
     eng = create_engine(pool_size=2)
-    async with eng.begin() as conn:
-        await conn.execute(
-            text(
-                "TRUNCATE events, sessions, ip_reputation, enrichment_quota, "
-                "enrichment_status, sessions_daily, system_status, maintenance_log, "
-                "provider_secrets, provider_test_requests, cve, cve_sync_state, "
-                "indicators, indicator_sessions, indicator_intel, indicator_contacts, "
-                "indicator_contact_checks"
-            )
-        )
+    await reset_tables(
+        eng,
+        "TRUNCATE events, sessions, ip_reputation, enrichment_quota, "
+        "enrichment_status, sessions_daily, system_status, maintenance_log, "
+        "provider_secrets, provider_test_requests, cve, cve_sync_state, "
+        "indicators, indicator_sessions, indicator_intel, indicator_contacts, "
+        "indicator_contact_checks",
+    )
     yield eng
     await eng.dispose()
 
