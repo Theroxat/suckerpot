@@ -480,15 +480,54 @@ Discord and Teams webhooks need no variable. They are stored as channels in the 
 
 Today, global search, the glossary and the research-scanner switch need no variable. Research scanners are labelled by the network that owns them, and they are left out of lists unless a page asks for them (`include_benign`). The list of scanners is in `ingest/rules/scanners.yaml`.
 
+## Anonymous egress and payload collection (M21)
+
+Details in [Architecture](ARCHITECTURE.md#anonymous-egress-m21) and [Deployment](deployment.md#anonymous-egress-vpn). Every outbound request of the stack goes through a WireGuard tunnel in the `vpn` service. There is no direct mode: without a tunnel, the outbound features stay idle.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `COMPOSE_PROFILES` | unset | Add `egress` to run `vpn`, `collector` and `analyzer`. Without it the stack is healthy but has no outbound traffic. |
+| `VPN_WG_PRIVATE_KEY` | empty | Interface private key from your provider's WireGuard config. A secret. |
+| `VPN_WG_PEER_PUBLIC_KEY` | empty | Public key of the provider's server |
+| `VPN_WG_ADDRESSES` | empty | Interface addresses, comma-separated. IPv6 entries are ignored. |
+| `VPN_WG_DNS` | empty | The provider's DNS address (informational: names resolve through the tunnel) |
+| `VPN_WG_ENDPOINT_IP` | empty | Server address, without the port (a public IPv4 address) |
+| `VPN_WG_ENDPOINT_PORT` | empty | Server UDP port |
+| `EGRESS_PROXY_PASSWORD` | empty | Password of the `vpn` HTTP proxy. At least 24 characters, required with the profile. A secret. |
+| `EGRESS_PROXY_URL` | `http://vpn:8888` | Proxy used by ingest and collector |
+| `EGRESS_CONTROL_URL` | `http://vpn:8000` | Control server (read-only status routes) |
+| `EGRESS_ECHO_URLS` | `https://api.ipify.org,https://icanhazip.com` | Services that answer with the caller's public address. At least two must agree. |
+| `EGRESS_ALLOWED_CIDRS` | empty | Networks the VPN exit address must belong to, comma-separated. Empty means the /24 of `VPN_WG_ENDPOINT_IP`. Set it when your provider exits elsewhere. |
+| `EGRESS_CHECK_INTERVAL_S` | `300` | Seconds between egress self-checks |
+| `POSTGRES_COLLECTOR_PASSWORD`, `POSTGRES_ANALYZER_PASSWORD` | empty | Passwords of the collector and analyzer database roles. At least 24 characters, all different from each other and from the other secrets. Required with the profile. Secrets. |
+| `POSTGRES_COLLECTOR_USER`, `POSTGRES_ANALYZER_USER` | `suckerpot_collector`, `suckerpot_analyzer` | Role names |
+| `COLLECTOR_ENABLED` | `false` | Fetch captured download URLs and analyse the files. Off by default. |
+| `COLLECTOR_POLL_S` | `15` | Seconds between two looks for new URLs |
+| `COLLECTOR_MAX_BYTES` | `16777216` | Largest file kept (16 MiB) |
+| `COLLECTOR_TIMEOUT_S` | `60` | Total time for one fetch |
+| `COLLECTOR_CONNECT_TIMEOUT_S` | `10` | Connect time for one fetch |
+| `COLLECTOR_MAX_REDIRECTS` | `3` | Redirects followed, each one validated |
+| `COLLECTOR_CONCURRENCY` | `2` | Fetches in flight (one per host) |
+| `COLLECTOR_HOST_INTERVAL_S` | `10` | Seconds between two requests to the same host |
+| `COLLECTOR_HOURLY_QUOTA`, `COLLECTOR_DAILY_QUOTA` | `60`, `500` | Fetches per hour and per day |
+| `COLLECTOR_REFETCH_HOURS` | `24` | Minimum age before a URL that was seen again is fetched again |
+| `COLLECTOR_MAX_DEPTH` | `2` | How many levels of next-stage URLs found inside fetched scripts are followed |
+| `COLLECTOR_DENY_CIDRS` | empty | Extra networks the collector must never contact (your own ranges), comma-separated |
+| `QUARANTINE_MAX_MB` | `2048` | Size cap of the quarantine volume. At the cap, fetching stops. |
+| `QUARANTINE_RETENTION_DAYS` | `90` | Days to keep a file after it was last seen. Its row and analysis stay. |
+| `ANALYZER_TIMEOUT_S` | `60` | Wall-clock limit for analysing one file |
+| `ANALYZER_MEMORY_MB` | `384` | Memory cap of the parser child process |
+
+`scripts/check-vpn-env.sh` (run by `just up` and `just config`) checks these settings and prints variable names only, never values. It refuses a missing endpoint, a private endpoint address, a proxy password under 24 characters, and missing or repeated database passwords.
+
+`FETCH_PAYLOADS`, `PAYLOAD_MAX_BYTES` and `PAYLOAD_TIMEOUT_SECONDS` no longer exist. `COLLECTOR_ENABLED`, `COLLECTOR_MAX_BYTES` and `COLLECTOR_TIMEOUT_S` replace them.
+
 ## In `.env.example` but not used yet
 
 These names are in the template. The code does not read them, so setting them has no effect today.
 
 | Variable | Default | Milestone | Description |
 | --- | --- | --- | --- |
-| `FETCH_PAYLOADS` | `false` | not scheduled | If `true`, ingest fetches files from captured download URLs into quarantine. Not implemented. |
-| `PAYLOAD_MAX_BYTES` | `10485760` | not scheduled | Maximum size of one fetched payload |
-| `PAYLOAD_TIMEOUT_SECONDS` | `20` | not scheduled | Timeout for one payload fetch |
 
 ## Data sources and attribution
 

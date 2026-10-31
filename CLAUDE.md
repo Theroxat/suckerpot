@@ -59,7 +59,7 @@ Never start routine work on `opus`. If an agent fails twice on the same task, mo
 ## 3. Architecture
 
 ```
-Internet ──► ISP box (DMZ, all ports) ──► VM ──► 12 sensors ──► Redis Streams ──► ingest ──► PostgreSQL + TimescaleDB ──► API (FastAPI) ──► Web UI (React)
+Internet ──► ISP box (port forwards) ──► VM ──► 12 sensors ──► Redis Streams ──► ingest ──► PostgreSQL + TimescaleDB ──► API (FastAPI) ──► Web UI (React)
                                                                                                                             ▲
                                                                         cloudflared (another VM on the LAN) ────────────────┘
 ```
@@ -71,12 +71,14 @@ Full detail in `docs/ARCHITECTURE.md`; read it before touching compose, Redis AC
 | `sensor-{ssh,telnet,adb,web,docker,synology,redis,mysql,mssql,rdp,smb,sip}` | `ingress` (`sp-ingress`) + its own `sensors-<name>` | The only services published to the internet. `sp-ingress` has masquerading and inter-container traffic off; `sensors-<name>` is internal and links that one sensor to Redis. One Redis ACL user per sensor, limited to `XADD events:<name>` |
 | `redis` | every `sensors-<name>`, `tools`, `backend` | One stream per sensor (`events:<name>`), AOF on `redis-data` |
 | `migrate` | `backend` | Runs Alembic as the DB owner and (re)sets the `suckerpot_ingest` / `suckerpot_api` role passwords on every run |
-| `ingest` | `backend`, `egress` | Enrichment, tagging and the analysis workers. The only service with outbound internet |
+| `ingest` | `backend`, `egress-proxy` | Enrichment, tagging and the analysis workers. No route out: every outbound call goes through `suckerpot_egress` and the `vpn` proxy |
+| `vpn` (profile `egress`) | `vpn-uplink` (`sp-vpn`), `egress-proxy` | WireGuard client (gluetun) with kill switch and HTTP proxy. The ONLY service with an internet route, the only one with `NET_ADMIN` |
+| `collector` / `analyzer` (profile `egress`) | `egress-proxy` + `samples` / `samples` only | Fetch captured download URLs through the proxy into the `quarantine` volume / static analysis in an rlimited child, no network out |
 | `db` | `backend` | PostgreSQL + TimescaleDB, on a named volume |
 | `api` | `backend`, `dashboard` (`sp-dashboard`) | FastAPI: REST + WebSocket, also serves the built web UI |
 | `demo` (profile `tools`) | `tools` | Demo generator; reaches Redis only |
 
-- `backend`, `tools` and every `sensors-<name>` network are `internal: true`. The host firewall (`scripts/host/`) matches `sp-ingress` and `sp-dashboard` by bridge name.
+- `backend`, `tools`, `egress-proxy`, `samples` and every `sensors-<name>` network are `internal: true`. The owner's home IP must never be used for an outbound connection: only `vpn` reaches the internet, `just guardrails` (CI) enforces the compose rules and `just egress-check` proves them on the live stack. Design: `docs/design/m21.md`. The host firewall (`scripts/host/`) matches `sp-ingress` and `sp-dashboard` by bridge name.
 - The dashboard is published on ONE port only (set in `.env`), never on a sensor port or 22222. `scripts/check-ports.sh` enforces this and runs before `just up` / `just config`.
 
 ### Pipeline invariants (break these and data is lost or forged)
@@ -153,7 +155,8 @@ The core pages are below. Later milestones added Today, Campaigns, Techniques, S
 ## 5. Security and isolation (non-negotiable)
 
 - **Sensors never execute attacker input.** The fake shell is pure emulation: no `subprocess`, `os.system`, `eval` or `exec`, and no file write outside its own data path. Fake commands return canned or generated output from a fake filesystem.
-- **Downloads.** By default, only record the URL. Payload fetching (`FETCH_PAYLOADS=false` by default), when enabled, is done by ingest, not by the sensors: size cap, timeout, stored in a quarantine volume under its sha256 name, mode 0400, never executed, never committed.
+- **Downloads.** Sensors only record the URL. Payload fetching (`COLLECTOR_ENABLED`) is done by the `collector` service, never by sensors or ingest, and only through the VPN egress gate: SSRF validator on every URL and redirect, size/time/quota caps, generic client identity, stored in the `quarantine` volume under its sha256 name, mode 0400, never executed, never committed. Analysis is static only.
+- **Anonymous egress.** No outbound connection may use the owner's home IP. New outbound clients go through `suckerpot_egress` (static tests fail otherwise); nothing sent outside names the project or the owner.
 - **Containers.** Non-root user, `read_only: true` with tmpfs where needed, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, memory, CPU and pids limits, healthchecks. Sensors listen on high ports inside the container, and compose maps host 22 → container 2222, etc., so no capability is needed.
 - **Abuse resistance.** Cap concurrent connections per sensor and per IP, set timeouts everywhere, and limit the size of every captured field. A retention job keeps raw events for 90 days and aggregates forever. Make sure disk usage cannot explode.
 - **Never** bind host port 22222 (admin SSH) from any service. The dashboard port is never one of the sensor ports.

@@ -131,6 +131,11 @@ These pages are generated from the code, so they match the running version. Use 
 | `GET` | `/api/v1/search` | Global search (M19) |
 | `GET` | `/api/v1/stats/benign` | Sessions and addresses from research scanners in the last 24 hours (M19) |
 | `GET` | `/api/v1/settings/system` | Sensor status, retention policy, disk guard state and database size. See [System settings](#get-apiv1settingssystem). |
+| `GET` | `/api/v1/samples` | Files fetched by the collector, with filters and cursor paging. See [Samples and egress](#samples-and-egress-m21). |
+| `GET` | `/api/v1/samples/{sha256}` | One sample with its analysis, sources and links |
+| `GET` | `/api/v1/samples/{sha256}/chain` | The chain session, URL, sample and C2 of one sample |
+| `POST` | `/api/v1/samples/{sha256}/archive` | Download a sample as a password-protected zip (administrators only) |
+| `GET` | `/api/v1/egress` | State of the egress gate, collector quota and quarantine use |
 | `GET` | `/api/v1/settings/enrichment` | GeoIP database status and reputation quotas. See [Enrichment status](#get-apiv1settingsenrichment). |
 | `PUT` | `/api/v1/settings/providers/{provider}` | Set or replace an enrichment API key. See [Provider keys](#provider-keys). |
 | `DELETE` | `/api/v1/settings/providers/{provider}` | Remove a key set in Settings. See [Provider keys](#provider-keys). |
@@ -643,6 +648,52 @@ The home point of the Live map, where the attack arcs land, as a country-level p
 ```
 
 It comes from `SITE_HOME_LAT`, `SITE_HOME_LON` and `SITE_HOME_LABEL`. The values are rounded to one decimal place (about 11 km) on purpose, so the public page never shows an exact location. Do not put the real address of the host in them.
+
+## Samples and egress (M21)
+
+Samples are the files the `collector` fetched from captured download URLs and the `analyzer` examined. The API reads the database and the quarantine volume read-only. It never serves a raw file. All routes need a signed-in user; the archive route needs an administrator.
+
+### `GET /api/v1/samples`
+
+Cursor pagination: `cursor` and `limit` (up to 200, default 50). Sorted by `last_seen`, newest first.
+
+| Parameter | Meaning |
+| --- | --- |
+| `kind` | File kind, such as `elf`, `pe`, `script` (case-insensitive) |
+| `arch` | Architecture, such as `arm`, `mips`, `x86-64` |
+| `family` | Family set by a YARA rule |
+| `yara` | Name of a YARA rule that matched |
+| `status` | Analysis state: `pending`, `done`, `failed` or `timeout` |
+| `q` | A hash prefix or part of a source URL (1 to 128 characters) |
+| `since` | Only samples seen since this time |
+
+### `GET /api/v1/samples/{sha256}`
+
+Metadata (kind, architecture, size, sha256, sha1, md5, TLSH, family, severity, whether the file is still stored), the analysis (YARA hits, capped strings, deobfuscated script text and the steps taken), the sources (URLs, first and last fetch, session count, sensors and addresses), the links found inside it (next-stage URLs and C2 addresses), the latest sessions that dropped it, and `virustotal_url`. That is a link only: the API makes no call to VirusTotal. Defang URLs when you paste them anywhere.
+
+### `GET /api/v1/samples/{sha256}/chain`
+
+`{nodes, edges}` for the story session, then URL, then sample, then C2. Bounded to three levels and 100 nodes. Node kinds: `session`, `url`, `sample`, `c2`.
+
+### `POST /api/v1/samples/{sha256}/archive`
+
+Administrators only. The body is `{"password": "<your dashboard password>"}`: the password is asked again. The request also needs the CSRF header and an allowed origin like every write. At most 10 downloads per hour per user (`429` with `Retry-After` beyond that). The answer is an `application/zip` attachment: AES-256, password `infected` (the convention that keeps mail scanners quiet, not a secret), one entry named after the sha256, with `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. Each download is written to the audit log. `404` if the file is no longer stored.
+
+### `GET /api/v1/egress`
+
+The state of the anonymous egress, for the Settings card.
+
+| Field | Meaning |
+| --- | --- |
+| `ingest`, `collector` | `{state, reason, checked_at}` of each gate. `state` is `open` or `closed`. `reason` is a constant code such as `no_vpn`, `tunnel_down`, `echo_failed`, `echo_disagree`, `ip_mismatch` or `ip_not_allowed`. |
+| `exit_ip_allowed` | Whether the VPN exit address is in the allowed network |
+| `exit_ip` | The VPN exit address (never the home address). The web app hides it until you ask. |
+| `collector_quota` | `{used, limit}` of fetches today |
+| `quarantine` | `{used_bytes, max_bytes}` |
+
+### Malware
+
+`GET /api/v1/malware` and `/api/v1/malware/detail` now fill `sha256`, `size` and `virustotal_url` from the fetched samples, and add `fetch_status` (for example `fetched`, `pending`, `failed`, `refused`, `unsupported`).
 
 ## Campaigns and MITRE ATT&CK (M15)
 

@@ -73,11 +73,11 @@ Attackers send credentials to the sensors, so the sensors record some of them. T
 
 ### Downloads
 
-Payload fetching is **not implemented**. The rules below are the contract for when it is.
+Payload fetching is done by the `collector` (M21), and only when `COLLECTOR_ENABLED=true`. The rules below apply.
 
 - By default, only the download URL is recorded.
-- Payload fetching is disabled by default (`FETCH_PAYLOADS=false`). When it is enabled, ingest fetches the file, not the sensors. The fetch has a size cap and a timeout.
-- A fetched payload is stored in a quarantine volume under its sha256 name, with mode `0400`. It is never executed and never committed to the repo.
+- Payload fetching is off by default (`COLLECTOR_ENABLED=false`). When it is on, the `collector` service fetches the file, never a sensor and never ingest. See [Anonymous egress](#anonymous-egress-m21).
+- A fetched payload is stored in the quarantine volume under its sha256 name, with mode `0400`. It is never executed and never committed to the repo.
 
 ### Containers
 
@@ -99,7 +99,9 @@ These rules apply to every service in `docker-compose.yml`.
 | `sensors-ssh`, `sensors-web`, ... | None (`internal: true`) | `redis` and one sensor each | A sensor reaches Redis and nothing else |
 | `tools` | None (`internal: true`) | `redis`, the demo generator | The generator reaches Redis only |
 | `backend` | None (`internal: true`) | `redis`, `db`, `migrate`, `ingest`, `api` | Storage and processing stay private |
-| `egress` | Outbound | `ingest` only | GeoIP downloads, reputation lookups and the CVE feeds |
+| `vpn-uplink` (`sp-vpn`) | Outbound, only through the WireGuard tunnel | `vpn` only | The one route to the internet |
+| `egress-proxy` (`sp-egress`) | None (`internal: true`) | `vpn`, `ingest`, `collector` | The HTTP proxy and control server of `vpn` |
+| `samples` (`sp-samples`) | None (`internal: true`) | `db`, `collector`, `analyzer` | Keeps the file handling away from Redis and the API |
 | `dashboard` (`sp-dashboard`) | Intended inbound only | `api` only | Masquerading is off. This does not block egress on its own. |
 
 The design is explained in [Architecture](ARCHITECTURE.md#networks).
@@ -116,6 +118,38 @@ Egress must also be filtered outside the containers. Check it from the owner sid
 #### The host firewall and the sensor network
 
 A compromised sensor has no route to the internet (masquerading is off), but without a host rule it could still open connections to the host itself, for example to its admin SSH port, or to machines on your LAN through the host. The nftables table in `scripts/host/firewall.nft` blocks that, and it matches Docker networks by interface name, so it works whatever address pool Docker picks. It is installed with its own systemd unit, never with the stock `nftables` service, which would flush Docker's own rules.
+
+#### Anonymous egress (M21)
+
+The aim: no outbound connection made by the stack ever comes from the home address.
+
+- **One route out.** Only `vpn` (gluetun, WireGuard) has an internet route. A static test (`just guardrails`, part of `just test`) loads `docker-compose.yml` and its overlays and fails if another service joins a network with a route out, if `ingest`, `collector` or `analyzer` lack `dns: 127.0.0.1`, if any service other than `vpn` gets `cap_add`, `devices`, `privileged` or a `network_mode`, if the `egress-proxy` members change, or if any `HTTP_PROXY`-style variable appears.
+- **Kill switch.** gluetun's firewall starts before the tunnel and allows only the tunnel and the WireGuard packets to one endpoint. The [host firewall](deployment.md#host-firewall) drops everything else from `sp-vpn` (new connections other than UDP to the endpoint, the LAN, IPv6, TCP) and every new connection from `sp-vpn`, `sp-egress` and `sp-samples` to the host. With the tunnel down, nothing leaves.
+- **Proxy only.** `ingest` and `collector` use one client factory that sends host names to the proxy. External DNS does not resolve in those containers. A static test scans their code and fails on any other way to open a socket (`httpx.AsyncClient(` outside the factory, `socket`, `smtplib`, `urllib.request`, `requests`, `aiohttp`, `getaddrinfo`). SMTP goes through an HTTP `CONNECT` tunnel.
+- **The gate.** No outbound work starts unless the last self-check passed (every `EGRESS_CHECK_INTERVAL_S`, 300 s by default). It checks that the tunnel is running, that two independent echo services agree on the public address, that it equals the address gluetun reports, that it is a global address and that it is inside `EGRESS_ALLOWED_CIDRS` (default: the /24 of the endpoint). Otherwise it stays closed with a constant reason code and lookups wait without spending quota. Events keep being stored. It is a positive check: it never needs to learn the home address.
+- **Least privilege for `vpn`.** It is the only container with `NET_ADMIN` and `/dev/net/tun`, still `cap_drop: [ALL]`, `no-new-privileges`, read-only root, no published port, image pinned by digest. Its control server answers only two read routes (tunnel status, public address), so a compromised client cannot stop or reconfigure the tunnel. The proxy needs a password (at least 24 characters) and runs in stealth mode (no `Via` or `X-Forwarded-For`).
+- **Check it live.** `just egress-check` tries direct TCP and UDP to public resolvers from `ingest`, `collector` and `analyzer`, name resolution, CONNECT to the bridge gateway, a name that resolves to loopback, and takes the tunnel down and back up. It prints PASS or FAIL per line and never prints the exit address.
+
+#### The collector and SSRF
+
+The collector is the one component whose destination is chosen by an attacker (the URL in a captured command). Its rules:
+
+- **URL validator**, run before the first request and on every redirect hop (redirects are followed by hand, 3 at most). Only `http` and `https`, no user-info. An IP literal must be in canonical form (decimal, octal, hex and short forms are refused) and global: not private, loopback, link-local, multicast, reserved, documentation or carrier-grade NAT, not the VPN's own addresses, not anything in `COLLECTOR_DENY_CIDRS`. A name needs at least two labels, valid IDNA, and must not be `localhost` or end in `.local`, `.internal`, `.lan`, `.arpa` and similar, or be one of the deployment's own host names.
+- **Three more layers** behind the validator: gluetun's DNS rebinding protection drops private answers, the host firewall allows nothing from `sp-vpn` but WireGuard, and `vpn` shares networks only with its two clients.
+- **Caps.** 16 MiB (`COLLECTOR_MAX_BYTES`) counted on the bytes streamed, never on `Content-Length`; 10 s connect and 60 s total; 2 concurrent fetches and one per host; 10 s between requests to one host; 60 fetches an hour and 500 a day. No decompression, no cookies, no `Referer`. The client identity is a generic `Wget` or `curl` string, never the project name.
+- **No body is kept on failure.** Every attempt is recorded with a constant outcome code.
+
+#### Quarantine
+
+- The `quarantine` volume is written only by `collector`. `analyzer` and `api` mount it read-only.
+- A file is written to a temporary name, hashed while streaming, aborted if it passes the size cap, set to mode `0400`, then moved to `ab/cd/<sha256>`. No extension, no execute bit. A static test forbids `chmod` with an `x` bit and any `exec` or `spawn` call on a quarantine path.
+- Total size is capped (`QUARANTINE_MAX_MB`, 2,048). At the cap the collector stops fetching and keeps recording URLs. A file is deleted `QUARANTINE_RETENTION_DAYS` (90) after it was last seen; its row and analysis stay.
+- Nothing is ever served raw. An administrator can download a sample only as an AES-256 zip with the conventional password `infected`, after typing their password again, at most 10 times an hour, with an audit log entry.
+- Nothing from the quarantine, and no file named after a sha256, may be committed.
+
+#### Parser safety
+
+The analyzer treats every file as hostile. It has no network and no Redis. Parsing happens in a child process with `RLIMIT_AS` 384 MB (`ANALYZER_MEMORY_MB`), `RLIMIT_CPU`, a zero file-size limit and 16 open files, a 60 s wall-clock timeout (`ANALYZER_TIMEOUT_S`) after which the child is killed, and a 2 MiB output cap. The parent validates the child's JSON against a model, so a confused child cannot write arbitrary rows. File types and architectures are read with small bounds-checked header parsers, not libmagic. YARA runs with a scan timeout. Archives are identified but not extracted, and packed files are never unpacked. Shell deobfuscation is plain text rewriting: no `eval`, no command substitution, at most 5 passes and 256 KiB of output. Tests feed truncated headers, huge counts, random 16 MiB buffers, deeply nested base64 and self-expanding variables, and no real malware is committed.
 
 #### Port guard
 
@@ -310,6 +344,7 @@ Review outcomes so far:
 | RDP sensor | 2 | Pass 1 **failed**: a TLS `close_notify` made the read return empty data, which sent the read loop into a 100% CPU busy loop (a one-packet denial of service), TLS handshakes were not throttled, and slow clients could use up all handshake slots. Fixed with an explicit end-of-stream check, per-source and global handshake limits, short deadlines and eviction of idle connections. Pass 2 passed. |
 | Dashboard authentication | 1 | Passed on the first pass. The medium findings were fixed: argon2 concurrency could exhaust memory (one check at a time now), CSRF bound to the session, `__Host-` cookies, trusted hosts, a per-boot signing key, IPv6 rate limiting per /64, trusted proxy CIDRs, and a stricter redirect target check in the web app. |
 | Synology sensor (M20) | passed | Two passes. Fixed: per-IP and sensor-wide caps on TLS handshakes in flight and per second, a full ClientHello required before a handshake slot is taken, an exact nginx plain-HTTP-on-HTTPS-port page, consistent `text/html`, and per-path asset sizes. PoCs against a hardened container kept legitimate HTTPS working. |
+| Anonymous egress, collector, analyzer and quarantine (M21) | passed | Reviewed for the VPN service and kill switch, the egress gate, the SSRF validator, the quarantine and the parser limits on hostile files. The rules it checked are listed in the section above. |
 | Web sensor | in progress | Pass 1 found response amplification that could exhaust memory. Pass 2 found lingering transports under reconnect churn. Pass 3 found the per-connection cost of TLS. Fixes are ongoing, and the sensor is not in Compose until it passes. |
 | Terminal replay (planned) | | The [safety contract](#terminal-replay-safety-contract) is a requirement for it. |
 

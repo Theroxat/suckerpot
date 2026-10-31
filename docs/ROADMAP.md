@@ -252,12 +252,12 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M21 — Anonymous egress, payload collection and static analysis
 
-- [ ] `vpn` service: a WireGuard client (settings from `VPN_WG_*` in `.env`) with a kill switch: nothing leaves when the tunnel is down, and DNS goes through the tunnel. The only container with `NET_ADMIN` and `/dev/net/tun`; everything else in it stays hardened.
-- [ ] Every outbound connection of the stack (ingest enrichment, intel and CVE lookups, the collector) goes through `vpn`. Sensors and the dashboard keep their current paths, and the host itself is unchanged. A test proves that no service other than `vpn` has a direct route to the internet.
-- [ ] `collector` service: fetches captured download URLs (HTTP, HTTPS, TFTP) through `vpn` only, soon after capture, with size, time, redirect and per-host caps, a generic client identity, and a bounded follow of the next-stage URLs found in fetched scripts. Files go to a quarantine volume under their sha256, mode 0400, never executed, never served raw by the API.
-- [ ] Static analysis without execution: file type and architecture, sha256 and TLSH, printable strings, YARA rules (Mirai, Gafgyt, miners, Redis modules) kept in the repo, shell deobfuscation (base64, `echo -e` hex, variables), and C2 addresses fed back into the indicators.
-- [ ] Sample pages in the UI: where a sample came from, which sources dropped it, the chain script → binary → C2, YARA hits and the deobfuscated text. Download of a sample only as a password-protected archive, by an admin.
-- [ ] Security review (egress, quarantine, parser safety on hostile files) and UI review.
+- [x] `vpn` service: a WireGuard client (settings from `VPN_WG_*` in `.env`) with a kill switch: nothing leaves when the tunnel is down, and DNS goes through the tunnel. The only container with `NET_ADMIN` and `/dev/net/tun`; everything else in it stays hardened.
+- [x] Every outbound connection of the stack (ingest enrichment, intel and CVE lookups, the collector) goes through `vpn`. Sensors and the dashboard keep their current paths, and the host itself is unchanged. A test proves that no service other than `vpn` has a direct route to the internet.
+- [x] `collector` service: fetches captured download URLs (HTTP, HTTPS, TFTP) through `vpn` only, soon after capture, with size, time, redirect and per-host caps, a generic client identity, and a bounded follow of the next-stage URLs found in fetched scripts. Files go to a quarantine volume under their sha256, mode 0400, never executed, never served raw by the API.
+- [x] Static analysis without execution: file type and architecture, sha256 and TLSH, printable strings, YARA rules (Mirai, Gafgyt, miners, Redis modules) kept in the repo, shell deobfuscation (base64, `echo -e` hex, variables), and C2 addresses fed back into the indicators.
+- [x] Sample pages in the UI: where a sample came from, which sources dropped it, the chain script → binary → C2, YARA hits and the deobfuscated text. Download of a sample only as a password-protected archive, by an admin.
+- [x] Security review (egress, quarantine, parser safety on hostile files) and UI review.
 
 **Acceptance:** with the tunnel down nothing is fetched and no lookup leaves; captured URLs are fetched through the tunnel only; a hostile file cannot crash or escape the analyser; security review PASS.
 
@@ -275,7 +275,6 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - Per-/24 or per-ASN daily cap on new campaigns, so one network cannot create many campaigns in a day.
 - ATT&CK per-event mapping: compute the lower-case form of each event field once and share it between rules.
 - Campaign clustering: commit per chunk instead of one transaction per cycle, so a long cycle does not hold locks.
-- Payload analysis in quarantine: static checks on fetched files, without execution. To be framed with the owner before any design work.
 - Provider keys: sealed-box (public-key) encryption so the API can store a key but never read it back, only ingest can.
 - Public read-only page through Cloudflare Tunnel, IPs masked.
 - LLM-backed SSH shell.

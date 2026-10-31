@@ -68,9 +68,9 @@ Host (nftables table "suckerpot_host", see Deployment)
 | Service | Networks | Role | Status |
 | --- | --- | --- | --- |
 | `redis` | `sensors-ssh`, `sensors-rdp`, `sensors-telnet`, `sensors-web`, `sensors-redis`, `sensors-docker`, `sensors-mysql`, `sensors-mssql`, `sensors-adb`, `sensors-smb`, `sensors-sip`, `sensors-synology`, `tools`, `backend` | Redis Streams queue. Named ACL users (see below). AOF persistence on `redis-data`. | Built |
-| `db` | `backend` | PostgreSQL 17 with TimescaleDB 2.22.1, on `db-data`. Runs only as the owner role. | Built |
+| `db` | `backend`, `samples` | PostgreSQL 17 with TimescaleDB 2.22.1, on `db-data`. Runs only as the owner role. | Built |
 | `migrate` | `backend` | One-shot. Checks the secrets policy, runs `alembic upgrade head`, then re-applies the application roles and their passwords, and exits with code 0. | Built |
-| `ingest` | `backend`, `egress` | Reads all sensor streams, validates events, enriches and tags them, writes them to the database. | Built. GeoIP files live on the `geoip-data` volume. |
+| `ingest` | `backend`, `egress-proxy` | Reads all sensor streams, validates events, enriches and tags them, writes them to the database. Outbound calls go through the `vpn` proxy only. | Built. GeoIP files live on the `geoip-data` volume. |
 | `api` | `backend`, `dashboard` | FastAPI (512 MB memory limit). REST endpoints, WebSocket feed, `/healthz`, and the built web UI when present. The only service with a dashboard port. | Built |
 | `sensor-ssh` | `ingress`, `sensors-ssh` | SSH honeypot. See [SSH sensor](sensors/ssh.md). | Built |
 | `sensor-telnet` | `ingress`, `sensors-telnet` | BusyBox-style Telnet sensor. See [Telnet](sensors/telnet.md). Stream `events:telnet`. | Built |
@@ -84,6 +84,9 @@ Host (nftables table "suckerpot_host", see Deployment)
 | `sensor-smb` | `ingress`, `sensors-smb` | SMB file service, observation only. See [SMB](sensors/smb.md). Stream `events:smb`. | Built (M9) |
 | `sensor-sip` | `ingress`, `sensors-sip` | Asterisk-style PBX on UDP and TCP 5060. See [SIP](sensors/sip.md). Stream `events:sip`. | Built (M9) |
 | `sensor-synology` | `ingress`, `sensors-synology` | Synology DSM 7.2.1 look-alike on HTTP 5000 and HTTPS 5001. See [Synology](sensors/synology.md). Stream `events:synology`. | Built (M20), under security review |
+| `vpn` | `vpn-uplink`, `egress-proxy` | WireGuard client (gluetun) with a kill switch, an HTTP proxy and a small control server. The only container with a route to the internet. Profile `egress`. | Built (M21) |
+| `collector` | `samples`, `egress-proxy` | Fetches the files behind captured download URLs through the `vpn` proxy and stores them in quarantine. Never parses or runs them. Profile `egress`. | Built (M21) |
+| `analyzer` | `samples` | Static analysis of quarantined files in a resource-limited child process. No route to the internet, Redis or ingest. Profile `egress`. | Built (M21) |
 | `demo` | `tools` | Synthetic attack generator. Runs only with `--profile tools`. | Built |
 
 Start order: `redis` and `db` first. `migrate` runs once the database is healthy. `ingest` and `api` start after `migrate` has finished with code 0. Sensors start after Redis is healthy.
@@ -98,10 +101,12 @@ Each network has a single job. The point of the layout is that a compromised sen
 | `sensors-<name>`, one per sensor (`sensors-ssh`, `sensors-web`, `sensors-sip`, ...) | (project prefix) | None (`internal: true`) | `redis` and one sensor | The one link between a sensor and Redis. One network per sensor. |
 | `tools` | (project prefix) | None (`internal: true`) | `redis`, `demo` | The demo generator reaches Redis and nothing else. |
 | `backend` | (project prefix) | None (`internal: true`) | `redis`, `db`, `migrate`, `ingest`, `api` | Storage and processing stay off the internet. |
-| `egress` | (project prefix) | Outbound | `ingest` only | The one place for outbound calls: GeoIP downloads, reputation lookups, CVE feeds, indicator intel, alert webhooks, the alert e-mail server and, when enabled, the Anthropic API. See [outbound hosts](#outbound-hosts). |
+| `vpn-uplink` | `sp-vpn` | Outbound, but only through the WireGuard tunnel. Inter-container communication off. | `vpn` only | The one route to the internet in the whole stack. See [Anonymous egress](#anonymous-egress-m21). |
+| `egress-proxy` | `sp-egress` | None (`internal: true`) | `vpn`, `ingest`, `collector` | The HTTP proxy and control server of `vpn`. Nothing else may join it. |
+| `samples` | `sp-samples` | None (`internal: true`) | `db`, `collector`, `analyzer` | Keeps the collector and analyzer away from Redis, ingest and the API. |
 | `dashboard` | `sp-dashboard` | None. Masquerading off. | `api` only | The published dashboard port. |
 
-`sp-ingress` and `sp-dashboard` have fixed bridge names, so the [host firewall](deployment.md#host-firewall) can match them by name.
+`sp-ingress`, `sp-dashboard`, `sp-vpn`, `sp-egress` and `sp-samples` have fixed bridge names, so the [host firewall](deployment.md#host-firewall) can match them by name.
 
 ### Sensors need two networks
 
@@ -124,9 +129,33 @@ The `dashboard` network is a normal bridge with IP masquerading turned off. The 
 This is **not** a complete block on outbound traffic. Without masquerading, packets from the container keep their container address. If the host has a route for that address and no firewall rule drops them, they can still leave. The DNS setting does not stop a connection to a raw IP address. The host firewall in [Deployment](deployment.md#host-firewall) drops new connections from `sp-ingress` and `sp-dashboard`. Keep it loaded, and filter egress upstream as well.
 ```
 
-### Why only `ingest` has `egress`
+### Anonymous egress (M21)
 
-Only `ingest` needs outbound calls: GeoIP database downloads, AbuseIPDB and GreyNoise checks, the daily CVE feeds (`www.cisa.gov`, `services.nvd.nist.gov`, `api.github.com`), indicator lookups at three fixed hosts (`urlhaus-api.abuse.ch`, `threatfox-api.abuse.ch`, `www.virustotal.com`), alert delivery (webhooks and e-mail), the optional script explainer, and (in the future) optional payload fetches. The API never sends anything out. The database and Redis are not reachable from the internet, and a sensor cannot reach the database.
+The stack's own outbound traffic never leaves from the home address. The rules:
+
+- **Only `vpn` has an internet route.** It sits on `vpn-uplink` (`sp-vpn`) and on the internal `egress-proxy` network. No other service is attached to a network with a route out, apart from the two inbound-only networks `sp-ingress` and `sp-dashboard`.
+- **`ingest` and `collector` go through the proxy.** They reach the internet only with the `suckerpot_egress` client, which sends host names to the `vpn` HTTP proxy. They do not resolve external names themselves (`dns: 127.0.0.1`), and no `HTTP_PROXY` variable is set, so a client that ignores the factory has no route and fails.
+- **`analyzer` has no network out.** It shares only `samples` with `db` and `collector`.
+- **`vpn` is on no backend or sample network.** Through the proxy one can reach whatever shares a network with `vpn`, so it shares networks only with its two clients.
+- **A kill switch.** gluetun's firewall allows only the tunnel and the WireGuard packets to one endpoint. The [host firewall](deployment.md#host-firewall) repeats that rule for `sp-vpn`, so it holds even if gluetun's firewall failed.
+- **A gate.** Before any outbound work, `ingest` and `collector` check that the tunnel is up and that the public address seen through the proxy is the one gluetun reports, a global address and inside the expected network. A closed gate pauses lookups. Events are still stored.
+
+Without the `egress` profile there is no `vpn`, so every outbound feature stays idle (GeoIP downloads, reputation, intel, CVE feeds, LLM, alert delivery, the collector) and Settings says "no egress". There is no direct mode. Already downloaded GeoIP files keep working.
+
+`scripts/guardrails/` holds a static test of `docker-compose.yml` that fails when these rules are broken. `just egress-check` proves them on the running stack. See [Security](SECURITY.md#anonymous-egress-m21).
+
+### Collector and analyzer
+
+Both run from one image (`collector/`) with different commands, networks and database roles.
+
+| Service | Command | Networks | DB role | Quarantine |
+| --- | --- | --- | --- | --- |
+| `collector` | `python -m collector fetch` | `samples`, `egress-proxy` | `suckerpot_collector` | read-write |
+| `analyzer` | `python -m collector analyze` | `samples` | `suckerpot_analyzer` | read-only |
+
+The collector polls the download URLs that ingest already stored as indicators (it does not read Redis), validates each one, fetches it through the proxy with size, time, redirect and rate caps, and writes the file to the `quarantine` volume under its sha256 name (mode `0400`, never executed). The analyzer identifies the file type and architecture, hashes it (sha256, sha1, md5, TLSH), extracts strings, runs YARA rules from `collector/rules/yara/`, deobfuscates shell scripts as text and extracts URLs and C2 addresses. Next-stage URLs go back to the collector (depth 2 by default); C2 addresses become indicators. The parser runs in a child process with memory, CPU and time limits. The API mounts the quarantine read-only and serves a sample only as a password-protected archive to an administrator.
+
+Both services are off until `COLLECTOR_ENABLED=true`. TFTP and FTP URLs are recorded but not fetched: UDP cannot cross an HTTP proxy.
 
 ### Outbound hosts
 
@@ -136,8 +165,12 @@ Only `ingest` needs outbound calls: GeoIP database downloads, AbuseIPDB and Grey
 | Alerts (Teams) | `outlook.office.com`, `outlook.office365.com`, and hosts under `.webhook.office.com`, `.logic.azure.com` or `.api.powerplatform.com` | A Teams channel is set up and a rule is on | Same checks as Discord, with the Workflows and connector path prefixes. |
 | Alerts (e-mail) | The SMTP server you set (`SMTP_HOST`), over STARTTLS (port 587 by default) or SMTPS (465) | An e-mail channel is set up and a rule is on | The certificate is always checked. Plain text is never offered. The sender is the one address you set. |
 | Script explainer | `api.anthropic.com` | `LLM_ENABLED=true` and a key is set | Only normalised script text is sent. No address, host or session data. |
+| GeoIP download, reputation, intel, CVE feeds | The fixed hosts listed in [Enrichment](configuration.md) and in the CVE and indicator sections of [Security](SECURITY.md) | The matching feature is on | Fixed hosts only, quotas enforced, results cached 24 h. |
+| Collector | The host in a captured download URL | `COLLECTOR_ENABLED=true` | The only caller whose destination is chosen by an attacker. Public addresses only (see [Security](SECURITY.md#the-collector-and-ssrf)), size, time, redirect and rate caps, never executed. |
+| Egress self-check | Two public "what is my address" services (`EGRESS_ECHO_URLS`) | Every `EGRESS_CHECK_INTERVAL_S` | Goes through the proxy like everything else. |
+| `vpn` | The one WireGuard endpoint (`VPN_WG_ENDPOINT_IP`, UDP) | Always, with the profile | The host firewall allows nothing else from `sp-vpn`. |
 
-Webhook and SMTP targets are checked when they are saved and again just before each send. Private and loopback addresses are refused. No other service in the stack has an outbound route.
+Webhook and SMTP targets are checked when they are saved and again just before each send. Private and loopback addresses are refused. Every call in this table leaves through the `vpn` proxy; no service in the stack has a direct outbound route.
 
 The public feed (`/feeds`, see [API](api.md)) is inbound only. It is served by the API on the dashboard port, and it is off until `FEEDS_ENABLED=true`.
 
