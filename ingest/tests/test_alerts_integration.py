@@ -17,6 +17,8 @@ from ingest.alerts.worker import AlertWorker
 from ingest.features import FeatureSettings
 from ingest.reports.worker import ReportWorker
 
+from .db_fixtures import reset_tables
+
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(not os.environ.get("POSTGRES_HOST"), reason="POSTGRES_HOST not set"),
@@ -53,10 +55,12 @@ async def clean(engine: AsyncEngine) -> AsyncIterator[AsyncEngine]:
     """Empty alert tables before and after, so other tests see the seeded, disabled rules."""
 
     async def reset() -> None:
-        async with engine.begin() as conn:
-            await conn.execute(text(RESET))
-            await conn.execute(text("UPDATE alert_rules SET enabled = false, channel_ids = '{}'"))
-            await conn.execute(text("TRUNCATE sessions"))
+        await reset_tables(
+            engine,
+            RESET,
+            "UPDATE alert_rules SET enabled = false, channel_ids = '{}'",
+            "TRUNCATE sessions",
+        )
 
     await reset()
     yield engine
