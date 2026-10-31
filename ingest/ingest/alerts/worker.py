@@ -266,6 +266,9 @@ class AlertWorker(FeatureWorker):
             await self._send(channel, message)
         except SendError as exc:
             log.info("alert delivery failed (%s)", exc.code)
+            if exc.code == "egress_closed":  # not now: stays pending and costs no attempt
+                await outbox.mark(self.sf, ids, "pending", error=exc.code, attempt=False)
+                return 0
             await outbox.record_retry(self.sf, items, exc.code, exc.retryable)
             return 0
         if digest_of:

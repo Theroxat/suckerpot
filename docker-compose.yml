@@ -104,7 +104,8 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=70,gid=70
       - /var/run/postgresql:rw,noexec,nosuid,nodev,size=1m,uid=70,gid=70
-    networks: [backend]
+    # "samples" lets the collector and analyzer (profile egress) reach the database.
+    networks: [backend, samples]
     shm_size: 256m
     mem_limit: 1g
     memswap_limit: 1g
@@ -134,6 +135,12 @@ services:
       POSTGRES_INGEST_PASSWORD: ${POSTGRES_INGEST_PASSWORD:?POSTGRES_INGEST_PASSWORD must be set in .env}
       POSTGRES_API_USER: ${POSTGRES_API_USER:-suckerpot_api}
       POSTGRES_API_PASSWORD: ${POSTGRES_API_PASSWORD:?POSTGRES_API_PASSWORD must be set in .env}
+      # Roles of the collector and analyzer (profile "egress"). Required when the profile is on
+      # (scripts/check-vpn-env.sh); empty otherwise.
+      POSTGRES_COLLECTOR_USER: ${POSTGRES_COLLECTOR_USER:-suckerpot_collector}
+      POSTGRES_COLLECTOR_PASSWORD: ${POSTGRES_COLLECTOR_PASSWORD:-}
+      POSTGRES_ANALYZER_USER: ${POSTGRES_ANALYZER_USER:-suckerpot_analyzer}
+      POSTGRES_ANALYZER_PASSWORD: ${POSTGRES_ANALYZER_PASSWORD:-}
       RETENTION_DAYS: ${RETENTION_DAYS:-90}
       INDICATORS_MAX_ROWS: ${INDICATORS_MAX_ROWS:-500000}
       CAMPAIGNS_MAX_ROWS: ${CAMPAIGNS_MAX_ROWS:-50000}
@@ -226,14 +233,25 @@ services:
       SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
       ALERTS_DASHBOARD_URL: ${ALERTS_DASHBOARD_URL:-}
       SITE_TIMEZONE: ${SITE_TIMEZONE:-UTC}
+      # Anonymous egress (M21): every outbound request goes through the vpn HTTP proxy. No
+      # HTTP(S)_PROXY variable is set on purpose: the clients use the suckerpot_egress factory.
+      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-http://vpn:8888}
+      EGRESS_PROXY_PASSWORD: ${EGRESS_PROXY_PASSWORD:-}
+      EGRESS_CONTROL_URL: ${EGRESS_CONTROL_URL:-http://vpn:8000}
+      EGRESS_ECHO_URLS: ${EGRESS_ECHO_URLS:-https://api.ipify.org,https://icanhazip.com}
+      EGRESS_ALLOWED_CIDRS: ${EGRESS_ALLOWED_CIDRS:-}
+      EGRESS_CHECK_INTERVAL_S: ${EGRESS_CHECK_INTERVAL_S:-300}
+      VPN_WG_ENDPOINT_IP: ${VPN_WG_ENDPOINT_IP:-}
+      VPN_WG_DNS: ${VPN_WG_DNS:-}
     volumes:
       # GeoIP databases downloaded by ingest (the only writable path besides /tmp).
       - geoip-data:/data/geoip
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
-    # "backend" is internal; "egress" gives ingest (and only ingest) outbound
-    # internet access for the enrichment APIs added in M4.
-    networks: [backend, egress]
+    # Both networks are internal. External names do not resolve here (Docker's embedded
+    # resolver still answers service names); the only way out is the vpn proxy.
+    dns: ["127.0.0.1"]
+    networks: [backend, egress-proxy]
     mem_limit: 384m
     memswap_limit: 384m
     oom_score_adj: -200
@@ -284,6 +302,9 @@ services:
       API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
       # Machine-readable blocklist feeds (M16), outside /api/v1 and off by default.
       FEEDS_ENABLED: ${FEEDS_ENABLED:-false}
+      # Egress card in Settings (quota meter and quarantine cap).
+      COLLECTOR_DAILY_QUOTA: ${COLLECTOR_DAILY_QUOTA:-500}
+      QUARANTINE_MAX_MB: ${QUARANTINE_MAX_MB:-2048}
       BLOCKLIST_NEVER: ${BLOCKLIST_NEVER:-}
       INDICATORS_IGNORE: ${INDICATORS_IGNORE:-}
       SITE_TIMEZONE: ${SITE_TIMEZONE:-UTC}
@@ -294,6 +315,9 @@ services:
     ports:
       # The only published port. Never use a sensor port or the admin SSH port.
       - "${DASHBOARD_BIND:-127.0.0.1}:${DASHBOARD_PORT:-8443}:8000"
+    volumes:
+      # Samples fetched by the collector, read-only (archive download of one sample).
+      - quarantine:/quarantine:ro
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
     networks: [backend, dashboard]
@@ -970,6 +994,211 @@ services:
       retries: 3
       start_period: 20s
 
+  # Anonymous egress (M21): the only container with a route to the internet, and only through
+  # a WireGuard tunnel (gluetun firewall = kill switch). Profile "egress": without it the
+  # stack runs without outbound access and every external lookup stays idle.
+  vpn:
+    image: qmcgaw/gluetun:v3.41.1@sha256:1a5bf4b4820a879cdf8d93d7ef0d2d963af56670c9ebff8981860b6804ebc8ab
+    profiles: [egress]
+    read_only: true
+    cap_drop: [ALL]
+    # gluetun runs as root to program iptables; with everything else dropped that root
+    # keeps NET_ADMIN only.
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+    # The Docker networks have no IPv6 and gluetun refuses to start with an IPv6 interface
+    # address, so the /128 entries of VPN_WG_ADDRESSES are dropped before it starts.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        WIREGUARD_ADDRESSES=$$(printf '%s' "$$WIREGUARD_ADDRESSES" | tr ',' '\n' | grep -v ':' | paste -sd, -)
+        export WIREGUARD_ADDRESSES
+        exec /gluetun-entrypoint
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: "1"
+    environment:
+      TZ: UTC
+      # An account that already exists in the image (nobody): gluetun would otherwise try to
+      # create one and fail on the read-only /etc/passwd.
+      PUID: "65534"
+      PGID: "65534"
+      VPN_SERVICE_PROVIDER: custom
+      VPN_TYPE: wireguard
+      VPN_INTERFACE: wg0
+      WIREGUARD_IMPLEMENTATION: userspace
+      # Empty values make gluetun exit: fail closed.
+      WIREGUARD_PRIVATE_KEY: ${VPN_WG_PRIVATE_KEY:-}
+      WIREGUARD_PUBLIC_KEY: ${VPN_WG_PEER_PUBLIC_KEY:-}
+      WIREGUARD_ADDRESSES: ${VPN_WG_ADDRESSES:-}
+      WIREGUARD_ENDPOINT_IP: ${VPN_WG_ENDPOINT_IP:-}
+      WIREGUARD_ENDPOINT_PORT: ${VPN_WG_ENDPOINT_PORT:-}
+      WIREGUARD_PERSISTENT_KEEPALIVE_INTERVAL: 25s
+      # gluetun v3.41.1 has no variable for a custom plain-DNS upstream: it keeps its default
+      # (DNS over TLS to a public resolver), which also goes through the tunnel.
+      DNS_UPSTREAM_IPV6: "off"
+      DNS_KEEP_NAMESERVER: "off"
+      # Must stay off: the blocklist would stop the collector from resolving the hosts it fetches.
+      BLOCK_MALICIOUS: "off"
+      BLOCK_SURVEILLANCE: "off"
+      BLOCK_ADS: "off"
+      HTTPPROXY: "on"
+      HTTPPROXY_LISTENING_ADDRESS: ":8888"
+      HTTPPROXY_STEALTH: "on"
+      HTTPPROXY_LOG: "off"
+      HTTPPROXY_USER: egress
+      HTTPPROXY_PASSWORD: ${EGRESS_PROXY_PASSWORD:-}
+      SHADOWSOCKS: "off"
+      HTTP_CONTROL_SERVER_ADDRESS: ":8000"
+      HTTP_CONTROL_SERVER_LOG: "off"
+      HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH: /gluetun/auth/config.toml
+      HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE: "{}"
+      PUBLICIP_ENABLED: "on"
+      PUBLICIP_FILE: /gluetun/ip
+      # The startup health check must use IP:port targets. With the default host names, DNS fails
+      # at once (the tunnel is not up yet), gluetun restarts the VPN every second and the
+      # WireGuard handshake never completes.
+      HEALTH_TARGET_ADDRESSES: "1.1.1.1:443,9.9.9.9:443"
+      HEALTH_SMALL_CHECK_TYPE: dns
+      HEALTH_RESTART_VPN: "on"
+      VERSION_INFORMATION: "off"
+      UPDATER_PERIOD: "0"
+      # FIREWALL_OUTBOUND_SUBNETS must stay unset: it would open LAN routes outside the tunnel.
+    volumes:
+      - ./vpn/control-auth.toml:/gluetun/auth/config.toml:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m,mode=0755
+      - /gluetun:rw,noexec,nosuid,nodev,size=8m,mode=0755
+      # wireguard-go control sockets.
+      - /run/wireguard:rw,noexec,nosuid,nodev,size=1m
+    # gluetun cannot rewrite /etc/resolv.conf on a read-only root: point it at its own DNS
+    # server (which forwards through the tunnel) so name lookups never use Docker's resolver.
+    dns: ["127.0.0.1"]
+    networks:
+      vpn-uplink:
+        gw_priority: 100
+      egress-proxy: {}
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    # no ports: nothing is published
+
+  # Fetches the files behind captured download URLs, through the vpn proxy only. Hashes and
+  # stores them in quarantine; never parses or executes them.
+  collector:
+    profiles: [egress]
+    build:
+      context: .
+      dockerfile: collector/Dockerfile
+    command: ["python", "-m", "collector", "fetch"]
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      <<: *db-env
+      POSTGRES_USER: ${POSTGRES_COLLECTOR_USER:-suckerpot_collector}
+      POSTGRES_PASSWORD: ${POSTGRES_COLLECTOR_PASSWORD:-}
+      COLLECTOR_ENABLED: ${COLLECTOR_ENABLED:-false}
+      COLLECTOR_POLL_S: ${COLLECTOR_POLL_S:-15}
+      COLLECTOR_MAX_BYTES: ${COLLECTOR_MAX_BYTES:-16777216}
+      COLLECTOR_TIMEOUT_S: ${COLLECTOR_TIMEOUT_S:-60}
+      COLLECTOR_CONNECT_TIMEOUT_S: ${COLLECTOR_CONNECT_TIMEOUT_S:-10}
+      COLLECTOR_MAX_REDIRECTS: ${COLLECTOR_MAX_REDIRECTS:-3}
+      COLLECTOR_CONCURRENCY: ${COLLECTOR_CONCURRENCY:-2}
+      COLLECTOR_HOST_INTERVAL_S: ${COLLECTOR_HOST_INTERVAL_S:-10}
+      COLLECTOR_HOURLY_QUOTA: ${COLLECTOR_HOURLY_QUOTA:-60}
+      COLLECTOR_DAILY_QUOTA: ${COLLECTOR_DAILY_QUOTA:-500}
+      COLLECTOR_REFETCH_HOURS: ${COLLECTOR_REFETCH_HOURS:-24}
+      COLLECTOR_MAX_DEPTH: ${COLLECTOR_MAX_DEPTH:-2}
+      COLLECTOR_DENY_CIDRS: ${COLLECTOR_DENY_CIDRS:-}
+      QUARANTINE_MAX_MB: ${QUARANTINE_MAX_MB:-2048}
+      QUARANTINE_RETENTION_DAYS: ${QUARANTINE_RETENTION_DAYS:-90}
+      API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
+      API_ALLOWED_ORIGINS: ${API_ALLOWED_ORIGINS:-}
+      INDICATORS_IGNORE: ${INDICATORS_IGNORE:-}
+      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-http://vpn:8888}
+      EGRESS_PROXY_PASSWORD: ${EGRESS_PROXY_PASSWORD:-}
+      EGRESS_CONTROL_URL: ${EGRESS_CONTROL_URL:-http://vpn:8000}
+      EGRESS_ECHO_URLS: ${EGRESS_ECHO_URLS:-https://api.ipify.org,https://icanhazip.com}
+      EGRESS_ALLOWED_CIDRS: ${EGRESS_ALLOWED_CIDRS:-}
+      EGRESS_CHECK_INTERVAL_S: ${EGRESS_CHECK_INTERVAL_S:-300}
+      VPN_WG_ENDPOINT_IP: ${VPN_WG_ENDPOINT_IP:-}
+      VPN_WG_DNS: ${VPN_WG_DNS:-}
+    dns: ["127.0.0.1"]
+    volumes:
+      - quarantine:/quarantine
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    networks: [samples, egress-proxy]
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    pids_limit: 32
+    restart: unless-stopped
+    depends_on:
+      vpn:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-m", "collector.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Static analysis of quarantined files, in a resource-limited child process. No route to the
+  # internet, Redis or ingest: it shares only the "samples" network (with db and collector).
+  analyzer:
+    profiles: [egress]
+    build:
+      context: .
+      dockerfile: collector/Dockerfile
+    command: ["python", "-m", "collector", "analyze"]
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      <<: *db-env
+      POSTGRES_USER: ${POSTGRES_ANALYZER_USER:-suckerpot_analyzer}
+      POSTGRES_PASSWORD: ${POSTGRES_ANALYZER_PASSWORD:-}
+      COLLECTOR_ENABLED: ${COLLECTOR_ENABLED:-false}
+      COLLECTOR_POLL_S: ${COLLECTOR_POLL_S:-15}
+      COLLECTOR_MAX_DEPTH: ${COLLECTOR_MAX_DEPTH:-2}
+      COLLECTOR_DENY_CIDRS: ${COLLECTOR_DENY_CIDRS:-}
+      ANALYZER_TIMEOUT_S: ${ANALYZER_TIMEOUT_S:-60}
+      ANALYZER_MEMORY_MB: ${ANALYZER_MEMORY_MB:-384}
+      API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
+      INDICATORS_IGNORE: ${INDICATORS_IGNORE:-}
+    dns: ["127.0.0.1"]
+    volumes:
+      - quarantine:/quarantine:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    networks: [samples]
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 0.5
+    pids_limit: 16
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-m", "collector.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   # Synthetic attack generator. Publishes to Redis as the restricted "sensor" user.
   # Run with: docker compose --profile tools run --rm demo [args]
   demo:
@@ -1054,8 +1283,27 @@ networks:
   # Redis, database, ingest and API. No route to the internet.
   backend:
     internal: true
-  # Outbound internet for ingest only.
-  egress:
+  # The only route to the internet: the vpn container's uplink (WireGuard to one endpoint).
+  # Masquerading stays on so the tunnel handshake can leave; the host firewall
+  # (scripts/host/firewall.nft) restricts sp-vpn to that one endpoint.
+  vpn-uplink:
+    name: sp-vpn
+    driver_opts:
+      com.docker.network.bridge.name: sp-vpn
+      com.docker.network.bridge.enable_icc: "false"
+  # vpn <-> ingest <-> collector: the HTTP proxy and the control server. Internal.
+  egress-proxy:
+    internal: true
+    driver_opts:
+      # Named so the host firewall can drop its traffic to the host (the gateway is the host).
+      com.docker.network.bridge.name: sp-egress
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  # db <-> collector <-> analyzer. Keeps both away from Redis, ingest and the API.
+  samples:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.name: sp-samples
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # Inbound-only network for the API: masquerading is off, so the published
   # dashboard port works but the API container cannot reach the internet.
   dashboard:
@@ -1080,3 +1328,5 @@ volumes:
   sip-sensor-data:
   synology-sensor-data:
   geoip-data:
+  # Files fetched by the collector (0400, never executed). Read-only for analyzer and api.
+  quarantine:

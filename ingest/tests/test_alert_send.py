@@ -1,4 +1,4 @@
-"""Webhook and e-mail delivery: host pinning, no redirects, TLS-only mail (all mocked)."""
+"""Webhook and e-mail delivery through the egress proxy: no redirects, TLS-only mail (mocked)."""
 
 import smtplib
 import ssl
@@ -6,17 +6,20 @@ from typing import Any, ClassVar
 
 import httpx
 import pytest
+from suckerpot_egress import EgressGate
 
 from ingest.alerts.config import AlertSettings
 from ingest.alerts.messages import sample_message
 from ingest.alerts.send import Sender, SendError
+
+from .helpers import fake_gate
 
 TOKEN = "T" * 30
 DISCORD = f"https://discord.com/api/webhooks/123456789012345678/{TOKEN}"
 
 
 def sender(
-    handler: Any, addresses: list[str] | None = None, settings: AlertSettings | None = None
+    handler: Any, settings: AlertSettings | None = None, gate: EgressGate | None = None
 ) -> tuple[Sender, list[httpx.Request]]:
     seen: list[httpx.Request] = []
 
@@ -25,45 +28,36 @@ def sender(
         response: httpx.Response = handler(request)
         return response
 
-    async def resolver(_host: str) -> list[str]:
-        return ["162.159.135.232"] if addresses is None else addresses
-
     client = httpx.AsyncClient(transport=httpx.MockTransport(wrapped), follow_redirects=False)
-    return Sender(settings or AlertSettings(), resolver=resolver, client=client), seen
+    return Sender(settings or AlertSettings(), client=client, gate=gate or fake_gate()), seen
 
 
-async def test_discord_post_is_pinned_to_the_resolved_address() -> None:
+async def test_discord_post_goes_to_the_host_name() -> None:
     s, seen = sender(lambda _r: httpx.Response(204))
     await s.send("discord", DISCORD, sample_message())
     (req,) = seen
-    assert req.url.host == "162.159.135.232" and req.url.path.endswith(TOKEN)
-    assert req.headers["host"] == "discord.com"
-    assert req.extensions["sni_hostname"] == "discord.com"
+    assert req.url.host == "discord.com" and req.url.path.endswith(TOKEN)
     assert b'"parse":[]' in req.content.replace(b" ", b"")
 
 
-async def test_ipv6_address_is_bracketed() -> None:
-    s, seen = sender(lambda _r: httpx.Response(204), ["2606:4700::6810:84e5"])
-    await s.send("discord", DISCORD, sample_message())
-    assert seen[0].url.host == "2606:4700::6810:84e5"
-
-
-PRIVATE = [
-    "10.1.2.3",  # gitleaks:allow (must be refused)
-    "127.0.0.1",
-    "169.254.169.254",
-    "::1",
-    "fd00::1",
-]
-
-
-@pytest.mark.parametrize("address", PRIVATE)
-async def test_private_addresses_are_refused_before_any_request(address: str) -> None:
-    s, seen = sender(lambda _r: httpx.Response(204), ["162.159.135.232", address])
+async def test_closed_gate_sends_nothing_and_is_retryable() -> None:
+    gate = fake_gate(open_=False, reason="tunnel_down")
+    s = Sender(AlertSettings(), gate=gate)  # the real, gate-checked client
     with pytest.raises(SendError) as err:
         await s.send("discord", DISCORD, sample_message())
-    assert err.value.code == "private_address" and not err.value.retryable
-    assert seen == []
+    assert err.value.code == "egress_closed" and err.value.retryable
+
+
+async def test_closed_gate_blocks_mail_before_the_thread(smtp: "type[FakeSMTP]") -> None:
+    s, _ = sender(
+        lambda _r: httpx.Response(204),
+        settings=MAIL,
+        gate=fake_gate(open_=False, reason="no_vpn"),
+    )
+    with pytest.raises(SendError) as err:
+        await s.send("email", "analyst@example.org", sample_message())
+    assert err.value.code == "egress_closed" and err.value.retryable
+    assert smtp.instances == []
 
 
 async def test_unofficial_host_is_refused_before_any_request() -> None:
@@ -103,13 +97,6 @@ async def test_errors_never_carry_the_token() -> None:
     assert TOKEN not in str(err.value) and TOKEN not in repr(err.value)
 
 
-async def test_no_address_is_a_retryable_dns_error() -> None:
-    s, _ = sender(lambda _r: httpx.Response(204), [])
-    with pytest.raises(SendError) as err:
-        await s.send("discord", DISCORD, sample_message())
-    assert err.value.code == "dns" and err.value.retryable
-
-
 async def test_teams_card_is_sent() -> None:
     url = (
         "https://prod-1.westeurope.logic.azure.com/workflows/"
@@ -129,8 +116,8 @@ class FakeSMTP:
     fail: ClassVar[Exception | None] = None
     starttls_fails: ClassVar[bool] = False
 
-    def __init__(self, host: str, port: int, **kw: Any) -> None:
-        self.host, self.port, self.kw = host, port, kw
+    def __init__(self, gate: Any, host: str, port: int, **kw: Any) -> None:
+        self.gate, self.host, self.port, self.kw = gate, host, port, kw
         self.calls: list[str] = []
         self.sent: tuple[Any, list[str]] | None = None
         FakeSMTP.instances.append(self)
@@ -165,8 +152,10 @@ def smtp(monkeypatch: pytest.MonkeyPatch) -> type[FakeSMTP]:
     FakeSMTP.instances = []
     FakeSMTP.fail = None
     FakeSMTP.starttls_fails = False
-    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
-    monkeypatch.setattr(smtplib, "SMTP_SSL", FakeSMTP)
+    import ingest.alerts.send as send_mod
+
+    monkeypatch.setattr(send_mod, "TunnelSMTP", FakeSMTP)
+    monkeypatch.setattr(send_mod, "TunnelSMTP_SSL", FakeSMTP)
     return FakeSMTP
 
 
@@ -218,10 +207,10 @@ async def test_email_needs_configuration_and_a_clean_address(smtp: type[FakeSMTP
 
 
 async def test_an_unexpected_exception_becomes_a_constant_internal_error() -> None:
-    async def broken(_host: str) -> list[str]:
+    def broken(_r: httpx.Request) -> httpx.Response:
         raise ValueError(f"boom {DISCORD}")
 
-    s = Sender(AlertSettings(), resolver=broken, client=httpx.AsyncClient())
+    s, _ = sender(broken)
     with pytest.raises(SendError) as err:
         await s.send("discord", DISCORD, sample_message())
     assert err.value.code == "internal" and TOKEN not in str(err.value)
@@ -244,6 +233,6 @@ async def test_the_whole_smtp_exchange_has_a_deadline(
 
 
 def test_the_http_client_keeps_no_connections_alive() -> None:
-    s = Sender(AlertSettings())
-    pool = s.client._transport._pool  # type: ignore[attr-defined]
+    s = Sender(AlertSettings(), gate=fake_gate())
+    pool = s.client._transport._inner._pool  # type: ignore[attr-defined]
     assert pool._max_keepalive_connections == 0

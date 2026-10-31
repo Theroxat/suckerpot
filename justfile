@@ -12,7 +12,7 @@ playwright_image := "mcr.microsoft.com/playwright:v1.64.1-noble"
 web_cache := "suckerpot-web-cache"
 web_env := "-e HOME=/tmp -e CI=1 -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e COREPACK_HOME=/cache/corepack -e npm_config_store_dir=/cache/pnpm-store"
 pnpm_setup := "mkdir -p /tmp/bin && corepack enable --install-directory /tmp/bin && export PATH=/tmp/bin:$PATH"
-packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo db ingest api"
+packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo scripts/guardrails egress analysis collector db ingest api"
 
 # List recipes.
 default:
@@ -48,6 +48,17 @@ ps:
 # Check the port layout (see scripts/check-ports.sh).
 ports:
     scripts/check-ports.sh
+    scripts/check-vpn-env.sh
+
+# Static compose guardrails (network isolation, egress invariants).
+guardrails:
+    docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -v "{{uv_cache}}:/cache" -w /work/scripts/guardrails \
+      -e HOME=/tmp -e UV_CACHE_DIR=/cache -e UV_LINK_MODE=copy -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
+      {{uv_image}} sh -c "uv sync -q && uv run pytest -q -p no:cacheprovider"
+
+# Live check of the anonymous egress (needs the stack up with COMPOSE_PROFILES=egress).
+egress-check:
+    scripts/egress-check.sh
 
 # Validate the compose file.
 config: ports
@@ -168,7 +179,7 @@ test-integration:
     trap 'docker compose -p "$it" -f docker-compose.yml -f docker-compose.it.yml down -v >/dev/null 2>&1' EXIT
     docker compose -p "$it" -f docker-compose.yml -f docker-compose.it.yml up -d --build --wait db redis
     {{just_executable()}} _cache
-    for pkg in db ingest api; do
+    for pkg in db ingest api collector; do
       [ -f "$pkg/pyproject.toml" ] || continue
       echo "== integration: $pkg"
       cid=$(docker create --user "$(id -u):$(id -g)" \

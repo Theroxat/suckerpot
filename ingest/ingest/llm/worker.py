@@ -25,6 +25,7 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ingest.egress import EgressClosed, EgressGate, gate_open, get_gate, make_client
 from ingest.enrichment.config import EnrichmentSettings
 from ingest.enrichment.reputation import reserve_quota
 from ingest.features import FeatureSettings, FeatureWorker
@@ -146,8 +147,10 @@ class ExplainerWorker(FeatureWorker):
         factory: async_sessionmaker[AsyncSession] | None = None,
         api_key: str = "",
         client: httpx.AsyncClient | None = None,
+        gate: EgressGate | None = None,
     ) -> None:
         super().__init__(settings, enabled=settings.llm_enabled)
+        self._gate = gate or get_gate()
         self.factory = factory
         self.api_key = api_key
         self.client = client
@@ -170,11 +173,9 @@ class ExplainerWorker(FeatureWorker):
 
     def _http(self) -> httpx.AsyncClient:
         if self.client is None:
-            # No proxy or CA settings from the environment, no redirects: the key goes to one
-            # host only.
-            self.client = httpx.AsyncClient(
-                timeout=HTTP_TIMEOUT, trust_env=False, follow_redirects=False, verify=True
-            )
+            # Through the VPN proxy only, no CA settings from the environment, no redirects: the
+            # key goes to one host only.
+            self.client = make_client(HTTP_TIMEOUT, gate=self._gate)
         return self.client
 
     def _headers(self) -> dict[str, str]:
@@ -189,6 +190,8 @@ class ExplainerWorker(FeatureWorker):
         error: str | None = None
         if not self.api_key:
             error = "no_key"
+        elif not gate_open(self._gate):
+            error = "egress_closed"  # nothing is sent
         else:
             try:
                 resp = await self._http().get(
@@ -200,6 +203,8 @@ class ExplainerWorker(FeatureWorker):
                     error = "rate_limited"
                 elif resp.status_code != 200:
                     error = "error"
+            except EgressClosed:
+                error = "egress_closed"
             except httpx.HTTPError:
                 error = "error"
         self.test_result = {
@@ -265,9 +270,12 @@ class ExplainerWorker(FeatureWorker):
                     )
                 )
             ).first()
-        if req is None:
+        if req is None or not gate_open(self._gate):
+            return  # a closed gate leaves the request queued: no quota, no state change
+        try:
+            state, detail = await self._answer(req.script_id)
+        except EgressClosed:
             return
-        state, detail = await self._answer(req.script_id)
         self.last_state = state if detail is None else f"{state}:{detail}"
         async with self._db() as db, db.begin():
             await db.execute(
@@ -329,6 +337,8 @@ class ExplainerWorker(FeatureWorker):
                     },
                 )
             return "done", None
+        except EgressClosed:
+            raise  # closed between the check and the request: the request stays queued
         except ExplainError as exc:
             return "failed", exc.code
         except Exception as exc:  # never put the message in the row: it could echo a request

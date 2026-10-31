@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "suckerpot-common",
     "suckerpot-db",
+    "suckerpot-egress",
     "redis>=5.2,<7",
     "maxminddb>=2.6,<3",
     "httpx>=0.27,<1",
@@ -27,6 +28,7 @@ dev = [
 [tool.uv.sources]
 suckerpot-common = { path = "../sensors/common" }
 suckerpot-db = { path = "../db" }
+suckerpot-egress = { path = "../egress" }
 suckerpot-api = { path = "../api" }
 
 [build-system]

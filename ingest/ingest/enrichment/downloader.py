@@ -25,6 +25,7 @@ from typing import Any
 import httpx
 import maxminddb
 
+from ingest.egress import EgressClosed, EgressGate, get_gate, make_client
 from ingest.enrichment.config import EnrichmentSettings
 from ingest.enrichment.geo import ASN_FILES, CITY_FILES, GeoResolver
 
@@ -125,12 +126,14 @@ class GeoManager:
         *,
         client_factory: Callable[[], httpx.AsyncClient] | None = None,
         on_status: Callable[[dict[str, Any]], Any] | None = None,
+        gate: EgressGate | None = None,
     ) -> None:
         self.s = settings
         self.resolver = resolver
+        self._gate = gate or get_gate()
         self._client_factory = client_factory or (
-            lambda: httpx.AsyncClient(
-                timeout=httpx.Timeout(30.0, read=120.0), follow_redirects=True
+            lambda: make_client(
+                httpx.Timeout(30.0, read=120.0), gate=self._gate, follow_redirects=True
             )
         )
         self.on_status = on_status
@@ -186,6 +189,11 @@ class GeoManager:
         todo = [p for p in _plan(self.s) if force or self._stale(p[2])]
         if not todo:
             return False
+        try:
+            self._gate.require_open()
+        except EgressClosed:
+            self._force = self._force or force  # not now: try again when the gate opens
+            return False
         changed = False
         try:
             self.s.geoip_dir.mkdir(parents=True, exist_ok=True)
@@ -201,6 +209,8 @@ class GeoManager:
             if changed:
                 self.last_error = None
                 self.resolver.reload()
+        except EgressClosed:
+            self._force = self._force or force  # closed mid-way: nothing is recorded as an error
         except (OSError, TimeoutError) as exc:
             self.last_error = type(exc).__name__
             log.warning("GeoIP refresh failed: %s", type(exc).__name__)

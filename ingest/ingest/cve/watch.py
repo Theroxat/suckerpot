@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ingest.cve import sources
 from ingest.cve.relevance import RelevanceMap, rank_score
 from ingest.cve.sources import Batch, CveRecord, SourceError
+from ingest.egress import EgressClosed, EgressGate, gate_open, get_gate, make_client
 from ingest.enrichment.config import EnrichmentSettings
 from ingest.enrichment.reputation import reserve_quota
 
@@ -111,10 +112,12 @@ class CveWatch:
         *,
         relevance: RelevanceMap | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        gate: EgressGate | None = None,
     ) -> None:
         self.factory = factory
         self.s = settings
-        self.client = client or httpx.AsyncClient(timeout=sources.HTTP_TIMEOUT)
+        self._gate = gate or get_gate()
+        self.client = client or make_client(sources.HTTP_TIMEOUT, gate=self._gate)
         self._sleep = sleep
         self.relevance = relevance
         self._retry_at: dict[str, datetime] = {}
@@ -141,6 +144,7 @@ class CveWatch:
         async def reserve() -> bool:
             if limit <= 0:  # reserve_quota would let the first call of the day through
                 return False
+            self._gate.require_open()  # EgressClosed before any quota is spent
             return await reserve_quota(self.factory, f"cve_{source}", limit)
 
         return reserve
@@ -308,6 +312,8 @@ class CveWatch:
         try:
             batch = await self._fetch(source, since)
             count = await self.store(source, batch)
+        except EgressClosed:
+            return 0  # retryable: not a failure, no backoff, nothing recorded
         except SourceError as exc:
             self._failed(source, exc.kind)
             await self._record_run(source, ok=False, items=0, error=exc.kind)
@@ -399,6 +405,9 @@ class CveWatch:
                     reserve=self._reserve("nvd"),
                 )
                 stored += await self.store("nvd", batch)
+            except EgressClosed:
+                self._watched_tried.pop(cve_id, None)  # not tried at all
+                break
             except SourceError as exc:
                 log.warning("cve watched lookup failed: %s", exc.kind)
                 break
@@ -413,6 +422,8 @@ class CveWatch:
         """Sync every source that is due. Returns how many CVEs were written."""
         total = 0
         now = datetime.now(UTC)
+        if not gate_open(self._gate):
+            return 0
         for source in SOURCES:
             if self._retry_at.get(source, now) > now:
                 continue
@@ -433,6 +444,8 @@ class CveWatch:
         key = self.s.nvd_api_key if provider == "nvd" else self.s.github_token
         if not key:
             error = "no_key"
+        elif not gate_open(self._gate):
+            error = "egress_closed"  # nothing is sent and no quota is spent
         elif not await self._reserve(provider)():
             error = "quota_exhausted"
         else:
@@ -458,6 +471,8 @@ class CveWatch:
                     )
                 self.last_error.pop(provider, None)
                 self._retry_at.pop(provider, None)
+            except EgressClosed:
+                error = "egress_closed"
             except SourceError as exc:
                 error = exc.kind
         result = {

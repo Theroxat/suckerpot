@@ -20,6 +20,10 @@
 define ADMIN_SSH_PORT = CHANGE_ME
 # Replace with DASHBOARD_PORT from your .env (default 8443).
 define DASHBOARD_PORT = 8443
+# The VPN server your WireGuard config points at (VPN_WG_ENDPOINT_IP / VPN_WG_ENDPOINT_PORT
+# in .env). Example values: 203.0.113.10 and 51820. Only needed with the egress profile.
+define VPN_ENDPOINT_IP = CHANGE_ME
+define VPN_ENDPOINT_PORT = CHANGE_ME
 
 # Idempotent: create (no-op if it exists), delete, then define again.
 add table inet suckerpot_host
@@ -41,6 +45,11 @@ table inet suckerpot_host {
     # (1) Sensor and dashboard containers may not talk to the host at all.
     iifname { "sp-ingress", "sp-dashboard" } ct state new counter drop
 
+    # (4) The vpn container never talks to the host. Neither do the proxy and sample networks:
+    #     the bridge gateway is the host, and the proxy could otherwise be asked to CONNECT to
+    #     the host's published ports through it.
+    iifname { "sp-vpn", "sp-egress", "sp-samples" } ct state new counter drop
+
     # (2) No container may reach the protected ports of the host. Matching by
     #     interface (not by address) is independent of the address pool Docker
     #     picks, and it never touches your LAN.
@@ -55,6 +64,10 @@ table inet suckerpot_host {
 
     # (3) Nothing new may start from the sensor or dashboard networks.
     iifname { "sp-ingress", "sp-dashboard" } ct state new counter drop
+
+    # (5) From the vpn uplink, only WireGuard to the one endpoint.
+    iifname "sp-vpn" ct state new ip daddr $VPN_ENDPOINT_IP udp dport $VPN_ENDPOINT_PORT counter accept
+    iifname "sp-vpn" ct state new counter drop
   }
 
   # OPTIONAL: rate-limit new SIP flows (udp/5060) before they reach the sensor. The

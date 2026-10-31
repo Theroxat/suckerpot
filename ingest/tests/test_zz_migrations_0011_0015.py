@@ -122,7 +122,7 @@ async def assert_state(engine: AsyncEngine, applied: list[str]) -> None:
 
 
 async def test_each_revision_goes_down_and_up(engine: AsyncEngine) -> None:
-    assert await current(engine) == "0017"
+    assert await current(engine) == "0018"
     await assert_state(engine, ORDER)
 
     # Back to 0010 one revision at a time; then raw events with a compressed chunk.
@@ -182,7 +182,7 @@ async def test_each_revision_goes_down_and_up(engine: AsyncEngine) -> None:
         assert await conn.scalar(text("SELECT count(*) FROM events")) == 4
 
     _migrate()  # upgrade head + roles + retention again
-    assert await current(engine) == "0017"
+    assert await current(engine) == "0018"
     await assert_state(engine, ORDER)
     async with engine.connect() as conn:
         jobs = {

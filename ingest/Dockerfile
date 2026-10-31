@@ -9,6 +9,8 @@ WORKDIR /src
 COPY sensors/common ./sensors/common
 COPY db/pyproject.toml db/uv.lock ./db/
 COPY db/suckerpot_db ./db/suckerpot_db
+COPY egress/pyproject.toml egress/uv.lock ./egress/
+COPY egress/suckerpot_egress ./egress/suckerpot_egress
 COPY ingest/pyproject.toml ingest/uv.lock ./ingest/
 COPY ingest/ingest ./ingest/ingest
 WORKDIR /src/ingest

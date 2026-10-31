@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_db import ProviderSecretRow, ProviderTestRequestRow
 from suckerpot_db.secretbox import PROVIDERS, SecretBox, SecretError
 
+from ingest.egress import EgressClosed, EgressGate, gate_open, get_gate, make_client
 from ingest.enrichment.config import EnrichmentSettings
 from ingest.enrichment.reputation import HTTP_TIMEOUT, reserve_quota
 
@@ -86,7 +87,9 @@ class CredentialSync:
         on_synced: Callable[[], Awaitable[None]] | None = None,
         client: httpx.AsyncClient | None = None,
         interval_s: float = SYNC_INTERVAL_S,
+        gate: EgressGate | None = None,
     ) -> None:
+        self._gate = gate or get_gate()
         self.factory = factory
         self.base = base
         self.box = box
@@ -94,7 +97,7 @@ class CredentialSync:
         self.on_change = on_change
         self.run_test = run_test
         self.on_synced = on_synced
-        self.client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT)
+        self.client = client or make_client(HTTP_TIMEOUT, gate=self._gate)
         self.interval_s = interval_s
         self.info: dict[str, ProviderInfo] = {
             p: ProviderInfo("env" if _env_has(base, p) else None) for p in PROVIDERS
@@ -183,6 +186,8 @@ class CredentialSync:
         error: str | None = None
         if not self.current.maxmind_enabled:
             error = "no_key"
+        elif not gate_open(self._gate):
+            error = "egress_closed"  # nothing is sent and no quota is spent
         elif not await reserve_quota(self.factory, "maxmind", MAXMIND_TEST_QUOTA):
             error = "quota_exhausted"
         else:
@@ -203,6 +208,8 @@ class CredentialSync:
                     # A valid key is answered with a redirect to the file store: not followed
                     # (that would download the database), and proof enough that the key works.
                     error = "error"
+            except EgressClosed:
+                error = "egress_closed"
             except httpx.HTTPError:
                 error = "error"
         self.maxmind_test = {

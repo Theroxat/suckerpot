@@ -1,15 +1,18 @@
 """Delivery: webhooks (Discord, Teams) and e-mail. Ingest is the only service that sends.
 
+Everything leaves through the VPN proxy (``suckerpot_egress``); ingest cannot resolve external
+names itself. A closed egress gate makes a send fail with the retryable code ``egress_closed``
+before anything is sent.
+
 Webhooks:
 * the URL is validated again right before the send (official hosts only, https, port 443);
-* the host is resolved here and every address must be public; the request goes to that address
-  with the real host name as TLS server name and ``Host`` header, so a DNS answer that changes
-  between the check and the connection cannot redirect the call, and the certificate is still
-  verified against the real name;
+* the request goes to the host name through the proxy: the proxy side refuses private answers
+  (DNS rebinding protection) and the certificate is verified against the real name;
 * redirects are never followed, the environment's proxy settings are ignored, the body of the
   answer is not read.
 
 E-mail: TLS is mandatory (STARTTLS or implicit TLS) with certificate and host name verification.
+The connection is a CONNECT tunnel through the same proxy (a literal IP host must be public).
 The message is built with the standard library's ``EmailMessage``, which refuses header injection.
 
 Errors carry a constant code only (``SendError.code``); a target, a token or a server answer never
@@ -22,28 +25,24 @@ import asyncio
 import json
 import logging
 import smtplib
-import socket
 import ssl
-from collections.abc import Awaitable, Callable
 from email.message import EmailMessage
 from typing import Any
-from urllib.parse import urlsplit
 
 import httpx
-from suckerpot_db.alert_targets import TargetError, is_public_ip, validate_email, validate_webhook
+from suckerpot_db.alert_targets import TargetError, validate_email, validate_webhook
+from suckerpot_egress import TunnelSMTP, TunnelSMTP_SSL
 
 from ingest.alerts.config import AlertSettings
 from ingest.alerts.messages import render_discord, render_email, render_teams
+from ingest.egress import EgressClosed, EgressGate, get_gate, make_client
 
 log = logging.getLogger(__name__)
 
 HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
-DNS_TIMEOUT_S = 5.0
 SMTP_TIMEOUT_S = 15.0
 SMTP_DEADLINE_S = 60.0  # the whole exchange, whatever the server drips
 MAX_BODY_BYTES = 12_000  # well under every service's limit
-
-Resolver = Callable[[str], Awaitable[list[str]]]
 
 
 class SendError(Exception):
@@ -53,17 +52,6 @@ class SendError(Exception):
         super().__init__(code)
         self.code = code
         self.retryable = retryable
-
-
-async def system_resolver(host: str) -> list[str]:
-    loop = asyncio.get_running_loop()
-    try:
-        infos = await asyncio.wait_for(
-            loop.getaddrinfo(host, 443, type=socket.SOCK_STREAM), DNS_TIMEOUT_S
-        )
-    except (TimeoutError, OSError):
-        raise SendError("dns", retryable=True) from None
-    return [str(info[4][0]) for info in infos]
 
 
 def _status_error(status: int) -> SendError | None:
@@ -84,20 +72,15 @@ class Sender:
         settings: AlertSettings,
         *,
         smtp_password: str = "",
-        resolver: Resolver = system_resolver,
         client: httpx.AsyncClient | None = None,
+        gate: EgressGate | None = None,
     ) -> None:
         self.settings = settings
         self.smtp_password = smtp_password
-        self.resolver = resolver
-        # No connection is kept: each call pins its own address, and a pooled connection to
-        # one address must never be reused for another host name.
-        self.client = client or httpx.AsyncClient(
-            timeout=HTTP_TIMEOUT,
-            follow_redirects=False,
-            trust_env=False,
-            verify=True,
-            limits=httpx.Limits(max_keepalive_connections=0),
+        self._gate = gate or get_gate()
+        # No connection is kept: a webhook is rare, and a pooled tunnel would outlive the gate.
+        self.client = client or make_client(
+            HTTP_TIMEOUT, gate=self._gate, limits=httpx.Limits(max_keepalive_connections=0)
         )
 
     async def aclose(self) -> None:
@@ -108,6 +91,8 @@ class Sender:
             await self._dispatch(kind, target, message)
         except SendError:
             raise
+        except EgressClosed:
+            raise SendError("egress_closed", retryable=True) from None
         except Exception as exc:  # never let a message text (it may hold a target) escape
             log.warning("alert send failed unexpectedly (%s)", type(exc).__name__)
             raise SendError("internal") from None
@@ -129,25 +114,15 @@ class Sender:
             hook = validate_webhook(kind, target)
         except TargetError:
             raise SendError("blocked_target") from None
-        addresses = await self.resolver(hook.host)
-        if not addresses:
-            raise SendError("dns", retryable=True)
-        if not all(is_public_ip(a) for a in addresses):
-            raise SendError("private_address")
-        address = addresses[0]
-        parts = urlsplit(hook.url)
-        netloc = f"[{address}]" if ":" in address else address
-        url = f"https://{netloc}{parts.path}" + (f"?{parts.query}" if parts.query else "")
         body = json.dumps(payload, ensure_ascii=False).encode()
         if len(body) > MAX_BODY_BYTES:
             raise SendError("too_large")
         try:
             async with self.client.stream(
                 "POST",
-                url,
+                hook.url,
                 content=body,
-                headers={"Host": hook.host, "Content-Type": "application/json"},
-                extensions={"sni_hostname": hook.host},
+                headers={"Content-Type": "application/json"},
                 follow_redirects=False,
             ) as response:
                 error = _status_error(response.status_code)
@@ -177,6 +152,7 @@ class Sender:
         mail["Subject"] = subject
         mail.set_content(text)
         mail.add_alternative(body_html, subtype="html")
+        self._gate.require_open()  # EgressClosed before the thread starts
         try:
             await asyncio.wait_for(asyncio.to_thread(self._smtp_send, mail, to), SMTP_DEADLINE_S)
         except TimeoutError:
@@ -187,14 +163,15 @@ class Sender:
         context = ssl.create_default_context()  # verifies the certificate chain and host name
         try:
             if s.smtp_security == "ssl":
-                server: smtplib.SMTP = smtplib.SMTP_SSL(
-                    s.smtp_host, s.smtp_port, timeout=SMTP_TIMEOUT_S, context=context,
+                server: smtplib.SMTP = TunnelSMTP_SSL(
+                    self._gate, s.smtp_host, s.smtp_port, timeout=SMTP_TIMEOUT_S, context=context,
                     local_hostname="localhost",
                 )  # fmt: skip
             else:
-                server = smtplib.SMTP(
-                    s.smtp_host, s.smtp_port, timeout=SMTP_TIMEOUT_S, local_hostname="localhost"
-                )
+                server = TunnelSMTP(
+                    self._gate, s.smtp_host, s.smtp_port, timeout=SMTP_TIMEOUT_S,
+                    local_hostname="localhost",
+                )  # fmt: skip
             with server:
                 if s.smtp_security != "ssl":
                     server.ehlo()
@@ -203,6 +180,8 @@ class Sender:
                 if s.smtp_user:
                     server.login(s.smtp_user, self.smtp_password)
                 server.send_message(mail, to_addrs=[to])
+        except EgressClosed:
+            raise SendError("egress_closed", retryable=True) from None
         except smtplib.SMTPAuthenticationError:
             raise SendError("smtp_auth") from None
         except smtplib.SMTPRecipientsRefused:

@@ -20,6 +20,7 @@ import httpx
 from sqlalchemy import ARRAY, Text, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ingest.egress import EgressClosed, EgressGate, gate_open, get_gate, make_client
 from ingest.enrichment.config import EnrichmentSettings
 from ingest.enrichment.geo import is_routable
 
@@ -108,10 +109,12 @@ class ReputationWorker:
         factory: async_sessionmaker[AsyncSession],
         settings: EnrichmentSettings,
         client: httpx.AsyncClient | None = None,
+        gate: EgressGate | None = None,
     ) -> None:
         self.factory = factory
         self.s = settings
-        self.client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT)
+        self._gate = gate or get_gate()
+        self.client = client or make_client(HTTP_TIMEOUT, gate=self._gate)
         self._paused_until: dict[str, float] = {}
         self._disabled: dict[str, str] = {}
         self._retry_after: dict[tuple[str, str], float] = {}
@@ -137,6 +140,8 @@ class ReputationWorker:
         error: str | None = None
         if not self._key(provider):
             error = "no_key"
+        elif not gate_open(self._gate):
+            error = "egress_closed"  # nothing is sent and no quota is spent
         elif not await reserve_quota(self.factory, provider, self.quota(provider)):
             error = "quota_exhausted"
         else:
@@ -147,6 +152,8 @@ class ReputationWorker:
                     await self.check_greynoise(TEST_IP)
                 self._disabled.pop(provider, None)
                 self.last_error.pop(provider, None)
+            except EgressClosed:
+                error = "egress_closed"
             except ProviderError as exc:
                 error = exc.kind
                 if exc.kind == "auth":
@@ -263,6 +270,8 @@ class ReputationWorker:
     async def run_once(self) -> int:
         """One cycle over both providers. Returns how many lookups were made."""
         made = 0
+        if not gate_open(self._gate):
+            return 0  # retryable "not now": no lookup, no quota, no negative cache entry
         for provider in ("abuseipdb", "greynoise"):
             if not self.enabled(provider) or self._paused(provider):
                 continue
@@ -276,6 +285,8 @@ class ReputationWorker:
                         continue
                 except ValueError:
                     continue
+                if not gate_open(self._gate):
+                    return made
                 if not await reserve_quota(self.factory, provider, quota):
                     log.info("%s daily quota exhausted", provider)
                     self._paused_until[provider] = time.monotonic() + 600
@@ -287,6 +298,8 @@ class ReputationWorker:
                     else:
                         await self._store_greynoise(ip, await self.check_greynoise(ip))
                     self.last_error.pop(provider, None)
+                except EgressClosed:
+                    return made  # closed between the check and the request
                 except ProviderError as exc:
                     self.last_error[provider] = exc.kind
                     self._retry_after[(provider, ip)] = time.monotonic() + 900

@@ -23,6 +23,7 @@ from ingest.consumer import Consumer
 from ingest.cve import CveWatch
 from ingest.cve.relevance import load_relevance
 from ingest.diskguard import DiskGuard, publish_system_status
+from ingest.egress import get_gate
 from ingest.enrichment import EnrichmentSettings, GeoResolver
 from ingest.enrichment.credentials import CredentialSync
 from ingest.enrichment.downloader import GeoManager
@@ -192,7 +193,22 @@ async def run() -> None:
 
     sync.run_test = run_test
     sync.on_synced = publish_all
+    gate = get_gate()
+
+    async def egress_status(status: Any) -> None:
+        await publish_status(
+            factory,
+            "egress",
+            {
+                "open": status.open,
+                "reason": status.reason,
+                "egress_ip": status.egress_ip,
+                "checked_at": status.checked_at.isoformat(),
+            },
+        )
+
     background = [
+        asyncio.create_task(gate.run(egress_status), name="egress-gate"),
         asyncio.create_task(geo.run(), name="geoip"),
         asyncio.create_task(reputation.run(rep_status), name="reputation"),
         asyncio.create_task(cve_watch.run(cve_status), name="cve-watch"),
@@ -214,6 +230,7 @@ async def run() -> None:
         for task in background:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        await gate.aclose()
         await reputation.aclose()
         await cve_watch.aclose()
         await intel.aclose()

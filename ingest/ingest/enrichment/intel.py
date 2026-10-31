@@ -27,6 +27,7 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ingest.egress import EgressClosed, EgressGate, gate_open, get_gate, make_client
 from ingest.enrichment import contacts as contacts_mod
 from ingest.enrichment.config import EnrichmentSettings
 from ingest.enrichment.geo import GeoResolver
@@ -138,8 +139,10 @@ class IntelWorker:
         client: httpx.AsyncClient | None = None,
         indicator_settings: IndicatorSettings | None = None,
         resolver: GeoResolver | None = None,
+        gate: EgressGate | None = None,
     ) -> None:
         self.factory = factory
+        self._gate = gate or get_gate()
         self.resolver = resolver  # the local ASN database; None: no network filter
         self._shared_asns = contacts_mod.shared_asns()
         self._contacts_cleaned = False
@@ -147,7 +150,7 @@ class IntelWorker:
         self.ind = indicator_settings or IndicatorSettings.from_env()
         self._last_mark: float | None = None  # None: mark on the first cycle
         # follow_redirects is off: a redirect from an intel API is an error, never a hop.
-        self.client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=False)
+        self.client = client or make_client(HTTP_TIMEOUT, gate=self._gate)
         self.state = _State()
 
     def apply_settings(self, settings: EnrichmentSettings, changed: set[str]) -> None:
@@ -426,6 +429,7 @@ class IntelWorker:
 
     async def _reserve_contacts(self, provider: str) -> bool:
         """One unit from the contact share (30 %) and from the provider's real daily quota."""
+        self._gate.require_open()  # EgressClosed before any quota is spent
         return await reserve_quota(
             self.factory, f"{provider}:contacts", self._contacts_limit(provider)
         ) and await reserve_quota(self.factory, provider, self.quota(provider))
@@ -497,6 +501,8 @@ class IntelWorker:
         error: str | None = None
         if not self._key(provider):
             error = "no_key"
+        elif not gate_open(self._gate):
+            error = "egress_closed"  # nothing is sent and no quota is spent
         elif not await reserve_quota(self.factory, provider, self.quota(provider)):
             error = "quota_exhausted"
         else:
@@ -507,6 +513,8 @@ class IntelWorker:
                     await self.virustotal(TEST_SHA256)
                 self.state.disabled.pop(provider, None)
                 self.state.last_error.pop(provider, None)
+            except EgressClosed:
+                error = "egress_closed"
             except ProviderError as exc:
                 error = exc.kind
                 if exc.kind == "auth":
@@ -653,6 +661,8 @@ class IntelWorker:
         made = 0
         st = self.state
         now = time.monotonic()
+        if not gate_open(self._gate):
+            return 0
         st.retry_after = {k: v for k, v in st.retry_after.items() if v > now}
         if self._last_mark is None or now - self._last_mark >= MARK_INTERVAL_S:
             self._last_mark = now
@@ -671,6 +681,7 @@ class IntelWorker:
                 for source in cand.missing:
                     # A share of the quota is kept for indicators several addresses used.
                     limit = quota if cand.ips >= 2 else int(quota * (1 - RESERVED_FOR_SHARED))
+                    self._gate.require_open()  # EgressClosed before any quota is spent
                     if not await reserve_quota(self.factory, provider, limit):
                         log.info("%s daily quota exhausted", provider)
                         if cand.ips >= 2:
@@ -716,7 +727,10 @@ class IntelWorker:
     async def run(self, publish: Any = None) -> None:
         while True:
             try:
-                await self.run_once()
+                try:
+                    await self.run_once()
+                except EgressClosed:
+                    pass  # retryable: nothing was sent, no quota spent, nothing cached
                 if publish is not None:
                     await publish(await self.status())
             except asyncio.CancelledError:
