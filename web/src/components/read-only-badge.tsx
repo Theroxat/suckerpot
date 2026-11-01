@@ -20,7 +20,7 @@ export function ReadOnlyBadge({
         <span
           tabIndex={0}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-2xs font-medium text-fg-muted",
+            "inline-flex items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-2xs font-medium whitespace-nowrap text-fg-muted",
             className,
           )}
         >
