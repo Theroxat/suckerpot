@@ -5,6 +5,7 @@
  */
 import { delay, http, HttpResponse, type RequestHandler } from "msw"
 import type { QueueItem, SendRequest, SmtpConfig, SmtpForm, SmtpTest } from "@/lib/abuse-send"
+import { outcomeFor, repliesFor } from "./replies"
 import { find, missingSettings, pub, renderBody, rows, type Row } from "./abuse"
 
 const LATENCY_MS = 140
@@ -108,6 +109,9 @@ export const abuseSendHandlers: RequestHandler[] = [
       return HttpResponse.json({ detail: "Report not found.", code: "not_found" }, { status: 404 })
     return HttpResponse.json({
       ...pub(r),
+      outcome: outcomeFor(id, r.sent_at !== null),
+      replies: repliesFor(id),
+      reply_token: r.sent_at ? "a3f9c01b7d42" : null,
       send_state: {
         scheduled_at:
           smtp.mode === "auto" && scheduled.has(id)
