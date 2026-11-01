@@ -46,7 +46,7 @@ async def test_enrol_happy_path(env: Env) -> None:
     async with env.worker() as s:
         row = (await s.execute(select(Node))).scalar_one()
         assert row.last_active_day == date(2026, 11, 1)
-        assert row.reputation == pytest.approx(0.5)
+        assert row.reputation == pytest.approx(0.6)
 
 
 async def test_show_country_requires_a_country(env: Env) -> None:
