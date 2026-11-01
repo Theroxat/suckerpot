@@ -2,30 +2,36 @@
 # backend network. Dropping redis's per-sensor networks keeps the run within Docker's default
 # address pools while the live stack holds its own networks.
 services:
+  # The backup service is for the live stack only (and needs a writable, uid 70 owned volume).
+  # Test stacks start without it; `docker compose --profile backup up backup` is still possible.
+  backup:
+    profiles: ["backup"]
   redis:
     networks: !override [backend]
   # Same reason: the "samples" network only matters to the collector and analyzer.
   db:
     networks: !override [backend]
 
-# Project-local volumes: the base file declares every data volume as external and named
-# suckerpot_*; a test run must never mount those. `!override {}` drops that declaration.
+# Project-local volumes with an explicit "test-" name. The base file declares every data volume as
+# external and named <prefix>_<volume>; a test run must never mount those, and a plain
+# <project>_<volume> default could still equal a live name when the project is "suckerpot".
+# "test-<prefix>_<volume>" can never equal "<anything>_<volume>" of the live stack.
 volumes:
-  redis-data: !override {}
-  db-data: !override {}
-  ssh-hostkeys: !override {}
-  rdp-data: !override {}
-  telnet-data: !override {}
-  web-data: !override {}
-  redis-sensor-data: !override {}
-  docker-sensor-data: !override {}
-  mysql-sensor-data: !override {}
-  mssql-sensor-data: !override {}
-  adb-sensor-data: !override {}
-  smb-sensor-data: !override {}
-  sip-sensor-data: !override {}
-  synology-sensor-data: !override {}
-  geoip-data: !override {}
-  quarantine: !override {}
-  vpn-config: !override {}
-  backups: !override {}
+  redis-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_redis-data" }
+  db-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_db-data" }
+  ssh-hostkeys: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_ssh-hostkeys" }
+  rdp-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_rdp-data" }
+  telnet-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_telnet-data" }
+  web-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_web-data" }
+  redis-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_redis-sensor-data" }
+  docker-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_docker-sensor-data" }
+  mysql-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_mysql-sensor-data" }
+  mssql-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_mssql-sensor-data" }
+  adb-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_adb-sensor-data" }
+  smb-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_smb-sensor-data" }
+  sip-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_sip-sensor-data" }
+  synology-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_synology-sensor-data" }
+  geoip-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_geoip-data" }
+  quarantine: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_quarantine" }
+  vpn-config: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_vpn-config" }
+  backups: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_backups" }

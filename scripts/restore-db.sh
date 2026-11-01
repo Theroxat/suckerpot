@@ -7,9 +7,9 @@
 # FILE is a dump on the host (made by scripts/backup-db.sh). "latest" and "volume:NAME" read
 # a dump of the daily `backup` service from the external suckerpot_backups volume.
 #
-# Steps: stop ingest and api, recreate the database, restore the dump with the
+# Steps: check the dump with pg_restore -l, stop ingest, api and backup, recreate the database, restore the dump with the
 # TimescaleDB pre/post-restore hooks, run migrations (which re-apply the role
-# grants), then start ingest and api again. Sensors keep running; their events wait
+# grants), then start ingest, api and backup again. Sensors keep running; their events wait
 # in Redis and are ingested afterwards.
 set -euo pipefail
 
@@ -64,8 +64,14 @@ psqlx() {
     'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -v ON_ERROR_STOP=1 -q -h 127.0.0.1 -U "$POSTGRES_USER" -d "$0" "$@"' "$database" "$@"
 }
 
-echo "restore: stopping ingest and api"
-docker compose stop ingest api
+echo "restore: checking that the dump is readable"
+if ! read_dump | docker compose exec -T db pg_restore -l > /dev/null; then
+  echo "restore: the dump is not readable (pg_restore -l failed), nothing was changed" >&2
+  exit 1
+fi
+
+echo "restore: stopping ingest, api and backup"
+docker compose stop ingest api backup
 
 echo "restore: recreating the database"
 db=$(docker compose exec -T db sh -c 'printf %s "$POSTGRES_DB"')
@@ -83,6 +89,6 @@ psqlx "$db" -c "SELECT timescaledb_post_restore()" > /dev/null
 
 echo "restore: running migrations"
 docker compose run --rm migrate
-echo "restore: starting ingest and api"
-docker compose up -d --wait ingest api
+echo "restore: starting ingest, api and backup"
+docker compose up -d --wait ingest api backup
 echo "restore: done"

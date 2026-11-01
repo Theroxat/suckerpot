@@ -160,7 +160,8 @@ services:
         condition: service_healthy
 
   # Daily database dump into the external `backups` volume (7 kept). Backend network only: no
-  # route out. Uses the owner account like `migrate`; the image already ships a matching pg_dump.
+  # route out. It uses the database OWNER account (like `migrate`), because pg_dump needs to read
+  # every table; a dedicated read-only role is possible later. The image ships a matching pg_dump.
   backup:
     image: timescale/timescaledb:2.22.1-pg17
     <<: *hardening
@@ -182,11 +183,14 @@ services:
     pids_limit: 64
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "find /backups -maxdepth 1 -name 'suckerpot-*.dump' -mmin -1560 | grep -q ."]
+      # A dump younger than 26 h, and no "shrunk" marker (a dump under half of the largest one).
+      test: ["CMD-SHELL", "! test -e /backups/.shrunk && find /backups -maxdepth 1 -name 'suckerpot-*.dump' -mmin -1560 | grep -q ."]
       interval: 5m
       timeout: 10s
       retries: 3
       start_period: 10m
+      # While the first dump runs, probe often so `up --wait` is not held for a whole interval.
+      start_interval: 15s
     depends_on:
       db:
         condition: service_healthy

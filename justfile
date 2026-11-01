@@ -17,8 +17,24 @@ packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet s
 
 # Fails unless COMPOSE_PROJECT_NAME and SUCKERPOT_VOLUME_PREFIX are set (from .env). Dependency of every recipe that uses the live stack.
 _need-project:
-    @[ -n "${COMPOSE_PROJECT_NAME:-}" ] && [ -n "${SUCKERPOT_VOLUME_PREFIX:-}" ] || { echo "COMPOSE_PROJECT_NAME and SUCKERPOT_VOLUME_PREFIX must both be set. Create .env from .env.example on the live host only; never in a test checkout." >&2; exit 1; }
-    @case "$COMPOSE_PROJECT_NAME" in sp-it-*|sp-test|sp-ci) echo "COMPOSE_PROJECT_NAME is a throwaway name" >&2; exit 1;; esac
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "${COMPOSE_PROJECT_NAME:-}" ] || [ -z "${SUCKERPOT_VOLUME_PREFIX:-}" ]; then
+      echo "COMPOSE_PROJECT_NAME and SUCKERPOT_VOLUME_PREFIX must both be set (in .env, on the live install only; never in a test checkout)." >&2
+      exit 1
+    fi
+    re='^[a-z0-9][a-z0-9_-]{0,40}$'
+    if ! [[ "$SUCKERPOT_VOLUME_PREFIX" =~ $re ]] || ! [[ "$COMPOSE_PROJECT_NAME" =~ $re ]]; then
+      echo "COMPOSE_PROJECT_NAME / SUCKERPOT_VOLUME_PREFIX must match $re" >&2
+      exit 1
+    fi
+    case "$COMPOSE_PROJECT_NAME" in sp-it-*|sp-test|sp-ci) echo "COMPOSE_PROJECT_NAME is a throwaway name" >&2; exit 1;; esac
+    # A linked git worktree is a scratch checkout (the 2026-11-01 incident): never act on the live stack from it.
+    if git rev-parse --git-dir > /dev/null 2>&1 \
+      && [ "$(git rev-parse --absolute-git-dir)" != "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
+      echo "Refusing to run a live recipe from a linked git worktree. Use the main checkout." >&2
+      exit 1
+    fi
 
 # List recipes.
 default:
@@ -28,7 +44,7 @@ default:
 # are external: they are created first, and the start is refused if the database volume is gone
 # while the backups volume still holds dumps (--force-empty accepts an empty database on purpose).
 up *flags: _need-project ports
-    scripts/ensure-volumes.sh {{flags}}
+    bash scripts/ensure-volumes.sh {{flags}}
     docker compose up -d --build --wait
 
 # Start the stack for tests: dashboard authentication OFF (docker-compose.ci.yml).
@@ -144,7 +160,7 @@ backup: _need-project
 
 # Dump the database into the host folder ./backups (BACKUP_DIR, BACKUP_KEEP): see scripts/backup-db.sh.
 backup-host: _need-project
-    scripts/backup-db.sh
+    bash scripts/backup-db.sh
 
 # List the dumps in the suckerpot_backups volume.
 backups: _need-project
@@ -152,7 +168,7 @@ backups: _need-project
 
 # Restore a dump, replacing the whole database (asks for confirmation): just restore latest | FILE | volume:NAME
 restore file: _need-project
-    scripts/restore-db.sh {{file}}
+    bash scripts/restore-db.sh {{file}}
 
 # HTTP requests (WordPress login + PHP upload-progress) against the web sensor, then check the API.
 http-test:
