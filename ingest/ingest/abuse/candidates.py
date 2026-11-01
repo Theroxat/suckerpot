@@ -15,6 +15,7 @@ from typing import Any, Literal
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db.blocklist_values import is_never_host, valid_domain
+from suckerpot_db.network_names import host_of_target
 from suckerpot_reporting import SelfTerms
 from suckerpot_reporting.normalize import is_documentation, is_forbidden_range
 
@@ -67,6 +68,39 @@ def origin_of_domain(value: str, terms: SelfTerms | None) -> Origin | None:
     return "real"
 
 
+NETWORK_WINDOW_DAYS = 30
+
+
+async def network_covered(session: AsyncSession) -> set[str]:
+    """Hosts the Selfhostr network confirmed or reported in the last 30 days (M29 dedupe).
+
+    Empty unless this node is a member: the network sends one strong report per target, so the
+    local workflow must not send a second, weaker one to the same desk. Network kinds ``ip``,
+    ``domain``, ``c2_ip`` and ``c2_domain`` name hosts; a ``c2`` value may carry ``:port``.
+    """
+    rows = await session.execute(
+        text(
+            """
+            SELECT t.value FROM network_targets t
+            JOIN network_membership m ON m.id = 1 AND m.state = 'member'
+            WHERE t.state IN ('confirmed', 'reported', 'taken_down') AND t.value IS NOT NULL
+              AND t.kind IN ('ip', 'domain', 'c2_ip', 'c2_domain')
+              AND t.last_day >= (now() AT TIME ZONE 'UTC')::date - :days
+            """
+        ),
+        {"days": NETWORK_WINDOW_DAYS},
+    )
+    out: set[str] = set()
+    for (value,) in rows:
+        out.add(host_of_target(str(value)))
+    return out
+
+
+async def without_network(session: AsyncSession, seeds: list[Seed]) -> list[Seed]:
+    covered = await network_covered(session)
+    return [s for s in seeds if s.value.lower() not in covered] if covered else seeds
+
+
 def _bounds(settings: AbuseSettings, now: datetime) -> dict[str, Any]:
     return {
         "since": now - timedelta(days=settings.lookback_days),
@@ -110,20 +144,23 @@ async def attack_sources(
             },
         )
     ).all()
-    return [
-        Seed(
-            "attack_source",
-            "ip",
-            r.ip,
-            r.first_ts,
-            r.last_ts,
-            r.sessions,
-            r.events,
-            r.asn,
-            r.country,
-        )
-        for r in rows
-    ]
+    return await without_network(
+        session,
+        [
+            Seed(
+                "attack_source",
+                "ip",
+                r.ip,
+                r.first_ts,
+                r.last_ts,
+                r.sessions,
+                r.events,
+                r.asn,
+                r.country,
+            )
+            for r in rows
+        ],
+    )
 
 
 async def payload_hosts(
@@ -157,7 +194,7 @@ async def payload_hosts(
             out.append(
                 Seed("payload_host", kind, r.host, r.first_ts, r.last_ts, r.sessions, r.events)
             )
-    return out
+    return await without_network(session, out)
 
 
 async def c2_subjects(
@@ -201,7 +238,7 @@ async def c2_subjects(
         kind = _host_type(r.address)
         if kind is not None and r.address not in out:
             out[r.address] = Seed("c2", kind, r.address, r.first_ts, r.last_ts, 0, 0)
-    return list(out.values())[:limit]
+    return (await without_network(session, list(out.values())))[:limit]
 
 
 def _host_type(value: str) -> Literal["ip", "domain"] | None:

@@ -24,11 +24,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_db.blocklist_values import is_shared_host, normalize_value
 from suckerpot_db.models import BlocklistEntryRow
+from suckerpot_db.network_names import host_of_target
 
 from ingest.blocklist.scoring import (
     MIN_LISTED_SCORE,
     IndicatorFacts,
     IpFacts,
+    Scored,
+    network_bonus,
     score_contact,
     score_indicator,
     score_ip,
@@ -342,6 +345,43 @@ def merge_duplicates(candidates: list[Candidate]) -> list[Candidate]:
     return out
 
 
+NETWORK_KINDS = {
+    "ip": "ip", "c2_ip": "ip", "domain": "domain", "c2_domain": "domain", "url": "url",
+    "sha256": "hash",
+}  # fmt: skip
+
+
+async def _network_confirmed(db: AsyncSession) -> set[tuple[str, str]]:
+    """Values the Selfhostr network confirmed (M29), as blocklist ``(kind, value)`` keys."""
+    rows = await db.execute(
+        text(
+            "SELECT kind, value FROM network_targets "
+            "WHERE state IN ('confirmed', 'reported', 'taken_down') AND value IS NOT NULL"
+        )
+    )
+    out: set[tuple[str, str]] = set()
+    for r in rows:
+        kind = NETWORK_KINDS.get(r.kind)
+        value = r.value
+        if kind is None:
+            continue
+        if r.kind in ("c2_ip", "c2_domain"):
+            value = host_of_target(value)  # the port is not part of the host
+        norm = normalize_value(kind, value)
+        if norm is not None:
+            out.add((kind, norm))
+    return out
+
+
+def apply_network(candidates: list[Candidate], confirmed: set[tuple[str, str]]) -> list[Candidate]:
+    """+2 for what the network confirmed. Only for candidates seen here; overrides still win."""
+    for c in candidates:
+        if (c.kind, c.value) in confirmed:
+            bumped = network_bonus(Scored(c.score, c.reasons))
+            c.score, c.reasons = bumped.score, bumped.reasons
+    return candidates
+
+
 async def _overrides(db: AsyncSession, now: datetime) -> list[dict[str, Any]]:
     rows = (
         (
@@ -467,6 +507,7 @@ class BlocklistWorker(FeatureWorker):
             candidates += await _indicator_candidates(db, cutoff)
             candidates += await _contact_candidates(db, cutoff)
             candidates = merge_duplicates(candidates)
+            candidates = apply_network(candidates, await _network_confirmed(db))
             candidates = apply_overrides(candidates, await _overrides(db, now))
             top = select_top(candidates, self.settings.blocklist_max_rows)
             self.removed = await write_entries(db, top, now)
