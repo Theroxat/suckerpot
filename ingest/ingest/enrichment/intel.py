@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -196,7 +197,7 @@ class IntelWorker:
         if urlsplit(url).hostname not in ALLOWED_HOSTS:  # defence in depth: never a free host
             raise ProviderError("error", "host not allowed")
         gap = MIN_GAP_S.get(provider, 0.0) - (
-            time.monotonic() - self.state.last_call.get(provider, 0.0)
+            time.monotonic() - self.state.last_call.get(provider, -math.inf)
         )
         if gap > 0:
             await asyncio.sleep(gap)
