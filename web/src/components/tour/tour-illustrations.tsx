@@ -41,7 +41,7 @@ function Node({ node }: { node: FlowNode }) {
   return (
     <span
       className={cn(
-        "inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium",
+        "inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium sm:whitespace-nowrap",
         fam ? [fam.text, fam.tint] : "bg-bg text-fg",
       )}
     >
@@ -130,7 +130,7 @@ const FLOWS: Record<TourStep["id"], { label: string; stages: Stages }> = {
     stages: [
       [{ icon: Database, label: "Ingest and collector" }],
       [{ icon: Shield, label: "Gate" }],
-      [{ icon: Waypoints, label: "vpn, kill switch" }],
+      [{ icon: Waypoints, label: "VPN + kill switch" }],
       [{ icon: Globe, label: "Internet" }],
     ],
   },
@@ -144,10 +144,10 @@ const FLOWS: Record<TourStep["id"], { label: string; stages: Stages }> = {
     ],
   },
   alerts: {
-    label: "Rules send messages to your channels, and a weekly digest summarises the week.",
+    label: "Rules send messages to your channels, and a weekly report summarises the week.",
     stages: [
       [{ icon: Bell, label: "Rules" }],
-      [{ icon: Mail, label: "Discord, Teams, e-mail" }],
+      [{ icon: Mail, label: "Discord, Teams, email" }],
       [{ icon: UserCheck, label: "You" }],
     ],
   },

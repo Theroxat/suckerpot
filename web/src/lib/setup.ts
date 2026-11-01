@@ -19,8 +19,8 @@ export const setupKeys = { status: ["setup", "status"] as const }
 
 /** Titles in the order the checklist shows them; unknown ids are listed after, by their id. */
 const TITLES: Record<string, string> = {
-  sensors: "Sensors are receiving traffic",
-  vpn: "Outbound gate is open",
+  sensors: "Sensor traffic",
+  vpn: "Outbound gate",
   collector: "Payload collector",
   reporting_settings: "Report wording",
   self_address: "Your own address",
@@ -75,7 +75,7 @@ export function describeSetup(items: readonly SetupItem[]): string {
   const warning = items.filter((i) => i.state === "warning").length
   const todo = items.filter((i) => i.state === "todo").length
   if (ok === items.length) return "Everything is set up."
-  const parts = [`${ok} of ${items.length} steps are done`]
+  const parts = [`${ok} of ${items.length} steps ${ok === 1 ? "is" : "are"} done`]
   if (warning > 0) parts.push(`${warning} ${warning === 1 ? "needs" : "need"} attention`)
   if (todo > 0) parts.push(`${todo} ${todo === 1 ? "is" : "are"} still to do`)
   return `${parts.join(", ")}.`

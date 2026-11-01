@@ -298,7 +298,7 @@ describe("VpnTab", () => {
   describe("tunnel controls (M24)", () => {
     afterEach(() => vi.useRealTimers())
 
-    it("offers Check now and Reconnect once when the gate is open, twice when it is closed", async () => {
+    it("offers Check now and Reconnect in one place, open or closed", async () => {
       stub(ENV)
       const { unmount } = mount()
       await screen.findByText(/Traffic leaves through/)
@@ -308,9 +308,8 @@ describe("VpnTab", () => {
       stub(UPLOADED)
       mount()
       await screen.findByText(/The gate is closed/)
-      // Right in the status card, and again in the tunnel controls card.
-      expect(screen.getAllByRole("button", { name: "Check now" })).toHaveLength(2)
-      expect(screen.getAllByRole("button", { name: "Reconnect" })).toHaveLength(2)
+      expect(screen.getAllByRole("button", { name: "Check now" })).toHaveLength(1)
+      expect(screen.getAllByRole("button", { name: "Reconnect" })).toHaveLength(1)
     })
 
     it("checks now without a password, shows Checking… until the gate has a newer check", async () => {
@@ -365,9 +364,7 @@ describe("VpnTab", () => {
       mount()
       await user.click(await screen.findByRole("button", { name: "Reconnect" }))
       const dialog = await screen.findByRole("dialog")
-      expect(
-        within(dialog).getByText(/The tunnel restarts; outbound lookups pause for a few seconds\./),
-      ).toBeInTheDocument()
+      expect(within(dialog).getByText(/Events are still recorded\./)).toBeInTheDocument()
       await user.type(within(dialog).getByLabelText("Your password"), "pw")
       await user.click(within(dialog).getByRole("button", { name: "Reconnect" }))
       await waitFor(() => expect(calls).toHaveLength(1))

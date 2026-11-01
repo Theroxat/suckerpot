@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Link } from "react-router"
 import { useAuth } from "@/app/auth"
 import { FirewallNote, SetupItems } from "@/components/setup-checklist"
 import { SkeletonText } from "@/components/skeletons"
@@ -41,11 +42,18 @@ function LastStepChecklist({ onNavigate }: { onNavigate: () => void }) {
         <SetupItems
           items={q.data}
           onNavigate={onNavigate}
-          className="max-h-48 overflow-y-auto rounded-lg border sm:max-h-60 [&>li]:px-3"
+          className="max-h-none overflow-y-auto rounded-lg border sm:max-h-72 [&>li]:px-3"
         />
       ) : q.isPending ? (
         <SkeletonText lines={3} />
       ) : null}
+      <Link
+        to="/settings"
+        onClick={onNavigate}
+        className="inline-block rounded-sm text-sm font-medium text-fg underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
+        See all in Settings
+      </Link>
       <p className="text-xs text-fg-muted">
         <FirewallNote />
       </p>
@@ -65,7 +73,7 @@ export function TourDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden bg-popover p-0 sm:max-w-xl"
+        className="max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden bg-popover p-0 sm:top-[12vh] sm:max-w-xl sm:translate-y-0"
       >
         {/* Remounted on every open, so the tour always starts at step one. */}
         <TourSteps onClose={() => onOpenChange(false)} />
@@ -97,7 +105,7 @@ function TourSteps({ onClose }: { onClose: () => void }) {
         </DialogHeader>
 
         {/* The last step leaves the room to the checklist on a phone. */}
-        <TourIllustration step={step.id} className={last ? "hidden sm:flex" : undefined} />
+        <TourIllustration step={step.id} className={last ? "hidden" : undefined} />
 
         {last ? <LastStepChecklist onNavigate={onClose} /> : null}
       </div>

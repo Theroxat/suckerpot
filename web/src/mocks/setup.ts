@@ -20,7 +20,7 @@ function items(done: boolean): SetupItem[] {
       : {
           id: "sensors",
           state: "warning",
-          detail: "2 sensors have been silent for 24 hours: Synology and SIP.",
+          detail: "1 sensor has been silent for 24 hours: SIP.",
           href: "/settings",
         },
     gate
@@ -98,7 +98,7 @@ function items(done: boolean): SetupItem[] {
       : {
           id: "alerts",
           state: "off",
-          detail: "No alert channel yet. Add Discord, Teams or e-mail to be told about attacks.",
+          detail: "No alert channel yet. Add Discord, Teams or email to be told about attacks.",
           href: "/settings?tab=alerts",
         },
     done

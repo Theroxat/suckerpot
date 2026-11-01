@@ -16,7 +16,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
   {
     id: "what",
     title: "SuckerPot is a trap: fake servers that attackers find on the internet.",
-    body: "Twelve sensors pretend to be SSH, a web app, a database and more, with nothing real behind them. Every attempt is recorded, and ingest groups the events of one connection into a session you can read as a story.",
+    body: "Twelve sensors pretend to be SSH, a web app, a database and more, with nothing real behind them. Every attempt is recorded, and the events of one connection are grouped into a session you can read as a story.",
   },
   {
     id: "daily",
@@ -30,23 +30,23 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     id: "payloads",
-    title: "Payloads are fetched safely and never run.",
-    body: "Sensors only record the download URL. When payload fetching is on, the collector fetches it through the VPN into a quarantine, and the analyzer, which has no network, reads the file for its type, hashes, rule matches, hidden scripts and command servers.",
+    title: "Payloads are never run, and fetching them is optional.",
+    body: "Sensors only record the download URL. When payload fetching is on, the collector fetches it through the VPN into a quarantine, and the analyzer, which has no network, reads the file for its type, hashes, rule matches, hidden scripts and possible command servers.",
   },
   {
     id: "egress",
-    title: "Only one service can reach the internet: the VPN.",
-    body: "Every lookup and download leaves through the vpn service, so your home address is never used. The gate pauses all outbound work when the tunnel or its exit looks wrong, and a kill switch blocks traffic if the tunnel drops.",
+    title: "Only one service can reach out to the internet: the VPN.",
+    body: "Every lookup, download and alert the stack makes leaves through the vpn service, so none of them comes from your home address (the sensors still answer attackers on it). The gate pauses all outbound work when the tunnel or its exit looks wrong, and a kill switch blocks traffic if the tunnel drops.",
   },
   {
     id: "abuse",
     title: "Abuse reports are drafts that you send yourself.",
-    body: "Contacts are found over RDAP through the VPN, and a draft is built for each network. You review it and send it from your own mailbox: the stack never sends mail, and an identity check blocks anything that could point to you.",
+    body: "When abuse reports are on, contacts are found over RDAP through the VPN, and one draft is built per abuse contact. You review it and send it from your own mailbox: SuckerPot never sends a report itself, and an identity check masks or blocks anything that matches your own addresses or the terms you listed.",
   },
   {
     id: "alerts",
     title: "Alerts tell you when something matters.",
-    body: "Rules watch for things like a new campaign or a malware drop, and send a message to Discord, Teams or e-mail, plus a weekly digest. Everything is off until you switch it on, and messages leave through the VPN.",
+    body: "Rules watch for things like a new campaign or a malware drop, and send a message to Discord, Teams or email, and a weekly report is built every Monday. Everything is off until you switch it on, and messages leave through the VPN.",
   },
 ]
 
