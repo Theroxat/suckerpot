@@ -42,6 +42,7 @@ SECURITY
 design/m21
 design/m22
 design/m23
+design/m24
 ```
 
 ```{toctree}
