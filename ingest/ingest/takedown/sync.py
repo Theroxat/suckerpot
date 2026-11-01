@@ -2,8 +2,9 @@
 
 Nothing here talks to the network: it reads reports, their subjects and fetched URLs and writes
 ``takedown_targets`` rows. A payload URL becomes HTTP-eligible only when the collector already
-fetched it and kept a sample (``fetch_targets.status = 'fetched'`` with a hash); that is the one
-condition under which the collector may later re-check it.
+fetched it and kept a sample (``fetch_targets.status = 'fetched'`` with a hash) and its host is
+not an attacking or C2 address; that is the one condition under which the collector may later
+re-check it.
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ log = logging.getLogger(__name__)
 MAX_REPORTS = 200
 MAX_SUBMISSIONS = 100
 MAX_CHILDREN_PER_HOST = 20
+HOSTILE_DAYS = 30  # a host that attacked us this recently is an attacker, whatever else it serves
+DEMOTE_BATCH = 2000
 AsnLookup = Callable[[str], tuple[int | None, str | None]]
 
 ROLE_OF_REPORT = {"attack_source": "attack_source", "payload_host": "payload_host", "c2": "c2"}
@@ -133,6 +136,41 @@ def _country(value: str | None) -> str | None:
     return value.upper() if value and len(value) == 2 and value.isalpha() else None
 
 
+def url_host(url: str) -> str:
+    """The lower-case host of a URL ('' when it has none)."""
+    try:
+        return (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+HOSTILE_SQL = """
+SELECT h AS host FROM unnest(CAST(:hosts AS text[])) AS h
+WHERE EXISTS (SELECT 1 FROM sample_links l
+              WHERE l.kind IN ('c2_ip', 'c2_domain') AND l.value = h)
+   OR EXISTS (SELECT 1 FROM takedown_targets t
+              WHERE t.role IN ('c2', 'attack_source') AND t.value = h)
+   OR CASE WHEN h = ANY(CAST(:ips AS text[])) THEN EXISTS (
+        SELECT 1 FROM sessions s WHERE s.src_ip = CAST(h AS inet)
+          AND s.started_at > CAST(:now AS timestamptz) - make_interval(days => :days))
+      ELSE false END
+"""
+
+
+async def hostile_hosts(session: AsyncSession, hosts: list[str], now: datetime) -> set[str]:
+    """Which of ``hosts`` are an attacking address seen in the last 30 days, a C2 address of a
+    captured sample, or a target we reported as one. Such a host is never contacted (T1): a
+    payload URL on it, like a Mirai loader on its own address, is followed by passive signals."""
+    unique = sorted({h for h in hosts if h})
+    if not unique:
+        return set()
+    ips = [h for h in unique if host_kind(h) == "ip"]
+    rows = await session.execute(
+        text(HOSTILE_SQL), {"hosts": unique, "ips": ips, "now": now, "days": HOSTILE_DAYS}
+    )
+    return {r.host for r in rows}
+
+
 class TargetSync:
     def __init__(
         self,
@@ -143,13 +181,16 @@ class TargetSync:
         self.factory = factory
         self.s = settings
         self._asn_lookup = asn_lookup
+        self._now: datetime | None = None  # the clock of the sync in progress
 
     async def sync(self, now: datetime) -> dict[str, int]:
+        self._now = now
         since = now - timedelta(days=self.s.track_days)
         made = {
             "reports": await self._from_reports(now, since),
             "children": await self._children(now),
             "submissions": await self._from_submissions(now, since),
+            "demoted": await self.demote_hostile(now),
         }
         return made
 
@@ -170,6 +211,10 @@ class TargetSync:
         eligible: bool = False,
         baseline: str | None = None,
     ) -> int:
+        if eligible and kind == "url":
+            host = url_host(value)
+            if not host or host in await hostile_hosts(session, [host], self._now or reported_at):
+                eligible, baseline = False, None  # attacker or C2 address: passive signals only
         params: dict[str, Any] = {
             "kind": kind, "role": role, "value": value[:1024], "key": target_key(kind, value),
             "parent": parent, "fetch": fetch_id, "net": provider.network_id,
@@ -192,6 +237,31 @@ class TargetSync:
             ),
             {"t": target, "r": report, "s": sub},
         )
+
+    async def demote_hostile(self, now: datetime) -> int:
+        """Stop HTTP re-checks of payload URLs whose host became an attacker or C2 address after
+        the target was made. Runs every cycle, so a host that starts attacking later is dropped
+        before the next request."""
+        async with self.factory() as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT id, value FROM takedown_targets WHERE kind = 'url' "
+                        "AND http_eligible AND tracking ORDER BY id LIMIT :n"
+                    ),
+                    {"n": DEMOTE_BATCH},
+                )
+            ).all()
+            hostile = await hostile_hosts(session, [url_host(r.value) for r in rows], now)
+        ids = [r.id for r in rows if not url_host(r.value) or url_host(r.value) in hostile]
+        if not ids:
+            return 0
+        async with self.factory() as session, session.begin():
+            await session.execute(
+                text("UPDATE takedown_targets SET http_eligible = false WHERE id = ANY(:ids)"),
+                {"ids": ids},
+            )
+        return len(ids)
 
     # ---- sent reports ----------------------------------------------------------------------
     async def _from_reports(self, now: datetime, since: datetime) -> int:

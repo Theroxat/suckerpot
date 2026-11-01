@@ -37,6 +37,7 @@ async def clean(engine: AsyncEngine) -> None:
                 "sample_links, sample_sources, samples, fetch_targets CASCADE"
             )
         )
+        await conn.execute(text("DELETE FROM sessions WHERE session_id LIKE 'tk-%'"))
 
 
 async def seed_network(conn: Any, asn: int | None = 64500) -> int:
@@ -367,3 +368,94 @@ async def test_rollup_counts_targets_and_tolerates_missing_outcomes(
     assert url.targets == 1 and url.targets_down_48h == 1 and url.targets_eligible_48h == 1
     assert url.reports_sent == 1  # the report that put it under tracking
     assert "198.51.100.7" not in json.dumps([dict(r._mapping) for r in rows], default=str)
+
+
+# ---- T1: nothing is requested from an attacking or C2 address (security review) -------------
+
+
+async def seed_session(engine: AsyncEngine, ip: str, days_ago: float = 1) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO sessions (session_id, sensor, src_ip, src_port, dst_port, "
+                "started_at, last_event_at) VALUES (:s, 'ssh', :ip, 4000, 22, :t, :t) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            {"s": f"tk-{ip}-{days_ago}", "ip": ip, "t": NOW - timedelta(days=days_ago)},
+        )
+
+
+async def payload_urls(engine: AsyncEngine) -> list[Any]:
+    return [t for t in await targets(engine) if t.role == "payload_url"]
+
+
+async def test_a_loader_on_an_attacking_address_is_never_eligible(
+    engine: AsyncEngine, factory: Factory
+) -> None:
+    await seed_report(engine, "payload_host", [("ip", "198.51.100.7")], sent_hours_ago=10)
+    await seed_fetched(engine, "http://198.51.100.7/bins.sh", "198.51.100.7")
+    await seed_session(engine, "198.51.100.7", days_ago=2)
+    await sync(factory).sync(NOW)
+    (url,) = await payload_urls(engine)
+    assert url.http_eligible is False and url.baseline_sha256 is None
+
+
+async def test_an_attacker_older_than_thirty_days_does_not_count(
+    engine: AsyncEngine, factory: Factory
+) -> None:
+    await seed_report(engine, "payload_host", [("ip", "198.51.100.7")], sent_hours_ago=10)
+    await seed_fetched(engine, "http://198.51.100.7/bins.sh", "198.51.100.7")
+    await seed_session(engine, "198.51.100.7", days_ago=40)
+    await sync(factory).sync(NOW)
+    (url,) = await payload_urls(engine)
+    assert url.http_eligible is True
+
+
+async def test_a_host_that_starts_attacking_later_is_dropped_at_the_next_cycle(
+    engine: AsyncEngine, factory: Factory
+) -> None:
+    await seed_report(engine, "payload_host", [("ip", "198.51.100.7")], sent_hours_ago=10)
+    await seed_fetched(engine, "http://198.51.100.7/bins.sh", "198.51.100.7")
+    await sync(factory).sync(NOW)
+    (url,) = await payload_urls(engine)
+    assert url.http_eligible is True
+    await seed_session(engine, "198.51.100.7", days_ago=0.1)
+    made = await sync(factory).sync(NOW)
+    assert made["demoted"] == 1
+    (url,) = await payload_urls(engine)
+    assert url.http_eligible is False
+
+
+async def test_a_url_on_a_known_c2_address_is_never_eligible(
+    engine: AsyncEngine, factory: Factory
+) -> None:
+    await seed_report(engine, "payload_host", [("ip", "198.51.100.7")], sent_hours_ago=10)
+    await seed_fetched(engine, "http://198.51.100.7/bins.sh", "198.51.100.7")
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO samples (sha256, sha1, md5, size, first_seen, last_seen) "
+                "VALUES (:s, 'x', 'y', 1, now(), now()) ON CONFLICT DO NOTHING"
+            ),
+            {"s": OTHER},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO sample_links (sha256, kind, value, port, source, confidence) "
+                "VALUES (:s, 'c2_ip', '198.51.100.7', 4444, 'strings', 'high')"
+            ),
+            {"s": OTHER},
+        )
+    await sync(factory).sync(NOW)
+    (url,) = await payload_urls(engine)
+    assert url.http_eligible is False
+
+
+async def test_a_clean_host_stays_eligible(engine: AsyncEngine, factory: Factory) -> None:
+    await seed_report(engine, "payload_host", [("ip", "198.51.100.7")], sent_hours_ago=10)
+    await seed_fetched(engine, "http://198.51.100.7/a.sh", "198.51.100.7")
+    await seed_session(engine, "203.0.113.200", days_ago=1)  # someone else attacked
+    await sync(factory).sync(NOW)
+    made = await sync(factory).sync(NOW)
+    (url,) = await payload_urls(engine)
+    assert url.http_eligible is True and made["demoted"] == 0
