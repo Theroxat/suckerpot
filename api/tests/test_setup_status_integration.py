@@ -32,6 +32,7 @@ ORDER = [
     "reporting_settings",
     "self_address",
     "abuse_worker",
+    "replies",
     "alerts",
     "provider_keys",
 ]

@@ -28,6 +28,7 @@ from api.abuse_core import (
     load_terms,
     release,
     render_checked,
+    reply_args,
 )
 from api.abuse_exports import build_export
 
@@ -71,7 +72,13 @@ async def check_reports(db: AsyncSession, tally: Tally) -> None:
         for fmt in FORMATS:
             try:
                 rendered = await asyncio.to_thread(
-                    render_checked, evidence, bundle.settings, terms, ctx, fmt
+                    render_checked,
+                    evidence,
+                    bundle.settings,
+                    terms,
+                    ctx,
+                    fmt,
+                    **reply_args(row, bundle),
                 )
                 release(rendered.guard)
             except GuardFailed as exc:

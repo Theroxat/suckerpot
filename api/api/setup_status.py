@@ -19,6 +19,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db import AlertChannelRow, EnrichmentStatusRow, EventRow
+from suckerpot_db.models import ReportImapRow, ReportImapStateRow
 from suckerpot_db.trusted_exits import ACTIVE_SELF_NETWORKS_SQL
 
 from api.abuse_core import env_flag, load_settings, missing_for
@@ -183,6 +184,33 @@ async def _abuse_worker(_db: AsyncSession, _now: datetime) -> SetupItem:
     )
 
 
+async def _replies(db: AsyncSession, _now: datetime) -> SetupItem:
+    """Optional: reading replies needs a mailbox and the server switch. Never a to-do."""
+    href = "/settings?tab=reporting"
+    profile = (
+        await db.execute(
+            select(ReportImapRow.enabled, ReportImapRow.password_set).where(ReportImapRow.id == 1)
+        )
+    ).first()
+    if profile is None or not profile.password_set:
+        return _item(
+            "replies",
+            "off",
+            "Replies mailbox: optional, not set up. You can still paste a reply on a report.",
+            href,
+        )
+    if not env_flag("ABUSE_REPLIES_ENABLED", False) or not profile.enabled:
+        return _item(
+            "replies", "off", "Replies mailbox is saved but reading is switched off.", href
+        )
+    error = await db.scalar(select(ReportImapStateRow.last_error).where(ReportImapStateRow.id == 1))
+    if error:
+        return _item(
+            "replies", "warning", "The last check of the replies mailbox did not work.", href
+        )
+    return _item("replies", "ok", "Replies are read from your mailbox through the VPN.", href)
+
+
 async def _alerts(db: AsyncSession, _now: datetime) -> SetupItem:
     href = "/settings?tab=alerts"
     count = await db.scalar(
@@ -229,6 +257,7 @@ CHECKS: tuple[tuple[str, Callable[[AsyncSession, datetime], Awaitable[SetupItem]
     ("reporting_settings", _reporting_settings, "/settings?tab=reporting"),
     ("self_address", _self_address, "/settings?tab=reporting"),
     ("abuse_worker", _abuse_worker, "/settings?tab=reporting"),
+    ("replies", _replies, "/settings?tab=reporting"),
     ("alerts", _alerts, "/settings?tab=alerts"),
     ("provider_keys", _provider_keys, "/settings?tab=keys"),
 )
