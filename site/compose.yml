@@ -1,0 +1,33 @@
+# Selfhostr public site, standalone. Not part of the honeypot stack.
+#   docker compose -f site/compose.yml -p selfhostr-site up -d --build
+# SITE_PORT (default 8141) is the host port; put a TLS reverse proxy or tunnel in front of it.
+
+name: selfhostr-site
+
+services:
+  site:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${SITE_PORT:-8141}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    cpus: 0.5
+    pids_limit: 64
+    networks: [default]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+networks:
+  default: {}
