@@ -109,7 +109,7 @@ export const HELP = {
   },
   "abuse-report": {
     title: "Abuse report",
-    body: "One draft report for one abuse desk. The identity check says what was masked, or why the report is blocked, against your own addresses and the terms you listed in Settings → Reporting. Review it, then copy the message and send it yourself and mark it as sent, or use Send now if you set up SMTP.",
+    body: "One draft report for one abuse desk. The identity check says what was masked, or why the report is blocked, against your own addresses and the terms you listed in Settings → Reporting. Review it, then copy the message and send it yourself and mark it as sent, or let SuckerPot send it if you set up SMTP sending (Send now, or automatically after a waiting time, with Cancel).",
   },
   "settings-general": {
     title: "General",
