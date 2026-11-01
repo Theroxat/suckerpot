@@ -316,8 +316,9 @@ async def test_c2_is_up_when_a_new_sample_points_to_it_and_never_down(
             ),
             {"s": OTHER},
         )
-    assert await sample_signals(factory, NOW) == 1
-    await update_states(factory, NOW, 7)
+    later = NOW + timedelta(minutes=1)  # a check must be newer than the last state update
+    assert await sample_signals(factory, later) == 1
+    await update_states(factory, later, 7)
     t = (await targets(engine))[0]
     assert (t.state, t.state_source) == ("up", "samples")
 
