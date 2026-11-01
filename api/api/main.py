@@ -51,6 +51,7 @@ from api.story import router as story_router
 from api.today import router as today_router
 from api.trends import router as trends_router
 from api.users import router as users_router
+from api.vpn_settings import router as vpn_settings_router
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 DEFAULT_WEB_DIST = "/app/web"
@@ -127,6 +128,7 @@ def create_app(
         indicators_router,
         settings_router,
         provider_keys_router,
+        vpn_settings_router,
         users_router,
         audit_router,
         campaigns_router,
