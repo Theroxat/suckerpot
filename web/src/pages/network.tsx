@@ -92,6 +92,7 @@ function MemberOverview({ status }: { status: NetworkStatus }) {
             value={t?.median_days_to_takedown}
             loading={summary.isPending}
             unit="days"
+            className="col-span-2 lg:col-span-1"
             hint="from first sighting"
           />
         )}
@@ -106,7 +107,7 @@ function MemberOverview({ status }: { status: NetworkStatus }) {
           <FindingCard
             eyebrow="Per week"
             finding={weeklyFinding(s.weekly)}
-            detail={`Figures of ${formatDay(s.generated_day, true)}. Takedowns use the success colour; nothing here is an alarm.`}
+            detail={`Figures of ${formatDay(s.generated_day, true)}.`}
           >
             <WeeklyChart weekly={s.weekly} />
           </FindingCard>

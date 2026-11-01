@@ -27,7 +27,10 @@ export function CountriesList({ countries }: { countries: readonly NetworkCountr
             aria-label={`${countryName(c.cc) ?? c.cc}: ${c.members} members. Show them.`}
           >
             <span className="truncate text-fg group-hover:underline group-hover:underline-offset-4">
-              <CountryFlag code={c.cc} showName decorative />
+              <span className="inline-flex items-center gap-2">
+                <CountryFlag code={c.cc} decorative />
+                {countryName(c.cc) ?? c.cc}
+              </span>
             </span>
             <span aria-hidden className="h-1.5 overflow-hidden rounded-full bg-surface-hover">
               <span

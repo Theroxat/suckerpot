@@ -42,7 +42,7 @@ const KINDS = [
   { value: "c2_ip", label: "Command servers" },
 ] as const
 
-const COLS = "sm:grid-cols-[minmax(0,1.6fr)_7rem_minmax(0,1fr)_6.5rem_8.5rem]"
+const COLS = "sm:grid-cols-[minmax(0,1.6fr)_7rem_minmax(0,1fr)_9.5rem_8.5rem]"
 
 function TargetValue({ t }: { t: NetworkTarget }) {
   const isIp = (t.kind === "ip" || t.kind === "c2_ip") && t.value
@@ -71,7 +71,9 @@ function TargetValue({ t }: { t: NetworkTarget }) {
 function Row({ t }: { t: NetworkTarget }) {
   const days = daysToTakedown(t)
   return (
-    <li className={`grid grid-cols-1 items-center gap-x-4 gap-y-1.5 px-4 py-3 sm:px-5 ${COLS}`}>
+    <li
+      className={`grid min-w-0 grid-cols-1 items-center gap-x-4 gap-y-1.5 px-4 py-3 sm:px-5 ${COLS}`}
+    >
       <div className="min-w-0 space-y-1">
         <TargetValue t={t} />
         {t.mine ? (
@@ -138,13 +140,15 @@ export function TargetsCard() {
       Show all targets
     </Button>
   ) : (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <SegmentedControl
-        label="State"
-        value={state as (typeof STATES)[number]["value"]}
-        onChange={(v) => setState(v === "taken_down" ? null : v)}
-        options={STATES}
-      />
+    <div className="flex max-w-full flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="max-w-full overflow-x-auto">
+        <SegmentedControl
+          label="State"
+          value={state as (typeof STATES)[number]["value"]}
+          onChange={(v) => setState(v === "taken_down" ? null : v)}
+          options={STATES}
+        />
+      </div>
       <label className="inline-flex items-center gap-2 text-xs text-fg-muted">
         <Switch size="sm" checked={mine} onCheckedChange={(v) => setMine(v ? "1" : null)} />
         Only ones I helped confirm
@@ -161,9 +165,9 @@ export function TargetsCard() {
           Never a list of who saw what: each target shows only how many sensors, in a range.
         </span>
       }
-      action={controls}
       bodyClassName="px-0 sm:px-0 pb-0 sm:pb-0"
     >
+      <div className="px-4 pb-3 sm:px-5">{controls}</div>
       {target ? null : (
         <div className="overflow-x-auto px-4 pb-3 sm:px-5">
           <SegmentedControl
