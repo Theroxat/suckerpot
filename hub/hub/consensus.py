@@ -277,10 +277,13 @@ async def run_consensus(
     link_kinds: list[str] = []
     link_keys: list[str] = []
     link_nodes: list[uuid.UUID] = []
-    droppers: set[str] = set()  # sha256 values confirmed in this run and fetched by 2+ nodes
+    # sha256 values confirmed in this run and fetched by 2+ nodes, with the nodes that fetched them
+    droppers: dict[str, set[uuid.UUID]] = {}
     ordered = sorted(groups.items(), key=lambda kv: kv[0][0] != "sha256")
     for (kind, value), group in ordered:
-        via_ok = bool(group.via & droppers)
+        # The named dropper counts only when at least k nodes of THIS group also submitted and
+        # fetched it: two colluding fetchers cannot vouch for a C2 reported by many others.
+        via_ok = any(len(group.nodes & droppers.get(v, set())) >= s.min_nodes for v in group.via)
         verdict = evaluate(group, eligible, s, never=never, corroborated=None, via_ok=via_ok)
         if verdict.reason == "need_corroboration":
             host = split_host_port(value)[0] if kind == "c2_ip" else value
@@ -291,7 +294,7 @@ async def run_consensus(
             and verdict.confirmed
             and len(group.fetched_nodes & eligible.keys()) >= MIN_FETCHED_NODES
         ):
-            droppers.add(value)
+            droppers[value] = group.fetched_nodes & eligible.keys()
         result.reasons[verdict.reason] += 1
         if verdict.reason == "never_list":
             continue

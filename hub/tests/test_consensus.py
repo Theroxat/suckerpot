@@ -544,6 +544,18 @@ async def test_c2_needs_a_confirmed_dropper_fetched_by_two_eligible_nodes(env: E
 
 
 @pytest.mark.integration
+async def test_c2_needs_k_of_its_own_nodes_to_have_fetched_the_dropper(env: Env) -> None:
+    nodes = await ten(env)
+    await observe(env.worker, nodes, "c2_ip", "203.0.113.104:23", [D1, D2], via="dd" * 32)
+    # the dropper is confirmed and fetched by two nodes only; the other eight did not fetch it
+    await observe(env.worker, nodes[:2], "sha256", "dd" * 32, [D1, D2], fetched=True)
+    await observe(env.worker, nodes[2:], "sha256", "dd" * 32, [D1, D2], fetched=False)
+    await run(env)
+    assert (await target(env.worker, "sha256", "dd" * 32))["state"] == "confirmed"
+    assert (await target(env.worker, "c2_ip", "203.0.113.104:23"))["state"] == "candidate"
+
+
+@pytest.mark.integration
 async def test_empty_batches_do_not_keep_a_node_eligible(env: Env) -> None:
     nodes = await add_nodes(env.worker, 5)
     async with env.worker() as s:
