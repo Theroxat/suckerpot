@@ -33,6 +33,8 @@ describe("navigation", () => {
       "/cves",
       "/defend/alerts",
       "/defend/abuse",
+      "/defend/submissions",
+      "/defend/results",
       "/settings",
       "/styleguide",
     ])
@@ -51,6 +53,8 @@ describe("navigation", () => {
     ["/cves", "/defend/exposure"],
     ["/reports/2026-W43", "/defend/alerts"],
     ["/defend/alerts", "/defend/alerts"],
+    ["/defend/results/targets/4", "/defend/abuse"],
+    ["/defend/submissions", "/defend/abuse"],
     ["/", "/"],
   ])("%s lights up the %s entry", (path, to) => {
     expect(itemForPath(path)?.to).toBe(to)

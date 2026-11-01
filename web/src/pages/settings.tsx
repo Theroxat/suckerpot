@@ -10,6 +10,8 @@ import {
 import { useEffect, useRef } from "react"
 import { Link } from "react-router"
 import { ReportingCard } from "@/components/abuse/reporting-card"
+import { AbusechCard } from "@/components/abuse/abusech-card"
+import { ImapCard } from "@/components/abuse/imap-card"
 import { SendingCard } from "@/components/abuse/sending-card"
 import { ChannelsCard } from "@/components/alerts/channels-card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -452,6 +454,8 @@ export function SettingsPage() {
           <TabsContent value="reporting" className="grid grid-cols-1 gap-4">
             <ReportingCard />
             <SendingCard />
+            <ImapCard />
+            <AbusechCard />
           </TabsContent>
         ) : null}
         {canWrite ? (

@@ -20,6 +20,7 @@ import type {
 } from "@/lib/abuse"
 import { KIND_LABEL } from "@/lib/abuse"
 import { sampleSha } from "./samples"
+import { outcomeFor, repliesStatus } from "./replies"
 
 const LATENCY_MS = 140
 const HOUR = 3_600_000
@@ -424,6 +425,7 @@ export const abuseHandlers: RequestHandler[] = [
       self_address_fresh: true,
       counts: counts(),
       waiting_for_contact: waiting.reduce((n, w) => n + w.subject_count, 0),
+      replies: repliesStatus(),
     }
     return HttpResponse.json(status)
   }),
@@ -451,6 +453,7 @@ export const abuseHandlers: RequestHandler[] = [
           updated_at: d.updated_at,
           revision: d.revision,
           guard: d.guard,
+          outcome: outcomeFor(d.public_id, d.sent_at !== null),
         }
       })
     return HttpResponse.json({ items, next_cursor: null })

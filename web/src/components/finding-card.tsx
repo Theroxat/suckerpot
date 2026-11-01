@@ -37,7 +37,7 @@ export function FindingCard({
           <h3 className="text-base font-medium text-pretty text-fg">{finding}</h3>
           {detail ? <p className="text-sm text-fg-muted">{detail}</p> : null}
         </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
+        {action ? <div className="max-w-full shrink-0">{action}</div> : null}
       </header>
       {children ? (
         <div className={cn("px-4 pt-4 pb-4 sm:px-5 sm:pb-5", bodyClassName)}>{children}</div>
