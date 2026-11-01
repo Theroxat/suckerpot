@@ -6,7 +6,7 @@ from datetime import date
 
 from fastapi import APIRouter, Request
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, text
 from starlette.responses import Response
 from suckerpot_netproto import models
 
@@ -49,4 +49,24 @@ async def network(request: Request) -> Response:
         )
     except ValidationError:  # a malformed cache never reaches a node
         summary = empty_summary(ctx.today())
+    # The cache is built once a day: drop members that left since, so a deleted node is not
+    # listed for up to a day.
+    async with ctx.sessionmaker() as session:
+        alive = set(
+            (
+                await session.execute(
+                    text("SELECT substr(encode(sha256(pubkey), 'hex'), 1, 8) FROM nodes")
+                )
+            )
+            .scalars()
+            .all()
+        )
+    kept = [m for m in summary.members if m.fingerprint in alive]
+    if len(kept) != len(summary.members):
+        summary = summary.model_copy(
+            update={
+                "members": kept,
+                "totals": summary.totals.model_copy(update={"members": len(kept)}),
+            }
+        )
     return reply(request, ctx, 200, summary.model_dump(mode="json"))
