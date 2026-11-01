@@ -31,6 +31,8 @@ EXTRA_CIDRS_TTL_S = 60.0  # the extra allowed ranges are read at most this often
 
 type Network = ipaddress.IPv4Network | ipaddress.IPv6Network
 type ExtraCidrs = Callable[[], Awaitable[Sequence[Network]]]
+type SelfNetworks = Callable[[], Awaitable[Sequence[Network]]]
+type AsnLookup = Callable[[str], tuple[int | None, str | None]]
 
 REASONS = (
     "ok",
@@ -44,6 +46,8 @@ REASONS = (
     "ip_mismatch",
     "ip_not_global",
     "ip_not_allowed",
+    "exit_is_self",
+    "exit_asn_denied",
     "check_error",
 )
 
@@ -62,6 +66,8 @@ class GateStatus:
     reason: str
     egress_ip: str | None
     checked_at: datetime
+    asn: int | None = None
+    org: str | None = None
 
 
 def _utcnow() -> datetime:
@@ -83,12 +89,15 @@ class EgressGate:
         client: httpx.AsyncClient | None = None,
         clock: Callable[[], datetime] = _utcnow,
         extra_cidrs: ExtraCidrs | None = None,
+        self_networks: SelfNetworks | None = None,
+        asn_lookup: AsnLookup | None = None,
     ) -> None:
         self.settings = settings
         # Ranges the owner trusted at run time (M23). They only ever add to the ``.env`` list.
-        self._extra_provider = extra_cidrs
-        self._extra: tuple[Network, ...] = ()
-        self._extra_read_at: datetime | None = None
+        self._extra = _Cached(extra_cidrs, clock)
+        # The honeypot's own addresses (M23): the exit may never be one of them.
+        self._self = _Cached(self_networks, clock)
+        self._asn_lookup = asn_lookup  # local database only, never a network call
         self._clock = clock
         self._injected = client
         self._control: httpx.AsyncClient | None = client
@@ -120,9 +129,16 @@ class EgressGate:
             self._proxy_errors = 0
             self._wake.set()
 
-    def _set(self, ok: bool, reason: str, ip: str | None) -> GateStatus:
+    def _set(
+        self,
+        ok: bool,
+        reason: str,
+        ip: str | None,
+        asn: int | None = None,
+        org: str | None = None,
+    ) -> GateStatus:
         previous = self._status
-        self._status = GateStatus(ok, reason, ip, self._clock())
+        self._status = GateStatus(ok, reason, ip, self._clock(), asn, org)
         if (previous.open, previous.reason) != (ok, reason):
             log.info("egress gate %s (%s)", "open" if ok else "closed", reason)
         return self._status
@@ -195,30 +211,28 @@ class EgressGate:
         # 5. a public address
         if not seen.is_global:
             return self._set(False, "ip_not_global", shown)
-        # 6. inside the VPN's expected range
+        asn, org = self._asn_of(shown)
+        # 6. never the honeypot's own address (or its network), whatever the ranges say
+        if any(seen in net for net in await self._self.get()):
+            return self._set(False, "exit_is_self", shown, asn, org)
+        # 7. not an operator-denied AS
+        if asn is not None and asn in self.settings.deny_asns:
+            return self._set(False, "exit_asn_denied", shown, asn, org)
+        # 8. inside the VPN's expected range, or one the owner trusted
         if not any(seen in net for net in self.settings.allowed_cidrs) and not any(
-            seen in net for net in await self._extra_cidrs()
+            seen in net for net in await self._extra.get()
         ):
-            return self._set(False, "ip_not_allowed", shown)
-        return self._set(True, "ok", shown)
+            return self._set(False, "ip_not_allowed", shown, asn, org)
+        return self._set(True, "ok", shown, asn, org)
 
-    async def _extra_cidrs(self) -> tuple[Network, ...]:
-        """The run-time trusted ranges: read at most once a minute, last good list kept on error
-        (empty at start, so the ``.env`` ranges alone apply until the first successful read)."""
-        if self._extra_provider is None:
-            return ()
-        now = self._clock()
-        read_at = self._extra_read_at
-        if read_at is not None and (now - read_at).total_seconds() < EXTRA_CIDRS_TTL_S:
-            return self._extra
-        self._extra_read_at = now  # a failing source is retried after the TTL, not at every check
+    def _asn_of(self, ip: str) -> tuple[int | None, str | None]:
+        if self._asn_lookup is None:
+            return None, None
         try:
-            self._extra = tuple(await self._extra_provider())
-        except asyncio.CancelledError:
-            raise
+            return self._asn_lookup(ip)
         except Exception as exc:
-            log.warning("could not read the trusted exit ranges (%s)", type(exc).__name__)
-        return self._extra
+            log.warning("asn lookup failed (%s)", type(exc).__name__)
+            return None, None
 
     async def _echo(self, url: str) -> IPAddress | None:
         _, proxied = self._clients()
@@ -252,6 +266,36 @@ class EgressGate:
             self._wake.clear()
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._wake.wait(), self.settings.check_interval_s)
+
+
+class _Cached:
+    """A list of networks read from ``provider`` at most once a minute. A failing read keeps the
+    last good list (empty at start) and is retried after the same delay, not at every check."""
+
+    def __init__(
+        self,
+        provider: Callable[[], Awaitable[Sequence[Network]]] | None,
+        clock: Callable[[], datetime],
+    ) -> None:
+        self._provider = provider
+        self._clock = clock
+        self._value: tuple[Network, ...] = ()
+        self._read_at: datetime | None = None
+
+    async def get(self) -> tuple[Network, ...]:
+        if self._provider is None:
+            return ()
+        now = self._clock()
+        if self._read_at is not None and (now - self._read_at).total_seconds() < EXTRA_CIDRS_TTL_S:
+            return self._value
+        self._read_at = now
+        try:
+            self._value = tuple(await self._provider())
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("could not read a network list (%s)", type(exc).__name__)
+        return self._value
 
 
 def _json_field(resp: httpx.Response, key: str) -> str | None:

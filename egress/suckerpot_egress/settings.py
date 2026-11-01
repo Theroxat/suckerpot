@@ -31,6 +31,16 @@ def derive_allowed_cidrs(endpoint_ip: str) -> tuple[Network, ...]:
     return (ipaddress.ip_network(f"{addr}/24", strict=False),)
 
 
+def parse_asns(value: str) -> frozenset[int]:
+    """A comma list of AS numbers (``AS64500`` or ``64500``). Anything else is ignored."""
+    out: set[int] = set()
+    for part in _split(value):
+        digits = part.upper().removeprefix("AS")
+        if digits.isdigit() and 0 < int(digits) < 2**32:
+            out.add(int(digits))
+    return frozenset(out)
+
+
 @dataclass(frozen=True)
 class EgressSettings:
     proxy_url: str = DEFAULT_PROXY_URL
@@ -40,6 +50,7 @@ class EgressSettings:
     echo_urls: tuple[str, ...] = DEFAULT_ECHO_URLS
     allowed_cidrs: tuple[Network, ...] = ()
     check_interval_s: int = DEFAULT_INTERVAL_S
+    deny_asns: frozenset[int] = frozenset()  # exit ASNs that close the gate (EGRESS_DENY_ASNS)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> EgressSettings:
@@ -63,4 +74,5 @@ class EgressSettings:
             echo_urls=echo,
             allowed_cidrs=cidrs,
             check_interval_s=max(10, interval),
+            deny_asns=parse_asns(e.get("EGRESS_DENY_ASNS", "")),
         )

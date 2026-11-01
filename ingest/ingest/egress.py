@@ -12,7 +12,7 @@ from collections.abc import Mapping
 
 import httpx
 from suckerpot_egress import EgressClosed, EgressGate, EgressSettings, egress_client
-from suckerpot_egress.gate import ExtraCidrs
+from suckerpot_egress.gate import AsnLookup, ExtraCidrs, SelfNetworks
 
 __all__ = [
     "EgressClosed",
@@ -34,10 +34,18 @@ def get_gate() -> EgressGate:
     return _gate
 
 
-def install_gate(extra_cidrs: ExtraCidrs) -> EgressGate:
-    """Build the process gate with the owner-trusted exit ranges (M23). Call it before any
-    worker is created, so that every worker shares this gate."""
-    gate = EgressGate(EgressSettings.from_env(), extra_cidrs=extra_cidrs)
+def install_gate(
+    extra_cidrs: ExtraCidrs, self_networks: SelfNetworks, asn_lookup: AsnLookup
+) -> EgressGate:
+    """Build the process gate with the owner-trusted exit ranges, the honeypot's own networks
+    and the local ASN lookup (M23). Call it before any worker is created, so that every worker
+    shares this gate."""
+    gate = EgressGate(
+        EgressSettings.from_env(),
+        extra_cidrs=extra_cidrs,
+        self_networks=self_networks,
+        asn_lookup=asn_lookup,
+    )
     set_gate(gate)
     return gate
 

@@ -1,6 +1,7 @@
 """The strict WireGuard parser and the config file writer (M23). No database."""
 
 import base64
+import ipaddress
 import json
 import os
 import stat
@@ -10,7 +11,14 @@ from pathlib import Path
 import pytest
 
 from api import vpn_settings as vpn
-from api.vpn_settings import MAX_CONF_BYTES, candidate_network, parse_wireguard
+from api.vpn_settings import (
+    MAX_CONF_BYTES,
+    candidate_network,
+    clean_stale_tmp,
+    deny_asns,
+    evaluate_candidate,
+    parse_wireguard,
+)
 
 PRIVATE = base64.b64encode(b"\x01" * 32).decode()
 PUBLIC = base64.b64encode(b"\x02" * 32).decode()
@@ -277,3 +285,55 @@ def test_candidate_is_the_slash_24_of_the_observed_address() -> None:
 )
 def test_no_candidate(d: dict[str, object] | None) -> None:
     assert candidate_network(d, NOW) is None
+
+
+# ---- self addresses, denied ASNs, scope ids, leftovers -----------------------------------------
+
+
+def nets(*texts: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    return [ipaddress.ip_network(t) for t in texts]
+
+
+def test_a_self_address_in_the_range_refuses_the_candidate() -> None:
+    net, blocked = evaluate_candidate(detail(), NOW, nets("9.9.9.200/32"), frozenset())
+    assert (net, blocked) == (None, "exit_is_self")
+    other = nets("9.9.8.0/24", "2001:db8::/32")
+    net, blocked = evaluate_candidate(detail(), NOW, other, frozenset())
+    assert str(net) == "9.9.9.0/24" and blocked is None
+
+
+def test_a_denied_asn_refuses_the_candidate() -> None:
+    d = detail(egress_asn=64511)
+    assert evaluate_candidate(d, NOW, [], frozenset({64511})) == (None, "exit_asn_denied")
+    assert evaluate_candidate(d, NOW, [], frozenset({1}))[1] is None
+
+
+def test_the_gate_reasons_are_reported_as_blocked() -> None:
+    for reason in ("exit_is_self", "exit_asn_denied"):
+        assert evaluate_candidate(detail(reason=reason), NOW, [], frozenset()) == (None, reason)
+    stale = detail(reason="exit_is_self", checked_at=(NOW - timedelta(hours=1)).isoformat())
+    assert evaluate_candidate(stale, NOW, [], frozenset()) == (None, None)
+
+
+def test_deny_asns_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EGRESS_DENY_ASNS", "AS64496, 64511,as64500,x,0,99999999999")
+    assert deny_asns() == frozenset({64496, 64511, 64500})
+    monkeypatch.delenv("EGRESS_DENY_ASNS")
+    assert deny_asns() == frozenset()
+
+
+@pytest.mark.parametrize("address", ["fe80::1%eth0/64", "2001:db8::1%1/64", "198.51.100.2/32 x"])
+def test_interface_addresses_with_odd_characters_are_refused(address: str) -> None:
+    result = parse_wireguard(conf(address=f"198.51.100.2/32, {address}"))
+    assert result.summary is None and "bad_address" in result.problems
+
+
+def test_stale_temp_files_are_cleaned(tmp_path: Path) -> None:
+    old = tmp_path / ".wg.env.abc.tmp"
+    fresh = tmp_path / ".meta.json.def.tmp"
+    keep = tmp_path / "wg.env"
+    for f in (old, fresh, keep):
+        f.write_text("x")
+    os.utime(old, (1, 1))
+    assert clean_stale_tmp(tmp_path) == 1
+    assert sorted(p.name for p in tmp_path.iterdir()) == [".meta.json.def.tmp", "wg.env"]

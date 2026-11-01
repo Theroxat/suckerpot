@@ -22,6 +22,8 @@ import logging
 import os
 import re
 import tempfile
+import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -35,6 +37,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db import EgressTrustedExitRow, EnrichmentStatusRow
+from suckerpot_db.trusted_exits import load_self_networks
 
 from api import audit as audit_db
 from api import auth as auth_mod
@@ -54,7 +57,10 @@ MAX_CONF_BYTES = 4096
 MAX_TRUSTED_EXITS = 8
 CANDIDATE_MAX_AGE = timedelta(minutes=10)
 FILE_MODE = 0o644  # gluetun's root has no CAP_DAC_OVERRIDE: it must be able to read the file
-CHECKED_ROWS = ("egress", "egress_collector")
+# The candidate comes from the ingest gate only (never the collector's row).
+GATE_ROW = "egress"
+DENY_ASNS_ENV = "EGRESS_DENY_ASNS"
+BLOCKED_REASONS = ("exit_is_self", "exit_asn_denied")
 
 AdminOnly = Depends(require_admin)
 
@@ -145,6 +151,8 @@ def _parse_addresses(value: str) -> tuple[tuple[str, ...], list[str]]:
         except ValueError:
             return (), ["bad_address"]
         addr = iface.ip
+        if not re.fullmatch(r"[0-9a-fA-F:./]+", str(iface)):
+            return (), ["bad_address"]  # e.g. an IPv6 scope id
         if addr.is_loopback or addr.is_multicast or addr.is_unspecified or addr.is_link_local:
             return (), ["bad_address"]
         out.append(str(iface))
@@ -297,6 +305,24 @@ def config_available() -> bool:
     return d.is_dir() and os.access(d, os.W_OK | os.X_OK)
 
 
+STALE_TMP_S = 60.0
+
+
+def clean_stale_tmp(directory: Path, now: float | None = None) -> int:
+    """Remove temp files a crashed write left behind (older than a minute, so that a write in
+    flight is never touched). Returns how many were removed."""
+    cutoff = (time.time() if now is None else now) - STALE_TMP_S
+    removed = 0
+    for path in directory.glob(".*.tmp"):
+        try:
+            if path.is_file() and not path.is_symlink() and path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        except OSError:
+            continue
+    return removed
+
+
 def _atomic_write(directory: Path, name: str, content: str) -> None:
     fd, tmp = tempfile.mkstemp(dir=directory, prefix=f".{name}.", suffix=".tmp")
     try:
@@ -324,6 +350,7 @@ def render_env(summary: WireguardSummary) -> str:
 def write_config(summary: WireguardSummary, uploaded_by: str, now: datetime) -> dict[str, Any]:
     """Write ``meta.json`` then ``wg.env`` (the file the vpn container watches)."""
     directory = config_dir()
+    clean_stale_tmp(directory)
     meta = {
         "uploaded_at": now.isoformat(),
         "uploaded_by": uploaded_by,
@@ -364,6 +391,8 @@ class VpnGate(BaseModel):
     state: str
     reason: str | None
     egress_ip: str | None
+    egress_asn: int | None
+    egress_org: str | None
     checked_at: datetime | None
 
 
@@ -385,6 +414,7 @@ class VpnSettings(BaseModel):
     gate: VpnGate
     trusted_exits: list[TrustedExit]
     trust_candidate: str | None
+    trust_blocked: str | None  # "exit_is_self" | "exit_asn_denied" | None
     config_writable: bool  # False: the vpn-config volume is missing or read-only (PUT: 503)
 
 
@@ -393,7 +423,9 @@ class PasswordBody(BaseModel):
 
 
 class UploadBody(BaseModel):
-    conf: str = Field(repr=False)
+    # Bounded by the model (twice the 4 KiB limit, in characters); the route answers 413 for
+    # anything over 4 KiB and, for bigger bodies, the model's own 422.
+    conf: str = Field(max_length=8192, repr=False)
     password: str = Field(max_length=1024, repr=False)
 
 
@@ -429,14 +461,34 @@ def _meta_fields(meta: dict[str, Any] | None) -> dict[str, Any]:
 
 def _gate_of(detail: dict[str, Any] | None) -> VpnGate:
     if not detail:
-        return VpnGate(state="closed", reason="no_status", egress_ip=None, checked_at=None)
+        return VpnGate(
+            state="closed", reason="no_status", egress_ip=None, egress_asn=None, egress_org=None,
+            checked_at=None,
+        )  # fmt: skip
     is_open = detail.get("open") is True
     return VpnGate(
         state="open" if is_open else "closed",
         reason=_str(detail.get("reason"), 64),
         egress_ip=_str(detail.get("egress_ip"), 64),
+        egress_asn=_asn_of(detail),
+        egress_org=_str(detail.get("egress_org"), 128),
         checked_at=_checked_at(detail),
     )
+
+
+def _asn_of(detail: dict[str, Any]) -> int | None:
+    asn = detail.get("egress_asn")
+    return asn if isinstance(asn, int) and not isinstance(asn, bool) and 0 < asn < 2**32 else None
+
+
+def deny_asns() -> frozenset[int]:
+    """``EGRESS_DENY_ASNS``: a comma list such as ``AS64500,64501``. Bad entries are ignored."""
+    out: set[int] = set()
+    for part in os.environ.get(DENY_ASNS_ENV, "").split(","):
+        digits = part.strip().upper().removeprefix("AS")
+        if digits.isdigit() and 0 < int(digits) < 2**32:
+            out.add(int(digits))
+    return frozenset(out)
 
 
 def candidate_network(
@@ -466,7 +518,7 @@ def candidate_network(
 async def _status_rows(db: AsyncSession) -> dict[str, dict[str, Any]]:
     rows = await db.execute(
         select(EnrichmentStatusRow.name, EnrichmentStatusRow.detail).where(
-            EnrichmentStatusRow.name.in_(CHECKED_ROWS)
+            EnrichmentStatusRow.name == GATE_ROW
         )
     )
     return {r.name: r.detail for r in rows}
@@ -480,27 +532,55 @@ async def _trusted(db: AsyncSession) -> list[TrustedExit]:
     ]
 
 
-async def _candidate(db: AsyncSession, trusted: list[TrustedExit]) -> str | None:
-    details = await _status_rows(db)
-    now = datetime.now(UTC)
-    for name in CHECKED_ROWS:
-        net = candidate_network(details.get(name), now)
-        if net is not None:
-            cidr = str(net)
-            return None if any(t.cidr == cidr for t in trusted) else cidr
-    return None
+Net = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+
+def evaluate_candidate(
+    detail: dict[str, Any] | None,
+    now: datetime,
+    self_networks: Sequence[Net],
+    denied: frozenset[int],
+) -> tuple[Net | None, str | None]:
+    """(range to offer, reason it is refused). Never offers a range that contains one of the
+    honeypot's own addresses (the owner's home IP must not become a trusted exit), nor one of
+    an operator-denied AS."""
+    net = candidate_network(detail, now)
+    if detail and detail.get("open") is not True and detail.get("reason") in BLOCKED_REASONS:
+        checked = _checked_at(detail)
+        if checked is not None and -timedelta(minutes=1) < now - checked <= CANDIDATE_MAX_AGE:
+            return None, str(detail["reason"])
+    if net is None or detail is None:
+        return None, None
+    if any(net.version == s.version and net.overlaps(s) for s in self_networks):
+        return None, "exit_is_self"
+    if _asn_of(detail) in denied:
+        return None, "exit_asn_denied"
+    return net, None
+
+
+async def _candidate(db: AsyncSession, trusted: list[TrustedExit]) -> tuple[str | None, str | None]:
+    """(cidr to offer, blocked reason)."""
+    detail = (await _status_rows(db)).get(GATE_ROW)
+    own = await load_self_networks(db)
+    net, blocked = evaluate_candidate(detail, datetime.now(UTC), own, deny_asns())
+    if net is None:
+        return None, blocked
+    cidr = str(net)
+    return (None if any(t.cidr == cidr for t in trusted) else cidr), None
 
 
 async def _settings(db: AsyncSession) -> VpnSettings:
     meta = await asyncio.to_thread(read_meta)
     details = await _status_rows(db)
     trusted = await _trusted(db)
+    candidate, blocked = await _candidate(db, trusted)
     return VpnSettings(
         source="env" if meta is None else "upload",
         **_meta_fields(meta),
         gate=_gate_of(details.get("egress")),
         trusted_exits=trusted,
-        trust_candidate=await _candidate(db, trusted),
+        trust_candidate=candidate,
+        trust_blocked=blocked,
         config_writable=await asyncio.to_thread(config_available),
     )
 
@@ -591,7 +671,9 @@ async def trust_exit(body: PasswordBody, request: Request, db: DbSession) -> Res
         return refused
     actor = principal.username if principal else "unknown"
     trusted = await _trusted(db)
-    cidr = await _candidate(db, trusted)
+    cidr, blocked = await _candidate(db, trusted)
+    if blocked is not None:
+        return _error(409, "This exit address cannot be trusted.", blocked)
     if cidr is None:
         return _error(409, "There is no exit range to trust right now.", "no_candidate")
     if len(trusted) >= MAX_TRUSTED_EXITS:

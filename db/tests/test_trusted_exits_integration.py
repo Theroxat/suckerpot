@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from suckerpot_db import database_url_from_env
 from suckerpot_db.roles import apply_roles
+from suckerpot_db.trusted_exits import ACTIVE_SELF_NETWORKS_SQL
 
 pytestmark = pytest.mark.integration
 
@@ -121,7 +122,7 @@ async def test_unique_and_at_most_eight_rows(owner: AsyncEngine) -> None:
     api = _as(ENV["POSTGRES_API_USER"], ENV["POSTGRES_API_PASSWORD"])
     try:
         for n in range(8):
-            assert await _sqlstate(api, INSERT, {"c": f"198.51.{n}.0/24"}) is None
+            assert await _sqlstate(api, INSERT, {"c": f"192.0.2.{n * 32}/27"}) is None
         assert await _sqlstate(api, INSERT, {"c": "203.0.113.0/24"}) == "23514"
         async with owner.begin() as conn:
             await conn.execute(
@@ -136,6 +137,39 @@ async def test_unique_and_at_most_eight_rows(owner: AsyncEngine) -> None:
             await conn.execute(
                 text("DELETE FROM egress_trusted_exits WHERE cidr = '203.0.113.0/24'")
             )
-        assert await _sqlstate(api, INSERT, {"c": "198.51.3.0/24"}) == "23505"
+        assert await _sqlstate(api, INSERT, {"c": "192.0.2.96/27"}) == "23505"
     finally:
         await api.dispose()
+
+
+async def test_active_self_networks_are_readable_by_api_and_ingest(owner: AsyncEngine) -> None:
+    rows = [
+        ("address", "192.0.2.10", "manual", False),
+        ("cidr", "198.51.100.0/25", "sensor", False),
+        ("address", "203.0.113.5", "learned", True),
+        ("address", "203.0.113.6", "learned", False),  # not confirmed: does not act
+        ("name", "srv-example", "manual", False),
+    ]
+    async with owner.begin() as conn:
+        await conn.execute(text("DELETE FROM report_self_terms"))
+        for kind, value, source, confirmed in rows:
+            await conn.execute(
+                text(
+                    "INSERT INTO report_self_terms (kind, value, source, confirmed) "
+                    "VALUES (:k, :v, :s, :c)"
+                ),
+                {"k": kind, "v": value, "s": source, "c": confirmed},
+            )
+    for user, password in (
+        (ENV["POSTGRES_API_USER"], ENV["POSTGRES_API_PASSWORD"]),
+        (ENV["POSTGRES_INGEST_USER"], ENV["POSTGRES_INGEST_PASSWORD"]),
+    ):
+        engine = _as(user, password)
+        try:
+            async with engine.connect() as conn:
+                found = sorted((await conn.scalars(text(ACTIVE_SELF_NETWORKS_SQL))).all())
+        finally:
+            await engine.dispose()
+        assert found == ["192.0.2.10", "198.51.100.0/25", "203.0.113.5"]
+    async with owner.begin() as conn:
+        await conn.execute(text("DELETE FROM report_self_terms"))
