@@ -45,7 +45,7 @@ async def test_failed_authentication_is_never_signed(env: Env) -> None:
         await node.call("GET", "/v1/node", timestamp=now - 999),
         await node.call("GET", "/v1/node", drop=(sign.H_SIGNATURE,)),
         await node.call("GET", "/v1/node", sign_path="/v1/x"),
-        await stranger.call("GET", "/v1/node"),
+        await stranger.call("GET", "/v1/node", sign_path="/v1/x"),
         await node.call("POST", "/v1/reveals", raw=b" " * (64 * 1024 + 1)),
     ]
     for reply in cases:
@@ -78,6 +78,13 @@ async def test_unknown_node(env: Env) -> None:
     stranger = env.node()
     reply = await stranger.call("GET", "/v1/node")
     assert (reply.status, reply.error) == (401, "unknown_node")
+    assert reply.signature_ok  # the key proved itself: the hub may say it does not know it
+
+
+async def test_unknown_node_with_a_bad_signature_is_unsigned(env: Env) -> None:
+    reply = await env.node().call("GET", "/v1/node", sign_path="/v1/x")
+    assert (reply.status, reply.error) == (401, "bad_signature")
+    assert not reply.signature_ok
 
 
 async def test_bad_signature_covers_method_path_query_and_body(env: Env) -> None:
@@ -126,8 +133,8 @@ async def test_check_order(env: Env) -> None:
     ).error == "invalid_payload"
     # timestamp before the key lookup
     assert (await stranger.call("GET", "/v1/node", timestamp=now - 999)).error == "stale_timestamp"
-    # key lookup before the signature
-    assert (await stranger.call("GET", "/v1/node", sign_path="/v1/x")).error == "unknown_node"
+    # signature (with the key in the header) before the key lookup
+    assert (await stranger.call("GET", "/v1/node", sign_path="/v1/x")).error == "bad_signature"
     node = await _member(env)
     # signature before nonce: a bad signature with a fresh nonce does not burn the nonce
     n = sign.new_nonce()

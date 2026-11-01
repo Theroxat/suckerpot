@@ -46,8 +46,8 @@ Every address and name below is a placeholder (documentation ranges and `example
   1. size (`too_large`);
   2. headers present and well formed (`invalid_payload`);
   3. `|now - timestamp| <= 300` seconds (`stale_timestamp`);
-  4. key known, except for enrolment (`unknown_node`);
-  5. signature (`bad_signature`);
+  4. signature, checked with the key named in the header (`bad_signature`);
+  5. key known, except for enrolment (`unknown_node`, see below);
   6. nonce unseen for this key in the last 10 minutes (`replayed_nonce`);
   7. rate limit (`rate_limited`).
 - **Response signature.** An answer to an authenticated request carries `X-SPN-Hub-Signature`:
@@ -70,8 +70,10 @@ Every address and name below is a placeholder (documentation ranges and `example
   only its nonce: a man in the middle cannot send its own request to the hub, keep the signed
   answer and replay it to a victim's nonce.
 - **Unsigned answers.** The hub does not sign an answer to a request whose authentication failed
-  (`stale_timestamp`, `unknown_node`, `bad_signature`, malformed headers, an unknown route,
-  `too_large`). A node treats such an error as "not authenticated", never as a statement by the
+  (`stale_timestamp`, `bad_signature`, malformed headers, an unknown route,
+  `too_large`). `unknown_node` IS signed, because the request signature already proved the key:
+  a node that sent `DELETE /v1/node` and gets a signed `unknown_node` knows it is already gone.
+  A node treats an unsigned error as "not authenticated", never as a statement by the
   hub, and only retries later.
 - **Unsigned requests.** A client SHOULD send `X-SPN-Nonce` (16 random bytes, base64url) on the
   unsigned endpoints too. When the header is well formed, the hub signs its answer with the
