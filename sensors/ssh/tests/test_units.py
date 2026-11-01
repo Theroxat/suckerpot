@@ -110,3 +110,10 @@ async def test_loopback_is_quiet_by_default(make_harness) -> None:  # type: igno
         await conn.run("echo x")
         conn.close()
         assert await h.events() == []
+
+
+def test_default_hostname_is_a_reserved_fake_name() -> None:
+    """The abuse-report redactor (reporting/terms.py FAKE_HOSTNAMES) knows this default."""
+    from ssh_sensor.config import Config
+
+    assert Config.from_env({}).hostname in {"srv-web01", "srv-app02", "srv-db01"}

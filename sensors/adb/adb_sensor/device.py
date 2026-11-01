@@ -159,6 +159,20 @@ MODELS = (
 MODEL_BY_KEY = {m.key: m for m in MODELS}
 
 
+def self_identity(*names: str) -> dict[str, list[str]]:
+    """The ``data.self_identity`` block of a ``connect`` event (up to 4 names, 64 chars each).
+
+    Only this sensor's own configured or derived names, never anything from a client. Ingest
+    uses them to keep the deployment's identity out of anonymous abuse reports.
+    """
+    out: list[str] = []
+    for name in names:
+        clipped = name[:64]
+        if clipped and clipped not in out:
+            out.append(clipped)
+    return {"names": out[:4]}
+
+
 @dataclass(frozen=True)
 class Device:
     """Everything that makes this deployment's box unique."""
@@ -170,6 +184,16 @@ class Device:
     android_id: str
     busybox: bool
     root: bool
+
+    def self_identity(self) -> dict[str, list[str]]:
+        """Per-install names a client can read: serial, host name, net.hostname, Android ID."""
+        host = self.profile.hostname
+        return self_identity(
+            self.serial,
+            "" if host == "localhost" else host,
+            f"{self.model.product_name}-{self.serial[-4:]}",
+            self.android_id,
+        )
 
     @property
     def banner_props(self) -> str:

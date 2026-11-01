@@ -172,3 +172,10 @@ def test_state_is_bounded() -> None:
             cfg.state_per_ip,
         )
     assert len(st.containers) == 3
+
+
+def test_default_hostname_is_a_reserved_fake_name() -> None:
+    """The abuse-report redactor (reporting/terms.py FAKE_HOSTNAMES) knows this default."""
+    from docker_sensor.config import Config
+
+    assert Config.from_env({}).hostname in {"srv-web01", "srv-app02", "srv-db01"}

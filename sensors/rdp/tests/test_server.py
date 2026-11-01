@@ -70,6 +70,18 @@ async def test_cookie_login_attempt_and_hybrid_tls(make_harness: HarnessFactory)
         challenge = await reader.read(4096)  # the server's TSRequest carrying an NTLM CHALLENGE
         idx = challenge.index(b"NTLMSSP\x00")
         assert challenge[idx + 8] == 2  # NTLM message type 2 (CHALLENGE)
+        msg = challenge[idx:]
+        length, _, offset = struct.unpack_from("<HHI", msg, 40)
+        info = msg[offset : offset + length]
+        served = {cn.lower()}
+        pos = 0
+        while pos + 4 <= len(info):
+            kind, size = struct.unpack_from("<HH", info, pos)
+            if kind == 0:
+                break
+            if kind in (1, 2, 3, 4, 5):
+                served.add(info[pos + 4 : pos + 4 + size].decode("utf-16-le").lower())
+            pos += 4 + size
         writer.close()
         disc = (await h.wait_disconnects(1))[0]
         logins = await h.events("login_attempt")
@@ -88,6 +100,12 @@ async def test_cookie_login_attempt_and_hybrid_tls(make_harness: HarnessFactory)
         assert disc.data["client_hello"]["ja3_hash"]
         types = [e.type for e in h.publisher.events]
         assert types == ["connect", "login_attempt", "disconnect"]
+        declared = h.publisher.events[0].data["self_identity"]["names"]
+        assert 0 < len(declared) <= 4 and all(0 < len(n) <= 64 for n in declared)
+        shared = {h.identity.netbios_domain.lower(), h.identity.dns_domain.lower()}
+        assert not shared & {n.lower() for n in declared}
+        # the certificate CN and the per-install NTLM names
+        assert served - shared <= {n.lower() for n in declared}
         assert all(e.dst_port == 3389 and e.sensor == "rdp" for e in h.publisher.events)
         assert len({e.session_id for e in h.publisher.events}) == 1
 

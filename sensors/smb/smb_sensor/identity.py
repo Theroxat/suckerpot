@@ -92,6 +92,20 @@ def derive_server_guid(secret: str) -> bytes:
     return _derive(secret, "smb-server-guid")[:16]
 
 
+def self_identity(*names: str) -> dict[str, list[str]]:
+    """The ``data.self_identity`` block of a ``connect`` event (up to 4 names, 64 chars each).
+
+    Only this sensor's own configured or derived names, never anything from a client. Ingest
+    uses them to keep the deployment's identity out of anonymous abuse reports.
+    """
+    out: list[str] = []
+    for name in names:
+        clipped = name[:64]
+        if clipped and clipped not in out:
+            out.append(clipped)
+    return {"names": out[:4]}
+
+
 @dataclass(frozen=True)
 class Identity:
     computer_name: str  # NetBIOS computer name, e.g. "SRV-FS01"
@@ -99,6 +113,10 @@ class Identity:
     dns_domain: str  # DNS domain, e.g. "corp.local"
     dns_computer: str  # FQDN, e.g. "srv-fs01.corp.local"
     server_guid: bytes  # 16 bytes
+
+    def self_identity(self) -> dict[str, list[str]]:
+        """Only the per-install names: the pooled domain words are deliberately left out."""
+        return self_identity(self.computer_name, self.dns_computer)
 
     @property
     def netbios_computer(self) -> str:

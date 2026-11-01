@@ -453,3 +453,20 @@ def test_scramble_helpers_match_client_library() -> None:
 def test_accounts_parsing() -> None:
     accounts = parse_accounts("root:,root:toor,admin:a:b,bad, :x")
     assert accounts == {"root": (b"", b"toor"), "admin": (b"a:b",)}
+
+
+async def test_connect_declares_the_host_name_the_protocol_serves(
+    make_harness: HarnessFactory,
+) -> None:
+    async with make_harness() as h:
+        conn = await h.aconnect()
+        try:
+            cur = conn.cursor()
+            await asyncio.to_thread(cur.execute, "SELECT @@hostname")
+            served = (await asyncio.to_thread(cur.fetchone))[0]
+        finally:
+            conn.close()
+        (event,) = await h.events("connect")
+        names = event.data["self_identity"]["names"]
+        assert 0 < len(names) <= 4 and all(0 < len(n) <= 64 for n in names)
+        assert served in names

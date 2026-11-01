@@ -340,3 +340,15 @@ def test_gnu_error_messages_become_toybox_ones() -> None:
     )
     assert androidize_error("ls", "plain\n") == "plain\n"
     assert androidize_error("x", "x: cannot " * 2000)  # no crash on odd input
+
+
+async def test_connect_declares_the_per_install_names_the_protocol_serves(make_harness) -> None:  # type: ignore[no-untyped-def]
+    async with make_harness() as h:
+        c = await h.connect()
+        props = await c.shell("getprop")
+        (conn,) = await h.events("connect")
+        names = conn.data["self_identity"]["names"]
+        assert 0 < len(names) <= 4 and all(0 < len(n) <= 64 for n in names)
+        for key in ("ro.serialno", "net.hostname"):
+            line = next(ln for ln in props.splitlines() if ln.startswith(f"[{key}]"))
+            assert line.split(": [", 1)[1].rstrip("]") in names

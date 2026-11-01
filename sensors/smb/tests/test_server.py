@@ -220,3 +220,42 @@ async def test_cpu_limited_client_gets_insufficient_resources(
             assert _status(reply) == smb.STATUS_INSUFFICIENT_RESOURCES
         finally:
             await conn.close()
+
+
+def _served_names(challenge: bytes) -> set[str]:
+    """Every name in the NTLM CHALLENGE target info, lower-cased."""
+    msg = challenge[challenge.find(b"NTLMSSP\x00") :]
+    length, _, offset = struct.unpack_from("<HHI", msg, 40)
+    info = msg[offset : offset + length]
+    names: set[str] = set()
+    pos = 0
+    while pos + 4 <= len(info):
+        kind, size = struct.unpack_from("<HH", info, pos)
+        if kind == 0:
+            break
+        if kind in (1, 2, 3, 4, 5):
+            names.add(info[pos + 4 : pos + 4 + size].decode("utf-16-le").lower())
+        pos += 4 + size
+    return names
+
+
+async def test_connect_declares_the_names_the_protocol_serves(
+    make_harness: HarnessFactory,
+) -> None:
+    async with make_harness() as h:
+        conn = await smb_client.Conn.open(h.port)
+        try:
+            await conn.send(smb_client.negotiate_request([0x0311]))
+            challenge = await conn.send(
+                smb_client.session_setup_request(smb_client.ntlm_negotiate(), message_id=1)
+            )
+        finally:
+            await conn.close()
+        served = _served_names(challenge)
+        connect = (await h.events("connect"))[0]
+        names = connect.data["self_identity"]["names"]
+        assert 0 < len(names) <= 4 and all(0 < len(n) <= 64 for n in names)
+        declared = {n.lower() for n in names}
+        shared = {h.sensor.identity.domain_name.lower(), h.sensor.identity.dns_domain.lower()}
+        assert not shared & declared  # pooled domain words are never declared
+        assert served - shared <= declared and h.sensor.identity.computer_name.lower() in declared

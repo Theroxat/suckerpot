@@ -76,6 +76,20 @@ def valid_version(text: str) -> bool:
     return parse_version(text) is not None
 
 
+def self_identity(*names: str) -> dict[str, list[str]]:
+    """The ``data.self_identity`` block of a ``connect`` event (up to 4 names, 64 chars each).
+
+    Only this sensor's own configured or derived names, never anything from a client. Ingest
+    uses them to keep the deployment's identity out of anonymous abuse reports.
+    """
+    out: list[str] = []
+    for name in names:
+        clipped = name[:64]
+        if clipped and clipped not in out:
+            out.append(clipped)
+    return {"names": out[:4]}
+
+
 @dataclass(frozen=True)
 class Profile:
     version_text: str
@@ -90,6 +104,10 @@ class Profile:
     domain: str = "WORKGROUP"
     dns_domain: str = "workgroup.local"
     _secret: str = field(repr=False, default="")
+
+    def self_identity(self) -> dict[str, list[str]]:
+        """Server name and server FQDN only; domain names are shared defaults and left out."""
+        return self_identity(self.server_name, f"{self.server_name.upper()}.{self.dns_domain}")
 
     def derive(self, label: str, n: int = 16) -> bytes:
         return hmac.new(self._secret.encode(), label.encode(), hashlib.sha256).digest()[:n]

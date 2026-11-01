@@ -499,7 +499,11 @@ class Session:
 
     async def run(self) -> None:
         self._tune_socket()
-        self.emit(EventType.connect, {}, priority=True)
+        self.emit(
+            EventType.connect,
+            {"self_identity": self.profile.self_identity()},
+            priority=True,
+        )
         reason = "server_closed"
         try:
             async with asyncio.timeout(self.cfg.max_session):
