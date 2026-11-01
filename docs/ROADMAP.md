@@ -279,6 +279,15 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 **Acceptance:** uploading a valid file switches the tunnel with no shell on the VM; an invalid or hostile file is refused; a new exit is unused until trusted; security review PASS.
 
+## M24 — Guided tour, setup checklist and tunnel controls
+
+- [ ] A replayable guided tour on first login that explains each area and how payloads, the VPN, abuse reports and alerts work, plus a "?" help on every page.
+- [ ] A setup checklist computed from the real state (sensors, VPN, collector, reporting, alerts, keys).
+- [ ] VPN tab: "Check now" and "Reconnect", and a gate that re-checks quickly while closed.
+- [ ] UI review and security review (new routes, entrypoint change).
+
+**Acceptance:** a new owner can tell from the dashboard what is left to set up; after a tunnel restart the gate reopens within a minute or on demand.
+
 ## Later (not part of the loop)
 
 - Per-/24 or per-ASN daily cap on new campaigns, so one network cannot create many campaigns in a day.
