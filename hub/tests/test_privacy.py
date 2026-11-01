@@ -149,7 +149,7 @@ async def test_flow_logs_and_stores_no_client_address(
     (node,) = await env.enrolled(pseudonym="quiet owl", country="CH")
     await env.client.unsigned("GET", "/v1/info")
     await node.call("GET", "/v1/node")
-    await node.call("POST", "/v1/observations", batch("2026-10-31", sources=[source("8.8.4.4")]))
+    await node.call("POST", "/v1/observations", batch("2026-10-31", sources=[source("192.0.2.4")]))
     await node.call("GET", "/v1/targets")
     await node.call("GET", "/v1/node", timestamp=1)  # an error path
     await env.node().call("GET", "/v1/node")  # another one

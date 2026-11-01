@@ -39,7 +39,7 @@ async def test_standing_low_when_reputation_drops(env: Env) -> None:
 async def test_active_days_counts_batches(env: Env) -> None:
     (node,) = await env.enrolled()
     for day in ("2026-10-31", "2026-10-30"):
-        r = await node.call("POST", "/v1/observations", batch(day, sources=[source("8.8.4.4")]))
+        r = await node.call("POST", "/v1/observations", batch(day, sources=[source("192.0.2.4")]))
         assert r.status == 200
     assert (await node.call("GET", "/v1/node")).json["active_days_14"] == 2
 
@@ -95,9 +95,9 @@ async def test_delete_leaves_no_row_with_the_node_id(env: Env) -> None:
             "/v1/observations",
             batch(
                 day,
-                sources=[source("8.8.4.4")],
-                payloads=[{"url_b": "ab" * 32, "host_ip": "1.1.1.1", "fetched": False}],
-                c2=[{"ip": "9.9.9.9", "port": 23}],
+                sources=[source("192.0.2.4")],
+                payloads=[{"url_b": "ab" * 32, "host_ip": "192.0.2.1", "fetched": False}],
+                c2=[{"ip": "192.0.2.9", "port": 23}],
                 files=[{"sha256": "cd" * 32}],
             ),
         )
@@ -105,7 +105,7 @@ async def test_delete_leaves_no_row_with_the_node_id(env: Env) -> None:
     async with env.worker() as s:
         await s.execute(
             text(
-                "INSERT INTO targets (id, kind, value, state) VALUES ('t_000000000001','ip','8.8.4.4','confirmed')"
+                "INSERT INTO targets (id, kind, value, state) VALUES ('t_000000000001','ip','192.0.2.4','confirmed')"
             )
         )
         await s.execute(
