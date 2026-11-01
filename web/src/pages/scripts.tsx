@@ -124,6 +124,7 @@ export function ScriptsPage() {
   return (
     <>
       <PageHeader
+        help="scripts"
         title="Scripts"
         description={
           <span className="normal-nums">

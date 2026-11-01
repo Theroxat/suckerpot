@@ -194,6 +194,7 @@ export function AbusePage() {
   return (
     <>
       <PageHeader
+        help="abuse"
         title="Abuse reports"
         description={<span className="normal-nums">{describeReports(st.data)}</span>}
         actions={

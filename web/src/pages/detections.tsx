@@ -51,7 +51,11 @@ export function DetectionsPage() {
   const meta = RULE_KIND_META[kind]
   return (
     <>
-      <PageHeader title="Detections" description={detectionsSentence(total, days)} />
+      <PageHeader
+        help="detections"
+        title="Detections"
+        description={detectionsSentence(total, days)}
+      />
       <ReviewNotice />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">

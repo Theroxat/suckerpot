@@ -91,7 +91,7 @@ export function AttackerDetailPage() {
     const missing = q.error instanceof ApiError && q.error.status === 404
     return (
       <>
-        <PageHeader title={shownIp} eyebrow={back} />
+        <PageHeader help="attacker" title={shownIp} eyebrow={back} />
         <EmptyState
           icon={SearchX}
           title={missing ? "No sensor has seen this address" : "Could not load this attacker"}
@@ -121,6 +121,7 @@ export function AttackerDetailPage() {
   return (
     <>
       <PageHeader
+        help="attacker"
         eyebrow={back}
         title={shownIp}
         description={story ? (masked ? maskIpsInText(story) : story) : "Loading the profile…"}

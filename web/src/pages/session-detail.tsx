@@ -1,3 +1,4 @@
+import { PageHelp } from "@/components/page-help"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft, FileQuestion, TerminalSquare } from "lucide-react"
 import { lazy, Suspense, useMemo } from "react"
@@ -145,10 +146,13 @@ export function SessionDetailPage() {
               ))}
             </div>
             {s.campaign_id ? <CampaignChip id={s.campaign_id} /> : null}
-            <h1 className="text-lg font-medium text-pretty sm:text-xl">
-              <span className="sr-only">Session {s.session_id}: </span>
-              <SessionStory session={s} layout="block" />
-            </h1>
+            <div className="flex items-start gap-1.5">
+              <h1 className="min-w-0 text-lg font-medium text-pretty sm:text-xl">
+                <span className="sr-only">Session {s.session_id}: </span>
+                <SessionStory session={s} layout="block" />
+              </h1>
+              <PageHelp id="session" className="mt-0.5" />
+            </div>
           </>
         ) : (
           <SkeletonText lines={2} className="max-w-xl" />

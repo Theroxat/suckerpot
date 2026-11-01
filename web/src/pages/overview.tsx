@@ -93,6 +93,7 @@ export function OverviewPage() {
   return (
     <>
       <PageHeader
+        help="activity"
         title="Overview"
         description={
           s
