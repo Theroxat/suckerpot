@@ -36,6 +36,7 @@ const InfrastructurePage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("@/pages/settings").then((m) => ({ default: m.SettingsPage })),
 )
+const SetupPage = lazy(() => import("@/pages/setup").then((m) => ({ default: m.SetupPage })))
 const StyleguidePage = lazy(() =>
   import("@/pages/styleguide").then((m) => ({ default: m.StyleguidePage })),
 )
@@ -190,6 +191,14 @@ function appRoutes(): RouteObject {
         element: (
           <Lazy>
             <SettingsPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "setup",
+        element: (
+          <Lazy>
+            <SetupPage />
           </Lazy>
         ),
       },
