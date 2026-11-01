@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# Changes settings in .env, safely. Called by `just sensors` and `just set`, which then run
+# `docker compose up -d --wait` so the change takes effect.
+#
+#   scripts/env-set.sh sensors                 print the current sensor selection
+#   scripts/env-set.sh sensors LIST            LIST = recommended | all | ssh,telnet,web,...
+#   scripts/env-set.sh set KEY=VALUE [...]     change allow-listed settings (see lib/env.sh)
+#
+# Refuses secret-looking keys (*_PASSWORD, *_SECRET, *_HASH, *_KEY, VPN_WG_*) and keys outside
+# the allow-list. Prints variable names only, never values of anything secret. The change is
+# reverted when scripts/check-ports.sh refuses the resulting port layout.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+# shellcheck source=scripts/lib/env.sh
+. scripts/lib/env.sh
+
+die() { echo "env-set: $*" >&2; exit 1; }
+
+[ -f .env ] || die ".env not found. Run ./scripts/install.sh first."
+
+# Keeps a private copy of .env while a change is applied, so it can be put back.
+backup=""
+cleanup() { [ -n "$backup" ] && rm -f "$backup"; return 0; }
+trap cleanup EXIT
+
+apply_checked() {
+  # Runs the port check on the changed file; restores the old one on failure.
+  if ! scripts/check-ports.sh; then
+    cp "$backup" .env
+    chmod 600 .env
+    die "the port check refused this change; .env was left as it was"
+  fi
+}
+
+begin() {
+  backup=$(mktemp)
+  chmod 600 "$backup"
+  cp .env "$backup"
+}
+
+cmd=${1:-}
+[ $# -gt 0 ] && shift
+
+case $cmd in
+  sensors)
+    if [ $# -eq 0 ]; then
+      echo "Sensors in .env:"
+      for s in "${SENSORS[@]}"; do
+        v=$(env_get "$(sensor_var "$s")" 1)
+        if [ "$v" = 0 ]; then state=off; else state=on; fi
+        printf '  %-9s %s\n' "$s" "$state"
+      done
+      exit 0
+    fi
+    [ $# -eq 1 ] || die "usage: sensors [recommended|all|name,name,...]"
+    list=$1
+    chosen=()
+    case $list in
+      recommended) chosen=("${RECOMMENDED_SENSORS[@]}") ;;
+      all) chosen=("${SENSORS[@]}") ;;
+      none | '') die "choose at least one sensor, or 'all'" ;;
+      *)
+        IFS=, read -r -a chosen <<< "$list"
+        for s in "${chosen[@]}"; do
+          is_sensor "$s" || die "unknown sensor '$s' (known: ${SENSORS[*]})"
+        done
+        ;;
+    esac
+    begin
+    for s in "${SENSORS[@]}"; do
+      on=0
+      for c in "${chosen[@]}"; do [ "$c" = "$s" ] && on=1; done
+      env_set_line .env "$(sensor_var "$s")" "$on"
+    done
+    apply_checked
+    echo "env-set: sensors on: ${chosen[*]}"
+    ;;
+  set)
+    [ $# -ge 1 ] || die "usage: set KEY=VALUE [KEY=VALUE ...]"
+    # Validate everything first, so a bad pair changes nothing.
+    keys=()
+    values=()
+    for pair in "$@"; do
+      [[ $pair == *=* ]] || die "'$pair' is not KEY=VALUE"
+      key=${pair%%=*}
+      value=${pair#*=}
+      settable_key "$key" || die "$key cannot be changed with 'just set' (secret-looking or not allow-listed)"
+      settable_value "$value" || die "the value for $key has characters that are not allowed"
+      case $key in
+        SENSOR_*) [[ $value =~ ^[01]$ ]] || die "$key must be 0 or 1" ;;
+        *_ENABLED | COOKIE_SECURE) [[ $value =~ ^(true|false)$ ]] || die "$key must be true or false" ;;
+        *_HOST_PORT | DASHBOARD_PORT)
+          [[ $value =~ ^[0-9]{1,5}$ ]] && [ "$value" -ge 1 ] && [ "$value" -le 65535 ] || die "$key must be a port number"
+          ;;
+      esac
+      keys+=("$key")
+      values+=("$value")
+    done
+    begin
+    for i in "${!keys[@]}"; do
+      env_set_line .env "${keys[$i]}" "${values[$i]}"
+    done
+    apply_checked
+    echo "env-set: updated ${keys[*]}"
+    ;;
+  *)
+    die "usage: env-set.sh sensors [LIST] | set KEY=VALUE [...]"
+    ;;
+esac
