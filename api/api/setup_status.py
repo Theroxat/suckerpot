@@ -183,6 +183,35 @@ async def _abuse_worker(_db: AsyncSession, _now: datetime) -> SetupItem:
     )
 
 
+async def _takedown(_db: AsyncSession, _now: datetime) -> SetupItem:
+    href = "/settings?tab=reporting"
+    if env_flag("TAKEDOWN_ENABLED", False):
+        return _item("takedown", "ok", "Takedown tracking is on.", href)
+    return _item(
+        "takedown",
+        "off",
+        "Takedown tracking is off. Turn it on to see which reported targets went down.",
+        href,
+    )
+
+
+async def _abusech_submit(db: AsyncSession, _now: datetime) -> SetupItem:
+    href = "/settings?tab=reporting"
+    if not env_flag("ABUSECH_SUBMIT_ENABLED", False):
+        return _item("abusech_submit", "off", "abuse.ch submission is off on this server.", href)
+    mode = await db.scalar(text("SELECT mode FROM abusech_submission WHERE id = 1"))
+    if mode == "review":
+        return _item("abusech_submit", "ok", "You review each URL before it goes to URLhaus.", href)
+    if mode == "auto":
+        return _item("abusech_submit", "ok", "New URLs go to URLhaus automatically.", href)
+    return _item(
+        "abusech_submit",
+        "off",
+        "abuse.ch submission is allowed on this server but switched off in Settings.",
+        href,
+    )
+
+
 async def _alerts(db: AsyncSession, _now: datetime) -> SetupItem:
     href = "/settings?tab=alerts"
     count = await db.scalar(
@@ -231,6 +260,8 @@ CHECKS: tuple[tuple[str, Callable[[AsyncSession, datetime], Awaitable[SetupItem]
     ("abuse_worker", _abuse_worker, "/settings?tab=reporting"),
     ("alerts", _alerts, "/settings?tab=alerts"),
     ("provider_keys", _provider_keys, "/settings?tab=keys"),
+    ("takedown", _takedown, "/settings?tab=reporting"),
+    ("abusech_submit", _abusech_submit, "/settings?tab=reporting"),
 )
 
 

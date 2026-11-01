@@ -20,6 +20,7 @@ from api import authz
 from api.abuse import router as abuse_router
 from api.abuse_exports import router as abuse_exports_router
 from api.abuse_smtp import router as abuse_smtp_router
+from api.abusech import router as abusech_router
 from api.alerts import router as alerts_router
 from api.analytics import router as analytics_router
 from api.attack import router as attack_router
@@ -50,6 +51,7 @@ from api.settings import router as settings_router
 from api.setup_status import router as setup_status_router
 from api.spa import install_security_headers, install_spa
 from api.story import router as story_router
+from api.takedown import router as takedown_router
 from api.today import router as today_router
 from api.trends import router as trends_router
 from api.users import router as users_router
@@ -145,6 +147,8 @@ def create_app(
         abuse_router,
         abuse_exports_router,
         abuse_smtp_router,
+        abusech_router,
+        takedown_router,
         search_router,
         today_router,
         live_window_router,
