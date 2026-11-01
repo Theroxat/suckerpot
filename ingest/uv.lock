@@ -1285,6 +1285,7 @@ dependencies = [
     { name = "suckerpot-common" },
     { name = "suckerpot-db" },
     { name = "suckerpot-egress" },
+    { name = "suckerpot-netproto" },
     { name = "suckerpot-reporting" },
 ]
 
@@ -1309,6 +1310,7 @@ requires-dist = [
     { name = "suckerpot-common", directory = "../sensors/common" },
     { name = "suckerpot-db", directory = "../db" },
     { name = "suckerpot-egress", directory = "../egress" },
+    { name = "suckerpot-netproto", directory = "../netproto" },
     { name = "suckerpot-reporting", directory = "../reporting" },
 ]
 
@@ -1322,6 +1324,28 @@ dev = [
     { name = "suckerpot-api", directory = "../api" },
     { name = "types-netaddr" },
     { name = "types-pyyaml" },
+]
+
+[[package]]
+name = "suckerpot-netproto"
+version = "0.1.0"
+source = { directory = "../netproto" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=44" },
+    { name = "pydantic", specifier = ">=2.9,<3" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.13" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "ruff", specifier = ">=0.8" },
 ]
 
 [[package]]

@@ -42,3 +42,18 @@ def pseudonym_problem(name: str) -> str | None:
 
 def valid_country(code: str) -> bool:
     return COUNTRY.fullmatch(code) is not None
+
+
+def host_of_target(value: str) -> str:
+    """The host of a target value that may carry a port: ``192.0.2.5:23``, ``[2001:db8::5]:443``.
+
+    A bare IPv6 address (several colons, no brackets) is returned unchanged, lower-cased.
+    """
+    v = value.strip().lower()
+    if v.startswith("["):
+        return v[1:].split("]", 1)[0]
+    if v.count(":") == 1:
+        host, _, port = v.partition(":")
+        if port.isdigit():
+            return host
+    return v

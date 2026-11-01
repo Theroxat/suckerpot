@@ -1,0 +1,450 @@
+"""The network worker (design M29 section 9.3). Off unless ``NETWORK_ENABLED=true`` AND an admin
+opted in (``network_membership.desired``). Nothing is sent otherwise (N1).
+
+One cycle:
+
+1. idle when there is nothing asked for;
+2. ``desired = leave``: delete at the hub, wipe every local network row and the key (N8);
+3. ``desired = member``: make the key, enrol (proof of work off the event loop);
+4. member: sync a changed pseudonym/country, send due days, pull targets (6 hourly), answer
+   reveals and rechecks, fetch the daily summary.
+
+Every hub call goes through ``HubClient`` (egress gate, pinned key). A failure ends the cycle with
+a protocol error code in ``last_error_code``; no value from the hub or the database is logged.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import random
+import time
+from collections.abc import Callable
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
+
+import httpx
+from suckerpot_db.network_names import pseudonym_problem
+from suckerpot_db.secretbox import SecretBox
+from suckerpot_netproto import ProtoError, pow, sign
+from suckerpot_reporting import GuardContext, SelfTerms, guard
+
+from ingest.egress import EgressClosed, EgressGate, gate_open
+from ingest.features import FeatureSettings, FeatureWorker
+
+from . import identity as ident
+from . import scheduler, sync
+from .builder import BatchBuilder, TermsSource
+from .client import HubClient, HubError, HubUnavailable
+from .config import NetworkSettings
+from .store import Membership, Store
+
+log = logging.getLogger(__name__)
+
+PULL_EVERY = timedelta(hours=6)
+SUMMARY_EVERY = timedelta(hours=24)
+LEAVE_GIVE_UP = timedelta(days=7)
+POW_CAP_S = 15 * 60
+PERMANENT = frozenset({"pseudonym_taken", "pseudonym_invalid", "enrolment_closed", "pow_timeout"})
+FAST_INTERVAL_S = 60.0
+
+
+class NetworkWorker(FeatureWorker):
+    name = "network"
+
+    def __init__(
+        self,
+        features: FeatureSettings,
+        network: NetworkSettings,
+        store: Store | None,
+        terms: TermsSource | None,
+        builder: BatchBuilder | None,
+        *,
+        box: SecretBox | None = None,
+        gate: EgressGate | None = None,
+        client: httpx.AsyncClient | None = None,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        rng: random.Random | None = None,
+        allow_documentation: bool = False,
+    ) -> None:
+        super().__init__(features, enabled=network.enabled)
+        self.network = network
+        self.store = store
+        self.terms = terms
+        self.builder = builder
+        self.box = box
+        self._gate = gate
+        self._client = client
+        self._clock = clock
+        self._rng = rng
+        self._allow_doc = allow_documentation  # test overlay, as in the builder
+        self.interval_s = float(network.interval_s)
+        self.state = "off"
+        self.reason: str | None = None
+
+    # -- status -----------------------------------------------------------------------------
+
+    async def status(self) -> dict[str, Any]:
+        return {
+            self.name: {
+                "enabled": self.enabled,
+                "hub_configured": self.network.hub_configured,
+                "state": self.state,
+                "reason": self.reason,
+                "cycles": self.cycles,
+                "last_error": self.last_error,
+            }
+        }
+
+    # -- loop -------------------------------------------------------------------------------
+
+    async def run(self, publish: Any = None) -> None:
+        """Disabled in .env: no hub contact ever, but a pending 'leave' still wipes locally."""
+        if self.enabled or self.store is None:
+            await super().run(publish)
+            return
+        while True:
+            try:
+                m = await self.store.membership()
+                if m.desired == "leave" or m.state == "leaving":
+                    await self.store.wipe(leave_error="leave_unconfirmed")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("network local leave failed (%s)", type(exc).__name__)
+            await asyncio.sleep(self.network.interval_s)
+
+    async def run_once(self) -> None:
+        store = self.store
+        if store is None or not self.network.hub_configured:
+            self.state, self.reason = "off", "no_hub" if store is not None else None
+            return
+        m = await store.membership()
+        self.state = m.state
+        pending = m.desired == "leave" or (m.desired == "member" and m.state != "member")
+        self.interval_s = FAST_INTERVAL_S if pending else float(self.network.interval_s)
+        if m.desired == "off" and m.state in ("off", "error"):
+            self.reason = None
+            return
+        try:
+            if m.desired == "leave" or m.state == "leaving":
+                await self._leave(m)
+            elif m.state != "member":
+                await self._enrol(m)
+            else:
+                await self._maintain(m)
+        except EgressClosed:
+            await self._note(m, "egress_closed")
+        except HubError as exc:
+            await self._note(m, exc.code if exc.code != "server_error" else "hub_error")
+        except HubUnavailable:
+            await self._note(m, "hub_unreachable")
+        except ProtoError as exc:
+            await self._note(m, exc.code)
+
+    async def _note(self, m: Membership, code: str) -> None:
+        self.reason = code
+        if m.last_error_code != code:
+            assert self.store is not None  # noqa: S101
+            await self.store.update(last_error_code=code)
+
+    # -- helpers ----------------------------------------------------------------------------
+
+    def _now(self) -> datetime:
+        return self._clock()
+
+    def _hub(self, identity: ident.Identity | None) -> HubClient:
+        return HubClient(
+            self.network, identity, gate=self._gate, client=self._client,
+            clock=lambda: self._now().timestamp(),
+        )  # fmt: skip
+
+    def _identity(self, m: Membership) -> ident.Identity:
+        if m.privkey_enc is None or m.privkey_nonce is None or m.pubkey is None:
+            raise ident.NoSettingsKey
+        return ident.unseal(self.box, m.privkey_enc, m.privkey_nonce, m.pubkey)
+
+    async def _pseudonym_ok(self, name: str | None) -> bool:
+        """Local shape rules, then the identity guard (an owner name or domain is refused)."""
+        if name is None:
+            return True
+        if pseudonym_problem(name) is not None:
+            return False
+        terms: SelfTerms | None = await self.terms.get() if self.terms is not None else None
+        if terms is None:
+            return False
+        result = guard(
+            name, terms, fmt="text", ctx=GuardContext(allow_documentation=self._allow_doc)
+        )
+        return set(result.codes) <= {"no_self_address"}
+
+    # -- leave ------------------------------------------------------------------------------
+
+    async def _leave(self, m: Membership) -> None:
+        store = self.store
+        assert store is not None  # noqa: S101
+        now = self._now()
+        if m.state != "leaving" or m.leave_requested_at is None:
+            await store.update(state="leaving", leave_requested_at=m.leave_requested_at or now)
+            m.leave_requested_at = m.leave_requested_at or now
+        if m.pubkey is None or m.privkey_enc is None or m.node_id is None:
+            await store.wipe()  # never enrolled: nothing at the hub
+            self.state = "off"
+            return
+        try:
+            identity = self._identity(m)
+            await self._hub(identity).delete_node()
+        except HubError as exc:
+            if exc.code != "unknown_node":
+                raise
+        except ident.NoSettingsKey:
+            await store.wipe(leave_error="leave_unconfirmed")  # the key is gone: cannot sign
+            self.state = "off"
+            return
+        except (EgressClosed, HubUnavailable, ProtoError):
+            if now - m.leave_requested_at > LEAVE_GIVE_UP:
+                await store.wipe(leave_error="leave_unconfirmed")
+                self.state = "off"
+                return
+            raise
+        await store.wipe()
+        self.state, self.reason = "off", None
+
+    # -- enrol ------------------------------------------------------------------------------
+
+    async def _enrol(self, m: Membership) -> None:
+        store = self.store
+        assert store is not None  # noqa: S101
+        if not gate_open(self._gate):
+            raise EgressClosed("egress_closed")
+        if m.privkey_enc is None:
+            try:
+                identity = ident.generate()
+                ciphertext, nonce = ident.seal(identity, self.box)
+            except ident.NoSettingsKey:
+                await store.update(state="error", last_error_code="no_settings_key")
+                self.state, self.reason = "error", "no_settings_key"
+                return
+            await store.update(
+                state="enrolling", pubkey=identity.public, fingerprint=identity.fingerprint,
+                privkey_enc=ciphertext, privkey_nonce=nonce, last_error_code=None,
+            )  # fmt: skip
+        else:
+            try:
+                identity = self._identity(m)
+            except ident.NoSettingsKey:
+                await store.update(state="error", last_error_code="no_settings_key")
+                self.state, self.reason = "error", "no_settings_key"
+                return
+        if not await self._pseudonym_ok(m.pseudonym):
+            await store.update(state="error", desired="off", last_error_code="pseudonym_invalid")
+            self.state, self.reason = "error", "pseudonym_invalid"
+            return
+        hub = self._hub(identity)
+        try:
+            info = await hub.info()
+            if "spn/1" not in info.protocols or info.hub_key != self.network.hub_key:
+                await store.update(state="error", last_error_code="unsupported_protocol")
+                self.state, self.reason = "error", "unsupported_protocol"
+                return
+            ch = await hub.challenge(identity)
+            deadline = time.monotonic() + POW_CAP_S
+            nonce_raw = await asyncio.to_thread(
+                pow.solve_pow,
+                sign.b64u_decode(ch.challenge),
+                identity.public,
+                ch.difficulty,
+                should_stop=lambda: time.monotonic() > deadline,
+            )
+            if nonce_raw is None:
+                await store.update(state="error", desired="off", last_error_code="pow_timeout")
+                self.state, self.reason = "error", "pow_timeout"
+                return
+            done = await hub.enrol(
+                identity,
+                challenge=ch.challenge,
+                pow_nonce=sign.b64u_encode(nonce_raw),
+                pseudonym=m.pseudonym,
+                country=m.country,
+                show_country=m.show_country,
+            )
+        except HubError as exc:
+            if exc.code in PERMANENT:
+                await store.update(state="error", desired="off", last_error_code=exc.code)
+                self.state, self.reason = "error", exc.code
+                return
+            raise
+        await store.update(
+            state="member",
+            node_id=done.node_id,
+            fingerprint=done.fingerprint,
+            enrolled_day=date.fromisoformat(done.enrolled_day),
+            eligible_from_day=date.fromisoformat(done.eligible_from_day),
+            synced_pseudonym=m.pseudonym,
+            synced_country=m.country,
+            synced_show_country=m.show_country,
+            next_submit_at=scheduler.next_submit_at(
+                self._now(), self.network.delay_min_h, self.network.delay_max_h, self._rng
+            ),
+            standing="new",
+            last_error_code=None,
+        )
+        self.state, self.reason = "member", None
+
+    # -- member -----------------------------------------------------------------------------
+
+    async def _maintain(self, m: Membership) -> None:
+        store = self.store
+        assert store is not None  # noqa: S101
+        identity = self._identity(m)
+        hub = self._hub(identity)
+        now = self._now()
+        errors: list[str] = []
+        await self._sync_profile(m, hub)
+        await self._submit(m, hub, errors)
+        if m.last_pull_at is None or now - m.last_pull_at >= PULL_EVERY:
+            await self._pull(m, hub)
+        if m.last_summary_at is None or now - m.last_summary_at >= SUMMARY_EVERY:
+            summary = await hub.network()
+            await store.save_summary(sync.summary_json(summary))
+            node = await hub.node()
+            await store.update(standing=node.standing, last_summary_at=now)
+        if errors:
+            await self._note(m, errors[0])
+        elif m.last_error_code is not None:
+            await store.update(last_error_code=None)
+            self.reason = None
+
+    async def _sync_profile(self, m: Membership, hub: HubClient) -> None:
+        store = self.store
+        assert store is not None  # noqa: S101
+        if (m.pseudonym, m.country, m.show_country) == (
+            m.synced_pseudonym, m.synced_country, m.synced_show_country,
+        ):  # fmt: skip
+            return
+        if not await self._pseudonym_ok(m.pseudonym):
+            await store.update(
+                pseudonym=m.synced_pseudonym, country=m.synced_country,
+                show_country=bool(m.synced_show_country), last_error_code="pseudonym_invalid",
+            )  # fmt: skip
+            return
+        try:
+            await hub.patch_node(
+                pseudonym=m.pseudonym, country=m.country, show_country=m.show_country
+            )
+        except HubError as exc:
+            if exc.code not in PERMANENT:
+                raise
+            await store.update(
+                pseudonym=m.synced_pseudonym, country=m.synced_country,
+                show_country=bool(m.synced_show_country), last_error_code=exc.code,
+            )  # fmt: skip
+            return
+        await store.update(
+            synced_pseudonym=m.pseudonym, synced_country=m.country,
+            synced_show_country=m.show_country,
+        )  # fmt: skip
+
+    async def _submit(self, m: Membership, hub: HubClient, errors: list[str]) -> None:
+        store = self.store
+        builder = self.builder
+        assert store is not None and builder is not None  # noqa: S101
+        now = self._now()
+        days = scheduler.due_days(
+            now, m.next_submit_at, await store.submitted_days(), since=m.enrolled_day
+        )
+        if not days:
+            if m.next_submit_at is not None and now >= m.next_submit_at:
+                # Everything due is already in: draw the next random release time.
+                await store.update(
+                    next_submit_at=scheduler.next_submit_at(
+                        now, self.network.delay_min_h, self.network.delay_max_h, self._rng
+                    )
+                )
+            return
+        blocked = False
+        for day in days:
+            existing = await store.submission(day)
+            if (
+                existing
+                and existing["payload"]
+                and existing["status"] == "failed"
+                and (existing["error_code"] in ("pending", "hub_unreachable"))
+            ):
+                batch: dict[str, Any] = existing["payload"]  # resend the same batch id
+                counts: dict[str, int] = {}
+                dropped: dict[str, int] = {}
+            else:
+                built = await builder.build(day)
+                if built.status != "ok" or built.batch is None:
+                    code = (
+                        "waiting_self_address"
+                        if built.status == "waiting_self_address"
+                        else (
+                            "guard_failed"
+                            if built.status == "guard_failed"
+                            else "self_terms_unavailable"
+                        )
+                    )
+                    if built.status == "guard_failed":
+                        await store.record_submission(
+                            day, batch_id="-", status="failed", counts=built.counts,
+                            dropped=built.dropped, error_code="guard_failed", payload=None,
+                            sent_at=None,
+                        )  # fmt: skip
+                    errors.append(code)
+                    blocked = True
+                    break
+                batch, counts, dropped = built.batch, built.counts, built.dropped
+                await store.record_submission(
+                    day, batch_id=batch["batch_id"], status="failed", counts=counts,
+                    dropped=dropped, error_code="pending", payload=batch, sent_at=None,
+                )  # fmt: skip
+            try:
+                answer = await hub.observations(batch)
+            except HubError as exc:
+                if exc.code in ("day_not_closed", "day_too_old"):
+                    await store.record_submission(
+                        day, batch_id=batch["batch_id"], status="skipped", counts={},
+                        dropped=dropped, error_code=exc.code, payload=None, sent_at=None,
+                    )  # fmt: skip
+                    continue
+                if exc.code == "invalid_payload":
+                    await store.record_submission(
+                        day, batch_id=batch["batch_id"], status="failed", counts=counts,
+                        dropped=dropped, error_code="invalid_payload", payload=None, sent_at=None,
+                    )  # fmt: skip
+                    errors.append("invalid_payload")
+                    blocked = True
+                    break
+                raise
+            except HubUnavailable:
+                await store.record_submission(
+                    day, batch_id=batch["batch_id"], status="failed", counts=counts,
+                    dropped=dropped, error_code="hub_unreachable", payload=None, sent_at=None,
+                )  # fmt: skip
+                raise
+            await store.record_submission(
+                day, batch_id=batch["batch_id"], status="sent",
+                counts={k: int(v) for k, v in answer.accepted.items()}, dropped=dropped,
+                error_code=None, payload=None, sent_at=self._now(),
+            )  # fmt: skip
+            await store.update(last_submit_day=day)
+        if not blocked:
+            await store.update(
+                next_submit_at=scheduler.next_submit_at(
+                    now, self.network.delay_min_h, self.network.delay_max_h, self._rng
+                )
+            )
+
+    async def _pull(self, m: Membership, hub: HubClient) -> None:
+        store = self.store
+        assert store is not None  # noqa: S101
+        got = await sync.pull(hub, store, m.pull_cursor)
+        await sync.mark_mine(store, got.blinded)
+        terms = await self.terms.get() if self.terms is not None else None
+        await sync.answer_reveals(
+            hub, store, got.reveal, terms, allow_documentation=self._allow_doc
+        )
+        await sync.answer_rechecks(hub, got.recheck, self._now().date())
+        await store.update(pull_cursor=got.cursor, last_pull_at=self._now())
