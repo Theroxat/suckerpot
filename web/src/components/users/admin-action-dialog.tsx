@@ -72,7 +72,7 @@ function ActionForm({
       setPassword("")
       if (e instanceof UserError && e.reason === "wrong-password")
         setPasswordError(describeUserError(e))
-      else setFormError(describeUserError(e))
+      else setFormError(e instanceof UserError && e.detail ? e.detail : describeUserError(e))
     } finally {
       setPending(false)
     }
