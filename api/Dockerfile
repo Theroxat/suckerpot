@@ -19,6 +19,8 @@ ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=0 UV_PROJECT_ENVIRONMENT=/opt/venv UV_
 WORKDIR /src
 COPY db/pyproject.toml db/uv.lock ./db/
 COPY db/suckerpot_db ./db/suckerpot_db
+COPY reporting/pyproject.toml reporting/uv.lock ./reporting/
+COPY reporting/suckerpot_reporting ./reporting/suckerpot_reporting
 COPY api/pyproject.toml api/uv.lock ./api/
 COPY api/api ./api/api
 WORKDIR /src/api

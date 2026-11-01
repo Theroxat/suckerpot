@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import io
 import logging
 import os
 import re
@@ -24,12 +23,12 @@ from collections import deque
 from datetime import datetime
 from typing import Annotated, Any
 
-import pyzipper  # type: ignore[import-untyped]
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db.models import SessionRow
+from suckerpot_reporting import build_encrypted_zip
 
 from api import audit as audit_db
 from api import auth as auth_mod
@@ -49,9 +48,6 @@ MAX_CHAIN_NODES = 100
 MAX_CHAIN_DEPTH = 3
 SESSIONS_PER_URL = 5
 MAX_ARCHIVE_INPUT = 16 * 1024 * 1024
-ARCHIVE_PASSWORD = (
-    b"infected"  # the malware-sharing convention; protects mail scanners, not secrets
-)
 ARCHIVE_PER_HOUR = 10
 QUARANTINE_ENV = "QUARANTINE_DIR"
 DEFAULT_QUARANTINE = "/quarantine"
@@ -623,14 +619,8 @@ def read_quarantined(sha256: str) -> bytes:
 
 
 def build_archive(sha256: str, data: bytes) -> bytes:
-    buf = io.BytesIO()
-    with pyzipper.AESZipFile(
-        buf, "w", compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES
-    ) as zf:
-        zf.setpassword(ARCHIVE_PASSWORD)
-        zf.setencryption(pyzipper.WZ_AES, nbits=256)
-        zf.writestr(f"{sha256}.bin", data)
-    return buf.getvalue()
+    """One AES-256 zip (password ``infected``, neutral metadata) holding ``<sha256>.bin``."""
+    return build_encrypted_zip([(f"{sha256}.bin", data)])
 
 
 @router.post("/samples/{sha256}/archive")

@@ -17,6 +17,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from suckerpot_db import create_engine, create_session_factory
 
 from api import authz
+from api.abuse import router as abuse_router
+from api.abuse_exports import router as abuse_exports_router
 from api.alerts import router as alerts_router
 from api.analytics import router as analytics_router
 from api.attack import router as attack_router
@@ -135,6 +137,8 @@ def create_app(
         scripts_router,
         alerts_router,
         reports_router,
+        abuse_router,
+        abuse_exports_router,
         search_router,
         today_router,
         live_window_router,
