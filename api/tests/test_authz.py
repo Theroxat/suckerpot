@@ -36,6 +36,7 @@ ADMIN_ONLY_GETS = {
     "/api/v1/defend/feed-tokens",
     "/api/v1/abuse/settings",
     "/api/v1/abuse/self-terms",
+    "/api/v1/settings/vpn",
 }
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -67,7 +68,8 @@ def operations(app: FastAPI) -> list[tuple[str, str]]:
 
 
 def fill(path: str) -> str:
-    return path.replace("{user_id}", "1").replace("{provider}", "abuseipdb")
+    filled = path.replace("{user_id}", "1").replace("{provider}", "abuseipdb")
+    return filled.replace("{exit_id}", "1")
 
 
 def concrete(path: str) -> str:
