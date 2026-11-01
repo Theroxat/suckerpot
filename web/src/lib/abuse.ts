@@ -75,7 +75,7 @@ export function guardReason(code: string): string {
 }
 
 export interface SendRequestShape {
-  status: "pending" | "sent" | "failed" | "cancelled"
+  status: "pending" | "sending" | "sent" | "failed" | "cancelled"
   error_code: string | null
   requested_at?: string | null
   done_at: string | null

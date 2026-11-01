@@ -6,7 +6,13 @@ import { useSendMode } from "@/components/abuse/send-hooks"
 import { ConfirmDialog } from "@/components/abuse/status-dialogs"
 import { Button } from "@/components/ui/button"
 import { abuseKeys } from "@/lib/abuse"
-import { describeRequest, describeSendError, sendApi, type SendRequest } from "@/lib/abuse-send"
+import {
+  describeRequest,
+  describeSendError,
+  inFlight,
+  sendApi,
+  type SendRequest,
+} from "@/lib/abuse-send"
 import { formatClock } from "@/lib/format"
 
 interface SendControlProps {
@@ -46,14 +52,14 @@ export function SendControl({
 
   // A request that finished changes the report itself: reload it.
   useEffect(() => {
-    if (was.current === "pending" && status !== "pending") {
+    if (inFlight(was.current) && !inFlight(status)) {
       void qc.invalidateQueries({ queryKey: abuseKeys.all })
     }
     was.current = status
   }, [status, qc])
 
   if (!canWrite) return null
-  const pending = status === "pending"
+  const pending = inFlight(status)
   const sentence = describeRequest(lastRequest)
   const at = mode === "auto" && !pending ? scheduledAt : null
   const canSend = mode === "click" && ready && !pending
