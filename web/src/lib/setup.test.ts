@@ -30,6 +30,7 @@ describe("setup checklist helpers", () => {
   it("only follows in-app links", () => {
     expect(safeHref("/settings?tab=vpn")).toBe("/settings?tab=vpn")
     expect(safeHref("https://example.com/")).toBeNull()
+    expect(safeHref("/\\evil.example")).toBeNull()
     expect(safeHref("//example.com")).toBeNull()
     expect(safeHref(null)).toBeNull()
   })
