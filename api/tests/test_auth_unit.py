@@ -229,9 +229,12 @@ async def test_verify_is_off_the_event_loop() -> None:
             ticks += 1
 
     t = asyncio.create_task(ticker())
+    await asyncio.sleep(0)  # let the ticker reach its first await
+    before = ticks
     await svc.check_credentials("admin", PASSWORD)
     t.cancel()
-    assert ticks > 0
+    # The loop must have run the ticker at least once while the hash was being checked.
+    assert ticks > before
 
 
 def test_csrf_is_bound_to_the_session() -> None:
