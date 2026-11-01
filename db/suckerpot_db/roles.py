@@ -302,13 +302,14 @@ BEGIN
     IF to_regclass('public.takedown_targets') IS NOT NULL THEN
         -- M27: ingest syncs targets, decides their state and runs the abuse.ch submissions. The
         -- collector columns (HTTP re-check progress) and the API columns stay out of its reach.
+        -- http_eligible is shared: ingest turns it off for a host that attacks or runs C2.
         EXECUTE format('GRANT SELECT, INSERT, DELETE ON takedown_targets TO %I', r);
         EXECUTE format(
             'GRANT UPDATE (parent_id, fetch_target_id, network_id, asn, country, provider_key, '
             'provider_name, reported_at, channels, tracking, track_until, stopped_at, '
             'stopped_by, state, state_source, state_since, state_updated_at, '
             'down_before_report, last_up_at, first_down_at, resurrections, listing_step, '
-            'listing_next_at, baseline_sha256) ON takedown_targets TO %I', r);
+            'listing_next_at, baseline_sha256, http_eligible) ON takedown_targets TO %I', r);
         EXECUTE format('GRANT SELECT, INSERT ON takedown_checks TO %I', r);
         EXECUTE format('GRANT SELECT, INSERT, DELETE ON takedown_target_links TO %I', r);
         EXECUTE format('GRANT SELECT ON abusech_submission TO %I', r);
@@ -497,7 +498,8 @@ BEGIN
         -- outcome. The automatic outcome columns and the reply content are ingest's.
         EXECUTE format(
             'GRANT SELECT (id, enabled, host, port, security, username, password_set, folder, '
-            'processed_action, move_folder, poll_minutes, since, updated_at, updated_by) '
+            'processed_action, move_folder, poll_minutes, since, trusted_authserv_id, '
+            'updated_at, updated_by) '
             'ON report_imap TO %I', r);
         EXECUTE format('GRANT INSERT, UPDATE, DELETE ON report_imap TO %I', r);
         EXECUTE format('GRANT SELECT ON report_imap_state TO %I', r);

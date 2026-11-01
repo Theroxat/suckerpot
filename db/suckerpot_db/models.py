@@ -1212,6 +1212,8 @@ class ReportImapRow(Base):
     since: Mapped[date] = mapped_column(
         Date, server_default=text("((now() AT TIME ZONE 'UTC')::date)"), nullable=False
     )
+    # The authserv-id of the Authentication-Results header the owner's mailbox provider adds.
+    trusted_authserv_id: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=_now(), nullable=False
     )

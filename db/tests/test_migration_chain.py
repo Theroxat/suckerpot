@@ -428,7 +428,8 @@ def test_m27_column_grants() -> None:
     assert api == {"tracking", "stopped_at", "stopped_by", "http_next_at", "listing_next_at"}
     ingest = _update_columns(_GRANTS_INGEST, "takedown_targets")
     assert {"state", "first_down_at", "baseline_sha256"} <= ingest
-    assert not ingest & collector
+    # The one shared column: ingest switches re-checks off for an attacking or C2 host (T1).
+    assert ingest & collector == {"http_eligible"}
     assert not ingest & {"kind", "role", "value", "target_key", "demo"}
     assert _update_columns(_GRANTS_API, "abusech_submissions") == {
         "status",
