@@ -30,7 +30,13 @@ ANY_ROLE_UNSAFE = {
     ("POST", "/api/v1/auth/password"),
 }
 # Reads that are for administrators only.
-ADMIN_ONLY_GETS = {"/api/v1/users", "/api/v1/audit", "/api/v1/defend/feed-tokens"}
+ADMIN_ONLY_GETS = {
+    "/api/v1/users",
+    "/api/v1/audit",
+    "/api/v1/defend/feed-tokens",
+    "/api/v1/abuse/settings",
+    "/api/v1/abuse/self-terms",
+}
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
 
