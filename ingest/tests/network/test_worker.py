@@ -199,6 +199,46 @@ async def test_a_taken_pseudonym_ends_the_attempt_for_good() -> None:
     assert [c for c in rig.hub.calls if c[1] == "/v1/enrol"] == [("POST", "/v1/enrol")]
 
 
+@pytest.mark.parametrize("code", ["enrolment_closed", "pow_timeout"])
+async def test_a_closed_or_too_hard_enrolment_waits_with_backoff_and_never_opts_out(
+    code: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = MemoryStore(desired="member", pseudonym="night owl")
+    rig = Rig(store)
+    if code == "pow_timeout":
+
+        async def too_slow(*_: Any, **__: Any) -> None:
+            return None
+
+        monkeypatch.setattr("ingest.network.worker.solve_low_priority", too_slow)
+    else:
+        rig.hub.fail["POST /v1/enrol"] = (503, "enrolment_closed")
+    await rig.cycle()
+    assert store.m.desired == "member" and store.m.state == "enrolling"
+    assert store.m.last_error_code == "waiting_enrolment"
+    attempts = len([c for c in rig.hub.calls if c[1] == "/v1/enrol/challenge"])
+    await rig.cycle()  # still inside the first 15 minutes: no call at all
+    assert len([c for c in rig.hub.calls if c[1] == "/v1/enrol/challenge"]) == attempts
+    rig.now = NOW + timedelta(minutes=16)
+    await rig.cycle()
+    assert len([c for c in rig.hub.calls if c[1] == "/v1/enrol/challenge"]) == attempts + 1
+    rig.now = NOW + timedelta(minutes=16 + 20)  # the second wait is twice as long (30 min)
+    await rig.cycle()
+    assert len([c for c in rig.hub.calls if c[1] == "/v1/enrol/challenge"]) == attempts + 1
+    assert store.m.desired == "member"
+
+
+async def test_enrolment_succeeds_once_the_hub_reopens(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = MemoryStore(desired="member")
+    rig = Rig(store)
+    rig.hub.fail["POST /v1/enrol"] = (503, "enrolment_closed")
+    await rig.cycle()
+    del rig.hub.fail["POST /v1/enrol"]
+    rig.now = NOW + timedelta(minutes=16)
+    await rig.cycle()
+    assert store.m.state == "member" and store.m.last_error_code is None
+
+
 # -- N9: the hub's signature -------------------------------------------------------------------
 
 
@@ -285,6 +325,25 @@ async def test_leaving_when_the_hub_does_not_know_the_node_still_wipes() -> None
     rig.hub.fail["DELETE /v1/node"] = (401, "unknown_node")
     await rig.cycle()
     assert store.wiped == 1
+
+
+async def test_leaving_sends_a_signed_delete_even_without_a_node_id() -> None:
+    store = member_store(desired="leave", node_id=None)
+    rig = Rig(store)
+    await rig.cycle()
+    assert rig.hub.deleted and store.wiped == 1 and store.m.last_error_code is None
+
+
+async def test_any_hub_error_ends_in_the_seven_day_give_up() -> None:
+    store = member_store(desired="leave")
+    rig = Rig(store)
+    rig.hub.fail["DELETE /v1/node"] = (500, "server_error")
+    await rig.cycle()
+    assert store.wiped == 0 and store.m.state == "leaving"
+    rig.now = NOW + timedelta(days=8)
+    await rig.cycle()
+    assert store.wiped == 1 and store.m.last_error_code == "leave_unconfirmed"
+    assert store.m.privkey_enc is None
 
 
 async def test_leaving_is_retried_for_seven_days_then_given_up() -> None:

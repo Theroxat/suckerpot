@@ -124,7 +124,8 @@ class MemoryStore:
         return {
             t.value_b
             for t in self.targets.values()
-            if t.value_b in value_bs and t.value is None
+            if t.value_b in value_bs
+            and t.value is None
             and t.state in ("confirmed", "reported", "taken_down")
         }
 

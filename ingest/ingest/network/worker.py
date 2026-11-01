@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -26,7 +25,7 @@ from typing import Any
 import httpx
 from suckerpot_db.network_names import pseudonym_problem
 from suckerpot_db.secretbox import SecretBox
-from suckerpot_netproto import ProtoError, pow, sign
+from suckerpot_netproto import ProtoError, sign
 from suckerpot_reporting import GuardContext, SelfTerms, guard
 
 from ingest.egress import EgressClosed, EgressGate, gate_open
@@ -37,6 +36,7 @@ from . import scheduler, sync
 from .builder import BatchBuilder, TermsSource
 from .client import HubClient, HubError, HubUnavailable
 from .config import NetworkSettings
+from .powproc import solve_low_priority
 from .store import Membership, Store
 
 log = logging.getLogger(__name__)
@@ -45,7 +45,12 @@ PULL_EVERY = timedelta(hours=6)
 SUMMARY_EVERY = timedelta(hours=24)
 LEAVE_GIVE_UP = timedelta(days=7)
 POW_CAP_S = 15 * 60
-PERMANENT = frozenset({"pseudonym_taken", "pseudonym_invalid", "enrolment_closed", "pow_timeout"})
+PERMANENT = frozenset({"pseudonym_taken", "pseudonym_invalid"})
+# The hub may close enrolment or set a hard puzzle for a while: wait, never opt out.
+TEMPORARY = frozenset({"enrolment_closed", "pow_timeout"})
+BACKOFF_FIRST = timedelta(minutes=15)
+BACKOFF_MAX = timedelta(hours=6)
+WAITING_ENROLMENT = "waiting_enrolment"
 FAST_INTERVAL_S = 60.0
 
 
@@ -81,6 +86,8 @@ class NetworkWorker(FeatureWorker):
         self.interval_s = float(network.interval_s)
         self.state = "off"
         self.reason: str | None = None
+        self._enrol_failures = 0
+        self._enrol_retry_at: datetime | None = None
 
     # -- status -----------------------------------------------------------------------------
 
@@ -130,6 +137,9 @@ class NetworkWorker(FeatureWorker):
             if m.desired == "leave" or m.state == "leaving":
                 await self._leave(m)
             elif m.state != "member":
+                if self._enrol_retry_at is not None and self._now() < self._enrol_retry_at:
+                    self.reason = WAITING_ENROLMENT  # still backing off: no call
+                    return
                 await self._enrol(m)
             else:
                 await self._maintain(m)
@@ -187,15 +197,21 @@ class NetworkWorker(FeatureWorker):
         if m.state != "leaving" or m.leave_requested_at is None:
             await store.update(state="leaving", leave_requested_at=m.leave_requested_at or now)
             m.leave_requested_at = m.leave_requested_at or now
-        if m.pubkey is None or m.privkey_enc is None or m.node_id is None:
-            await store.wipe()  # never enrolled: nothing at the hub
+        if m.pubkey is None or m.privkey_enc is None:
+            await store.wipe()  # no key was ever made: nothing at the hub
             self.state = "off"
             return
+        # Whenever a key exists a signed DELETE goes out, even if the enrolment answer was lost
+        # (no node id): a signed unknown_node means the hub holds nothing of ours.
         try:
             identity = self._identity(m)
             await self._hub(identity).delete_node()
         except HubError as exc:
             if exc.code != "unknown_node":
+                if now - m.leave_requested_at > LEAVE_GIVE_UP:
+                    await store.wipe(leave_error="leave_unconfirmed")
+                    self.state = "off"
+                    return
                 raise
         except ident.NoSettingsKey:
             await store.wipe(leave_error="leave_unconfirmed")  # the key is gone: cannot sign
@@ -248,17 +264,11 @@ class NetworkWorker(FeatureWorker):
                 self.state, self.reason = "error", "unsupported_protocol"
                 return
             ch = await hub.challenge(identity)
-            deadline = time.monotonic() + POW_CAP_S
-            nonce_raw = await asyncio.to_thread(
-                pow.solve_pow,
-                sign.b64u_decode(ch.challenge),
-                identity.public,
-                ch.difficulty,
-                should_stop=lambda: time.monotonic() > deadline,
+            nonce_raw = await solve_low_priority(
+                sign.b64u_decode(ch.challenge), identity.public, ch.difficulty, POW_CAP_S
             )
             if nonce_raw is None:
-                await store.update(state="error", desired="off", last_error_code="pow_timeout")
-                self.state, self.reason = "error", "pow_timeout"
+                await self._enrol_wait(store)
                 return
             done = await hub.enrol(
                 identity,
@@ -273,7 +283,11 @@ class NetworkWorker(FeatureWorker):
                 await store.update(state="error", desired="off", last_error_code=exc.code)
                 self.state, self.reason = "error", exc.code
                 return
+            if exc.code in TEMPORARY:
+                await self._enrol_wait(store)
+                return
             raise
+        self._enrol_failures, self._enrol_retry_at = 0, None
         await store.update(
             state="member",
             node_id=done.node_id,
@@ -290,6 +304,14 @@ class NetworkWorker(FeatureWorker):
             last_error_code=None,
         )
         self.state, self.reason = "member", None
+
+    async def _enrol_wait(self, store: Store) -> None:
+        """Enrolment is temporarily out of reach: stay a member-to-be, retry with backoff."""
+        delay = min(BACKOFF_FIRST * 2**self._enrol_failures, BACKOFF_MAX)
+        self._enrol_failures = min(self._enrol_failures + 1, 10)
+        self._enrol_retry_at = self._now() + delay
+        await store.update(state="enrolling", last_error_code=WAITING_ENROLMENT)
+        self.state, self.reason = "enrolling", WAITING_ENROLMENT
 
     # -- member -----------------------------------------------------------------------------
 

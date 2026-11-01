@@ -179,6 +179,9 @@ def test_status_reports_env_off_and_waiting_reasons(
     assert body["waiting"] == "egress" and body["last_error_code"] == "egress_closed"
     rig.db.m.update(last_error_code="no_settings_key")
     assert rig.client().get("/api/v1/network/status").json()["waiting"] == "settings_key"
+    rig.db.m.update(last_error_code="waiting_enrolment")
+    body = rig.client().get("/api/v1/network/status").json()
+    assert body["waiting"] == "enrolment" and body["last_error_code"] is None
 
 
 # -- joining -----------------------------------------------------------------------------------

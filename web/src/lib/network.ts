@@ -14,7 +14,7 @@ import { UserError } from "./users"
 
 export type NetworkDesired = "off" | "member" | "leave"
 export type NetworkState = "off" | "enrolling" | "member" | "leaving" | "error"
-export type NetworkWaiting = "self_address" | "egress" | "settings_key"
+export type NetworkWaiting = "self_address" | "egress" | "settings_key" | "enrolment"
 export type NetworkStanding = "new" | "good" | "low"
 
 /** `GET /api/v1/network/status` (any signed-in user). Never 404. */
@@ -321,6 +321,8 @@ const WAITING_TEXT: Record<NetworkWaiting, string> = {
   egress: "The outbound gate is closed, so nothing is sent. See Settings, VPN.",
   settings_key:
     "The settings encryption key is not set, so the node key cannot be stored safely. Nothing is sent.",
+  enrolment:
+    "The hub is not taking new members right now, or its puzzle is too hard for now. This sensor stays signed up and tries again later by itself.",
 }
 
 export function waitingText(w: NetworkWaiting | null): string | null {

@@ -103,6 +103,16 @@ async def test_hub_errors_carry_their_code() -> None:
     assert err.value.code == "rate_limited" and err.value.status == 429
 
 
+@pytest.mark.parametrize("sent", ["made_up_code", "x" * 80, "has space", "pow_timeout"])
+async def test_a_code_outside_the_protocol_list_becomes_hub_error(sent: str) -> None:
+    hub = FakeHub()
+    hub.fail["GET /v1/node"] = (418, sent)
+    client = HubClient(settings(), ident.generate(), gate=FakeGate(), client=hub_client(hub))  # type: ignore[arg-type]
+    with pytest.raises(HubError) as err:
+        await client.node()
+    assert err.value.code == "hub_error"
+
+
 async def test_a_closed_gate_makes_no_call() -> None:
     hub = FakeHub()
     client = HubClient(settings(), ident.generate(), gate=FakeGate(False), client=hub_client(hub))  # type: ignore[arg-type]
