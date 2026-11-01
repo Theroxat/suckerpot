@@ -13,7 +13,7 @@ from starlette.responses import Response
 from suckerpot_netproto import ProtoError, models, pow, sign
 
 from .. import pseudonym
-from ..auth import MAX_BODY_DEFAULT, authenticate_new_key, read_body, reply
+from ..auth import MAX_BODY_DEFAULT, authenticate_new_key, bind_unsigned, read_body, reply
 from ..context import AppContext, get_ctx
 from ..models import EnrolChallenge, Node
 
@@ -41,10 +41,12 @@ async def current_difficulty(ctx: AppContext, session: AsyncSession) -> int:
 @router.post("/enrol/challenge")
 async def challenge(request: Request) -> Response:
     ctx = get_ctx(request)
+    body = await read_body(request, MAX_BODY_DEFAULT)
+    bind_unsigned(request, body)
     wait = ctx.address_limiter.blocked(request) or ctx.address_limiter.check_unsigned(request)
     if wait:
         raise ProtoError("rate_limited", str(wait))
-    req = models.parse_body(models.ChallengeRequest, await read_body(request, MAX_BODY_DEFAULT))
+    req = models.parse_body(models.ChallengeRequest, body)
     pubkey = sign.parse_node_key(req.node_key)
     now = ctx.now()
     async with ctx.sessionmaker() as session:

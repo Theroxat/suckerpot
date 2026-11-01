@@ -27,13 +27,35 @@ async def test_valid_request_and_signed_answer(env: Env) -> None:
     assert reply.status == 200 and reply.signature_ok
 
 
-async def test_answer_signature_is_bound_to_the_request_nonce(env: Env) -> None:
+async def test_answer_is_bound_to_the_whole_request(env: Env) -> None:
     node = await _member(env)
     first = await node.call("GET", "/v1/node")
     assert first.signature_ok
     resp_sig = first.headers[sign.H_HUB_SIGNATURE]
-    # the same signature does not verify against any other nonce
-    assert not sign.verify_response(env.hub_key, resp_sig, sign.new_nonce(), 200, first.raw)
+    # an answer collected by a man in the middle for its own request never fits another one
+    other = sign.RequestBinding.signed("GET", "/v1/node", node.key, sign.new_nonce(), "s" * 86)
+    assert not sign.verify_response(env.hub_key, resp_sig, other, 200, first.raw)
+
+
+async def test_failed_authentication_is_never_signed(env: Env) -> None:
+    node = await _member(env)
+    now = int(env.clock().timestamp())
+    stranger = env.node()
+    cases = [
+        await node.call("GET", "/v1/node", timestamp=now - 999),
+        await node.call("GET", "/v1/node", drop=(sign.H_SIGNATURE,)),
+        await node.call("GET", "/v1/node", sign_path="/v1/x"),
+        await stranger.call("GET", "/v1/node"),
+        await node.call("POST", "/v1/reveals", raw=b" " * (64 * 1024 + 1)),
+    ]
+    for reply in cases:
+        assert reply.status >= 400 and not reply.has_signature and not reply.signature_ok
+
+
+async def test_authenticated_errors_are_signed(env: Env) -> None:
+    node = await _member(env)
+    bad = await node.call("POST", "/v1/reveals", {"protocol": "spn/9", "items": []})
+    assert bad.error == "unsupported_protocol" and bad.signature_ok
 
 
 @pytest.mark.parametrize("drop", [sign.H_KEY, sign.H_TIMESTAMP, sign.H_NONCE, sign.H_SIGNATURE])
@@ -163,14 +185,12 @@ async def test_nonces_are_stored_with_ttl(env: Env) -> None:
     assert (expires - env.clock()).total_seconds() == pytest.approx(600, abs=1)
 
 
-async def test_unknown_route_and_method_are_signed_errors(env: Env) -> None:
+async def test_unknown_route_is_an_unsigned_error(env: Env) -> None:
     node = await _member(env)
     nonce = sign.new_nonce()
     resp = await env.http.get("/v1/nothing", headers={sign.H_NONCE: nonce})
     assert resp.status_code == 404 and resp.json() == {"error": "invalid_payload"}
-    assert sign.verify_response(
-        env.hub_key, resp.headers[sign.H_HUB_SIGNATURE], nonce, 404, resp.content
-    )
+    assert sign.H_HUB_SIGNATURE not in resp.headers
     resp = await env.http.get("/openapi.json")
     assert resp.status_code == 404
     assert node.node_id
