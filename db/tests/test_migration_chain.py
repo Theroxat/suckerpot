@@ -449,3 +449,11 @@ def test_m27_api_cannot_read_the_auth_key() -> None:
     cols = select.group(1)
     assert "key_set" in cols and "key_last4" in cols
     assert "key_ciphertext" not in cols and "key_nonce" not in cols
+
+
+def test_role_scripts_have_balanced_if_blocks() -> None:
+    """A merge once dropped an END IF; the grants are only parsed by the database."""
+    for script in (_GRANTS_INGEST, _GRANTS_API, _GRANTS_COLLECTOR, _GRANTS_ANALYZER):
+        opened = len(re.findall(r"^\s*IF\b.*\bTHEN\s*$", script, re.M))
+        closed = len(re.findall(r"^\s*END IF;", script, re.M))
+        assert opened == closed

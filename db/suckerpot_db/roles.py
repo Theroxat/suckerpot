@@ -298,6 +298,7 @@ BEGIN
         EXECUTE format(
             'GRANT USAGE ON SEQUENCE %s TO %I',
             pg_get_serial_sequence('public.abuse_replies', 'id'), r);
+    END IF;
     IF to_regclass('public.takedown_targets') IS NOT NULL THEN
         -- M27: ingest syncs targets, decides their state and runs the abuse.ch submissions. The
         -- collector columns (HTTP re-check progress) and the API columns stay out of its reach.
@@ -521,6 +522,7 @@ BEGIN
             'GRANT USAGE ON SEQUENCE %s, %s TO %I',
             pg_get_serial_sequence('public.report_imap_requests', 'id'),
             pg_get_serial_sequence('public.abuse_reply_imports', 'id'), r);
+    END IF;
     IF to_regclass('public.takedown_targets') IS NOT NULL THEN
         -- M27: the owner stops tracking or asks for an early re-check; nothing else changes.
         EXECUTE format('GRANT SELECT ON takedown_targets, takedown_checks TO %I', r);
