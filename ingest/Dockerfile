@@ -11,6 +11,8 @@ COPY db/pyproject.toml db/uv.lock ./db/
 COPY db/suckerpot_db ./db/suckerpot_db
 COPY egress/pyproject.toml egress/uv.lock ./egress/
 COPY egress/suckerpot_egress ./egress/suckerpot_egress
+COPY netproto/pyproject.toml netproto/uv.lock ./netproto/
+COPY netproto/suckerpot_netproto ./netproto/suckerpot_netproto
 COPY reporting/pyproject.toml reporting/uv.lock ./reporting/
 COPY reporting/suckerpot_reporting ./reporting/suckerpot_reporting
 COPY ingest/pyproject.toml ingest/uv.lock ./ingest/

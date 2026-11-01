@@ -15,6 +15,7 @@ from suckerpot_db.secretbox import SecretBox, SecretError, box_from_env
 from suckerpot_db.trusted_exits import self_networks_provider, trusted_exit_provider
 
 from ingest.abuse import AbuseWorker
+from ingest.abuse.selfterms import TermsCache
 from ingest.alerts import AlertWorker
 from ingest.alerts.config import AlertSettings
 from ingest.attack import AttackCatalogWorker, load_attack
@@ -37,6 +38,9 @@ from ingest.enrichment.status import publish_status
 from ingest.features import FeatureSettings, FeatureWorker
 from ingest.indicators import IndicatorExtractor, IndicatorSettings
 from ingest.llm import ExplainerWorker
+from ingest.network import BatchBuilder, NetworkSettings, NetworkWorker
+from ingest.network.source import SqlSource
+from ingest.network.store import SqlStore
 from ingest.reports import ReportWorker
 from ingest.scanners import load_scanners
 from ingest.scripts import ScriptWorker, load_annotations
@@ -52,6 +56,20 @@ def load_secret_box() -> SecretBox | None:
     except SecretError as exc:
         log.error("SETTINGS_ENCRYPTION_KEY is unusable (%s): keys set in Settings are ignored", exc)
         return None
+
+
+def build_network_worker(features: FeatureSettings, factory: Any) -> NetworkWorker:
+    """The opt-in network worker. A bad NETWORK_* value leaves the network off."""
+    try:
+        network = NetworkSettings.from_env()
+    except ValueError as exc:
+        log.error("network settings are invalid (%s): the network stays off", exc)
+        network = NetworkSettings()
+    terms = TermsCache(factory)
+    builder = BatchBuilder(SqlSource(factory), terms, max_sources=network.max_sources)
+    return NetworkWorker(
+        features, network, SqlStore(factory), terms, builder, box=load_secret_box()
+    )
 
 
 async def run() -> None:
@@ -178,6 +196,7 @@ async def run() -> None:
         ),
         ReportWorker(features, factory),
         AbuseWorker(features, factory, box=load_secret_box()),
+        build_network_worker(features, factory),
     ]
     for worker in feature_workers:
         appliers.append(worker.apply_settings)
