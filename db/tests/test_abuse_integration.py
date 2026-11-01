@@ -299,13 +299,25 @@ async def _ask(api: AsyncEngine, report_id: int) -> int | None:
     return await _run(api, SEND_REQUEST.format(cols="", vals=""), {"r": report_id})
 
 
-async def test_ingest_marks_a_report_sent_only_for_a_pending_request(
+START = (
+    "UPDATE abuse_send_requests SET status = 'sending', started_at = now() "
+    "WHERE report_id = :r AND status = 'pending'"
+)
+
+
+async def _start(ingest: AsyncEngine, report_id: int) -> int | None:
+    return await _run(ingest, START, {"r": report_id})
+
+
+async def test_ingest_marks_a_report_sent_only_for_a_request_being_sent(
     owner: AsyncEngine, roles: tuple[AsyncEngine, AsyncEngine]
 ) -> None:
     api, ingest = roles
     rid = await _report(owner)
     assert await _run(ingest, MARK_SMTP, {"v": "smtp", "r": rid}) is None  # no request yet
     assert await _ask(api, rid) == 1
+    assert await _run(ingest, MARK_SMTP, {"v": "smtp", "r": rid}) is None  # still only pending
+    assert await _start(ingest, rid) == 1
     assert await _run(ingest, MARK_SMTP, {"v": "manual", "r": rid}) is None  # only smtp
     assert (
         await _run(
@@ -333,6 +345,7 @@ async def test_an_automatic_send_may_stamp_the_review_as_auto(
     api, ingest = roles
     rid = await _report(owner)
     assert await _ask(api, rid) == 1
+    assert await _start(ingest, rid) == 1
     assert (
         await _run(
             ingest,
@@ -350,11 +363,13 @@ async def test_demo_and_unguarded_reports_cannot_be_sent_by_ingest(
     api, ingest = roles
     rid = await _report(owner, demo=True)
     assert await _ask(api, rid) == 1
+    assert await _start(ingest, rid) == 1
     assert await _run(ingest, MARK_SMTP, {"v": "smtp", "r": rid}) is None
     rid = await _report(owner)
     async with owner.begin() as conn:
         await conn.execute(text("UPDATE abuse_reports SET guard_ok = false"))
     assert await _ask(api, rid) == 1
+    assert await _start(ingest, rid) == 1
     assert await _run(ingest, MARK_SMTP, {"v": "smtp", "r": rid}) is None
 
 
@@ -430,6 +445,35 @@ async def test_send_request_rules(
     assert await _run(ingest, "DELETE FROM abuse_send_requests") is None
     assert await _run(ingest, done_sql) == 1
     assert await _run(ingest, done_sql) is None  # finished is final
+
+
+async def test_a_request_goes_through_sending_and_only_ingest_moves_it(
+    owner: AsyncEngine, roles: tuple[AsyncEngine, AsyncEngine]
+) -> None:
+    api, ingest = roles
+    rid = await _report(owner)
+    assert await _ask(api, rid) == 1
+    finish = "UPDATE abuse_send_requests SET status = 'sent', done_at = now()"
+    assert await _run(ingest, finish) is None  # never straight from pending
+    assert await _start(ingest, rid) == 1
+    async with owner.connect() as conn:
+        row = (
+            await conn.execute(text("SELECT status, started_at, done_at FROM abuse_send_requests"))
+        ).one()
+    assert row.status == "sending" and row.started_at is not None and row.done_at is None
+    # The mail may be on the wire: the owner can no longer cancel it, nor touch it.
+    assert await _run(api, "UPDATE abuse_send_requests SET status = 'cancelled'") is None
+    assert await _run(api, "UPDATE abuse_send_requests SET status = 'sent'") is None
+    assert await _run(ingest, "UPDATE abuse_send_requests SET status = 'cancelled'") is None
+    assert await _run(ingest, "UPDATE abuse_send_requests SET status = 'sending'") == 1
+    # Nothing was connected (gate closed under it): back to pending, then started again.
+    assert (
+        await _run(ingest, "UPDATE abuse_send_requests SET status = 'pending', started_at = NULL")
+        == 1
+    )
+    assert await _start(ingest, rid) == 1
+    assert await _run(ingest, finish) == 1
+    assert await _run(ingest, "UPDATE abuse_send_requests SET status = 'pending'") is None
 
 
 async def test_the_api_writes_the_smtp_password_but_never_reads_it_back(

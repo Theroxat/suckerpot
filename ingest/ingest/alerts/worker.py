@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_db.alert_targets import decrypt_target
 from suckerpot_db.secretbox import SecretBox, SecretError
 
+from ingest.abuse.selfterms import TermsCache
 from ingest.alerts import outbox
 from ingest.alerts.config import AlertSettings
 from ingest.alerts.messages import (
@@ -82,7 +83,11 @@ class AlertWorker(FeatureWorker):
         self.factory = factory
         self.box = box
         self.alert_settings = alert_settings or AlertSettings()
-        self.sender = sender or Sender(self.alert_settings, smtp_password=smtp_password)
+        self.sender = sender or Sender(
+            self.alert_settings,
+            smtp_password=smtp_password,
+            terms=TermsCache(factory).get if factory is not None else None,
+        )
         self._last_eval = -math.inf  # due at once, whatever the host uptime
         self.sent_cycle = 0
 

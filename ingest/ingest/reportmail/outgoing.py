@@ -18,11 +18,15 @@ Errors are constant codes. The password, the message and the server's answers ar
 
 from __future__ import annotations
 
+import contextlib
 import email.policy
 import re
 import secrets
 import smtplib
+import socket
 import ssl
+import threading
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.message import EmailMessage
@@ -60,6 +64,7 @@ CODES: Final = (
     "tls_failed",
     "refused",
     "timeout",
+    "unknown_outcome",
     "network",
     "egress_closed",
     "guard_failed",
@@ -185,48 +190,103 @@ def check_message(
         raise SendFailure("guard_failed", reasons=tuple(result.codes))
 
 
-def deliver(gate: EgressGate, profile: Profile, raw: bytes, rcpt: str) -> None:
+def _map_error(exc: Exception, stage: str, expired: bool) -> SendFailure:
+    """A constant code for what went wrong. In the ``send`` stage the message may already be on
+    its way, so anything that is not a clear refusal is an unknown outcome (never retried)."""
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return SendFailure("auth_failed")
+    if isinstance(exc, smtplib.SMTPNotSupportedError):
+        return SendFailure("tls_failed" if stage == "tls" else "auth_failed")
+    if isinstance(exc, ssl.SSLError) and not expired:
+        return SendFailure("tls_failed")
+    clear_refusal = isinstance(exc, smtplib.SMTPResponseException | smtplib.SMTPRecipientsRefused)
+    if clear_refusal and not expired:
+        return SendFailure("refused")
+    if stage == "send":
+        return SendFailure("unknown_outcome")  # DATA may have started: we cannot know
+    if isinstance(exc, TimeoutError) or expired:
+        return SendFailure("timeout")
+    if isinstance(exc, smtplib.SMTPException) and not isinstance(
+        exc, smtplib.SMTPServerDisconnected
+    ):
+        return SendFailure("refused")
+    return SendFailure("network")
+
+
+def deliver(
+    gate: EgressGate,
+    profile: Profile,
+    raw: bytes,
+    rcpt: str,
+    *,
+    deadline_s: float = SMTP_DEADLINE_S,
+) -> None:
     """Blocking (run it in a thread). The gate is checked immediately before connecting, and the
-    connection is a CONNECT tunnel through the VPN proxy: ``TunnelSMTP`` is the only way out."""
+    connection is a CONNECT tunnel through the VPN proxy: ``TunnelSMTP`` is the only way out.
+
+    The whole exchange ends within ``deadline_s`` whatever the server drips: every socket
+    operation gets what is left of it, and a timer shuts the socket down as a backstop."""
     context = ssl.create_default_context()  # certificate chain and host name are verified
     helo = profile.domain
     stage = "connect"
+    started = time.monotonic()
+    expired = threading.Event()
+    holder: list[smtplib.SMTP] = []
+
+    def left() -> float:
+        return max(0.5, deadline_s - (time.monotonic() - started))
+
+    def expire() -> None:
+        expired.set()
+        sock = getattr(holder[0], "sock", None) if holder else None
+        if sock is not None:
+            with contextlib.suppress(OSError):
+                sock.shutdown(socket.SHUT_RDWR)
+            with contextlib.suppress(OSError):
+                sock.close()
+
+    def arm(server: smtplib.SMTP) -> None:
+        if expired.is_set():
+            raise TimeoutError
+        sock = getattr(server, "sock", None)
+        if sock is not None:
+            sock.settimeout(min(SMTP_TIMEOUT_S, left()))
+
+    timer = threading.Timer(deadline_s, expire)
+    timer.daemon = True
     try:
         gate.require_open()  # EgressClosed before any client, socket or tunnel is created
+        timer.start()
+        timeout = min(SMTP_TIMEOUT_S, left())
+        # Created unconnected, so the timer can already reach the socket while it connects.
         if profile.security == "ssl":
             server: smtplib.SMTP = TunnelSMTP_SSL(
-                gate, profile.host, profile.port, timeout=SMTP_TIMEOUT_S, context=context,
-                local_hostname=helo,
-            )  # fmt: skip
+                gate, "", 0, timeout=timeout, context=context, local_hostname=helo
+            )
         else:
-            server = TunnelSMTP(
-                gate, profile.host, profile.port, timeout=SMTP_TIMEOUT_S, local_hostname=helo
-            )  # fmt: skip
+            server = TunnelSMTP(gate, "", 0, timeout=timeout, local_hostname=helo)
+        holder.append(server)
+        server.connect(profile.host, profile.port)
         with server:
             if profile.security != "ssl":
+                arm(server)
                 server.ehlo()
                 stage = "tls"
+                arm(server)
                 server.starttls(context=context)  # fails when the server cannot: no plain text
                 stage = "connect"
+                arm(server)
                 server.ehlo()
             if profile.username:
                 stage = "auth"
+                arm(server)
                 server.login(profile.username, profile.password)
-                stage = "send"
+            stage = "send"
+            arm(server)
             server.sendmail(profile.from_address, [rcpt], raw)
     except EgressClosed:
         raise SendFailure("egress_closed") from None
-    except smtplib.SMTPAuthenticationError:
-        raise SendFailure("auth_failed") from None
-    except smtplib.SMTPNotSupportedError:
-        raise SendFailure("tls_failed" if stage == "tls" else "auth_failed") from None
-    except ssl.SSLError:
-        raise SendFailure("tls_failed") from None
-    except TimeoutError:
-        raise SendFailure("timeout") from None
-    except smtplib.SMTPServerDisconnected:
-        raise SendFailure("network") from None
-    except smtplib.SMTPException:
-        raise SendFailure("refused") from None
-    except OSError:
-        raise SendFailure("network") from None
+    except Exception as exc:
+        raise _map_error(exc, stage, expired.is_set()) from None
+    finally:
+        timer.cancel()

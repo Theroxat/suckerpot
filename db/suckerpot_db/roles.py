@@ -255,7 +255,8 @@ BEGIN
         EXECUTE format('GRANT SELECT ON report_smtp TO %I', r);
         EXECUTE format('GRANT SELECT, INSERT ON abuse_send_requests TO %I', r);
         EXECUTE format(
-            'GRANT UPDATE (status, error_code, done_at) ON abuse_send_requests TO %I', r);
+            'GRANT UPDATE (status, error_code, done_at, started_at) '
+            'ON abuse_send_requests TO %I', r);
         EXECUTE format(
             'GRANT USAGE ON SEQUENCE %s TO %I',
             pg_get_serial_sequence('public.abuse_send_requests', 'id'), r);

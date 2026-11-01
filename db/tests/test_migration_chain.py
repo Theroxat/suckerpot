@@ -270,6 +270,7 @@ def test_m25_grants_keep_the_password_away_from_the_api() -> None:
         "status",
         "error_code",
         "done_at",
+        "started_at",
     }
     assert "DELETE" not in _grants(_GRANTS_API)["abuse_send_requests"]
 
