@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 import unicodedata
 
@@ -17,7 +18,7 @@ from ingest.replies.parse import (
 )
 
 from . import mails
-from .mails import OUR_ID, TOKEN, mail
+from .mails import OUR_ID, TOKEN, mail, multipart
 
 
 def test_a_plain_reply() -> None:
@@ -175,42 +176,70 @@ def test_the_message_is_cut_at_max_bytes() -> None:
 # --- authentication ------------------------------------------------------------------------
 
 
+MX = "mx.example.org"  # the authserv-id the owner trusts in these tests
+
+
 def test_authentication_results() -> None:
-    ok = "mx.example.org; dkim=pass header.d=example.net; dmarc=pass header.from=example.net"
-    assert authentication(ok, "example.net") == "pass"
+    ok = [f"{MX}; dkim=pass header.d=example.net; dmarc=pass header.from=example.net"]
+    assert authentication(ok, "example.net", MX) == "pass"
+    policy = [f"{MX}; dmarc=pass (policy=none) header.from=mail.example.net"]
+    assert authentication(policy, "example.net", MX) == "pass"
+    other = [f"{MX}; dkim=pass header.d=other.example.org"]
+    assert authentication(other, "example.net", MX) == "none"
     assert (
-        authentication("mx; dmarc=pass (policy=none) header.from=mail.example.net", "example.net")
-        == "pass"
+        authentication([f"{MX}; dmarc=fail header.from=example.net"], "example.net", MX) == "fail"
     )
-    assert authentication("mx; dkim=pass header.d=other.example.org", "example.net") == "none"
-    assert authentication("mx; dmarc=fail header.from=example.net", "example.net") == "fail"
-    assert authentication("mx; dkim=fail header.d=example.net", "example.net") == "none"
-    assert authentication("mx; spf=pass", "example.net") == "none"
-    assert authentication(None, "example.net") == "none"
-    assert authentication(ok, None) == "none"
+    assert authentication([f"{MX}; dkim=fail header.d=example.net"], "example.net", MX) == "none"
+    assert authentication([f"{MX}; spf=pass"], "example.net", MX) == "none"
+    assert authentication(None, "example.net", MX) == "none"
+    assert authentication(ok, None, MX) == "none"
 
 
-def test_only_the_topmost_authentication_results_header_counts() -> None:
-    top_fail = mail(
-        extra={"Authentication-Results": "mx; dmarc=fail header.from=example.net"},
-    ).replace(
-        b"MIME-Version",
-        b"Authentication-Results: mx; dkim=pass header.d=example.net\r\nMIME-Version",
+def test_without_a_trusted_authserv_id_nothing_is_authenticated() -> None:
+    ok = [f"{MX}; dmarc=pass header.from=example.net"]
+    assert authentication(ok, "example.net", None) == "none"
+    assert authentication(ok, "example.net", "") == "none"
+
+
+def test_a_forged_authentication_results_header_is_ignored() -> None:
+    forged = ["attacker; dmarc=pass header.from=victim.example"]
+    assert authentication(forged, "victim.example", MX) == "none"
+    # A forged header on top of the real one: the first with the trusted id counts.
+    real_fail = [*forged, f"{MX}; dmarc=fail header.from=victim.example"]
+    assert authentication(real_fail, "victim.example", MX) == "fail"
+    # The id is compared whole, not as a prefix or a substring.
+    assert authentication([f"x{MX}; dmarc=pass header.from=a.example"], "a.example", MX) == "none"
+    assert (
+        authentication([f"{MX}.evil.example; dmarc=pass header.from=a.example"], "a.example", MX)
+        == "none"
     )
-    # The first header in the file wins, whatever follows it.
-    assert parse_message(top_fail).auth in ("fail", "pass")
+
+
+def test_quoted_strings_and_comments_do_not_split_clauses() -> None:
+    sneaky = [f'{MX}; x=y reason="a; dmarc=pass header.from=victim.example"']
+    assert authentication(sneaky, "victim.example", MX) == "none"
+    commented = [
+        f"{MX}; dkim=fail (x; dmarc=pass header.from=victim.example) header.d=other.example"
+    ]
+    assert authentication(commented, "victim.example", MX) == "none"
+    quoted_value = [f'{MX}; dkim=pass header.d="victim.example"']
+    assert authentication(quoted_value, "victim.example", MX) == "pass"
+
+
+def test_only_the_first_trusted_authentication_results_header_counts() -> None:
     two = (
-        b"Authentication-Results: mx; dmarc=fail header.from=example.net\r\n"
-        b"Authentication-Results: mx; dkim=pass header.d=example.net\r\n"
+        b"Authentication-Results: mx.example.org; dmarc=fail header.from=example.net\r\n"
+        b"Authentication-Results: mx.example.org; dkim=pass header.d=example.net\r\n"
         b"From: a@example.net\r\n\r\nx"
     )
-    assert parse_message(two).auth == "fail"
-    forged = (
-        b"Authentication-Results: mx; spf=pass\r\n"
-        b"Authentication-Results: mx; dkim=pass header.d=example.net\r\n"
+    assert parse_message(two, trusted_authserv_id=MX).auth == "fail"
+    assert parse_message(two).auth == "none"  # no trusted id
+    forged_top = (
+        b"Authentication-Results: attacker; dkim=pass header.d=example.net\r\n"
+        b"Authentication-Results: mx.example.org; spf=pass\r\n"
         b"From: a@example.net\r\n\r\nx"
     )
-    assert parse_message(forged).auth == "none"
+    assert parse_message(forged_top, trusted_authserv_id=MX).auth == "none"
 
 
 # --- excerpt -------------------------------------------------------------------------------
@@ -251,3 +280,41 @@ def test_message_id_lists_are_capped_at_twenty() -> None:
     refs = " ".join(f"<id{i}@example.org>" for i in range(60))
     parsed = parse_message(mail(extra={"References": refs}, in_reply_to=None))
     assert len(parsed.reference_ids) == 20 and parsed.reference_ids[-1] == "<id59@example.org>"
+
+
+# --- limits of the columns (a mail must never be able to break the insert) -------------------
+
+
+def test_an_overlong_sender_is_unknown_not_a_poison_pill() -> None:
+    long_domain = ".".join(["a" * 60] * 5) + ".example.net"  # 312+ characters
+    assert len(long_domain) > 253
+    parsed = parse_message(mail(from_=f"postmaster@{long_domain}"))
+    assert parsed.from_address is None and parsed.from_domain is None
+    # Total address over 254 characters with a legal domain.
+    domain = ".".join(["b" * 50] * 4) + ".net"  # 204 characters, local part 64
+    parsed = parse_message(mail(from_=f"{'l' * 64}@{domain}"))
+    assert parsed.from_address is None
+
+
+def test_attachment_types_are_ascii_and_bounded() -> None:
+    parts = [("text/plain; charset=utf-8", "", b"hello")]
+    for i in range(12):
+        parts.append((f"application/{'é' * 90}{i}", "", b"x"))
+    parsed = parse_message(multipart(parts))
+    types = parsed.attachments["types"]
+    assert types and all(t.isascii() and len(t) <= 64 for t in types)
+    assert len(json.dumps(parsed.attachments)) <= 2048
+
+
+def test_long_ascii_attachment_types_cannot_overflow_the_json() -> None:
+    parts = [("text/plain; charset=utf-8", "", b"hello")]
+    for i in range(12):
+        parts.append((f"application/x-{'a' * 70}{i}", "", b"x"))
+    parsed = parse_message(multipart(parts))
+    assert len(json.dumps(parsed.attachments)) <= 2048
+    assert all(len(t) <= 64 for t in parsed.attachments["types"])
+
+
+def test_the_excerpt_never_exceeds_the_column_whatever_the_setting() -> None:
+    parsed = parse_message(mail(body="word " * 2000), excerpt_chars=100_000)
+    assert len(parsed.excerpt) <= 2000

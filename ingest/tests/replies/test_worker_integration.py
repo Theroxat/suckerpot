@@ -129,6 +129,7 @@ class World:
         values: dict[str, Any] = {
             "host": "imap.example.org", "port": 993, "security": "ssl", "username": "reports",
             "folder": "INBOX", "action": "mark_read", "move_folder": None, "enabled": True,
+            "trusted": None,
         }  # fmt: skip
         values.update(over)
         cipher, nonce = BOX.encrypt("report_imap", Credential(key="sample-password"))
@@ -138,15 +139,15 @@ class World:
                 text(
                     "INSERT INTO report_imap (id, enabled, host, port, security, username, "
                     "password_ciphertext, password_nonce, folder, processed_action, move_folder, "
-                    "since) VALUES (1, :enabled, :host, :port, :security, :username, :c, :n, "
-                    ":folder, :action, :move_folder, '2026-01-01')"
+                    "since, trusted_authserv_id) VALUES (1, :enabled, :host, :port, :security, "
+                    ":username, :c, :n, :folder, :action, :move_folder, '2026-01-01', :trusted)"
                 ),
                 values | {"c": cipher, "n": nonce},
             )
 
     async def sent_report(
         self, mailbox: str | None = None, *, status: str = "sent", kind: str = "attack_source",
-        message_id: str | None = None,
+        message_id: str | None = None, reply_domains: list[str] | None = None,
     ) -> tuple[int, str]:  # fmt: skip
         """A report to its own provider, sent two days ago. Returns (id, reply token)."""
         self.n += 1
@@ -158,6 +159,11 @@ class World:
                 ),
                 {"m": mailbox},
             )
+            if reply_domains:
+                await conn.execute(
+                    text("UPDATE abuse_recipients SET reply_domains = :d WHERE id = :i"),
+                    {"d": reply_domains, "i": rec},
+                )
             rid = int(
                 await conn.scalar(
                     text(
@@ -404,7 +410,7 @@ async def test_a_forged_reply_is_stored_but_changes_nothing(world: World) -> Non
 
 
 async def test_authenticated_mail_from_the_recipient_is_verified(world: World) -> None:
-    await world.profile()
+    await world.profile(trusted="mx.example.org")
     rid, token = await world.sent_report("abuse@example.net")
     good = mail(
         in_reply_to=None,
@@ -431,7 +437,10 @@ async def test_a_bounce_is_stored_and_needs_review(world: World) -> None:
     await outcome.ensure_rows(world.factory)
     await outcome.recompute(world.factory)
     out = await world.outcome(rid)
-    assert out.auto_outcome == "bounce" and out.needs_review and out.bounced_at is not None
+    # Quoting our Message-ID proves nothing about the sender: an unauthenticated bounce from a
+    # mail system we never wrote to waits for the owner and sets no date.
+    assert not row.verified
+    assert out.auto_outcome == "bounce" and out.needs_review and out.bounced_at is None
 
 
 async def test_an_unmatched_dsn_is_kept_for_the_owner(world: World) -> None:
@@ -749,3 +758,257 @@ def test_the_fingerprint_changes_with_the_mailbox() -> None:
     assert fingerprint(base) == fingerprint(
         ImapProfile("h.example.org", 993, "ssl", "u", "INBOX", "move", "Done", 30, date(2026, 5, 5))
     )
+
+
+# ---- poison pills and forged replies (security review of M26/M27) -----------------------------
+
+
+async def test_a_mail_that_breaks_a_column_does_not_stop_the_ones_behind_it(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    from ingest.replies import store as store_module
+
+    await world.profile()
+    rid, _ = await world.sent_report("abuse@example.net", message_id=OUR_ID)
+    real = store_module.store_reply
+
+    async def flaky(session: AsyncSession, rules: Any, parsed: Any, **kw: Any) -> Any:
+        if kw.get("uid") == 1:
+            raise IntegrityError("INSERT", {}, Exception("check constraint"))
+        return await real(session, rules, parsed, **kw)
+
+    monkeypatch.setattr("ingest.replies.worker.store_reply", flaky)
+    box = FakeMailbox({1: mail(message_id="<poison@example.net>"), 2: mail()})
+    await poll(world, box)
+    (row,) = await world.replies()
+    assert row.uid == 2 and row.report_id == rid  # the valid reply behind the poison was stored
+    state = await world.state()
+    assert state.last_uid == 2 and state.last_error is None
+    assert state.counters["failed"] == 1
+
+
+async def test_a_database_outage_is_still_fatal_and_keeps_the_position(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    await world.profile()
+    await world.sent_report("abuse@example.net", message_id=OUR_ID)
+
+    async def down(*a: Any, **kw: Any) -> Any:
+        raise OperationalError("INSERT", {}, Exception("connection lost"))
+
+    monkeypatch.setattr("ingest.replies.worker.store_reply", down)
+    await poll(world, FakeMailbox({1: mail()}))
+    state = await world.state()
+    assert state.last_uid == 0 and state.last_error == "internal"  # retried next poll
+
+
+async def test_an_overlong_sender_domain_is_harmless(world: World) -> None:
+    await world.profile()
+    rid, _ = await world.sent_report("abuse@example.net", message_id=OUR_ID)
+    long_domain = ".".join(["a" * 60] * 5) + ".example.net"
+    poison = mail(from_=f"postmaster@{long_domain}", message_id="<poison@example.net>")
+    await poll(world, FakeMailbox({1: poison, 2: mail()}))
+    replies = await world.replies()
+    assert [r.uid for r in replies if r.report_id == rid] == [2]
+    state = await world.state()
+    assert state.last_uid == 2 and state.last_error is None
+
+
+async def test_many_parts_with_long_non_ascii_types_are_stored(world: World) -> None:
+    await world.profile()
+    _, _ = await world.sent_report("abuse@example.net", message_id=OUR_ID)
+    parts = [("text/plain; charset=utf-8", "", b"The server was suspended.")]
+    parts += [(f"application/{'\u00e9' * 90}{i}", "", b"x") for i in range(12)]
+    raw = mails.multipart(parts)
+    await poll(world, FakeMailbox({1: raw, 2: mail(message_id="<next@example.net>")}))
+    stored = await world.replies()
+    assert {r.uid for r in stored} == {1, 2}
+    assert all(len(str(r.attachments)) <= 2048 for r in stored)
+
+
+async def test_quoting_our_message_id_from_a_stranger_verifies_nothing(world: World) -> None:
+    await world.profile()
+    rid, _ = await world.sent_report("abuse@example.net", message_id=OUR_ID)
+    forged = mail(
+        from_="Anyone <someone@evil.example.org>",
+        body="The account was terminated.\r\n",
+        message_id="<forged@evil.example.org>",
+    )
+    await poll(world, FakeMailbox({1: forged}))
+    (row,) = await world.replies()
+    assert row.report_id == rid and row.match_method == "message_id" and row.verified is False
+    await outcome.ensure_rows(world.factory)
+    await outcome.recompute(world.factory)
+    out = await world.outcome(rid)
+    assert out.auto_outcome == "none" and out.needs_review and out.resolved_at is None
+
+
+async def test_a_forged_authentication_results_header_does_not_verify(world: World) -> None:
+    await world.profile(trusted="mx.example.org")
+    _, token = await world.sent_report("abuse@example.net")
+    forged = mail(
+        from_="Anyone <someone@example.net>",
+        in_reply_to=None,
+        subject=f"Re: report (ref {token})",
+        extra={"Authentication-Results": "attacker; dmarc=pass header.from=example.net"},
+    )
+    await poll(world, FakeMailbox({1: forged}))
+    (row,) = await world.replies()
+    assert row.auth == "none" and row.verified is False
+
+
+async def test_no_trusted_authserv_id_means_no_mail_is_authenticated(world: World) -> None:
+    await world.profile()  # nothing trusted
+    _, token = await world.sent_report("abuse@example.net")
+    good = mail(
+        in_reply_to=None,
+        subject=f"Re: report (ref {token})",
+        extra={"Authentication-Results": "mx.example.org; dmarc=pass header.from=example.net"},
+    )
+    await poll(world, FakeMailbox({1: good}))
+    (row,) = await world.replies()
+    assert row.auth == "none" and row.verified is False
+
+
+async def test_a_bounce_verifies_with_authentication_or_from_a_domain_we_wrote_to(
+    world: World,
+) -> None:
+    await world.profile(trusted="mx.example.org")
+    _, _ = await world.sent_report("abuse@example.net", message_id=OUR_ID)
+    authed = mails.dsn(
+        extra={"Authentication-Results": "mx.example.org; dmarc=pass header.from=example.org"}
+    )
+    await poll(world, FakeMailbox({1: authed}))
+    (row,) = await world.replies()
+    assert row.classification == "bounce" and row.auth == "pass" and row.verified
+
+
+async def test_subdomains_do_not_inherit_trust(world: World) -> None:
+    await world.profile(trusted="mx.example.org")
+    rid, token = await world.sent_report("abuse@zendesk.example.net")
+    mailbox = mail(
+        from_="Desk <acme@acme.zendesk.example.net>",
+        in_reply_to=None,
+        subject=f"Re: report (ref {token})",
+        extra={
+            "Authentication-Results": "mx.example.org; dmarc=pass header.from=acme.zendesk.example.net"
+        },
+    )
+    await poll(world, FakeMailbox({1: mailbox}))
+    (row,) = await world.replies()
+    assert row.report_id == rid and row.auth == "pass" and row.verified is False
+
+
+async def test_a_listed_reply_domain_is_trusted_exactly(world: World) -> None:
+    await world.profile(trusted="mx.example.org")
+    _, token = await world.sent_report(
+        "abuse@zendesk.example.net", reply_domains=["acme.zendesk.example.net"]
+    )
+    mailbox = mail(
+        from_="Desk <acme@acme.zendesk.example.net>",
+        in_reply_to=None,
+        subject=f"Re: report (ref {token})",
+        extra={
+            "Authentication-Results": "mx.example.org; dmarc=pass header.from=acme.zendesk.example.net"
+        },
+    )
+    await poll(world, FakeMailbox({1: mailbox}))
+    (row,) = await world.replies()
+    assert row.verified is True
+
+
+async def test_a_free_mail_recipient_makes_no_domain_relevant(world: World) -> None:
+    await world.profile()
+    await world.sent_report("abuse-desk@gmail.com")
+    stranger = mail(from_="Someone <random.person@gmail.com>", in_reply_to=None, subject="Hi")
+    box = FakeMailbox({1: stranger})
+    await poll(world, box)
+    assert await world.replies() == []
+    assert "fetch_partial" not in box.log  # the body was not even fetched
+    state = await world.state()
+    assert state.counters["ignored"] == 1 and state.counters["relevant"] == 0
+
+
+async def test_a_free_mail_recipient_is_trusted_by_exact_address_only(world: World) -> None:
+    await world.profile(trusted="mx.example.org")
+    rid, token = await world.sent_report("abuse-desk@gmail.com")
+    auth = "mx.example.org; dmarc=pass header.from=gmail.com"
+    other = mail(
+        from_="Someone <random.person@gmail.com>",
+        in_reply_to=None,
+        subject=f"Re: report (ref {token})",
+        extra={"Authentication-Results": auth},
+        message_id="<other@gmail.com>",
+    )
+    exact = mail(
+        from_="Desk <abuse-desk@gmail.com>",
+        in_reply_to=None,
+        subject=f"Re: report (ref {token})",
+        extra={"Authentication-Results": auth},
+        message_id="<exact@gmail.com>",
+    )
+    await poll(world, FakeMailbox({1: other, 2: exact}))
+    by_uid = {r.uid: r for r in await world.replies()}
+    assert by_uid[1].report_id == rid and by_uid[1].verified is False
+    assert by_uid[2].report_id == rid and by_uid[2].verified is True
+
+
+async def test_a_reply_that_changed_is_recomputed_even_behind_500_older_reports(
+    world: World,
+) -> None:
+    """Candidates are the reports whose replies changed, least recently computed first."""
+    await world.profile()
+    rid, token = await world.sent_report("abuse@example.net")
+    await outcome.ensure_rows(world.factory)
+    await outcome.recompute(world.factory)
+    assert (await world.outcome(rid)).reply_count == 0
+    mailbox = mail(in_reply_to=None, subject=f"Re: report (ref {token})", body="Done, suspended.")
+    await poll(world, FakeMailbox({1: mailbox}))
+    assert (await world.outcome(rid)).reply_count == 1
+    # Nothing changed since: the next cycle has no candidate left.
+    assert await outcome.recompute(world.factory) == 0
+    async with world.owner.connect() as conn:
+        left = await conn.scalar(
+            text(
+                "SELECT count(*) FROM abuse_report_outcomes o WHERE EXISTS (SELECT 1 FROM "
+                "abuse_replies p WHERE p.report_id = o.report_id AND p.processed_at > "
+                "o.auto_updated_at)"
+            )
+        )
+    assert left == 0
+
+
+async def test_one_failing_pasted_reply_does_not_block_the_next(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ingest.replies import parse as parse_module
+
+    _, token = await world.sent_report("abuse@example.net")
+    good = mail(in_reply_to=None, subject=f"Re: report (ref {token})", body="Suspended.\r\n")
+    async with world.api.begin() as conn:
+        for raw in (b"first", good):
+            await conn.execute(
+                text("INSERT INTO abuse_reply_imports (raw, requested_by) VALUES (:r, 'admin')"),
+                {"r": raw},
+            )
+    real = parse_module.parse_message
+    calls = {"n": 0}
+
+    def boom(raw: bytes, **kw: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("parser bug")
+        return real(raw, **kw)
+
+    monkeypatch.setattr("ingest.replies.worker.parse_message", boom)
+    await poll(world, FakeMailbox({}))
+    async with world.owner.connect() as conn:
+        status = [
+            r[0]
+            for r in await conn.execute(text("SELECT status FROM abuse_reply_imports ORDER BY id"))
+        ]
+    assert status == ["failed", "done"]

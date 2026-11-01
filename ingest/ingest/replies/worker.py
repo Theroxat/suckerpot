@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DataError, IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_db.locks import ABUSE_IMAP_PROFILE
 from suckerpot_db.secretbox import SecretBox, SecretError
@@ -48,9 +48,12 @@ log = logging.getLogger(__name__)
 PASSWORD_AAD = "report_imap"  # noqa: S105 - a label, not a secret; bound to the ciphertext
 MAX_IMPORTS = 10
 MAX_REQUESTS = 5
-COUNTER_KEYS = ("fetched", "relevant", "matched", "ignored", "oversize")
-# A broken connection: nothing more can be done in this poll.
+COUNTER_KEYS = ("fetched", "relevant", "matched", "ignored", "oversize", "failed")
+# A broken connection or database: nothing more can be done in this poll. A mail that cannot be
+# stored (its own data is the problem) is counted as failed and skipped, never fatal: it must not
+# stop the replies behind it.
 FATAL = frozenset({"timeout", "network", "egress_closed", "tls_failed", "auth_failed", "internal"})
+BAD_DATA = (DataError, IntegrityError)
 
 MailboxFactory = Callable[[ImapProfile, EgressGate, float], Mailbox]
 T = TypeVar("T")
@@ -121,7 +124,8 @@ class ReplyWorker(FeatureWorker):
             await session.execute(
                 text(
                     "SELECT enabled, host, port, security, username, password_ciphertext, "
-                    "password_nonce, folder, processed_action, move_folder, poll_minutes, since "
+                    "password_nonce, folder, processed_action, move_folder, poll_minutes, since, "
+                    "trusted_authserv_id "
                     "FROM report_imap WHERE id = 1"
                 )
             )
@@ -146,6 +150,7 @@ class ReplyWorker(FeatureWorker):
             since=row.since,
             enabled=row.enabled,
             password=password,
+            trusted_authserv_id=row.trusted_authserv_id,
         )
 
     async def load_state(self) -> State:
@@ -248,15 +253,19 @@ class ReplyWorker(FeatureWorker):
                 )
             ).all()
             recent = await recent_reports(session, self.cfg.match_days)
-        for row in rows:
-            parsed = await asyncio.to_thread(
-                parse_message,
-                bytes(row.raw),
-                max_bytes=self.cfg.max_bytes,
-                excerpt_chars=self.cfg.excerpt_chars,
+            trusted_id = await session.scalar(
+                text("SELECT trusted_authserv_id FROM report_imap WHERE id = 1")
             )
+        for row in rows:
             status, code, reply_id = "done", None, None
             try:
+                parsed = await asyncio.to_thread(
+                    parse_message,
+                    bytes(row.raw),
+                    max_bytes=self.cfg.max_bytes,
+                    excerpt_chars=self.cfg.excerpt_chars,
+                    trusted_authserv_id=trusted_id,
+                )
                 async with self.factory() as session, session.begin():
                     stored = await store_reply(
                         session,
@@ -272,10 +281,13 @@ class ReplyWorker(FeatureWorker):
                         status, code = "failed", stored.status
                     reply_id = stored.reply_id
                     await self._finish_import(session, row.id, status, code, reply_id, now)
-            except SQLAlchemyError as exc:
+            except Exception as exc:  # one bad paste never blocks the ones behind it
                 log.warning("pasted reply %s failed (%s)", row.id, type(exc).__name__)
-                async with self.factory() as session, session.begin():
-                    await self._finish_import(session, row.id, "failed", "internal", None, now)
+                try:
+                    async with self.factory() as session, session.begin():
+                        await self._finish_import(session, row.id, "failed", "internal", None, now)
+                except Exception as inner:  # the database itself is gone: try again next cycle
+                    log.warning("pasted reply %s not closed (%s)", row.id, type(inner).__name__)
         return len(rows)
 
     @staticmethod
@@ -432,9 +444,16 @@ class ReplyWorker(FeatureWorker):
                 async with self.factory() as session:
                     recent = await recent_reports(session, cfg.match_days)
                 for item in items:
-                    code, moved = await self._one(
-                        mailbox, profile, item, validity, recent, counters, now
-                    )
+                    try:
+                        code, moved = await self._one(
+                            mailbox, profile, item, validity, recent, counters, now
+                        )
+                    except (MailboxError, SQLAlchemyError, asyncio.CancelledError):
+                        raise
+                    except Exception as exc:  # a bug on one mail must not stall the others
+                        log.warning("reply skipped (%s)", type(exc).__name__)
+                        counters["failed"] = int(counters.get("failed", 0)) + 1
+                        code, moved = None, None
                     if moved is not None:
                         move_supported = moved
                     if code is not None:
@@ -504,7 +523,11 @@ class ReplyWorker(FeatureWorker):
         want = min(item.size or cfg.max_bytes, cfg.max_bytes)
         raw = await asyncio.to_thread(mailbox.fetch_partial, item.uid, want)
         parsed = await asyncio.to_thread(
-            parse_message, raw, max_bytes=cfg.max_bytes, excerpt_chars=cfg.excerpt_chars
+            parse_message,
+            raw,
+            max_bytes=cfg.max_bytes,
+            excerpt_chars=cfg.excerpt_chars,
+            trusted_authserv_id=profile.trusted_authserv_id,
         )
         parsed = replace(
             parsed, size_bytes=item.size or len(raw), truncated=item.size > cfg.max_bytes
@@ -521,6 +544,12 @@ class ReplyWorker(FeatureWorker):
                     uidvalidity=validity,
                     uid=item.uid,
                 )
+        except BAD_DATA as exc:
+            # This mail's own data broke a constraint (the transaction rolled back): count it and
+            # let the poll move past it. Anything else (connection, lock) stays fatal.
+            log.warning("reply could not be stored (%s)", type(exc).__name__)
+            count("failed")
+            return None, None
         except SQLAlchemyError as exc:
             log.warning("reply could not be stored (%s)", type(exc).__name__)
             return "internal", None

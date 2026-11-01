@@ -24,8 +24,10 @@ import email.parser
 import email.policy
 import email.utils
 import hashlib
+import json
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.message import Message
@@ -43,6 +45,11 @@ MAX_ID_LEN: Final = 255
 BODY_FOR_RULES: Final = 8192
 DEFAULT_EXCERPT_CHARS: Final = 2000
 MAX_TYPES: Final = 10
+MAX_TYPE_LEN: Final = 64
+MAX_ATTACHMENTS_JSON: Final = 2048  # the column's CHECK
+MAX_ADDRESS: Final = 254
+MAX_DOMAIN: Final = 253
+MAX_EXCERPT: Final = 2000
 
 _CHARSETS: Final = (
     ["utf-8", "us-ascii", "ascii", "latin-1", "koi8-r", "gb2312", "gbk", "gb18030", "big5"]
@@ -63,6 +70,9 @@ def _canonical(name: str) -> str | None:
 ALLOWED_CHARSETS: Final = frozenset(c for c in map(_canonical, _CHARSETS) if c)
 
 _MAILBOX: Final = re.compile(r"^[A-Za-z0-9._%+\-]{1,64}@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+$")
+_MIME_TYPE: Final = re.compile(
+    r"^[a-z0-9][a-z0-9!#$&^_.+\-]{0,62}/[a-z0-9][a-z0-9!#$&^_.+\-]{0,62}$"
+)
 _ID: Final = re.compile(rf"<([^<>\s]{{1,{MAX_ID_LEN}}})>")
 _STATUS: Final = re.compile(r"^[245]\.\d{1,3}\.\d{1,3}$")
 _BLANKS: Final = re.compile(r"\n{3,}")
@@ -209,37 +219,87 @@ def _from(msg: Message) -> tuple[str | None, str | None, str | None]:
         return None, None, None
     local, _, domain = address.rpartition("@")
     domain = domain.lower()
+    if len(address) > MAX_ADDRESS or len(domain) > MAX_DOMAIN:
+        return None, None, None  # longer than the columns: unknown sender, never a poison pill
     return f"{local}@{domain}", domain, local.lower()
 
 
-def _strip_comments(value: str) -> str:
+def _split(value: str, separators: str) -> list[str]:
+    """Split on ``separators`` outside quoted strings and ``(comments)``; comments are dropped
+    and quotes kept. A separator inside quotes or a comment never ends a segment."""
     out: list[str] = []
+    cur: list[str] = []
     depth = 0
+    quoted = False
+    escaped = False
     for ch in value:
-        if ch == "(":
-            depth += 1
-        elif ch == ")" and depth:
-            depth -= 1
-        elif not depth:
-            out.append(ch)
-    return "".join(out)
+        if quoted:
+            cur.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                quoted = False
+        elif depth:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+        elif ch == "(":
+            depth = 1
+        elif ch == '"':
+            quoted = True
+            cur.append(ch)
+        elif ch in separators:
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    out.append("".join(cur))
+    return out
+
+
+def _unquote(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        return value[1:-1].replace('\\"', '"')
+    return value
 
 
 def _aligned(domain: str | None, from_domain: str) -> bool:
     if not domain:
         return False
-    d = domain.strip().lower().strip(".")
+    d = _unquote(domain).strip().lower().strip(".")
     return d == from_domain or from_domain.endswith("." + d) or d.endswith("." + from_domain)
 
 
-def authentication(value: str | None, from_domain: str | None) -> str:
-    """``pass`` when the topmost Authentication-Results says DMARC or DKIM passed for a domain
-    aligned with From, ``fail`` on ``dmarc=fail``, else ``none``."""
-    if not value or not from_domain:
+def _authserv_id(header: str) -> str:
+    """The authserv-id: the first token before the first ``;`` (RFC 8601), lower case."""
+    first = _split(header, ";")[0].split()
+    return _unquote(first[0]).lower() if first else ""
+
+
+def authentication(
+    values: Sequence[str] | str | None, from_domain: str | None, trusted_authserv_id: str | None
+) -> str:
+    """``pass`` when Authentication-Results says DMARC or DKIM passed for a domain aligned with
+    From, ``fail`` on ``dmarc=fail``, else ``none``.
+
+    Anyone can write that header. Only the first one (the topmost is the one our own mailbox
+    provider added last) whose authserv-id is the owner's trusted id is read, and without a
+    trusted id the answer is always ``none``."""
+    trusted = (trusted_authserv_id or "").strip().lower()
+    if isinstance(values, str):
+        values = [values]
+    if not values or not from_domain or not trusted:
+        return "none"
+    header = next((v for v in values if _authserv_id(v[:MAX_HEADER_VALUE]) == trusted), None)
+    if header is None:
         return "none"
     verdict = "none"
-    for clause in _strip_comments(value[:MAX_HEADER_VALUE]).split(";")[1:]:
-        tokens = clause.split()
+    for clause in _split(header[:MAX_HEADER_VALUE], ";")[1:]:
+        tokens = [t for t in _split(clause, " \t\r\n") if t]
         if not tokens or "=" not in tokens[0]:
             continue
         method, _, result = tokens[0].partition("=")
@@ -480,12 +540,29 @@ def _walk(msg: Message) -> _Walk:
             body = part.get_payload()
             walk.attach_bytes += len(body) if isinstance(body, str) else 0
             if ctype not in walk.attach_types and len(walk.attach_types) < MAX_TYPES:
-                walk.attach_types.append(ctype[:100])
+                walk.attach_types.append(ctype if _MIME_TYPE.match(ctype) else "other")
     return walk
 
 
+def _attachments(walk: _Walk) -> dict[str, Any]:
+    """Counts and bounded ASCII types; the JSON never exceeds the column's 2048 bytes."""
+    types = [t[:MAX_TYPE_LEN] for t in walk.attach_types if t.isascii()]
+    out: dict[str, Any] = {
+        "count": walk.attach_count,
+        "types": types,
+        "bytes": walk.attach_bytes,
+    }
+    while len(json.dumps(out)) > MAX_ATTACHMENTS_JSON and types:
+        types.pop()
+    return out
+
+
 def parse_message(
-    raw: bytes, *, max_bytes: int = 262_144, excerpt_chars: int = DEFAULT_EXCERPT_CHARS
+    raw: bytes,
+    *,
+    max_bytes: int = 262_144,
+    excerpt_chars: int = DEFAULT_EXCERPT_CHARS,
+    trusted_authserv_id: str | None = None,
 ) -> ParsedReply:
     """Parse one mail. Never raises: on any failure the headers (if readable) are still used."""
     size = len(raw)
@@ -508,7 +585,11 @@ def parse_message(
         "message_id_sha256": message_id_hash(_header(head, "Message-ID")),
         "reference_ids": _ids(in_reply, _header(head, "References")),
         "has_in_reply_to": bool(in_reply and in_reply.strip()),
-        "auth": authentication(_header(head, "Authentication-Results"), domain),
+        "auth": authentication(
+            [_header_text(v) for v in head.get_all("Authentication-Results", [])[:10]],
+            domain,
+            trusted_authserv_id,
+        ),
         "auto_submitted": (_header(head, "Auto-Submitted") or "").strip().lower() or None,
         "precedence": (_header(head, "Precedence") or "").strip().lower() or None,
         "x_autoreply": _present(head, "X-Autoreply"),
@@ -537,12 +618,8 @@ def parse_message(
         dsn_message_id=walk.original_id,
         dsn_subject=walk.original_subject,
         body=body,
-        excerpt=make_excerpt(text, excerpt_chars),
-        attachments={
-            "count": walk.attach_count,
-            "types": walk.attach_types,
-            "bytes": walk.attach_bytes,
-        },
+        excerpt=make_excerpt(text, min(excerpt_chars, MAX_EXCERPT)),
+        attachments=_attachments(walk),
     )
 
 
