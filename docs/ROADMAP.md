@@ -297,6 +297,60 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 **Acceptance:** with SMTP off nothing is ever sent; with SMTP on, a report is sent through the tunnel only after the guard passes, and the owner can cancel an automatic send during the hold time.
 
+```markdown
+## M26 — Report outcomes: did anyone answer?
+
+- [ ] A random reply token (`ref` plus 12 hex characters) in the subject of every report, stored per report and independent of every internal id, with the SMTP Message-ID kept for matching. The identity guard and its tests cover the token: never in exports, never derived from an internal id.
+- [ ] Optional mailbox in Settings > Reporting > Replies (IMAPS or STARTTLS, DNS host name only, password encrypted, re-authentication, admin only), off by default, with "Test connection" and "Check now".
+- [ ] Ingest replies worker (`ABUSE_REPLIES_ENABLED`, off by default) that reads the mailbox through the VPN tunnel only. Headers come first, unrelated mail is never stored or flagged, size caps apply, attachments are never decoded, HTML is never rendered, and mail is only marked read or moved, never deleted or answered.
+- [ ] Declarative reply rules in `ingest/rules/replies/` (auto-acknowledgement, ticket opened with ticket id, resolved, rejected, bounce, human reply, unknown) with generic defaults.
+- [ ] Matching by our Message-ID, then the token, the bounce's original headers, the ticket id and the sender domain. Only verified replies (our Message-ID, or authenticated from the provider's domain) change an outcome by themselves.
+- [ ] Paste a reply or upload an `.eml` by hand, set an outcome by hand, and confirm or link replies. Excerpts (2,000 characters at most) are kept 180 days.
+- [ ] Results page (Abuse reports hub): reports sent per kind, provider, ASN and country over time, answers by kind, response delays, each card opening with a plain-English finding.
+- [ ] Security review (hostile mail, egress, token) and UI review.
+
+**Acceptance:** with no mailbox nothing connects and the owner can still paste replies and set outcomes; with a mailbox, a provider's reply is matched to its report through the tunnel only, classified, and shown with its delay; unrelated mail is never stored; no mail is ever deleted or answered; security review PASS.
+
+## M27 — Takedown tracking and abuse.ch submission
+
+- [ ] Takedown targets from sent reports (attacking addresses, payload hosts and their malware URLs, C2 servers) and from abuse.ch submissions, each tracked for 30 days (`TAKEDOWN_ENABLED`, off by default).
+- [ ] Collector re-checks: one bounded GET through the VPN to a URL that already served malware, on a 0 h, 1 h, 6 h, 24 h, 48 h, then daily schedule, with the M21 URL validator on every hop and a daily quota. Nothing is stored unless the file changed. C2 servers and attacking addresses are never contacted.
+- [ ] Passive signals within quotas: URLhaus and ThreatFox listing status, AbuseIPDB (read only), whether our own sensors still see an attacking address, whether new samples still point to a C2.
+- [ ] States up, down, changed and unknown; down confirmed by two checks; time to takedown with its bounds; resurrections; monthly roll-up kept forever.
+- [ ] Optional abuse.ch submission behind `ABUSECH_SUBMIT_ENABLED` and an explicit owner switch (off, review each, automatic after a hold with a daily cap). Captured malware URLs go to URLhaus (optional C2 `ip:port` to ThreatFox) with an encrypted Auth-Key. A lookup comes first to skip known entries, the identity guard checks every body, delivery is at most once, and submissions show their status and form the audit log.
+- [ ] Results page: a finding sentence before each chart ("12 of 31 reported malware URLs went down within 48 h"), a time-to-takedown curve, a per-provider table (median time to takedown, % taken down, % answered), and a timeline per target; a Submissions tab.
+- [ ] CLAUDE.md §5 amended (owner approval) to allow takedown re-checks of URLs that served malware; security review and UI review.
+
+**Acceptance:** with the flags off nothing is checked or submitted; with tracking on, a reported malware URL that goes offline is shown as down with its time to takedown, an unchanged file is never stored again, and no request ever reaches a C2 or an attacking address; with submission on, a URL is sent to URLhaus only after the guard passes and only if URLhaus did not know it; security review PASS.
+
+## M28 — Installable by anyone
+
+- [ ] `scripts/install.sh`: checks Docker and Compose, RAM, disk and ports, asks a few questions, generates every secret and the admin password hash, writes `.env` (mode 0600) with `COMPOSE_PROJECT_NAME` and `SUCKERPOT_VOLUME_PREFIX`, creates the volumes, starts the stack and prints the URL and next steps. It never overwrites an `.env`, never adopts existing volumes and never looks up the public address.
+- [ ] Sensor choice: each sensor can be switched off (`SENSOR_<NAME>=0`, default on, so existing installs keep every sensor); `just sensors` and `just set` change `.env` from the host, and the port guard and the setup checklist follow the selection.
+- [ ] First-run setup in the dashboard (migration `0025`): welcome, sensors, ports, VPN upload, own address, reporting, alerts, then the M24 checklist and tour; can be skipped and reopened.
+- [ ] A "Sensors & ports" page listing what to open on the router, the port on this machine, and whether each sensor already receives traffic.
+- [ ] `just update` (backup, code, `.env` migration, pull or build, migrate, health check, rollback hint) and `just rollback` (restores the pre-update dump after confirmation).
+- [ ] Low-memory overlay (`docker-compose.lowmem.yml`) for 2 GiB machines, checked by the guardrails.
+- [ ] Version shown in the dashboard; a daily update check through the VPN only (no version or identifier sent, can be switched off).
+- [ ] Signed multi-arch images (amd64, arm64) on GHCR from a release workflow, with an install smoke test; build from source stays supported.
+- [ ] VPN idle mode, so the egress profile can start before a WireGuard file is uploaded.
+- [ ] Install guide, configuration and deployment updates; security review and UI review.
+
+**Acceptance:** on a fresh Linux VM with Docker, `scripts/install.sh` brings a healthy stack from published images on amd64 and arm64 in one command, and the dashboard walks the owner through the rest; `just update` from the previous release keeps the data and a failed update prints a working rollback; the update check never leaves outside the tunnel and never sends the running version; guardrails and security review PASS.
+
+## M29 — The Selfhostr network (opt-in, anonymous)
+
+- [ ] Protocol `spn/1` (JSON over HTTPS, Ed25519-signed requests and responses, nonce and timestamp replay protection, proof of work at enrolment) in a shared `netproto/` package and `docs/network-protocol.md`, with golden test vectors.
+- [ ] Hub service in `hub/` (own Dockerfile, compose file and migrations, deployed separately): enrol, signed daily observation batches, targets and network summary, reveals, takedown re-checks, leave and delete. No client address stored or logged, no analytics, 14-day observation retention, size caps and rate limits.
+- [ ] Consensus and anti-poisoning: at least 5 eligible nodes (14 days old, active, with reputation), 2 distinct days, a cap per enrolment cohort, external corroboration or twice the nodes, a never-list, and reputation that drops on disputes.
+- [ ] Grouped abuse reports sent by the hub from the project mailbox, deduplicated per recipient and target, under daily caps, reviewed by the hub operator in the first release; members' own M22 reports skip targets the network has reported.
+- [ ] Node worker in ingest (off by default, `NETWORK_ENABLED` plus an admin opt-in with re-authentication): VPN egress gate only, allow-listed aggregates (day buckets, count buckets, services and tags; URLs and domains blinded until consensus), the identity guard on every item and batch, a random delay after each day, never raw events or credentials. Migration `0026`.
+- [ ] Leaving is one click: the hub deletes the node and its data, the node deletes its key and every network row.
+- [ ] Network pages: overview (totals, weekly takedowns, k-anonymous country map, what the node helped confirm), members (pseudonyms, country only when 3 or more share it, coarse weekly activity), Settings > Network, the setup step, and figures for the M27 Impact page.
+- [ ] Threat model, user guide and hub operator guide; security review and UI review.
+
+**Acceptance:** with `NETWORK_ENABLED=false` or no opt-in nothing is ever sent; seven test nodes against a local hub confirm a target only when the consensus rules hold, and a Sybil set of new or same-week nodes never does; planted self addresses in sensor data never reach a batch; a node that leaves has no row left at the hub; the public and member views carry no per-node observation; security review PASS.
+
 ## Later (not part of the loop)
 
 - Per-/24 or per-ASN daily cap on new campaigns, so one network cannot create many campaigns in a day.
