@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -82,7 +83,7 @@ class AlertWorker(FeatureWorker):
         self.box = box
         self.alert_settings = alert_settings or AlertSettings()
         self.sender = sender or Sender(self.alert_settings, smtp_password=smtp_password)
-        self._last_eval = 0.0
+        self._last_eval = -math.inf  # due at once, whatever the host uptime
         self.sent_cycle = 0
 
     @property

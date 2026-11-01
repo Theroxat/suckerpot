@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
@@ -58,8 +59,8 @@ class AbuseWorker(FeatureWorker):
         self.bootstrap: Bootstrap = load_snapshot()
         self.bootstrap_at: datetime | None = None
         self.last_stats: CycleStats | None = None
-        self._last_build = 0.0
-        self._last_learn = 0.0
+        self._last_build = -math.inf  # due at once, whatever the host uptime
+        self._last_learn = -math.inf
         self.terms: TermsCache | None = None
         self.rdap: RdapClient | None = None
         self.builder: DraftBuilder | None = None
