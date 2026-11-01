@@ -530,7 +530,13 @@ function TrustedExitsCard({
 
 /* --- Upload --------------------------------------------------------------- */
 
-function UploadCard({ onUploaded, disabled }: { onUploaded: () => void; disabled: boolean }) {
+export function UploadCard({
+  onUploaded,
+  disabled,
+}: {
+  onUploaded: () => void
+  disabled: boolean
+}) {
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   // The file text lives here only until it is sent (or removed), and is dropped right after.

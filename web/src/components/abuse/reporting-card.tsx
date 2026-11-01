@@ -281,7 +281,7 @@ function SettingsForm({
 }
 
 /** Text the reports must never contain: learned from traffic, or added by hand. */
-function NeverInReport() {
+export function NeverInReport() {
   const qc = useQueryClient()
   const [reveal, setReveal] = useState(false)
   const [kind, setKind] = useState<SelfTerm["kind"]>("address")
