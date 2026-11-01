@@ -41,7 +41,9 @@ def upgrade() -> None:
         CREATE FUNCTION egress_check_requests_trim() RETURNS trigger
         LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
         BEGIN
-            DELETE FROM egress_check_requests WHERE id <= NEW.id - {KEEP_ROWS};
+            -- By rank, not id arithmetic: a forced huge id cannot prune the others.
+            DELETE FROM egress_check_requests WHERE id IN (
+                SELECT id FROM egress_check_requests ORDER BY id DESC OFFSET {KEEP_ROWS});
             RETURN NULL;
         END
         $$

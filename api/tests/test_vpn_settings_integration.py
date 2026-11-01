@@ -626,3 +626,21 @@ async def test_reconnect_without_a_writable_volume(
     monkeypatch.setenv("VPN_CONFIG_DIR", str(tmp_path / "missing"))
     r = await admin.post(f"{BASE}/reconnect", json={"password": PASSWORD})
     assert r.status_code == 503 and r.json()["code"] == "vpn_config_unavailable"
+
+
+async def test_reconnect_waits_for_the_advisory_lock(
+    admin: httpx.AsyncClient, vpn_dir: Path
+) -> None:
+    import asyncio
+
+    from api.vpn_settings import RECONNECT_LOCK_KEY
+
+    async with owner_engine() as owner, owner.connect() as conn:
+        await conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": RECONNECT_LOCK_KEY})
+        task = asyncio.create_task(admin.post(f"{BASE}/reconnect", json={"password": PASSWORD}))
+        await asyncio.sleep(0.5)
+        assert not task.done()  # serialised behind the lock
+        assert not (vpn_dir / "restart").exists()
+        await conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": RECONNECT_LOCK_KEY})
+        r = await asyncio.wait_for(task, 5)
+    assert r.status_code == 202
