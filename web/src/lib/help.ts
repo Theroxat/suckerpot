@@ -143,6 +143,14 @@ export const HELP = {
     title: "VPN",
     body: "Where outbound traffic leaves. Only the vpn service has a route to the internet, and the gate pauses every lookup when the tunnel or its exit looks wrong. You can check now, reconnect, upload a new WireGuard file and trust a new exit.",
   },
+  setup: {
+    title: "Setup",
+    body: "The first-run setup: which sensors to run, which router ports to open, the VPN, your own address, abuse reports and alerts. Every step can be skipped and reopened from Settings. Where a change needs the host, the page shows the command to copy; it never edits your files.",
+  },
+  "settings-ports": {
+    title: "Sensors and ports",
+    body: "Each sensor, the port to open on your router, the port on this machine it is forwarded to, and whether it has received a connection in the last 24 hours. The status is read from the stored events. To switch sensors on or off, copy the command from the setup.",
+  },
   styleguide: {
     title: "Styleguide",
     body: "Every colour token and base component in every state. It is the page the visual review screenshots. Switch the theme to check both.",
