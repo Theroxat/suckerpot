@@ -126,6 +126,7 @@ class FakeHub:
         self.enrolled = False
         self.fail: dict[str, tuple[int, str]] = {}  # "METHOD path" -> (status, error code)
         self.bad_signature = False
+        self.unsigned_errors = False
         self.targets: dict[str, Any] = {"cursor": "c_1", "targets": [], "reveal": [], "recheck": []}
         self.node_key: str | None = None
         self.deleted = False
@@ -133,9 +134,22 @@ class FakeHub:
     def _reply(self, request: httpx.Request, status: int, body: dict[str, Any]) -> httpx.Response:
         raw = json.dumps(body).encode()
         nonce = request.headers.get(sign.H_NONCE, "")
-        sig = sign.sign_response(HUB_SEED, nonce, status, raw)
+        target = request.url.raw_path.decode()
+        if request.headers.get(sign.H_SIGNATURE):
+            binding = sign.RequestBinding.signed(
+                request.method,
+                target,
+                request.headers[sign.H_KEY],
+                nonce,
+                request.headers[sign.H_SIGNATURE],
+            )
+        else:
+            binding = sign.RequestBinding.unsigned(request.method, target, nonce, request.content)
+        sig = sign.sign_response(HUB_SEED, binding, status, raw)
         if self.bad_signature:
-            sig = sign.sign_response(bytes(32), nonce, status, raw)
+            sig = sign.sign_response(bytes(32), binding, status, raw)
+        if self.unsigned_errors and status >= 400:
+            return httpx.Response(status, content=raw)
         return httpx.Response(status, content=raw, headers={sign.H_HUB_SIGNATURE: sig})
 
     def handle(self, request: httpx.Request) -> httpx.Response:

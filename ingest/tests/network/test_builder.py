@@ -196,3 +196,9 @@ async def test_no_credential_or_command_field_exists_in_the_batch() -> None:
     assert res.batch["files"] == [
         {"sha256": SHA, "file_type": "elf-mips"}
     ]  # unknown family dropped
+
+
+async def test_addresses_that_wrap_an_ipv4_address_are_dropped() -> None:
+    wrapped = ["64:ff9b::c633:6417", "2002:c633:6417::1", "2001:0:4136:e378:8000:63bf:3fff:fdd2"]
+    res = await builder(Source(sessions=[session(w) for w in wrapped]), docs=False).build(DAY)
+    assert res.batch is not None and res.batch["sources"] == []
