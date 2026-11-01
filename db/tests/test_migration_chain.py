@@ -76,11 +76,11 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0021() -> None:
+def test_the_chain_is_linear_up_to_0022() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0021"}
+    assert heads == {"0022"}
     for n in range(11, 22):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
 
@@ -247,9 +247,31 @@ def test_m22_column_grants() -> None:
     assert {"status", "notes", "options", "sent_at", "reviewed_by", "closed_at"} <= api
     assert not api & {"evidence", "content_sha256", "guard_ok", "recipient_id", "demo"}
     assert {"evidence", "status", "guard_ok"} <= ingest
-    assert not ingest & {"notes", "reviewed_at", "reviewed_by", "sent_at", "sent_by", "closed_at"}
+    # M25: ingest may stamp a report it sent by SMTP (trigger: pending request required).
+    assert not ingest & {"notes", "closed_at", "closed_by"}
+    assert {"sent_at", "sent_by", "sent_via"} <= ingest
+    assert "sent_via" in api
     for script in (_GRANTS_API, _GRANTS_INGEST):
         assert not re.search(r"GRANT [A-Z, ]*UPDATE[A-Z, ]* ON abuse_reports", script)
+
+
+def test_m25_grants_keep_the_password_away_from_the_api() -> None:
+    api = _grants(_GRANTS_API)
+    assert {"INSERT", "UPDATE", "DELETE"} <= api["report_smtp"]
+    select = re.search(
+        r"GRANT SELECT \(([a-z_, ]+)\)\s*'?\s*'?ON report_smtp", re.sub(r"'\s+'", "", _GRANTS_API)
+    )
+    assert select and "password_set" in select.group(1)
+    assert "password_ciphertext" not in select.group(1) and "password_nonce" not in select.group(1)
+    assert _grants(_GRANTS_INGEST)["report_smtp"] == {"SELECT"}
+    assert "report_smtp" not in _grants(_GRANTS_COLLECTOR)
+    assert _update_columns(_GRANTS_API, "abuse_send_requests") == {"status"}
+    assert _update_columns(_GRANTS_INGEST, "abuse_send_requests") == {
+        "status",
+        "error_code",
+        "done_at",
+    }
+    assert "DELETE" not in _grants(_GRANTS_API)["abuse_send_requests"]
 
 
 def test_trusted_exit_grants() -> None:

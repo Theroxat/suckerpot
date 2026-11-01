@@ -143,7 +143,8 @@ DECLARE
                   'sample_links', 'rdap_bootstrap', 'abuse_networks', 'abuse_lookups',
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
-                  'egress_trusted_exits', 'egress_check_requests']
+                  'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
+                  'abuse_send_requests']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -248,6 +249,20 @@ BEGIN
             pg_get_serial_sequence('public.report_self_terms', 'id'), r);
         -- @TERMS
     END IF;
+    IF to_regclass('public.report_smtp') IS NOT NULL THEN
+        -- M25: ingest is the only role that reads the SMTP password and the only one that sends.
+        -- It marks a report sent only with a matching pending request (transition trigger).
+        EXECUTE format('GRANT SELECT ON report_smtp TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT ON abuse_send_requests TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (status, error_code, done_at) ON abuse_send_requests TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s TO %I',
+            pg_get_serial_sequence('public.abuse_send_requests', 'id'), r);
+        EXECUTE format(
+            'GRANT UPDATE (sent_at, sent_by, sent_via, reviewed_at, reviewed_by, '
+            'reviewed_revision) ON abuse_reports TO %I', r);
+    END IF;
     IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
         -- M23: the gate reads the ranges the owner trusted; only the API changes them.
         EXECUTE format('GRANT SELECT ON egress_trusted_exits TO %I', r);
@@ -305,7 +320,8 @@ DECLARE
                   'sample_links', 'rdap_bootstrap', 'abuse_networks', 'abuse_lookups',
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
-                  'egress_trusted_exits', 'egress_check_requests']
+                  'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
+                  'abuse_send_requests']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -394,6 +410,22 @@ BEGIN
             pg_get_serial_sequence('public.abuse_report_requests', 'id'),
             pg_get_serial_sequence('public.report_self_terms', 'id'), r);
         -- @TERMS
+    END IF;
+    IF to_regclass('public.report_smtp') IS NOT NULL THEN
+        -- M25: the owner edits the profile. The API writes the password columns but can never
+        -- read them back: column grants leave them out of SELECT.
+        EXECUTE format(
+            'GRANT SELECT (id, host, port, security, username, from_address, from_name, mode, '
+            'auto_hold_minutes, daily_cap, password_set, updated_at, updated_by) '
+            'ON report_smtp TO %I', r);
+        EXECUTE format('GRANT INSERT, UPDATE, DELETE ON report_smtp TO %I', r);
+        -- A send request is a row; cancelling updates the status only (trigger: pending only).
+        EXECUTE format('GRANT SELECT, INSERT ON abuse_send_requests TO %I', r);
+        EXECUTE format('GRANT UPDATE (status) ON abuse_send_requests TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s TO %I',
+            pg_get_serial_sequence('public.abuse_send_requests', 'id'), r);
+        EXECUTE format('GRANT UPDATE (sent_via) ON abuse_reports TO %I', r);
     END IF;
     IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
         -- M23: the owner trusts or removes a VPN exit range from the dashboard.

@@ -1,7 +1,8 @@
 """Abuse reports (M22): the owner's review desk. Drafts come from ingest; this module reads them,
 renders them on demand behind the identity guard, and records the owner's decisions.
 
-Nothing here sends mail or contacts anyone. GET routes are open to both roles; every other method
+Nothing here sends mail or contacts anyone (``api.abuse_smtp`` only queues requests that ingest
+answers). GET routes are open to both roles; every other method
 is administrator only by the default-deny rule (``api.authz``), and the two screens that hold the
 owner's private choices (settings, self terms) are administrator only for GET as well. Rendered
 text and downloads run the guard after rendering and before returning; a failure answers 409 with
@@ -34,6 +35,7 @@ from suckerpot_db.models import (
     AbuseReportRequestRow,
     AbuseReportRow,
     AbuseReportSubjectRow,
+    AbuseSendRequestRow,
     AuditLogRow,
     EnrichmentQuotaRow,
     EnrichmentStatusRow,
@@ -69,6 +71,7 @@ from api.abuse_core import (
     self_address_fresh,
     settings_incomplete_response,
 )
+from api.abuse_smtp import SendState, send_state
 from api.auth import Principal, current_principal
 from api.authz import require_admin
 from api.cursor import InvalidCursorError, decode_cursor, encode_cursor
@@ -175,6 +178,7 @@ class OptionsOut(BaseModel):
 
 
 class ReportDetail(ReportItem):
+    send_state: SendState | None = None  # M25: scheduled time and last SMTP request
     subjects: list[SubjectOut]
     redaction: RedactionOut
     options: OptionsOut
@@ -474,6 +478,7 @@ async def _detail(
         custom_intro=not missing_for(bundle.settings),
         missing=list(missing_for(bundle.settings)),
         previously_reported=prev,
+        send_state=await send_state(db, row.id),
         reviewed_at=row.reviewed_at,
         sent_at=row.sent_at,
         closed_at=row.closed_at,
@@ -775,7 +780,7 @@ async def set_status(
         when = body.sent_at or now
         if when > now + timedelta(minutes=5):
             return error(422, "The sent time cannot be in the future.", "sent_in_future")
-        values |= {"sent_at": when.astimezone(UTC), "sent_by": actor}
+        values |= {"sent_at": when.astimezone(UTC), "sent_by": actor, "sent_via": "manual"}
     elif body.to == "closed":
         values |= {"closed_at": now, "closed_by": actor}
     try:
@@ -796,6 +801,13 @@ async def set_status(
     if res.rowcount != 1:  # type: ignore[attr-defined]
         await db.rollback()
         return error(409, "The draft changed while you were reading it.", "revision_mismatch")
+    if body.to == "sent":
+        # Marked sent by hand: a send request still waiting for this report must not go out.
+        await db.execute(
+            update(AbuseSendRequestRow)
+            .where(AbuseSendRequestRow.report_id == row.id, AbuseSendRequestRow.status == "pending")
+            .values(status="cancelled")
+        )
     await audit_db.record(
         db,
         actor=actor,
