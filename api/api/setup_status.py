@@ -1,7 +1,7 @@
 """The setup checklist (M24, ``docs/design/m24.md`` section 3). Admin only, read only.
 
 Every item is computed from real state with the API role: the last event of each sensor, the
-gate rows ingest and the collector publish, the reporting wording, the self addresses, the alert
+gate rows ingest and the collector publish, the reporting settings, the self addresses, the alert
 channels and the provider keys. ``detail`` is a short English sentence (never a value: no key,
 address or mailbox is ever repeated), ``href`` a dashboard path. The host firewall cannot be seen
 from inside the stack, so it is not an item.
@@ -34,13 +34,6 @@ State = Literal["ok", "todo", "warning", "off"]
 SILENT_AFTER = timedelta(hours=24)
 GATE_FRESH = timedelta(minutes=15)  # an "open" verdict older than this is not trusted
 MAX_NAMED = 6
-
-WORDING_LABELS = {
-    "intro": "introduction",
-    "outro": "closing",
-    "note": "note",
-    "subject_template": "subject line",
-}
 
 
 class SetupItem(BaseModel):
@@ -150,12 +143,16 @@ async def _reporting_settings(db: AsyncSession, _now: datetime) -> SetupItem:
     href = "/settings?tab=reporting"
     missing = missing_for((await load_settings(db)).settings)
     if not missing:
-        return _item("reporting_settings", "ok", "The report wording is filled in.", href)
-    labels = [WORDING_LABELS.get(m, m) for m in missing]
+        return _item(
+            "reporting_settings",
+            "ok",
+            "The reply contact is set. The report texts are optional.",
+            href,
+        )
     return _item(
         "reporting_settings",
         "todo",
-        f"Still to write in the report wording: {_names(labels)}.",
+        "Set the reply contact for abuse reports. The report texts are optional.",
         href,
     )
 

@@ -704,7 +704,7 @@ The state of the anonymous egress, for the Settings card.
 
 The API prepares reports and never talks SMTP itself: optional sending (M25) queues a request that ingest delivers through the VPN. Every `GET` is open to both roles, except settings and self terms (administrators only). Every write needs an administrator, the CSRF header and an allowed origin. Lists use cursor pagination (`limit` up to 100).
 
-Every render, download and export runs the identity guard before it returns. A failure answers `409` with `{"detail", "code": "identity_guard_failed", "reasons": [...]}`. Reasons are constant codes, never the matched value (see [Security](SECURITY.md#the-identity-guard)). When a required wording setting is empty the answer is `409` with `code: "settings_incomplete"` and the missing field names.
+Every render, download and export runs the identity guard before it returns. A failure answers `409` with `{"detail", "code": "identity_guard_failed", "reasons": [...]}`. Reasons are constant codes, never the matched value (see [Security](SECURITY.md#the-identity-guard)). When the reply contact is empty the answer is `409` with `code: "settings_incomplete"` and `missing: ["reply_contact"]`. It is the only required setting: the introduction, closing, note, signature, subject template and X-ARF user agent are optional (an empty part is left out; an empty subject template gives `Abuse report for {value}`, an empty user agent gives `Mozilla/5.0`).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -853,7 +853,7 @@ The ready reports, oldest first, one page at a time. This feeds the To send view
 - `id` is the report's public ID, the same value as in the report routes.
 - `last_request` is the newest send request of the report, or `null`. `scheduled_at` is set while an automatic send waits for its hold time.
 - A report that fails the guard when it is read is left out. A page can therefore hold fewer than `limit` items while `next_cursor` is still set. Keep paging until `next_cursor` is `null`.
-- When a wording setting is still empty, `items` is empty and `missing` lists the fields to fill.
+- When the reply contact is still empty, `items` is empty and `missing` lists it.
 - `mode` tells the web app whether the "Send now" button is shown.
 
 ### `POST /api/v1/abuse/reports/{public_id}/send`
@@ -870,7 +870,7 @@ Queues one report for sending. The mode must be `click` or `auto`. The body is o
 | `409` | `demo_report` | Demo reports are never sent |
 | `409` | `report_not_ready` | The report is not a draft or reviewed, it is muted, or it has no mailbox |
 | `409` | `already_queued` | A request for this report is already waiting or sending |
-| `409` | `settings_incomplete` | Wording settings are empty. The answer lists `missing`. |
+| `409` | `settings_incomplete` | The reply contact is empty. The answer lists `missing`. |
 | `409` | `evidence_invalid` | The stored evidence could not be rendered |
 
 ### `POST /api/v1/abuse/reports/{public_id}/send/cancel`
@@ -1013,7 +1013,7 @@ Removes one trusted range. Answers `204`.
 | `sensors` | Every sensor sent an event in the last 24 hours | `warning` names the silent sensors |
 | `vpn` | The ingest egress gate is open | `todo`: the gate has not reported yet. `warning`: the gate is closed, with its reason. |
 | `collector` | Payload fetching is on and its gate is open | `off`: `COLLECTOR_ENABLED` is false. `warning`: on, but its gate is closed. |
-| `reporting_settings` | Every wording field is filled | `todo` names the empty fields |
+| `reporting_settings` | The reply contact is set (the report texts are optional) | `todo` |
 | `self_address` | The honeypot's own address is known | `todo` |
 | `abuse_worker` | `ABUSE_REPORTS_ENABLED` is true | `off` |
 | `alerts` | At least one alert channel is enabled | `off` |

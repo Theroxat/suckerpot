@@ -32,6 +32,7 @@ from suckerpot_reporting import (
     render_text,
     render_xarf,
 )
+from suckerpot_reporting.legacy import legacy_hit
 from tests.conftest import (
     EXPORT_ID,
     OWNER_DOMAIN,
@@ -296,6 +297,23 @@ def test_default_wording_fails_every_format(
 def test_owner_wording_passes(terms: SelfTerms, ctx: GuardContext) -> None:
     msg = render_text(make_evidence(), SETTINGS)
     assert guard_message(msg, terms, ctx=ctx).ok
+
+
+def test_neutral_defaults_do_not_trip_the_legacy_guard(terms: SelfTerms, ctx: GuardContext) -> None:
+    from suckerpot_reporting import ReportSettings
+    from tests.conftest import make_evidence as _ev
+
+    bare = ReportSettings(reply_contact="reports@example.org")
+    for evidence in (_ev(), _ev(demo=True)):
+        msg = render_xarf(evidence, bare)
+        assert msg.subject.endswith("Abuse report for 198.51.100.23")
+        assert not legacy_hit(msg.subject) and not legacy_hit(msg.body)
+        assert "default_wording" not in guard_message(msg, terms, ctx=ctx).codes
+        eml = render_eml(msg)
+        assert "default_wording" not in guard(eml, terms, fmt="eml", ctx=ctx).codes
+    # an owner-written text equal to the old shipped wording is still refused
+    old = bare.model_copy(update={"subject_template": "Abuse report: {value}"})
+    assert "default_wording" in guard_message(render_text(_ev(), old), terms, ctx=ctx).codes
 
 
 def test_guard_mime_decoding(terms: SelfTerms, ctx: GuardContext) -> None:

@@ -5,7 +5,7 @@
  */
 import { delay, http, HttpResponse, type RequestHandler } from "msw"
 import type { QueueItem, SendRequest, SmtpConfig, SmtpForm, SmtpTest } from "@/lib/abuse-send"
-import { find, missingWording, pub, renderBody, rows, type Row } from "./abuse"
+import { find, missingSettings, pub, renderBody, rows, type Row } from "./abuse"
 
 const LATENCY_MS = 140
 const MINUTE = 60_000
@@ -43,7 +43,7 @@ const ready = (r: Row): boolean =>
   r.guard.ok &&
   !r.demo &&
   Boolean(r.recipient.mailbox) &&
-  missingWording().length === 0
+  missingSettings().length === 0
 
 function items(): QueueItem[] {
   return rows.filter(ready).map((r) => {

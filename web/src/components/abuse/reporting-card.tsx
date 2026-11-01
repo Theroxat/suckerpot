@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Eye, EyeOff, Info, Trash2 } from "lucide-react"
+import { Eye, EyeOff, Trash2 } from "lucide-react"
 import { useId, useState } from "react"
 import { useSearchParams } from "react-router"
 import { Field, FormError } from "@/components/form-parts"
@@ -49,19 +49,6 @@ function Toggle({
   )
 }
 
-const WORDING_FIELDS = [
-  "intro",
-  "outro",
-  "signature",
-  "xarf_user_agent",
-  "note",
-  "subject_template",
-] as const
-
-function wordingMissing(s: ReportSettings): boolean {
-  return WORDING_FIELDS.some((k) => !(s[k] ?? "").trim())
-}
-
 function SettingsForm({
   initial,
   onStale,
@@ -85,9 +72,11 @@ function SettingsForm({
   const [s, setS] = useState(initial)
   const [params] = useSearchParams()
   const flagged = new Set((params.get("missing") ?? "").split(",").filter(Boolean))
-  // A field the server named stays flagged until it holds text.
-  const need = (k: (typeof WORDING_FIELDS)[number]): string | undefined =>
-    flagged.has(k) && !(s[k] ?? "").trim() ? "Required: write this in your own words." : undefined
+  // The server names the reply contact when it is the one thing missing; it stays flagged until set.
+  const needContact =
+    flagged.has("reply_contact") && !(s.reply_contact ?? "").trim()
+      ? "Required: reports need a way to be answered."
+      : undefined
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const save = useMutation({
@@ -126,22 +115,12 @@ function SettingsForm({
         save.mutate()
       }}
     >
-      {wordingMissing(initial) ? (
-        <p
-          role="note"
-          className="flex items-start gap-2.5 rounded-md border border-dashed border-border-strong px-3 py-2.5 text-sm text-fg"
-        >
-          <Info aria-hidden className="mt-0.5 size-4 shrink-0 text-fg-muted" />
-          Every wording field starts empty on purpose. Write each one in your own words: any text
-          that ships with the software is public in its source code and would point back to this
-          project. Messages, downloads and exports stay blocked until all of them are filled.
-        </p>
-      ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         <Field
           id={ids.reply}
           label="Reply contact"
-          hint="A mailbox that does not point to you. Leave empty to send no contact; X-ARF needs one."
+          hint="Required. A mailbox that does not point to you, so the recipient can answer."
+          error={needContact}
         >
           <Input
             id={ids.reply}
@@ -156,8 +135,8 @@ function SettingsForm({
         <Field
           id={ids.sig}
           label="Signature"
-          hint="One line at the end of the message. Required."
-          error={need("signature")}
+          optional
+          hint="One line at the end of the message. Leave empty to send only the facts."
         >
           <Input
             id={ids.sig}
@@ -170,8 +149,8 @@ function SettingsForm({
         <Field
           id={ids.intro}
           label="Introduction"
-          hint="Shown after the greeting. Required."
-          error={need("intro")}
+          optional
+          hint="Shown before the facts. Leave empty to send only the facts."
         >
           <Textarea
             id={ids.intro}
@@ -184,8 +163,8 @@ function SettingsForm({
         <Field
           id={ids.outro}
           label="Closing"
-          hint="Shown before the signature. Required."
-          error={need("outro")}
+          optional
+          hint="Shown after the facts. Leave empty to send only the facts."
         >
           <Textarea
             id={ids.outro}
@@ -198,9 +177,8 @@ function SettingsForm({
         <Field
           id={ids.ua}
           label="X-ARF user agent"
-          hint="Sent in X-ARF reports. Required, and never the project name."
-
-          error={need("xarf_user_agent")}
+          optional
+          hint="Sent in X-ARF reports. Leave empty to use a generic value (Mozilla/5.0)."
         >
           <Input
             id={ids.ua}
@@ -214,9 +192,8 @@ function SettingsForm({
         <Field
           id={ids.note}
           label="Note about the destination and ports"
-          hint="Tell the reader the destination address is withheld and that source ports are given. Required."
-
-          error={need("note")}
+          optional
+          hint="For example that the destination address is withheld. Leave empty to send only the facts."
         >
           <Textarea
             id={ids.note}
@@ -229,9 +206,8 @@ function SettingsForm({
         <Field
           id={ids.subj}
           label="Subject template"
-          hint="The subject line of every message. Required."
-
-          error={need("subject_template")}
+          optional
+          hint="Leave empty to use the plain subject Abuse report for {value}."
         >
           <Input
             id={ids.subj}
@@ -459,9 +435,9 @@ export function ReportingCard() {
             ? "Loading the reporting settings…"
             : q.isError
               ? "The reporting settings could not be loaded."
-              : q.data.intro
-                ? "Your own wording is set. Reports are written with it."
-                : "Reports use the public default wording until you write your own."
+              : q.data.reply_contact
+                ? "Reports are ready to write. The texts around the facts are optional."
+                : "Set a reply contact so reports can be answered. The texts are optional."
         }
         detail="Saving these words sends nothing. By default you copy a draft into your own mailbox; SMTP sending is optional, further down."
       >

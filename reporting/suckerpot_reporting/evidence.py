@@ -11,7 +11,7 @@ import ipaddress
 import re
 import uuid
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -189,9 +189,11 @@ class Evidence(_Frozen):
 class ReportSettings(_Frozen):
     """Owner-written wording and contact (``report_settings``). The package ships no prose.
 
-    Every field defaults to empty. ``intro``, ``outro``, ``note`` and ``subject_template`` are
-    required to render a report; ``xarf_user_agent`` and ``reply_contact`` are also required for
-    X-ARF. ``subject_template`` may use ``{value}``, ``{asn}``, ``{network}``, ``{count}`` and
+    Every field defaults to empty. Only ``reply_contact`` is required to render a report (without
+    it the recipient has no way to answer). ``intro``, ``outro``, ``note`` and ``signature`` are
+    optional: an empty one is left out of every rendering. An empty ``subject_template`` falls
+    back to ``DEFAULT_SUBJECT`` and an empty ``xarf_user_agent`` to ``DEFAULT_XARF_USER_AGENT``.
+    ``subject_template`` may use ``{value}``, ``{asn}``, ``{network}``, ``{count}`` and
     ``{date}``.
     """
 
@@ -204,13 +206,22 @@ class ReportSettings(_Frozen):
     xarf_user_agent: str | None = Field(default=None, max_length=64)
 
 
+# One fixed, very common English phrase built from data only: no project or product wording.
+DEFAULT_SUBJECT: Final = "Abuse report for {value}"
+# The X-ARF 0.2 specification does not define a generic agent string, so the fallback is the
+# ubiquitous browser product token. Millions of clients send it; it says nothing about the sender.
+DEFAULT_XARF_USER_AGENT: Final = "Mozilla/5.0"
+
+
 def missing_settings(settings: ReportSettings | None, *, xarf: bool = False) -> tuple[str, ...]:
-    """Names of the required settings that are empty (field names only)."""
+    """Names of the required settings that are empty (field names only).
+
+    Only ``reply_contact`` is required, for every format. ``xarf`` is kept for callers that
+    still pass it; it no longer changes the answer.
+    """
+    del xarf
     cfg = settings or ReportSettings()
-    required = ["intro", "outro", "note", "subject_template"]
-    if xarf:
-        required += ["xarf_user_agent", "reply_contact"]
-    return tuple(n for n in required if not (getattr(cfg, n) or "").strip())
+    return tuple(n for n in ("reply_contact",) if not (getattr(cfg, n) or "").strip())
 
 
 # --- export input (STIX, MISP) -------------------------------------------------------------

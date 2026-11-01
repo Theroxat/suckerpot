@@ -84,7 +84,7 @@ def settings_incomplete_response(missing: Sequence[str]) -> JSONResponse:
     """409 naming the empty settings (field names only) so the UI can point at them."""
     return JSONResponse(
         {
-            "detail": "Fill in your own wording in Settings first.",
+            "detail": "Set a reply contact in Settings first.",
             "code": "settings_incomplete",
             "missing": list(missing),
         },

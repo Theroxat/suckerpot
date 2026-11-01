@@ -7,18 +7,24 @@ export function Field({
   label,
   hint,
   error,
+  optional = false,
   children,
 }: {
   id: string
   label: string
   hint?: string
   error?: string | undefined
+  /** Marks the field "Optional" next to its label. */
+  optional?: boolean
   children: ReactNode
 }) {
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-medium text-fg">
         {label}
+        {optional ? (
+          <span className="ml-1.5 text-xs font-normal text-fg-muted">Optional</span>
+        ) : null}
       </label>
       {children}
       {error ? (

@@ -252,7 +252,7 @@ function build(s: Seed): Row {
     options: defaultOptions(),
     notes: null,
     history,
-    custom_intro: Boolean(settings.intro),
+    missing: missingSettings(),
     previously_reported: s.previously ?? null,
     reviewed_at: s.status === "draft" ? null : iso(s.ageH * HOUR),
     sent_at: s.status === "sent" || s.status === "closed" ? iso(s.ageH * HOUR) : null,
@@ -312,22 +312,13 @@ const terms: (SelfTerm & { full: string })[] = [
 ]
 let nextTerm = 5
 
-export function missingWording(): string[] {
-  const fields = {
-    intro: settings.intro,
-    outro: settings.outro,
-    signature: settings.signature,
-    xarf_user_agent: settings.xarf_user_agent,
-    note: settings.note,
-    subject_template: settings.subject_template,
-  }
-  return Object.entries(fields)
-    .filter(([, v]) => !(v ?? "").trim())
-    .map(([k]) => k)
+/** Only the reply contact is required; the wording fields are optional. */
+export function missingSettings(): string[] {
+  return (settings.reply_contact ?? "").trim() ? [] : ["reply_contact"]
 }
 
 export function pub(r: Row): ReportDetail {
-  return { ...r, custom_intro: Boolean(settings.intro) }
+  return { ...r, missing: missingSettings() }
 }
 
 export function find(id: string): Row | undefined {
@@ -469,24 +460,16 @@ export const abuseHandlers: RequestHandler[] = [
     const r = find(String(params.id))
     if (!r) return notFound()
     if (!r.guard.ok) return blocked(r)
-    if (missingWording().length > 0)
+    if (missingSettings().length > 0)
       return HttpResponse.json(
         {
-          detail: "Finish the Reporting settings first.",
+          detail: "Set a reply contact in Settings first.",
           code: "settings_incomplete",
-          missing: missingWording(),
+          missing: missingSettings(),
         },
         { status: 409 },
       )
     const format = new URL(request.url).searchParams.get("format") ?? "text"
-    if (format === "xarf" && !(settings.reply_contact ?? "").trim())
-      return HttpResponse.json(
-        {
-          detail: "X-ARF needs a reply contact. Set one in Settings.",
-          code: "xarf_reply_contact_required",
-        },
-        { status: 409 },
-      )
     const m = renderBody(r, format)
     return HttpResponse.json({
       ...m,
@@ -536,9 +519,13 @@ export const abuseHandlers: RequestHandler[] = [
     }
     if (!allowed[r.status]?.includes(b.to))
       return HttpResponse.json({ detail: "No.", code: "invalid_transition" }, { status: 409 })
-    if (b.to === "reviewed" && !settings.intro)
+    if (b.to === "reviewed" && missingSettings().length > 0)
       return HttpResponse.json(
-        { detail: "Write your own introduction first.", code: "custom_intro_required" },
+        {
+          detail: "Set a reply contact in Settings first.",
+          code: "settings_incomplete",
+          missing: missingSettings(),
+        },
         { status: 409 },
       )
     if (b.to === "sent" && r.demo)

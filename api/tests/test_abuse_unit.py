@@ -17,6 +17,7 @@ from api import abuse, abuse_core
 
 SELF = "203.0.113.77"
 FULL = ReportSettings(
+    reply_contact="reports@example.org",
     intro="Own intro.",
     outro="Own outro.",
     note="Own note.",
@@ -89,3 +90,10 @@ def test_times_are_rounded_unless_exact_is_chosen() -> None:
     exact = abuse_core.SettingsBundle(ReportSettings(), {"round_times": False}, 1)
     assert abuse_core.effective_options(None, exact).time_precision == "second"
     assert abuse_core.effective_options({"time_precision": "minute"}, exact) == ReportOptions()
+
+
+def test_only_the_reply_contact_is_required() -> None:
+    assert abuse_core.missing_for(ReportSettings()) == ("reply_contact",)
+    assert abuse_core.missing_for(ReportSettings(), xarf=True) == ("reply_contact",)
+    assert abuse_core.missing_for(ReportSettings(reply_contact="reports@example.org")) == ()
+    assert abuse_core.missing_for(FULL) == ()

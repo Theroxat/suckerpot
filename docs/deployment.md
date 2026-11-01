@@ -300,7 +300,7 @@ Set `ABUSE_REPORTS_ENABLED=true` in `.env` and restart `ingest`. Tuning variable
 
 ### 2. Fill Settings > Reporting (admin)
 
-Write all the wording yourself: the introduction, the closing text, the note and the subject template. The project ships none, because shipped text lives in a public repo and could be searched. Add a reply contact (an alias that is not on one of your own domains) and an X-ARF user agent if you want X-ARF. Until these are filled, rendering answers `settings_incomplete`, and a report cannot be marked reviewed.
+Add a reply contact (an alias that is not on one of your own domains): it is the only required setting. Until it is set, rendering answers `settings_incomplete`, and a report cannot be marked reviewed. The introduction, closing text, note, signature, subject template and X-ARF user agent are optional. The project ships no wording, because shipped text lives in a public repo and could be searched. Leave them empty to send only the facts: an empty part is left out, an empty subject becomes `Abuse report for <address>` and an empty X-ARF user agent becomes `Mozilla/5.0`. If you write your own, make it yours.
 
 ### 3. Confirm the self terms
 
@@ -332,7 +332,7 @@ By default you send each report yourself. The dashboard can also send it through
 | `click` | A "Send now" button sends a ready report, after a confirmation. |
 | `auto` | Ready reports are sent after a hold time (default 60 minutes, 10 to 1440). While a report waits, the page shows the time it will go, with a Cancel button. At most `daily_cap` reports are sent per UTC day (default 20, 1 to 200). |
 
-Demo reports are never sent. A report that fails the identity guard, or that still misses a wording setting, is never sent in any mode. "Send a test" sends a short neutral message to the sender address itself, so you can check the profile first.
+Demo reports are never sent. A report that fails the identity guard, or that has no reply contact, is never sent in any mode. "Send a test" sends a short neutral message to the sender address itself, so you can check the profile first.
 
 **Setting up SMTP.** You need an SMTP server that accepts your login with STARTTLS (usually port 587) or with SMTPS (usually port 465). Enter the server's DNS name, not an IP address, with the port, the security, the login name, the sender address and the password. Saving the profile asks for your dashboard password again. The SMTP password is stored encrypted. The dashboard never shows it again. The API reference is in [Sending abuse reports](api.md#sending-abuse-reports-m25).
 

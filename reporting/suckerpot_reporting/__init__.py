@@ -16,6 +16,8 @@ from .bundle import (
 )
 from .errors import BundleLimitError, GuardFailed, RenderUnavailable, ReportingError
 from .evidence import (
+    DEFAULT_SUBJECT,
+    DEFAULT_XARF_USER_AGENT,
     Activity,
     Evidence,
     ExportData,
@@ -59,6 +61,8 @@ from .terms import SelfTermRow, SelfTerms, load_self_terms, mask_value
 
 __all__ = [
     "ARCHIVE_PASSWORD",
+    "DEFAULT_SUBJECT",
+    "DEFAULT_XARF_USER_AGENT",
     "Activity",
     "Attachment",
     "BundleLimitError",

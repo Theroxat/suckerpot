@@ -24,6 +24,8 @@ import yaml
 
 from .errors import GuardFailed, RenderUnavailable
 from .evidence import (
+    DEFAULT_SUBJECT,
+    DEFAULT_XARF_USER_AGENT,
     MAX_ACTIVITIES_BODY,
     MAX_ACTIVITIES_CSV,
     Activity,
@@ -68,7 +70,7 @@ class RenderedMessage:
 
 
 def _require(settings: ReportSettings | None, *, xarf: bool = False) -> ReportSettings:
-    """The package ships no wording: every required setting must have been written by the owner."""
+    """The only required setting is the reply contact; the wording is optional."""
     if settings is None or missing_settings(settings, xarf=xarf):
         raise RenderUnavailable("settings_incomplete")
     return settings
@@ -182,7 +184,7 @@ def message_subject(evidence: Evidence, settings: ReportSettings | None = None) 
         "count": str(len(evidence.subjects)),
         "date": evidence.window_end.astimezone(UTC).strftime("%Y-%m-%d"),
     }
-    template = cfg.subject_template or ""
+    template = (cfg.subject_template or "").strip() or DEFAULT_SUBJECT
     text = _PLACEHOLDER.sub(lambda m: fields[m.group(1)], template)
     if evidence.demo:
         text = DEMO_PREFIX + text
@@ -197,18 +199,31 @@ def render_text(evidence: Evidence, settings: ReportSettings | None = None) -> R
     """The plain-text report. Attachments are left to the caller (``render_csv``)."""
     cfg = _require(settings)
     opts = evidence.options
-    lines: list[str] = []
+    sections: list[list[str]] = []
     if evidence.demo:
-        lines += ["DEMO DATA: DO NOT SEND", ""]
-    lines += [_clean_block(cfg.intro or ""), _clean_block(cfg.note or ""), ""]
+        sections.append(["DEMO DATA: DO NOT SEND"])
+    opening = [t for t in (_clean_block(cfg.intro or ""), _clean_block(cfg.note or "")) if t]
+    if opening:
+        sections.append(opening)
     for s in evidence.subjects:
-        lines += _subject_block(s, opts)
-        lines.append("")
-    lines.append(_clean_block(cfg.outro or ""))
+        block = _subject_block(s, opts)
+        while block and not block[-1].strip():
+            block = block[:-1]
+        if block:
+            sections.append(block)
+    outro = _clean_block(cfg.outro or "")
+    if outro:
+        sections.append([outro])
     if cfg.reply_contact and opts.include_reply_contact:
-        lines += ["", f"Contact: {to_ascii(cfg.reply_contact.strip())}"]
-    if cfg.signature and cfg.signature.strip():
-        lines += ["", _clean_block(cfg.signature)]
+        sections.append([f"Contact: {to_ascii(cfg.reply_contact.strip())}"])
+    signature = _clean_block(cfg.signature or "")
+    if signature:
+        sections.append([signature])
+    lines: list[str] = []
+    for section in sections:
+        if lines:
+            lines.append("")
+        lines += section
     return RenderedMessage(
         to=evidence.recipient,
         subject=message_subject(evidence, cfg),
@@ -344,7 +359,7 @@ def render_xarf(
         "Service": service,
         "Port": port,
         "Version": 0.2,
-        "User-Agent": to_ascii((cfg.xarf_user_agent or "").strip()),
+        "User-Agent": to_ascii((cfg.xarf_user_agent or "").strip()) or DEFAULT_XARF_USER_AGENT,
         "Date": format_datetime(when),
         "Source-Type": _source_type(one),
         "Source": one.value,

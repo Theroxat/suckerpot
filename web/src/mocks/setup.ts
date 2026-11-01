@@ -53,13 +53,13 @@ function items(done: boolean): SetupItem[] {
       ? {
           id: "reporting_settings",
           state: "ok",
-          detail: "Every wording field for abuse reports is filled.",
+          detail: "The reply contact is set. The report texts are optional.",
           href: "/settings?tab=reporting",
         }
       : {
           id: "reporting_settings",
           state: "todo",
-          detail: "3 wording fields for abuse reports are empty.",
+          detail: "Set the reply contact for abuse reports. The report texts are optional.",
           href: "/settings?tab=reporting",
         },
     done

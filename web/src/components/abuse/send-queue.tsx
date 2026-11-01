@@ -142,9 +142,9 @@ export function SendQueue() {
           done > 0
             ? `You sent ${formatNumber(done)} ${done === 1 ? "report" : "reports"} in this session.`
             : (q.data.missing.length > 0
-                ? "Finish the Reporting settings first: the wording fields must all be filled. "
+                ? "Set a reply contact in the Reporting settings first. "
                 : "") +
-              "A report appears here once it passes the identity check, your Reporting settings are complete and it is still a draft or reviewed."
+              "A report appears here once it passes the identity check, your reply contact is set and it is still a draft or reviewed."
         }
       />
     )

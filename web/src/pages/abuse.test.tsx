@@ -74,7 +74,7 @@ function report(over: Partial<ReportDetail> = {}): ReportDetail {
     },
     notes: null,
     history: [{ ts: "2026-10-30T12:00:00Z", actor: "ingest", from: null, to: "draft" }],
-    custom_intro: true,
+    missing: [],
     previously_reported: null,
     reviewed_at: null,
     sent_at: null,
@@ -232,8 +232,8 @@ describe("AbuseDetailPage", () => {
     })
   })
 
-  it("refuses to review without a custom introduction", async () => {
-    stub({ report: report({ custom_intro: false }) })
+  it("refuses to review without a reply contact", async () => {
+    stub({ report: report({ missing: ["reply_contact"] }) })
     renderAt(`/defend/abuse/${ID}`)
     const button = await screen.findByRole("button", { name: "Mark reviewed" })
     expect(button).toBeDisabled()
