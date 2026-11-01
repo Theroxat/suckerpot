@@ -19,7 +19,9 @@
 #                      [--public-host HOST]  (dashboard behind an HTTPS tunnel: sets the host
 #                                             and origin allow-lists and COOKIE_SECURE=true)
 #                      [--admin-user admin] [--admin-password-stdin]
-#                      [--admin-ssh-port N] [--lowmem auto|on|off] [--wg-conf PATH]
+#                      [--admin-ssh-port N] [--lowmem auto|on|off] [--wg-conf PATH] [--skip-verify]
+#                      [--allow-lan]  (publish the dashboard on a non-loopback address WITHOUT an
+#                                      https tunnel: plain http, cookies lose Secure; not for the internet)
 #                      [--dry-run --env-out PATH]
 #
 # --yes takes the defaults; it reads the admin password from stdin with --admin-password-stdin
@@ -61,6 +63,8 @@ admin_user=""
 pw_stdin=0
 admin_ssh_port=""
 lowmem=""
+skip_verify=0
+allow_lan=0
 wg_conf=""
 dry_run=0
 env_out=""
@@ -83,6 +87,8 @@ while [ $# -gt 0 ]; do
     --admin-ssh-port) need_value "$@"; admin_ssh_port=$2; shift ;;
     --lowmem) need_value "$@"; lowmem=$2; shift ;;
     --wg-conf) need_value "$@"; wg_conf=$2; shift ;;
+    --skip-verify) skip_verify=1 ;;
+    --allow-lan) allow_lan=1 ;;
     --dry-run) dry_run=1 ;;
     --env-out) need_value "$@"; env_out=$2; shift ;;
     -h | --help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -167,8 +173,12 @@ else
     warn "less than 30 GiB free under Docker's data folder; logs and payloads need room"
   fi
 
-  if docker volume inspect "${prefix}_db-data" > /dev/null 2>&1; then
-    die "Data volumes for the prefix '$prefix' already exist. Restore your old .env, or pick another --prefix. (They are never adopted: the database password lives inside the data.)"
+  # Never adopt or mix with an existing install: its database password lives inside the data.
+  if [ -n "$(docker volume ls -q --filter "name=^${prefix}_" 2> /dev/null | head -n 1)" ]; then
+    die "Data volumes named '${prefix}_*' already exist. Restore your old .env, or pick another --prefix. (They are never adopted: the database password lives inside the data.)"
+  fi
+  if [ -n "$(docker ps -a -q --filter "label=com.docker.compose.project=$project" 2> /dev/null | head -n 1)" ]; then
+    die "Containers of the compose project '$project' already exist. Pick another --project, or remove that stack yourself first."
   fi
 fi
 
@@ -216,6 +226,9 @@ bind=${bind:-127.0.0.1}
 dport=${dport:-8443}
 [[ $bind =~ ^[0-9.]{7,15}$ ]] || die "--dashboard-bind must be an IPv4 address"
 [[ $dport =~ ^[0-9]{1,5}$ ]] && [ "$dport" -ge 1 ] && [ "$dport" -le 65535 ] || die "--dashboard-port must be a port number"
+if [[ $bind != 127.* ]] && [ -z "$public_host" ] && [ "$allow_lan" = 0 ]; then
+  die "--dashboard-bind $bind would publish the login page over plain http. Keep 127.0.0.1 (reach it with an SSH tunnel), give --public-host for an https tunnel, or pass --allow-lan if you accept it on a trusted network only."
+fi
 if [ -n "$public_host" ]; then
   [[ $public_host =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$ ]] || die "bad --public-host"
 fi
@@ -260,6 +273,9 @@ fi
 if [ "$lowmem" = on ] && [ ! -f docker-compose.lowmem.yml ]; then
   die "this checkout has no docker-compose.lowmem.yml, so --lowmem on is not possible"
 fi
+
+ask update_check "Check once a day whether a newer release exists? (one anonymous request through the VPN, never installs anything) (y or n)" n
+case $update_check in y | Y | yes | true) update_check=true ;; *) update_check=false ;; esac
 
 if [ -z "$wg_conf" ]; then ask wg_conf "Path to a WireGuard .conf from your VPN provider (empty = upload it later in the dashboard)" ""; fi
 wg_private="" wg_peer="" wg_addr="" wg_dns="" wg_ep_ip="" wg_ep_port=""
@@ -410,6 +426,7 @@ step 6 "Writing $target"
 umask 077
 tmp="${target}.tmp"
 rm -f "$tmp"
+trap 'rm -f "$tmp"' EXIT
 cp .env.example "$tmp"
 chmod 600 "$tmp"
 
@@ -428,8 +445,12 @@ if [ -n "$public_host" ]; then
   setv API_ALLOWED_HOSTS "$public_host"
   setv API_ALLOWED_ORIGINS "https://$public_host"
   setv COOKIE_SECURE true
-else
+elif [ "$allow_lan" = 1 ] && [[ $bind != 127.* ]]; then
+  # Plain http on a network address: browsers refuse Secure cookies there.
   setv COOKIE_SECURE false
+else
+  # http://127.0.0.1 and http://localhost accept Secure cookies, so the safe value stays on.
+  setv COOKIE_SECURE true
 fi
 [ -n "$admin_ssh_port" ] && setv ADMIN_SSH_PORT "$admin_ssh_port"
 [ -n "$self_addr" ] && setv INDICATORS_IGNORE "$self_addr"
@@ -445,8 +466,12 @@ if [ -n "$wg_conf" ]; then
 fi
 
 printf '\n# Added by the Selfhostr installer\n' >> "$tmp"
+setv UPDATE_CHECK_ENABLED "$update_check"
 setv SUCKERPOT_INSTALL_MODE "$mode"
-[ "$mode" = images ] && setv SUCKERPOT_VERSION "$version"
+if [ "$mode" = images ]; then
+  setv SUCKERPOT_IMAGE_PREFIX "$image_prefix"
+  setv SUCKERPOT_VERSION "$version"
+fi
 for s in "${SENSORS[@]}"; do
   if sensor_on "$s" && [ -z "${sensor_off[$s]:-}" ]; then v=1; else v=0; fi
   setv "$(sensor_var "$s")" "$v"
@@ -470,6 +495,7 @@ for name in "${SECRET_VARS[@]}"; do
 done
 unset ENV_FILE
 mv "$tmp" "$target"
+trap - EXIT
 chmod 600 "$target"
 note "wrote $target (mode 0600)"
 
@@ -497,6 +523,11 @@ fi
 step 9 "Starting Selfhostr (this can take several minutes)"
 if [ "$mode" = images ]; then
   docker compose pull || die "could not pull the images. Check the version and your network, then run: docker compose pull"
+  if [ "$skip_verify" = 1 ]; then
+    warn "--skip-verify: the image signatures were NOT checked"
+  else
+    bash scripts/verify-images.sh "$version" || die "the image signatures could not be verified, so nothing was started. Check the version, or run scripts/verify-images.sh $version. Only if you accept the risk: --skip-verify"
+  fi
   docker compose up -d --wait --wait-timeout 600 || die "the stack did not become healthy. See: docker compose ps, docker compose logs"
 else
   SUCKERPOT_BUILD_VERSION=$(git describe --tags --always --dirty 2> /dev/null || echo dev)

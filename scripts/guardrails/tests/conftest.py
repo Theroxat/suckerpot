@@ -29,6 +29,8 @@ COPIED = [
     "scripts/check-vpn-env.sh",
     "scripts/ensure-volumes.sh",
     "scripts/restore-db.sh",
+    "scripts/verify-images.sh",
+    "scripts/compose-fresh.sh",
     "scripts/lib/env.sh",
     ".env.example",
     "docker-compose.yml",
@@ -44,20 +46,25 @@ case "$*" in
   "volume inspect "*)
     for v in $SHIM_EXISTING_VOLUMES; do [ "volume inspect $v" = "$*" ] && exit 0; done
     exit 1 ;;
+  "volume ls "*) for v in $SHIM_EXISTING_VOLUMES; do echo "$v"; done ;;
+  "ps -a "*) [ -z "${SHIM_PROJECT_CONTAINERS:-}" ] || echo "${SHIM_PROJECT_CONTAINERS}" ;;
   "volume create "*) echo "${3:-}" ;;
   "pull "* | "build "*) ;;
   "run "*api.hashpw*)
     cat > "$SHIM_DIR/hash-stdin"
     echo '$argon2id$v=19$m=65536,t=3,p=4$ZmFrZXNhbHQ$ZmFrZWhhc2g' ;;
+  "run "*"--entrypoint test"*) [ -z "${SHIM_DUMP_MISSING:-}" ] || exit 1 ;;
   "run "*) echo 0 ;;
   "image inspect "*) echo "sha256:0123456789abcdef" ;;
   "compose ps backup --format"*) echo "${SHIM_BACKUP_HEALTH:-healthy}" ;;
   "compose ps -a --format"*) echo "api=shim/api:1"; echo "ingest=shim/ingest:1" ;;
   "compose ps --format"*) echo "api healthy"; echo "db healthy" ;;
-  "compose exec -T backup /bin/sh /backup-service.sh now") exit "${SHIM_BACKUP_RC:-0}" ;;
-  "compose exec -T backup sh -c"*) echo "/backups/suckerpot-20261101T020000Z.dump" ;;
+  "compose exec -T backup /bin/sh /backup-service.sh now preupdate") exit "${SHIM_BACKUP_RC:-0}" ;;
+  "compose exec -T backup sh -c"*) echo "/backups/suckerpot-preupdate-20261101T020000Z.dump" ;;
   "compose exec -T api printenv SUCKERPOT_RUNNING_VERSION") echo "${SHIM_RUNNING_VERSION:-}" ;;
-  "compose up"*) [ "${SHIM_UP_RC:-0}" = 0 ] || exit "$SHIM_UP_RC" ;;
+  "compose up"*)
+    echo "ENV_AT_UP SUCKERPOT_VERSION=${SUCKERPOT_VERSION:-unset} DASHBOARD_PORT=${DASHBOARD_PORT:-unset} SENSOR_WEB=${SENSOR_WEB:-unset}" >> "$SHIM_LOG"
+    [ "${SHIM_UP_RC:-0}" = 0 ] || exit "$SHIM_UP_RC" ;;
   *) ;;
 esac
 exit 0

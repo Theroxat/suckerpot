@@ -19,6 +19,7 @@ SECRET_NAMES = [
     .split()
 ]
 PASSWORD = "correct horse battery"  # noqa: S105
+ALL_IFACES = "0.0.0.0"  # noqa: S104
 
 
 def dry_run(
@@ -73,7 +74,7 @@ def test_dry_run_writes_a_complete_env(
     assert env["SENSOR_WEB"] == "1"
     assert env["SENSOR_TELNET"] == "0"
     assert env["COMPOSE_PROFILES"] == "egress"
-    assert env["COOKIE_SECURE"] == "false"
+    assert env["COOKIE_SECURE"] == "true"
     assert env["DASHBOARD_BIND"] == "127.0.0.1"
     assert re.fullmatch(r"'\$argon2[^']+'", env["ADMIN_PASSWORD_HASH"])
     # The password is never written, and nothing was run.
@@ -284,6 +285,22 @@ def test_install_refuses_existing_volumes_and_adopts_nothing(sandbox: Sandbox) -
     assert not any(c.startswith("docker volume create") for c in sandbox.docker_calls())
 
 
+def test_install_refuses_any_volume_of_the_prefix(sandbox: Sandbox) -> None:
+    sandbox.env["SHIM_EXISTING_VOLUMES"] = "suckerpot_backups"
+    rc, out = _real_run(sandbox)
+    assert rc != 0
+    assert "already exist" in out
+    assert not (sandbox.root / ".env").exists()
+
+
+def test_install_refuses_existing_containers_of_the_project(sandbox: Sandbox) -> None:
+    sandbox.env["SHIM_PROJECT_CONTAINERS"] = "0123456789ab"
+    rc, out = _real_run(sandbox)
+    assert rc != 0
+    assert "Containers of the compose project" in out
+    assert not (sandbox.root / ".env").exists()
+
+
 def test_install_refuses_low_memory_and_low_disk(sandbox: Sandbox) -> None:
     (sandbox.shim / "meminfo").write_text("MemTotal:        1000000 kB\n")
     rc, out = _real_run(sandbox)
@@ -373,3 +390,55 @@ def test_script_never_looks_up_a_public_address() -> None:
             if re.search(r"\bcurl\b", line):
                 assert "healthz" in line, (rel, line)
                 assert re.search(r"http://(\$hbind|\$bind|127\.0\.0\.1)", line), (rel, line)
+
+
+def test_images_install_verifies_signatures_after_the_pull(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    rc, out = _real_run(sandbox)
+    assert rc == 0, out
+    calls = sandbox.docker_calls()
+    pull = next(i for i, c in enumerate(calls) if c == "docker compose pull")
+    verify = next(i for i, c in enumerate(calls) if "cosign" in c and " verify " in c)
+    up = next(i for i, c in enumerate(calls) if c.startswith("docker compose up"))
+    assert pull < verify < up
+    env = parse_env(sandbox.root / ".env")
+    assert env["SUCKERPOT_IMAGE_PREFIX"].startswith("ghcr.io/")
+    assert env["UPDATE_CHECK_ENABLED"] == "false"
+
+
+def test_failed_signature_check_starts_nothing(sandbox: Sandbox) -> None:
+    (sandbox.root / "scripts/verify-images.sh").write_text("#!/bin/sh\nexit 1\n")
+    rc, out = _real_run(sandbox)
+    assert rc != 0
+    assert "signatures could not be verified" in out
+    assert not any(c.startswith("docker compose up") for c in sandbox.docker_calls())
+
+
+def test_skip_verify_is_explicit_and_loud(sandbox: Sandbox) -> None:
+    (sandbox.root / "scripts/verify-images.sh").write_text("#!/bin/sh\nexit 1\n")
+    rc, out = _real_run(sandbox, "--skip-verify")
+    assert rc == 0, out
+    assert "NOT checked" in out
+
+
+def test_lan_bind_needs_a_tunnel_or_an_explicit_flag(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    _, rc, out = dry_run(sandbox, "--dashboard-bind", ALL_IFACES)
+    assert rc != 0
+    assert "--allow-lan" in out
+    target, rc, out = dry_run(sandbox, "--dashboard-bind", ALL_IFACES, "--allow-lan")
+    assert rc == 0, out
+    assert parse_env(target)["COOKIE_SECURE"] == "false"
+    target, rc, out = dry_run(
+        sandbox, "--dashboard-bind", ALL_IFACES, "--public-host", "dash.example.org", out="b.env"
+    )
+    assert rc == 0, out
+    assert parse_env(target)["COOKIE_SECURE"] == "true"
+
+
+def test_a_failed_install_leaves_no_temporary_env(sandbox: Sandbox) -> None:
+    sandbox.env["SHIM_PROJECT_CONTAINERS"] = "0123456789ab"
+    _real_run(sandbox)
+    assert not list(sandbox.root.glob(".env*.tmp")) and not (sandbox.root / ".env.tmp").exists()
