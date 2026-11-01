@@ -76,12 +76,12 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0019() -> None:
+def test_the_chain_is_linear_up_to_0020() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0019"}
-    for n in range(11, 20):
+    assert heads == {"0020"}
+    for n in range(11, 21):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
 
 
@@ -250,3 +250,11 @@ def test_m22_column_grants() -> None:
     assert not ingest & {"notes", "reviewed_at", "reviewed_by", "sent_at", "sent_by", "closed_at"}
     for script in (_GRANTS_API, _GRANTS_INGEST):
         assert not re.search(r"GRANT [A-Z, ]*UPDATE[A-Z, ]* ON abuse_reports", script)
+
+
+def test_trusted_exit_grants() -> None:
+    """M23: the API manages the ranges; ingest and the collector only read them."""
+    assert _grants(_GRANTS_API)["egress_trusted_exits"] == {"SELECT", "INSERT", "DELETE"}
+    assert _grants(_GRANTS_INGEST)["egress_trusted_exits"] == {"SELECT"}
+    assert _grants(_GRANTS_COLLECTOR)["egress_trusted_exits"] == {"SELECT"}
+    assert "egress_trusted_exits" not in _grants(_GRANTS_ANALYZER)
