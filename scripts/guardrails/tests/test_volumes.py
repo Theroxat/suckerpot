@@ -1,5 +1,6 @@
 """Live data volumes are external in the base file and never reachable from test overlays."""
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -93,3 +94,31 @@ def test_backup_service_is_hardened_and_isolated() -> None:
     assert backup["user"] == "70:70"
     for key in ("mem_limit", "pids_limit", "cpus", "healthcheck"):
         assert key in backup
+
+
+def _effective_name(key: str, spec: dict[str, Any], project: str, prefix: str) -> str:
+    """The volume name Compose would use: the explicit name, else ``<project>_<key>``."""
+    name = spec.get("name")
+    if not name:
+        return f"{project}_{key}"
+    return re.sub(r"\$\{SUCKERPOT_VOLUME_PREFIX(:\?[^}]*)?\}", prefix, str(name))
+
+
+@pytest.mark.parametrize("overlay", OVERLAYS)
+@pytest.mark.parametrize("project", ["suckerpot", "sp-ci"])
+def test_overlay_effective_names_never_equal_a_live_name(overlay: str, project: str) -> None:
+    """Even with the live project name and the live prefix, no test volume is a live volume."""
+    compose = load_compose([BASE, ROOT / overlay])
+    live = {f"suckerpot_{key}" for key in DATA_VOLUMES}
+    for key, spec in compose["volumes"].items():
+        spec = spec or {}
+        effective = _effective_name(key, spec, project, "suckerpot")
+        assert effective not in live, f"{overlay}: {key} would be {effective}"
+        assert spec.get("name"), f"{overlay}: {key} has no explicit name"
+        assert str(spec["name"]).startswith("test-"), f"{overlay}: {key}"
+
+
+@pytest.mark.parametrize("overlay", OVERLAYS)
+def test_overlays_keep_the_backup_service_out_of_test_stacks(overlay: str) -> None:
+    backup = load_compose([BASE, ROOT / overlay])["services"]["backup"]
+    assert backup["profiles"] == ["backup"]

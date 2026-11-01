@@ -23,6 +23,10 @@ if [ -z "$prefix" ]; then
   echo "ensure-volumes: SUCKERPOT_VOLUME_PREFIX is not set (it comes from .env on the live host)" >&2
   exit 1
 fi
+if ! [[ "$prefix" =~ ^[a-z0-9][a-z0-9_-]{0,40}$ ]]; then
+  echo "ensure-volumes: SUCKERPOT_VOLUME_PREFIX must match ^[a-z0-9][a-z0-9_-]{0,40}\$" >&2
+  exit 1
+fi
 mapfile -t volumes < <(grep -oE '^    name: \$\{SUCKERPOT_VOLUME_PREFIX:\?[^}]*\}_[a-z0-9-]+$' docker-compose.yml | sed -E "s/.*\}_/${prefix}_/")
 if [ "${#volumes[@]}" -lt 10 ]; then
   echo "ensure-volumes: could not read the volume names from docker-compose.yml" >&2
@@ -39,11 +43,12 @@ exists() { docker volume inspect "$1" > /dev/null 2>&1; }
 if ! exists "${prefix}_db-data" && exists "${prefix}_backups"; then
   dumps=$(docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true \
     --user 70:70 --entrypoint sh -v "${prefix}_backups":/b:ro "$image" \
-    -c 'ls -1 /b/suckerpot-*.dump 2>/dev/null | wc -l' || echo 0)
-  if [ "${dumps:-0}" -gt 0 ] && [ "$force" -ne 1 ]; then
+    -c 'ls -1 /b/suckerpot-*.dump 2>/dev/null | wc -l') || dumps=unknown
+  case $dumps in '' | *[!0-9]*) dumps=unknown ;; esac
+  if [ "$dumps" != 0 ] && [ "$force" -ne 1 ]; then
     cat >&2 << EOF
 ensure-volumes: STOP. The database volume "${prefix}_db-data" does not exist, but the
-backups volume ${prefix}_backups holds $dumps dump(s). Starting now would create an EMPTY database.
+backups volume ${prefix}_backups holds $dumps dump(s) (unknown = could not be counted). Starting now would create an EMPTY database.
 
   - To restore the newest dump: create the volumes and start only the database, then restore:
         scripts/ensure-volumes.sh --force-empty && docker compose up -d --wait db && just restore latest

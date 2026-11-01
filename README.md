@@ -102,7 +102,7 @@ You need Docker with the compose plugin, on a machine you can afford to lose.
 ```bash
 git clone https://github.com/Theroxat/suckerpot.git
 cd suckerpot
-cp .env.example .env        # replace every change-me (openssl rand -base64 32), uncomment SUCKERPOT_VOLUME_PREFIX
+cp .env.example .env        # replace every change-me (openssl rand -base64 32), on the live install set COMPOSE_PROJECT_NAME=suckerpot and SUCKERPOT_VOLUME_PREFIX=suckerpot
 just up                     # creates the data volumes, then starts the stack
 docker compose --profile tools run --rm demo     # or: just demo
 ```

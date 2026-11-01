@@ -41,7 +41,7 @@ Copy the template and edit it:
 cp .env.example .env
 ```
 
-Uncomment `SUCKERPOT_VOLUME_PREFIX=suckerpot` in your `.env` (it names the data volumes; it is commented in the template on purpose, see [Deployment](deployment.md)). Run `scripts/ensure-volumes.sh` once to create the volumes, or use `just up`, which does it for you.
+On the live install set `COMPOSE_PROJECT_NAME=suckerpot` and `SUCKERPOT_VOLUME_PREFIX=suckerpot` in your `.env` (the second names the data volumes; both are commented or placeholders in the template on purpose, see [Deployment](deployment.md)). Run `scripts/ensure-volumes.sh` once to create the volumes, or use `just up`, which does it for you.
 
 Every `change-me` value must be replaced. Each secret must be at least 24 characters, and no two secrets may be equal. Generate each one separately:
 
