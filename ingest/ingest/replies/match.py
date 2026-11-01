@@ -215,8 +215,11 @@ def is_verified(found: Match, reply: ParsedReply, trust: Trust) -> bool:
     if found.report_id is None:
         return False
     speaks = trust.covers(reply.from_address, reply.from_domain)
+    # A bounce usually answers our Message-ID (In-Reply-To) or quotes it: the mail system that
+    # wrote it is rarely the recipient, so authentication alone also vouches for it.
+    if reply.content_type == "multipart/report" or reply.dsn_action is not None:
+        if found.method in ("message_id", "dsn") and found.via_message_id:
+            return reply.auth == "pass" or speaks
     if found.method == "message_id":
         return speaks
-    if found.method == "dsn" and found.via_message_id:
-        return reply.auth == "pass" or speaks
     return reply.auth == "pass" and speaks

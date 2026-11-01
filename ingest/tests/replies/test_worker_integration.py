@@ -440,7 +440,7 @@ async def test_a_bounce_is_stored_and_needs_review(world: World) -> None:
     # Quoting our Message-ID proves nothing about the sender: an unauthenticated bounce from a
     # mail system we never wrote to waits for the owner and sets no date.
     assert not row.verified
-    assert out.auto_outcome == "bounce" and out.needs_review and out.bounced_at is None
+    assert out.auto_outcome == "none" and out.needs_review and out.bounced_at is None
 
 
 async def test_an_unmatched_dsn_is_kept_for_the_owner(world: World) -> None:
@@ -813,7 +813,8 @@ async def test_an_overlong_sender_domain_is_harmless(world: World) -> None:
     poison = mail(from_=f"postmaster@{long_domain}", message_id="<poison@example.net>")
     await poll(world, FakeMailbox({1: poison, 2: mail()}))
     replies = await world.replies()
-    assert [r.uid for r in replies if r.report_id == rid] == [2]
+    assert [r.uid for r in replies if r.report_id == rid] == [1, 2]
+    assert replies[0].from_domain is None and replies[0].verified is False
     state = await world.state()
     assert state.last_uid == 2 and state.last_error is None
 
