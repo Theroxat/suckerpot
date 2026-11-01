@@ -46,6 +46,11 @@ function Field({
   )
 }
 
+/** This tab's wording for the gate reason; the shared sentences stay as they are. */
+function gateReason(code: string | null): string {
+  return code === "ip_not_allowed" ? "exit not in a trusted range" : egressReason(code)
+}
+
 const mono = "font-mono text-xs break-all"
 
 /** Settings, VPN tab (admin only): where outbound traffic leaves, and replacing the tunnel. */
@@ -126,14 +131,14 @@ function StatusDetails({ v }: { v: VpnStatus }) {
       </Field>
       <Field label="Gate">
         {open ? (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-status-ok">
-            <CircleCheck aria-hidden className="size-3.5" strokeWidth={2.25} />
+          <span className="inline-flex items-start gap-1.5 text-sm font-medium text-status-ok">
+            <CircleCheck aria-hidden className="mt-0.5 size-3.5" strokeWidth={2.25} />
             Open
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-sev-warning">
-            <TriangleAlert aria-hidden className="size-3.5" strokeWidth={2.25} />
-            Closed: {egressReason(v.gate.reason)}
+          <span className="inline-flex items-start gap-1.5 text-sm font-medium text-sev-warning">
+            <TriangleAlert aria-hidden className="mt-0.5 size-3.5" strokeWidth={2.25} />
+            Closed: {gateReason(v.gate.reason)}
           </span>
         )}
       </Field>
