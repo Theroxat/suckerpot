@@ -144,7 +144,7 @@ DECLARE
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
                   'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
-                  'abuse_send_requests']
+                  'abuse_send_requests', 'setup_progress']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -322,7 +322,7 @@ DECLARE
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
                   'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
-                  'abuse_send_requests']
+                  'abuse_send_requests', 'setup_progress']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -434,6 +434,10 @@ BEGIN
         EXECUTE format(
             'GRANT USAGE ON SEQUENCE %s TO %I',
             pg_get_serial_sequence('public.egress_trusted_exits', 'id'), r);
+    END IF;
+    IF to_regclass('public.setup_progress') IS NOT NULL THEN
+        -- M28: the first-run setup keeps its one row here; ingest never reads it.
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE ON setup_progress TO %I', r);
     END IF;
     IF to_regclass('public.egress_check_requests') IS NOT NULL THEN
         -- M24: "Check now" inserts a request; the table trims itself (SECURITY DEFINER trigger).
