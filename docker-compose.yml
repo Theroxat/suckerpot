@@ -24,8 +24,13 @@ x-db-env: &db-env
 
 services:
   redis:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-redis:${SUCKERPOT_VERSION:-dev}
     build:
       context: ./redis
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
     <<: *hardening
     # The image's own "redis" user (uid 999). The /data volume is initialised
     # from the image, so it is already owned by that user: no root, no capabilities.
@@ -48,6 +53,8 @@ services:
       REDIS_INGEST_PASSWORD: ${REDIS_INGEST_PASSWORD:?REDIS_INGEST_PASSWORD must be set in .env}
       REDIS_HEALTH_PASSWORD: ${REDIS_HEALTH_PASSWORD:?REDIS_HEALTH_PASSWORD must be set in .env}
       SUCKERPOT_ALLOW_DEFAULT_SECRETS: ${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}
+      # Memory cap in MiB (redis.conf says 192); the low-memory overlay lowers it.
+      REDIS_MAXMEMORY_MB: ${REDIS_MAXMEMORY_MB:-192}
     volumes:
       - redis-data:/data
     tmpfs:
@@ -121,9 +128,14 @@ services:
       start_period: 30s
 
   migrate:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-migrate:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: db/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -196,9 +208,14 @@ services:
         condition: service_healthy
 
   ingest:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-ingest:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: ingest/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -344,9 +361,14 @@ services:
       start_period: 20s
 
   api:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-api:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: api/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -429,9 +451,17 @@ services:
 
   # SSH sensor: pure emulation, never executes attacker input.
   sensor-ssh:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-ssh:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/ssh/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_SSH in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_SSH:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -487,9 +517,17 @@ services:
 
   # RDP sensor: answers the connection handshake only, never authenticates anyone.
   sensor-rdp:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-rdp:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/rdp/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_RDP in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_RDP:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -541,9 +579,17 @@ services:
 
   # Telnet sensor: emulates a cheap BusyBox device, never executes attacker input.
   sensor-telnet:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-telnet:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/telnet/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_TELNET in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_TELNET:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -587,9 +633,17 @@ services:
 
   # Web sensor: a fake Apache + PHP 8.3 stack, pure emulation, never executes attacker input.
   sensor-web:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-web:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/web/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_WEB in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_WEB:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -645,9 +699,17 @@ services:
 
   # Redis sensor: a fake unauthenticated Redis server, pure emulation, never executes attacker input.
   sensor-redis:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-redis:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/redis/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_REDIS in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_REDIS:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -698,9 +760,17 @@ services:
 
   # Docker API sensor: a fake exposed Docker Engine API, never creates a container or pulls an image.
   sensor-docker:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-docker:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/docker/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_DOCKER in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_DOCKER:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -751,9 +821,17 @@ services:
 
   # MySQL sensor: a fake MySQL 8.0 server, records logins and queries, never runs any SQL.
   sensor-mysql:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-mysql:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/mysql/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_MYSQL in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_MYSQL:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -805,9 +883,17 @@ services:
 
   # MSSQL sensor: a fake SQL Server (TDS), records logins and queries, never runs any SQL.
   sensor-mssql:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-mssql:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/mssql/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_MSSQL in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_MSSQL:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -858,9 +944,17 @@ services:
 
   # ADB sensor: a fake Android debug bridge, records shell commands, never runs or installs anything.
   sensor-adb:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-adb:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/adb/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_ADB in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_ADB:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -909,9 +1003,17 @@ services:
 
   # SMB sensor: answers the SMB negotiation and NTLM handshake only, never serves a file.
   sensor-smb:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-smb:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/smb/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_SMB in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_SMB:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -965,9 +1067,17 @@ services:
 
   # SIP sensor: a fake PBX (UDP and TCP), rate-limited so it can never be used as a reflector.
   sensor-sip:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-sip:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/sip/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_SIP in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_SIP:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -1023,9 +1133,17 @@ services:
   # Synology sensor: a fake unpatched Synology DSM NAS (HTTP and HTTPS). Records requests and logins,
   # never runs or stores anything an attacker sends.
   sensor-synology:
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-synology:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/synology/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    # 1 = on, 0 = off (SENSOR_SYNOLOGY in .env). Replicas 0 creates no container and binds no port.
+    deploy:
+      replicas: ${SENSOR_SYNOLOGY:-1}
     <<: *hardening
     user: "10001:10001"
     environment:
@@ -1154,6 +1272,8 @@ services:
     volumes:
       - ./vpn/control-auth.toml:/gluetun/auth/config.toml:ro
       - ./vpn/entrypoint.sh:/vpn/entrypoint.sh:ro
+      # Healthy in idle mode (no VPN configured yet), else gluetun's own healthcheck.
+      - ./vpn/health.sh:/vpn/health.sh:ro
       # Uploaded WireGuard settings (wg.env), written by the api; read-only here.
       - vpn-config:/vpn-config:ro
     tmpfs:
@@ -1179,7 +1299,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      test: ["CMD", "/bin/sh", "/vpn/health.sh"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -1190,9 +1310,14 @@ services:
   # stores them in quarantine; never parses or executes them.
   collector:
     profiles: [egress]
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-collector:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: collector/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
     command: ["python", "-m", "collector", "fetch"]
     <<: *hardening
     user: "10001:10001"
@@ -1253,9 +1378,14 @@ services:
   # internet, Redis or ingest: it shares only the "samples" network (with db and collector).
   analyzer:
     profiles: [egress]
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-collector:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: collector/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
     command: ["python", "-m", "collector", "analyze"]
     <<: *hardening
     user: "10001:10001"
@@ -1296,9 +1426,14 @@ services:
   # Run with: docker compose --profile tools run --rm demo [args]
   demo:
     profiles: [tools]
+    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-demo:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: scripts/demo/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
     <<: *hardening
     user: "10001:10001"
     environment:

@@ -31,6 +31,10 @@ COPY --from=builder /opt/venv /opt/venv
 RUN mkdir -p /quarantine && chown 10001:10001 /quarantine && chmod 0700 /quarantine
 WORKDIR /app
 COPY collector/rules /app/rules
+# Build metadata (M28): passed by compose or the release workflow, read by the api and ingest.
+ARG VERSION=dev BUILD_KIND=source COMMIT=unknown
+ENV SUCKERPOT_RUNNING_VERSION=$VERSION SUCKERPOT_BUILD_KIND=$BUILD_KIND SUCKERPOT_COMMIT=$COMMIT
+LABEL org.opencontainers.image.version=$VERSION org.opencontainers.image.revision=$COMMIT
 USER 10001:10001
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python", "-m", "collector.healthcheck"]
