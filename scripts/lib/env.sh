@@ -177,3 +177,16 @@ need_project() {
 state_get() {
   sed -n "s/^  \"$2\": \"\\(.*\\)\",\\{0,1\\}\$/\\1/p" "$1" | head -n 1
 }
+
+# Unsets every variable that .env defines. `just` loads .env into the environment before a recipe
+# runs, and the shell environment beats .env for docker compose and for check-ports.sh: after a
+# script changed .env, the old values would still win. Call this once .env is final (and again
+# after changing it); compose then reads the new file itself.
+env_drop_loaded() {
+  local file=${ENV_FILE:-.env} name
+  [ -f "$file" ] || return 0
+  while IFS= read -r name; do
+    case $name in PATH | HOME | PWD | SHELL | USER | LANG | TERM | BASH_ENV | ENV | IFS | ENV_FILE) continue ;; esac
+    unset "$name" 2> /dev/null || true
+  done < <(sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' "$file")
+}

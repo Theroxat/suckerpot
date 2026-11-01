@@ -196,3 +196,29 @@ def test_lib_settable_patterns_match_the_design() -> None:
     text = (ROOT / "scripts/lib/env.sh").read_text()
     for pattern in ("'*_ENABLED'", "'*_HOST_PORT'", "DASHBOARD_BIND", "'SITE_*'", "'SENSOR_*'"):
         assert pattern in text
+
+
+def test_set_checks_the_new_value_not_the_stale_exported_one(sandbox: Sandbox) -> None:
+    """`just` exports the OLD .env: the guard must still refuse the NEW dashboard port."""
+    sandbox.write_env(BASE_ENV)
+    sandbox.env["DASHBOARD_PORT"] = "8443"  # what just exported from the old file
+    proc = sandbox.run("scripts/env-set.sh", "set", "DASHBOARD_PORT=22")
+    assert proc.returncode != 0
+    assert "DASHBOARD_PORT=8443" in (sandbox.root / ".env").read_text()
+
+
+def test_sensors_compose_call_sees_the_new_file(sandbox: Sandbox) -> None:
+    """scripts/compose-fresh.sh drops exported values so `docker compose` reads .env itself."""
+    sandbox.write_env(BASE_ENV + "SENSOR_WEB=0\n")
+    sandbox.env["SENSOR_WEB"] = "1"  # stale value exported by just
+    proc = sandbox.run("scripts/compose-fresh.sh", "up", "-d", "--wait")
+    assert proc.returncode == 0, proc.stderr
+    assert any(c.startswith("ENV_AT_UP") and "SENSOR_WEB=unset" in c for c in sandbox.calls())
+
+
+def test_check_ports_dotenv_only_ignores_the_environment(sandbox: Sandbox) -> None:
+    sandbox.write_env(BASE_ENV)
+    ok = sandbox.run("scripts/check-ports.sh", "--dotenv-only", extra_env={"DASHBOARD_PORT": "22"})
+    assert ok.returncode == 0, ok.stderr
+    plain = sandbox.run("scripts/check-ports.sh", extra_env={"DASHBOARD_PORT": "22"})
+    assert plain.returncode != 0

@@ -18,6 +18,7 @@ die() { echo "rollback: $*" >&2; exit 1; }
 
 [ -f .env ] || die ".env not found"
 need_project
+env_drop_loaded
 # restore-db.sh reads the volume prefix from the environment (just loads it from .env).
 SUCKERPOT_VOLUME_PREFIX=$(env_get SUCKERPOT_VOLUME_PREFIX)
 export SUCKERPOT_VOLUME_PREFIX
@@ -36,6 +37,13 @@ case $mode in images | source) ;; *) die "the state file has a bad install mode"
   || die "the last update was made without a backup, so there is no database to restore"
 [[ $from_version =~ ^[A-Za-z0-9._-]+$ ]] || die "the state file has a bad version"
 git rev-parse -q --verify "$from_ref^{commit}" > /dev/null || die "commit $from_ref is not in this checkout"
+
+# The dump must still be there BEFORE anything is changed (code, images or database).
+db_image=$(awk '/^  db:/ {indb=1} indb && /image: / {print $2; exit}' docker-compose.yml)
+[ -n "$db_image" ] || die "could not read the db image from docker-compose.yml"
+docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true --user 70:70 \
+  -v "${SUCKERPOT_VOLUME_PREFIX}_backups:/b:ro" --entrypoint test "$db_image" -s "/b/$dump" \
+  || die "the dump $dump is no longer in the backups volume (retention removed it?). Nothing was changed."
 
 echo "Rollback of the update made at $at:"
 echo "  code:     back to $from_version (commit ${from_ref:0:9})"
@@ -57,6 +65,7 @@ fi
 echo "[2/4] Restoring the images"
 if [ "$mode" = images ]; then
   env_set_line .env SUCKERPOT_VERSION "$from_version"
+  env_drop_loaded
   docker compose pull
 else
   SUCKERPOT_BUILD_VERSION=$(git describe --tags --always --dirty 2> /dev/null || echo dev)
@@ -69,6 +78,7 @@ echo "[3/4] Restoring the database from $dump"
 bash scripts/restore-db.sh "volume:$dump"
 
 echo "[4/4] Starting"
+bash scripts/check-ports.sh --dotenv-only
 docker compose up -d --wait --wait-timeout 600
 echo
 echo "Rolled back to $from_version."

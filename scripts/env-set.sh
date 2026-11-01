@@ -18,6 +18,8 @@ cd "$(dirname "$0")/.."
 die() { echo "env-set: $*" >&2; exit 1; }
 
 [ -f .env ] || die ".env not found. Run ./scripts/install.sh first."
+# The values just loaded from the old .env must not win over the file we are about to change.
+env_drop_loaded
 
 # Keeps a private copy of .env while a change is applied, so it can be put back.
 backup=""
@@ -26,7 +28,7 @@ trap cleanup EXIT
 
 apply_checked() {
   # Runs the port check on the changed file; restores the old one on failure.
-  if ! scripts/check-ports.sh; then
+  if ! scripts/check-ports.sh --dotenv-only; then
     cp "$backup" .env
     chmod 600 .env
     die "the port check refused this change; .env was left as it was"
