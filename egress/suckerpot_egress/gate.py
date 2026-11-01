@@ -10,7 +10,7 @@ import asyncio
 import contextlib
 import ipaddress
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -27,6 +27,10 @@ CONTROL_TIMEOUT_S = 5.0
 ECHO_MAX_BYTES = 64
 PROXY_ERRORS_BEFORE_RECHECK = 3
 STALE_FACTOR = 2  # a verdict older than this many intervals no longer counts as open
+EXTRA_CIDRS_TTL_S = 60.0  # the extra allowed ranges are read at most this often
+
+type Network = ipaddress.IPv4Network | ipaddress.IPv6Network
+type ExtraCidrs = Callable[[], Awaitable[Sequence[Network]]]
 
 REASONS = (
     "ok",
@@ -78,8 +82,13 @@ class EgressGate:
         *,
         client: httpx.AsyncClient | None = None,
         clock: Callable[[], datetime] = _utcnow,
+        extra_cidrs: ExtraCidrs | None = None,
     ) -> None:
         self.settings = settings
+        # Ranges the owner trusted at run time (M23). They only ever add to the ``.env`` list.
+        self._extra_provider = extra_cidrs
+        self._extra: tuple[Network, ...] = ()
+        self._extra_read_at: datetime | None = None
         self._clock = clock
         self._injected = client
         self._control: httpx.AsyncClient | None = client
@@ -187,9 +196,29 @@ class EgressGate:
         if not seen.is_global:
             return self._set(False, "ip_not_global", shown)
         # 6. inside the VPN's expected range
-        if not any(seen in net for net in self.settings.allowed_cidrs):
+        if not any(seen in net for net in self.settings.allowed_cidrs) and not any(
+            seen in net for net in await self._extra_cidrs()
+        ):
             return self._set(False, "ip_not_allowed", shown)
         return self._set(True, "ok", shown)
+
+    async def _extra_cidrs(self) -> tuple[Network, ...]:
+        """The run-time trusted ranges: read at most once a minute, last good list kept on error
+        (empty at start, so the ``.env`` ranges alone apply until the first successful read)."""
+        if self._extra_provider is None:
+            return ()
+        now = self._clock()
+        read_at = self._extra_read_at
+        if read_at is not None and (now - read_at).total_seconds() < EXTRA_CIDRS_TTL_S:
+            return self._extra
+        self._extra_read_at = now  # a failing source is retried after the TTL, not at every check
+        try:
+            self._extra = tuple(await self._extra_provider())
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("could not read the trusted exit ranges (%s)", type(exc).__name__)
+        return self._extra
 
     async def _echo(self, url: str) -> IPAddress | None:
         _, proxied = self._clients()

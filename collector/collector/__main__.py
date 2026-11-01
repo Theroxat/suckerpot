@@ -7,6 +7,7 @@ import logging
 import sys
 
 from suckerpot_db import create_engine, create_session_factory
+from suckerpot_db.trusted_exits import trusted_exit_provider
 from suckerpot_egress import EgressGate, EgressSettings
 
 from collector.analyzer import AnalyzerService
@@ -19,10 +20,9 @@ async def _fetch() -> None:
     settings = CollectorSettings.from_env()
     engine = create_engine(pool_size=4)
     try:
-        gate = EgressGate(EgressSettings.from_env())
-        service = CollectorService(
-            settings, create_session_factory(engine), Quarantine(settings.quarantine_dir), gate
-        )
+        factory = create_session_factory(engine)
+        gate = EgressGate(EgressSettings.from_env(), extra_cidrs=trusted_exit_provider(factory))
+        service = CollectorService(settings, factory, Quarantine(settings.quarantine_dir), gate)
         await service.run()
     finally:
         await engine.dispose()
