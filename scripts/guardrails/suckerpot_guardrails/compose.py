@@ -336,7 +336,9 @@ def _check_images(services: Mapping[str, Any]) -> list[str]:
         if re.search(r":latest($|[@\s])", image) or (image and ":" not in image.split("/")[-1]):
             problems.append(f"service '{name}' image must carry an explicit non-latest tag")
         if svc.get("build") is not None and not (
-            image.startswith("${SUCKERPOT_IMAGE_PREFIX") and ":${SUCKERPOT_VERSION" in image
+            (image.startswith("${SUCKERPOT_IMAGE_PREFIX") and ":${SUCKERPOT_VERSION" in image)
+            # A test overlay names images after its throwaway project, never the release prefix.
+            or (image.startswith("local/${COMPOSE_PROJECT_NAME:?}-") and image.endswith(":test"))
         ):
             problems.append(
                 f"service '{name}' image must use ${{SUCKERPOT_IMAGE_PREFIX...}} and "
