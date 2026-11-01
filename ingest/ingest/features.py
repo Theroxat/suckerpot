@@ -64,6 +64,8 @@ class FeatureSettings:
     alerts_enabled: bool = False
     reports_enabled: bool = False
     abuse_enabled: bool = False
+    takedown_enabled: bool = False  # M27: target tracking and re-check scheduling
+    abusech_submit_enabled: bool = False  # M27: server-side switch for abuse.ch submissions
     site_timezone: str = "UTC"
 
     @classmethod
@@ -85,6 +87,8 @@ class FeatureSettings:
             alerts_enabled=_flag(e, "ALERTS_ENABLED"),
             reports_enabled=_flag(e, "REPORTS_ENABLED"),
             abuse_enabled=_flag(e, "ABUSE_REPORTS_ENABLED"),
+            takedown_enabled=_flag(e, "TAKEDOWN_ENABLED"),
+            abusech_submit_enabled=_flag(e, "ABUSECH_SUBMIT_ENABLED"),
             site_timezone=(e.get("SITE_TIMEZONE", "").strip() or "UTC"),
         )
 
