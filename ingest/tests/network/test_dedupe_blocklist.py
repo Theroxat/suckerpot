@@ -15,8 +15,10 @@ T = datetime(2026, 11, 2, tzinfo=UTC)
 class FakeSession:
     def __init__(self, values: list[str]) -> None:
         self.values = values
+        self.sql = ""
 
-    async def execute(self, *_: Any, **__: Any) -> list[tuple[str]]:
+    async def execute(self, stmt: Any = None, *_: Any, **__: Any) -> list[tuple[str]]:
+        self.sql = str(stmt)
         return [(v,) for v in self.values]
 
 
@@ -56,3 +58,10 @@ def test_apply_network_only_touches_confirmed_candidates() -> None:
     b = Candidate("ip", "198.51.100.24", 40, ["ran-commands"], T, T)
     apply_network([a, b], {("ip", "198.51.100.23")})
     assert (a.score, b.score) == (42, 40) and "network-confirmed" in a.reasons
+
+
+async def test_a_merely_confirmed_target_does_not_cancel_the_local_report() -> None:
+    session = FakeSession([])
+    await without_network(session, [seed("198.51.100.23")])  # type: ignore[arg-type]
+    assert "'reported'" in session.sql and "'taken_down'" in session.sql
+    assert "'confirmed'" not in session.sql
