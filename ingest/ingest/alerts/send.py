@@ -12,6 +12,7 @@ Webhooks:
   answer is not read.
 
 E-mail: TLS is mandatory (STARTTLS or implicit TLS) with certificate and host name verification.
+The EHLO name is the domain of the sender address, never the container's host name.
 The connection is a CONNECT tunnel through the same proxy (a literal IP host must be public).
 The message is built with the standard library's ``EmailMessage``, which refuses header injection.
 
@@ -36,6 +37,7 @@ from suckerpot_egress import TunnelSMTP, TunnelSMTP_SSL
 from ingest.alerts.config import AlertSettings
 from ingest.alerts.messages import render_discord, render_email, render_teams
 from ingest.egress import EgressClosed, EgressGate, get_gate, make_client
+from ingest.mailname import sender_domain
 
 log = logging.getLogger(__name__)
 
@@ -161,16 +163,17 @@ class Sender:
     def _smtp_send(self, mail: EmailMessage, to: str) -> None:
         s = self.settings
         context = ssl.create_default_context()  # verifies the certificate chain and host name
+        helo = sender_domain(s.smtp_from)  # never the container's host name
         try:
             if s.smtp_security == "ssl":
                 server: smtplib.SMTP = TunnelSMTP_SSL(
                     self._gate, s.smtp_host, s.smtp_port, timeout=SMTP_TIMEOUT_S, context=context,
-                    local_hostname="localhost",
+                    local_hostname=helo,
                 )  # fmt: skip
             else:
                 server = TunnelSMTP(
                     self._gate, s.smtp_host, s.smtp_port, timeout=SMTP_TIMEOUT_S,
-                    local_hostname="localhost",
+                    local_hostname=helo,
                 )  # fmt: skip
             with server:
                 if s.smtp_security != "ssl":

@@ -177,7 +177,7 @@ async def run() -> None:
             enrich.smtp_password,
         ),
         ReportWorker(features, factory),
-        AbuseWorker(features, factory),
+        AbuseWorker(features, factory, box=load_secret_box()),
     ]
     for worker in feature_workers:
         appliers.append(worker.apply_settings)

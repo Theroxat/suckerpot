@@ -2,7 +2,8 @@
 
 Each minute it answers the API's requests; hourly it learns the monitored system's address,
 resolves abuse contacts through the egress gate and rebuilds the drafts; weekly it refreshes the
-RDAP bootstrap. It prepares text and files. It never sends anything to anyone.
+RDAP bootstrap. It prepares text and files. It sends nothing by itself: mail leaves only through
+``ingest.reportmail`` (M25), when the owner configured SMTP and picked a sending mode.
 """
 
 from __future__ import annotations
@@ -13,11 +14,12 @@ import math
 import time
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from suckerpot_db.secretbox import SecretBox
 
 from ingest.egress import EgressClosed, EgressGate, gate_open, get_gate
 from ingest.features import FeatureSettings, FeatureWorker
@@ -29,6 +31,9 @@ from .config import AbuseSettings
 from .contacts import ContactResolver, make_reserve, quota_providers
 from .rdap import QuotaExhausted, RdapClient, RdapError
 from .selfterms import TermsCache
+
+if TYPE_CHECKING:
+    from ingest.reportmail.sender import ReportSender
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +56,7 @@ class AbuseWorker(FeatureWorker):
         gate: EgressGate | None = None,
         client: httpx.AsyncClient | None = None,
         host_spacing_s: float = 2.0,
+        box: SecretBox | None = None,
     ) -> None:
         super().__init__(settings, enabled=settings.abuse_enabled)
         self.factory = factory
@@ -64,8 +70,12 @@ class AbuseWorker(FeatureWorker):
         self.terms: TermsCache | None = None
         self.rdap: RdapClient | None = None
         self.builder: DraftBuilder | None = None
+        self.sender: ReportSender | None = None  # M25, set when the worker is enabled
         if self.enabled and factory is not None:
             self.terms = TermsCache(factory, env)
+            from ingest.reportmail.sender import ReportSender  # late: it imports this package
+
+            self.sender = ReportSender(factory, self.terms, self.abuse, box=box, gate=gate)
             self.rdap = RdapClient(
                 make_reserve(factory, self.abuse),
                 lambda: self.bootstrap.hosts(),
@@ -210,6 +220,7 @@ class AbuseWorker(FeatureWorker):
             except RdapError as exc:
                 log.info("rdap bootstrap refresh failed (%s)", exc)
         force = await self.handle_requests()
+        await self._send_cycle(now)
         mono = time.monotonic()
         if mono - self._last_learn >= LEARN_EVERY_S:
             self._last_learn = mono
@@ -220,6 +231,15 @@ class AbuseWorker(FeatureWorker):
         if force or mono - self._last_build >= self.abuse.build_interval_s:
             self._last_build = mono
             self.last_stats = await self.builder.run(now, allow_lookups=self._open())
+
+    async def _send_cycle(self, now: datetime) -> None:
+        """Answer the SMTP send requests. A failure here never stops the rest of the cycle."""
+        if self.sender is None:
+            return
+        try:
+            await self.sender.run(now)
+        except Exception as exc:
+            log.warning("abuse mail cycle failed (%s)", type(exc).__name__)
 
     async def status(self) -> dict[str, Any]:
         base = (await super().status())[self.name]

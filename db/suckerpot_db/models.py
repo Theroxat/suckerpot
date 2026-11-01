@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Computed,
     Date,
     DateTime,
     ForeignKey,
@@ -1016,6 +1017,7 @@ class AbuseReportRow(Base):
     sent_by: Mapped[str | None] = mapped_column(Text)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_by: Mapped[str | None] = mapped_column(Text)
+    sent_via: Mapped[str | None] = mapped_column(Text)  # manual | smtp (NULL before M25)
 
 
 class AbuseReportSubjectRow(Base):
@@ -1117,4 +1119,52 @@ class EgressCheckRequestRow(Base):
         DateTime(timezone=True), server_default=_now(), nullable=False
     )
     requested_by: Mapped[str | None] = mapped_column(Text)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ReportSmtpRow(Base):
+    """The one SMTP profile for abuse reports (M25). The API writes the password columns but its
+    role cannot read them back; only ingest decrypts them."""
+
+    __tablename__ = "report_smtp"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default=text("1"))
+    host: Mapped[str] = mapped_column(Text)
+    port: Mapped[int] = mapped_column(Integer)
+    security: Mapped[str] = mapped_column(Text)  # starttls | ssl
+    username: Mapped[str] = mapped_column(Text, server_default=text("''"))
+    from_address: Mapped[str] = mapped_column(Text)
+    from_name: Mapped[str] = mapped_column(Text, server_default=text("''"))
+    password_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
+    password_nonce: Mapped[bytes | None] = mapped_column(LargeBinary)
+    password_set: Mapped[bool] = mapped_column(
+        Boolean, Computed("password_ciphertext IS NOT NULL", persisted=True)
+    )
+    mode: Mapped[str] = mapped_column(Text, server_default=text("'off'"))  # off | click | auto
+    auto_hold_minutes: Mapped[int] = mapped_column(Integer, server_default=text("60"))
+    daily_cap: Mapped[int] = mapped_column(Integer, server_default=text("20"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    updated_by: Mapped[str | None] = mapped_column(Text)
+
+
+class AbuseSendRequestRow(Base):
+    """A report (or a test) to send by SMTP, asked by the API or scheduled by ingest (M25)."""
+
+    __tablename__ = "abuse_send_requests"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    report_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_reports.id", ondelete="CASCADE")
+    )
+    kind: Mapped[str] = mapped_column(Text)  # send | test
+    auto: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    requested_by: Mapped[str] = mapped_column(Text)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(Text, server_default=text("'pending'"), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(Text)
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

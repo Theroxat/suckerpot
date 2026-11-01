@@ -236,3 +236,61 @@ def test_the_http_client_keeps_no_connections_alive() -> None:
     s = Sender(AlertSettings(), gate=fake_gate())
     pool = s.client._transport._inner._pool  # type: ignore[attr-defined]
     assert pool._max_keepalive_connections == 0
+
+
+async def test_email_ehlo_name_is_the_senders_domain_never_the_host_name(
+    smtp: type[FakeSMTP],
+) -> None:
+    import socket
+
+    s, _ = sender(lambda _r: httpx.Response(204), settings=MAIL)
+    await s.send("email", "analyst@example.org", sample_message())
+    (conn,) = smtp.instances
+    assert conn.kw["local_hostname"] == "example.org"
+    assert conn.kw["local_hostname"] != socket.gethostname()
+
+
+async def test_closed_gate_alert_mail_makes_no_connection_at_all() -> None:
+    """The real TunnelSMTP classes and a closed gate: not one connection, not even to the proxy."""
+    import socket
+    import threading
+    from email.message import EmailMessage
+
+    from suckerpot_egress import EgressSettings
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(4)
+    server.settimeout(0.05)
+    accepted: list[int] = []
+    stop = threading.Event()
+
+    def accept_loop() -> None:
+        while not stop.is_set():
+            try:
+                conn, _ = server.accept()
+            except (TimeoutError, OSError):
+                continue
+            accepted.append(1)
+            conn.close()
+
+    thread = threading.Thread(target=accept_loop, daemon=True)
+    thread.start()
+    try:
+        gate = fake_gate(open_=False, reason="no_vpn")
+        gate.settings = EgressSettings(
+            proxy_url=f"http://127.0.0.1:{server.getsockname()[1]}", proxy_password="t" * 24
+        )
+        s, _ = sender(lambda _r: httpx.Response(204), settings=MAIL, gate=gate)
+        with pytest.raises(SendError) as err:
+            await s.send("email", "analyst@example.org", sample_message())
+        assert err.value.code == "egress_closed" and err.value.retryable
+        # A direct call of the blocking sender (bypassing the early check) is refused as well.
+        with pytest.raises(SendError) as err2:
+            s._smtp_send(EmailMessage(), "analyst@example.org")
+        assert err2.value.code == "egress_closed"
+    finally:
+        stop.set()
+        thread.join(2)
+        server.close()
+    assert accepted == []

@@ -3,7 +3,7 @@
 import os
 import subprocess
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 
 import pytest
@@ -18,7 +18,8 @@ pytestmark = pytest.mark.integration
 # ruff: noqa: S608  (test SQL is built from constants)
 
 DB_DIR = Path(os.environ.get("DB_DIR", Path(__file__).resolve().parents[1]))
-TABLES = ("rdap_bootstrap", "abuse_networks", "abuse_lookups", "abuse_recipients",
+TABLES = ("report_smtp", "abuse_send_requests", "rdap_bootstrap", "abuse_networks",
+          "abuse_lookups", "abuse_recipients",
           "abuse_reports", "abuse_report_subjects", "abuse_report_requests", "report_settings",
           "report_self_terms")  # fmt: skip
 ENV: dict[str, str] = {
@@ -66,7 +67,7 @@ async def owner() -> AsyncIterator[AsyncEngine]:
 
 
 async def _run(
-    engine: AsyncEngine, sql: str, params: dict[str, object] | None = None
+    engine: AsyncEngine, sql: str, params: Mapping[str, object] | None = None
 ) -> int | None:
     """Row count of the statement, or None when it was refused (privilege, RLS or trigger)."""
     try:
@@ -280,3 +281,194 @@ async def test_a_waiting_recipient_has_no_mailbox_until_the_owner_types_one(
         api,
         "UPDATE abuse_recipients SET override_mailbox = 'abuse@example.org' WHERE mailbox IS NULL",
     )
+
+
+# ---- M25: sending by SMTP -----------------------------------------------------------------
+
+SEND_REQUEST = (
+    "INSERT INTO abuse_send_requests (report_id, kind, requested_by{cols}) "
+    "VALUES (:r, 'send', 'admin'{vals})"
+)
+MARK_SMTP = (
+    "UPDATE abuse_reports SET status = 'sent', sent_via = :v, sent_at = now(), sent_by = 'x' "
+    "WHERE id = :r"
+)
+
+
+async def _ask(api: AsyncEngine, report_id: int) -> int | None:
+    return await _run(api, SEND_REQUEST.format(cols="", vals=""), {"r": report_id})
+
+
+async def test_ingest_marks_a_report_sent_only_for_a_pending_request(
+    owner: AsyncEngine, roles: tuple[AsyncEngine, AsyncEngine]
+) -> None:
+    api, ingest = roles
+    rid = await _report(owner)
+    assert await _run(ingest, MARK_SMTP, {"v": "smtp", "r": rid}) is None  # no request yet
+    assert await _ask(api, rid) == 1
+    assert await _run(ingest, MARK_SMTP, {"v": "manual", "r": rid}) is None  # only smtp
+    assert (
+        await _run(
+            ingest, "UPDATE abuse_reports SET status = 'sent', sent_via = 'smtp', notes = 'n'"
+        )
+        is None
+    )  # no notes grant
+    assert (
+        await _run(
+            ingest,
+            "UPDATE abuse_reports SET status = 'sent', sent_via = 'smtp', reviewed_by = 'bob'",
+        )
+        is None
+    )  # a review stamp is 'auto' or nothing
+    assert await _run(ingest, MARK_SMTP, {"v": "smtp", "r": rid}) == 1  # draft -> sent
+    async with owner.connect() as conn:
+        row = (await conn.execute(text("SELECT status, sent_via FROM abuse_reports"))).one()
+    assert (row.status, row.sent_via) == ("sent", "smtp")
+    assert await _run(ingest, "UPDATE abuse_reports SET status = 'draft'") is None
+
+
+async def test_an_automatic_send_may_stamp_the_review_as_auto(
+    owner: AsyncEngine, roles: tuple[AsyncEngine, AsyncEngine]
+) -> None:
+    api, ingest = roles
+    rid = await _report(owner)
+    assert await _ask(api, rid) == 1
+    assert (
+        await _run(
+            ingest,
+            "UPDATE abuse_reports SET status = 'sent', sent_via = 'smtp', sent_at = now(), "
+            "sent_by = 'auto', reviewed_by = 'auto', reviewed_at = now(), "
+            "reviewed_revision = revision",
+        )
+        == 1
+    )
+
+
+async def test_demo_and_unguarded_reports_cannot_be_sent_by_ingest(
+    owner: AsyncEngine, roles: tuple[AsyncEngine, AsyncEngine]
+) -> None:
+    api, ingest = roles
+    rid = await _report(owner, demo=True)
+    assert await _ask(api, rid) == 1
+    assert await _run(ingest, MARK_SMTP, {"v": "smtp", "r": rid}) is None
+    rid = await _report(owner)
+    async with owner.begin() as conn:
+        await conn.execute(text("UPDATE abuse_reports SET guard_ok = false"))
+    assert await _ask(api, rid) == 1
+    assert await _run(ingest, MARK_SMTP, {"v": "smtp", "r": rid}) is None
+
+
+async def test_the_api_can_only_mark_sent_by_hand(
+    owner: AsyncEngine, roles: tuple[AsyncEngine, AsyncEngine]
+) -> None:
+    api, _ = roles
+    rid = await _report(owner, status="reviewed")
+    assert await _run(api, MARK_SMTP, {"v": "smtp", "r": rid}) is None  # never smtp
+    assert await _run(api, MARK_SMTP, {"v": "manual", "r": rid}) == 1
+    assert await _run(api, "UPDATE abuse_reports SET sent_via = 'smtp'") is None
+    assert await _run(api, "UPDATE abuse_reports SET sent_via = NULL") is None
+    await _report(owner, status="reviewed")
+    assert await _run(api, "UPDATE abuse_reports SET sent_via = 'manual'") is None  # not sent
+
+
+async def test_send_request_rules(
+    owner: AsyncEngine, roles: tuple[AsyncEngine, AsyncEngine]
+) -> None:
+    api, ingest = roles
+    rid = await _report(owner)
+    params = {"r": rid}
+    assert await _run(api, SEND_REQUEST.format(cols=", auto", vals=", true"), params) is None
+    assert (
+        await _run(api, SEND_REQUEST.format(cols=", scheduled_at", vals=", now()"), params) is None
+    )
+    assert await _run(api, SEND_REQUEST.format(cols=", status", vals=", 'sent'"), params) is None
+    assert (
+        await _run(api, "INSERT INTO abuse_send_requests (kind, requested_by) VALUES ('send', 'a')")
+        is None
+    )  # a send needs a report
+    assert (
+        await _run(
+            api,
+            "INSERT INTO abuse_send_requests (report_id, kind, requested_by) "
+            "VALUES (:r, 'test', 'a')",
+            params,
+        )
+        is None
+    )  # a test has none
+    assert (
+        await _run(api, "INSERT INTO abuse_send_requests (kind, requested_by) VALUES ('test', 'a')")
+        == 1
+    )
+    assert await _ask(api, rid) == 1
+    # The API may cancel a pending request and nothing else.
+    assert await _run(api, "UPDATE abuse_send_requests SET status = 'sent'") is None
+    assert await _run(api, "UPDATE abuse_send_requests SET error_code = 'x'") is None
+    assert await _run(api, "UPDATE abuse_send_requests SET requested_by = 'x'") is None
+    assert await _run(api, "DELETE FROM abuse_send_requests") is None
+    assert await _run(api, "UPDATE abuse_send_requests SET status = 'cancelled'") == 2
+    async with owner.connect() as conn:
+        done = await conn.scalar(
+            text("SELECT count(*) FROM abuse_send_requests WHERE done_at IS NOT NULL")
+        )
+    assert done == 2  # the trigger stamped it
+    assert await _run(api, "UPDATE abuse_send_requests SET status = 'cancelled'") is None
+    # Ingest schedules automatic sends only, and finishes a request once.
+    assert await _run(ingest, SEND_REQUEST.format(cols="", vals=""), params) is None
+    assert await _run(ingest, SEND_REQUEST.format(cols=", auto", vals=", true"), params) == 1
+    assert (
+        await _run(
+            ingest,
+            "INSERT INTO abuse_send_requests (kind, auto, requested_by) VALUES ('test', true, 'a')",
+        )
+        is None
+    )
+    done_sql = (
+        "UPDATE abuse_send_requests SET status = 'failed', error_code = 'refused', "
+        "done_at = now() WHERE auto"
+    )
+    assert await _run(ingest, "UPDATE abuse_send_requests SET requested_by = 'x'") is None
+    assert await _run(ingest, "DELETE FROM abuse_send_requests") is None
+    assert await _run(ingest, done_sql) == 1
+    assert await _run(ingest, done_sql) is None  # finished is final
+
+
+async def test_the_api_writes_the_smtp_password_but_never_reads_it_back(
+    owner: AsyncEngine, roles: tuple[AsyncEngine, AsyncEngine]
+) -> None:
+    api, ingest = roles
+    async with owner.begin() as conn:
+        await conn.execute(text("DELETE FROM report_smtp"))
+    insert = (
+        "INSERT INTO report_smtp (id, host, port, security, from_address, password_ciphertext, "
+        "password_nonce) VALUES (1, 'smtp.example.org', 587, 'starttls', 'a@example.org', "
+        "'\\x0102', '\\x0304')"
+    )
+    assert await _run(ingest, insert) is None  # ingest only reads
+    assert await _run(api, insert) == 1
+    assert await _run(api, "SELECT password_ciphertext FROM report_smtp") is None
+    assert await _run(api, "SELECT password_nonce FROM report_smtp") is None
+    assert await _run(api, "SELECT * FROM report_smtp") is None
+    assert await _run(api, "SELECT host, port, from_address, password_set FROM report_smtp")
+    async with api.connect() as conn:
+        assert await conn.scalar(text("SELECT password_set FROM report_smtp")) is True
+    clear = "UPDATE report_smtp SET password_ciphertext = NULL, password_nonce = NULL"
+    assert await _run(api, clear) == 1
+    async with api.connect() as conn:
+        assert await conn.scalar(text("SELECT password_set FROM report_smtp")) is False
+    async with ingest.connect() as conn:
+        assert await conn.scalar(text("SELECT password_ciphertext FROM report_smtp")) is None
+    assert await _run(ingest, "UPDATE report_smtp SET host = 'x.example.org'") is None
+    assert await _run(ingest, "DELETE FROM report_smtp") is None
+    for bad in (
+        "UPDATE report_smtp SET mode = 'bogus'",
+        "UPDATE report_smtp SET auto_hold_minutes = 5",
+        "UPDATE report_smtp SET auto_hold_minutes = 2000",
+        "UPDATE report_smtp SET daily_cap = 0",
+        "UPDATE report_smtp SET daily_cap = 201",
+        "UPDATE report_smtp SET security = 'plain'",
+        "UPDATE report_smtp SET port = 0",
+        "UPDATE report_smtp SET id = 2",
+        "UPDATE report_smtp SET password_ciphertext = '\\x01'",  # nonce missing
+    ):
+        assert await _run(api, bad) is None, bad
+    assert await _run(api, "DELETE FROM report_smtp") == 1
