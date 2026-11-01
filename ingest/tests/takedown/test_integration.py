@@ -91,7 +91,7 @@ async def seed_report(
                     "e": json.dumps({}),
                     "sent": NOW - timedelta(hours=sent_hours_ago),
                 },
-            )  # fmt: skip
+            )
             or 0
         )
         for stype, value in subjects:

@@ -1218,8 +1218,6 @@ class ReportImapRow(Base):
     updated_by: Mapped[str | None] = mapped_column(Text)
 
 
-
-
 class TakedownTargetRow(Base):
     """A reported target whose fate is tracked (M27). Ingest owns the state, the collector the HTTP
     re-check columns; ``reported_at`` only moves earlier."""

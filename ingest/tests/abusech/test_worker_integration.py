@@ -13,7 +13,7 @@ import httpx
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-from suckerpot_db import create_engine, create_session_factory
+from suckerpot_db import create_engine
 from suckerpot_db.secretbox import Credential, SecretBox
 from suckerpot_reporting import SelfTermRow, load_self_terms
 
