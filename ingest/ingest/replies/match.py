@@ -15,6 +15,7 @@ from typing import Final
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from suckerpot_db.shared_mail import is_shared_domain
 
 from .parse import BODY_FOR_RULES, ParsedReply
 
@@ -22,7 +23,6 @@ from .parse import BODY_FOR_RULES, ParsedReply
 TOKEN: Final = re.compile(r"(?<![a-z0-9])ref[ :#]{0,3}([0-9a-f]{12})(?![0-9a-z])")
 MAX_TOKENS: Final = 5
 MAX_RECENT: Final = 5000
-SECOND_LEVEL: Final = frozenset({"co", "com", "org", "net", "gov", "ac", "edu", "or", "ne", "go"})
 METHODS: Final = ("message_id", "token", "dsn", "ticket", "sender_domain", "manual", "none")
 
 
@@ -34,31 +34,51 @@ class Match:
 
 
 @dataclass(frozen=True, slots=True)
+class Trust:
+    """Who may speak for the recipient of a report. Domains are compared exactly (a subdomain is
+    another party). A shared or free mail domain never counts as a domain: only the exact
+    address of a mailbox on it does."""
+
+    domains: frozenset[str] = frozenset()
+    addresses: frozenset[str] = frozenset()
+
+    def covers(self, address: str | None, domain: str | None) -> bool:
+        d = (domain or "").lower()
+        if address and address.lower() in self.addresses:
+            return True
+        return bool(d) and d in self.domains and not is_shared_domain(d)
+
+
+@dataclass(frozen=True, slots=True)
 class RecentReport:
     id: int
-    domains: frozenset[str]
+    trust: Trust
 
 
 NO_MATCH: Final = Match(None, "none")
 
 
-def registrable(domain: str) -> str:
-    """The domain an organisation owns: the last two labels, three under ``co.uk``-like suffixes.
-    A heuristic without a public suffix list; it only decides who may speak for a recipient."""
-    labels = [x for x in domain.lower().strip(".").split(".") if x]
-    if len(labels) <= 2:
-        return ".".join(labels)
-    if len(labels[-1]) == 2 and labels[-2] in SECOND_LEVEL:
-        return ".".join(labels[-3:])
-    return ".".join(labels[-2:])
-
-
-def domains_of(*values: str | None, extra: Iterable[str] = ()) -> frozenset[str]:
-    """Registrable domains of mailboxes (``user@domain``) or bare domains."""
-    out = {registrable(v.rpartition("@")[2]) for v in values if v and v.strip()}
-    out.update(registrable(d) for d in extra if d)
-    out.discard("")
-    return frozenset(out)
+def trust_of(*mailboxes: str | None, extra: Iterable[str] = ()) -> Trust:
+    """The trust of a recipient: the domain of each mailbox (the exact address when the domain
+    is shared) and the owner's reply domains (an entry with ``@`` is an exact address)."""
+    domains: set[str] = set()
+    addresses: set[str] = set()
+    for value in mailboxes:
+        if not value or not value.strip():
+            continue
+        address = value.strip().lower()
+        domain = address.rpartition("@")[2]
+        if "@" in address and is_shared_domain(domain):
+            addresses.add(address)
+        elif domain:
+            domains.add(domain.strip("."))
+    for entry in extra:
+        item = (entry or "").strip().lower()
+        if "@" in item:
+            addresses.add(item)
+        elif item and not is_shared_domain(item):
+            domains.add(item.strip("."))
+    return Trust(frozenset(domains), frozenset(addresses))
 
 
 def find_tokens(*texts: str) -> list[str]:
@@ -86,12 +106,12 @@ async def recent_reports(session: AsyncSession, days: int) -> list[RecentReport]
         )
     ).all()
     return [
-        RecentReport(r.id, domains_of(r.mailbox, r.override_mailbox, extra=r.reply_domains or ()))
+        RecentReport(r.id, trust_of(r.mailbox, r.override_mailbox, extra=r.reply_domains or ()))
         for r in rows
     ]
 
 
-async def report_domains(session: AsyncSession, report_id: int) -> frozenset[str]:
+async def report_trust(session: AsyncSession, report_id: int) -> Trust:
     row = (
         await session.execute(
             text(
@@ -103,8 +123,8 @@ async def report_domains(session: AsyncSession, report_id: int) -> frozenset[str
         )
     ).first()
     if row is None:
-        return frozenset()
-    return domains_of(row.mailbox, row.override_mailbox, extra=row.reply_domains or ())
+        return Trust()
+    return trust_of(row.mailbox, row.override_mailbox, extra=row.reply_domains or ())
 
 
 async def by_message_id(session: AsyncSession, ids: tuple[str, ...]) -> int | None:
@@ -175,28 +195,28 @@ async def find_match(
         if len(rows) == 1:
             return Match(int(rows[0].report_id), "ticket")
     if reply.from_domain:
-        sender = registrable(reply.from_domain)
-        hits = [r.id for r in recent if sender in r.domains]
+        hits = [r.id for r in recent if r.trust.covers(reply.from_address, reply.from_domain)]
         if len(hits) == 1:
             return Match(hits[0], "sender_domain")
     return NO_MATCH
 
 
 def from_known_recipient(reply: ParsedReply, recent: list[RecentReport]) -> bool:
+    """A mail from a party we wrote to. A shared mail domain alone is never enough."""
     if not reply.from_domain:
         return False
-    sender = registrable(reply.from_domain)
-    return any(sender in r.domains for r in recent)
+    return any(r.trust.covers(reply.from_address, reply.from_domain) for r in recent)
 
 
-def is_verified(found: Match, reply: ParsedReply, report_domains_: frozenset[str]) -> bool:
-    """Vouched for: matched by our own Message-ID, or authenticated mail from the recipient."""
+def is_verified(found: Match, reply: ParsedReply, trust: Trust) -> bool:
+    """Vouched for. Quoting our Message-ID proves nothing about the sender (anyone who saw the
+    mail can), so it counts only from a party we wrote to; a delivery status notification
+    also counts when its mail system authenticated; the rest needs both."""
     if found.report_id is None:
         return False
-    if found.method == "message_id" or (found.method == "dsn" and found.via_message_id):
-        return True
-    return (
-        reply.auth == "pass"
-        and reply.from_domain is not None
-        and registrable(reply.from_domain) in report_domains_
-    )
+    speaks = trust.covers(reply.from_address, reply.from_domain)
+    if found.method == "message_id":
+        return speaks
+    if found.method == "dsn" and found.via_message_id:
+        return reply.auth == "pass" or speaks
+    return reply.auth == "pass" and speaks

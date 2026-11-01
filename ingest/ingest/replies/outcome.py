@@ -101,13 +101,18 @@ WHERE r.status IN ('sent', 'closed') AND NOT r.demo
 ORDER BY r.id LIMIT :n
 ON CONFLICT (report_id) DO NOTHING
 """
-# Reports that have replies, or had some (a reply moved away from them): recomputed each cycle,
-# written only when something differs.
+# Reports whose replies changed since their outcome was last computed: a new or reviewed reply,
+# or a different number of replies (one moved away). Least recently computed first, so a busy
+# old report can never starve a newer one. A recompute always stamps ``auto_updated_at``.
 CANDIDATES = """
 SELECT o.report_id FROM abuse_report_outcomes o
-WHERE o.reply_count > 0 OR EXISTS (SELECT 1 FROM abuse_replies p WHERE p.report_id = o.report_id)
-ORDER BY o.report_id LIMIT :n
+WHERE EXISTS (SELECT 1 FROM abuse_replies p WHERE p.report_id = o.report_id
+              AND (o.auto_updated_at IS NULL OR p.processed_at > o.auto_updated_at
+                   OR p.reviewed_at > o.auto_updated_at))
+   OR o.reply_count <> (SELECT count(*) FROM abuse_replies p WHERE p.report_id = o.report_id)
+ORDER BY o.auto_updated_at NULLS FIRST, o.report_id LIMIT :n
 """
+TOUCH_ROW = "UPDATE abuse_report_outcomes SET auto_updated_at = now() WHERE report_id = :r"
 LOAD_REPLIES = """
 SELECT classification, received_at, verified, reviewed_at IS NOT NULL AS reviewed, ticket_id
 FROM abuse_replies WHERE report_id = :r ORDER BY received_at, id LIMIT 1000
@@ -151,6 +156,7 @@ async def recompute(factory: async_sessionmaker[AsyncSession]) -> int:
             if current is not None and all(
                 current._mapping[name] == values[name] for name in FIELDS
             ):
+                await session.execute(text(TOUCH_ROW), {"r": report_id})
                 continue
             await session.execute(text(SAVE_ROW), {"r": report_id, **values})
             changed += 1

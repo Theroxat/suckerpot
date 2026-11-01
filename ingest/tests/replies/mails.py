@@ -79,7 +79,13 @@ def quoted_printable(text: str) -> bytes:
     )
 
 
-def dsn(*, action: str = "failed", status: str = "5.1.1", original_id: str = OUR_ID) -> bytes:
+def dsn(
+    *,
+    action: str = "failed",
+    status: str = "5.1.1",
+    original_id: str = OUR_ID,
+    extra: dict[str, str] | None = None,
+) -> bytes:
     returned = (
         f"Message-ID: {original_id}\r\nSubject: Abuse report for 198.51.100.23 (ref {TOKEN})\r\n"
         "To: abuse@example.net\r\n"
@@ -98,6 +104,7 @@ def dsn(*, action: str = "failed", status: str = "5.1.1", original_id: str = OUR
         from_="Mail Delivery System <MAILER-DAEMON@mx.example.org>",
         subject="Undelivered Mail Returned to Sender",
         in_reply_to=original_id,
+        extra=extra,
     )
 
 

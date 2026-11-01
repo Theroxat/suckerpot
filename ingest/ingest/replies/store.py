@@ -17,13 +17,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .match import (
     Match,
     RecentReport,
+    Trust,
     by_message_id,
     by_token,
     find_match,
     find_tokens,
     from_known_recipient,
     is_verified,
-    report_domains,
+    report_trust,
 )
 from .parse import HeaderView, ParsedReply
 from .rules import ReplyRules
@@ -63,8 +64,8 @@ async def is_relevant(session: AsyncSession, view: HeaderView, recent: list[Rece
 
 def _known(view: HeaderView, recent: list[RecentReport]) -> bool:
     return from_known_recipient(
-        ParsedReply(from_domain=view.from_domain),
-        recent,  # only the domain is read
+        ParsedReply(from_address=view.from_address, from_domain=view.from_domain),
+        recent,  # only the sender is read
     )
 
 
@@ -109,13 +110,9 @@ async def store_reply(
         if state is None or state.status not in ("sent", "closed"):
             return Stored("not_sent")
     verdict = rules.classify(reply, matched=found.report_id is not None)
-    domains = (
-        await report_domains(session, found.report_id)
-        if found.report_id is not None
-        else frozenset()
-    )
+    trust = await report_trust(session, found.report_id) if found.report_id is not None else Trust()
     by_owner = source == "paste" and found.report_id is not None
-    verified = by_owner or is_verified(found, reply, domains)
+    verified = by_owner or is_verified(found, reply, trust)
     row = (
         await session.execute(
             text(INSERT_REPLY),

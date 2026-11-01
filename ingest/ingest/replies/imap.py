@@ -76,6 +76,7 @@ class ImapProfile:
     since: date
     enabled: bool = True
     password: str = field(default="", repr=False)
+    trusted_authserv_id: str | None = None  # the only Authentication-Results we believe
 
 
 @dataclass(frozen=True, slots=True)
