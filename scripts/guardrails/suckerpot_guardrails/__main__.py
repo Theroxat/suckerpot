@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from suckerpot_guardrails.compose import check_compose, load_compose
+from suckerpot_guardrails.compose import check_compose, check_vpn_entrypoint, load_compose
 
 
 def main(argv: list[str]) -> int:
@@ -20,6 +20,9 @@ def main(argv: list[str]) -> int:
                 problems += [
                     f"[{overlay.name}] {p}" for p in check_compose(load_compose([*base, overlay]))
                 ]
+    script = root / "vpn" / "entrypoint.sh"
+    if script.exists():
+        problems += check_vpn_entrypoint(script.read_text())
     for problem in problems:
         print(f"guardrails: {problem}", file=sys.stderr)
     return 1 if problems else 0
