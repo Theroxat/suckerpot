@@ -142,7 +142,8 @@ DECLARE
                   'fetch_attempts', 'samples', 'sample_analysis', 'sample_sources',
                   'sample_links', 'rdap_bootstrap', 'abuse_networks', 'abuse_lookups',
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
-                  'abuse_report_requests', 'report_settings', 'report_self_terms']
+                  'abuse_report_requests', 'report_settings', 'report_self_terms',
+                  'egress_trusted_exits']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -247,6 +248,10 @@ BEGIN
             pg_get_serial_sequence('public.report_self_terms', 'id'), r);
         -- @TERMS
     END IF;
+    IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
+        -- M23: the gate reads the ranges the owner trusted; only the API changes them.
+        EXECUTE format('GRANT SELECT ON egress_trusted_exits TO %I', r);
+    END IF;
     -- @RLS
     EXECUTE format(
         'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.events', 'id'), r);
@@ -294,7 +299,8 @@ DECLARE
                   'fetch_attempts', 'samples', 'sample_analysis', 'sample_sources',
                   'sample_links', 'rdap_bootstrap', 'abuse_networks', 'abuse_lookups',
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
-                  'abuse_report_requests', 'report_settings', 'report_self_terms']
+                  'abuse_report_requests', 'report_settings', 'report_self_terms',
+                  'egress_trusted_exits']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -384,6 +390,13 @@ BEGIN
             pg_get_serial_sequence('public.report_self_terms', 'id'), r);
         -- @TERMS
     END IF;
+    IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
+        -- M23: the owner trusts or removes a VPN exit range from the dashboard.
+        EXECUTE format('GRANT SELECT, INSERT, DELETE ON egress_trusted_exits TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s TO %I',
+            pg_get_serial_sequence('public.egress_trusted_exits', 'id'), r);
+    END IF;
     -- @RLS
 END
 $$
@@ -420,6 +433,9 @@ BEGIN
             'GRANT USAGE ON SEQUENCE %s, %s TO %I',
             pg_get_serial_sequence('public.fetch_targets', 'id'),
             pg_get_serial_sequence('public.fetch_attempts', 'id'), r);
+    END IF;
+    IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
+        EXECUTE format('GRANT SELECT ON egress_trusted_exits TO %I', r);
     END IF;
 END
 $$

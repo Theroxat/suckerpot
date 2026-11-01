@@ -1091,3 +1091,16 @@ class ReportSelfTermRow(Base):
         DateTime(timezone=True), server_default=_now(), nullable=False
     )
     confirmed: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+
+
+class EgressTrustedExitRow(Base):
+    """A VPN exit range the owner trusts (M23). At most 8 rows (trigger in migration 0020)."""
+
+    __tablename__ = "egress_trusted_exits"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    cidr: Mapped[str] = mapped_column(CIDR, unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    created_by: Mapped[str | None] = mapped_column(Text)
