@@ -20,6 +20,7 @@ import { alertsHandlers } from "./alerts"
 import { abuseHandlers } from "./abuse"
 import { abuseSendHandlers } from "./abuse-send"
 import { vpnHandlers } from "./vpn"
+import { networkHandlers } from "./network"
 import { setupHandlers } from "./setup"
 import { searchHandlers } from "./search"
 import { todayHandlers } from "./today"
@@ -96,6 +97,7 @@ export const handlers = [
   ...abuseSendHandlers,
   ...abuseHandlers,
   ...vpnHandlers,
+  ...networkHandlers,
   ...setupHandlers,
   ...scriptsHandlers,
   ...alertsHandlers,
