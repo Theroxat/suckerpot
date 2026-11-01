@@ -454,6 +454,8 @@ def upgrade() -> None:
                 CHECK (move_folder IS NULL OR char_length(move_folder) BETWEEN 1 AND 100),
             poll_minutes integer NOT NULL DEFAULT 15 CHECK (poll_minutes BETWEEN 5 AND 1440),
             since date NOT NULL DEFAULT ((now() AT TIME ZONE 'UTC')::date),
+            trusted_authserv_id text
+                CHECK (trusted_authserv_id IS NULL OR trusted_authserv_id ~ '^[a-z0-9.-]{1,255}$'),
             updated_at timestamptz NOT NULL DEFAULT now(),
             updated_by text CHECK (char_length(updated_by) <= 120),
             CHECK ((password_ciphertext IS NULL) = (password_nonce IS NULL)),
