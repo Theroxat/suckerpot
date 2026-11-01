@@ -1,6 +1,7 @@
 name: pages
 
-# Project page (site/) at /suckerpot/ and the offline mock-data dashboard at /suckerpot/demo/.
+# Project page (site/public/) at the Pages root and the offline mock-data dashboard at demo/.
+# The page does not link to demo/: it is the same page as the self-hosted site (site/README.md).
 # One-time setup: Settings > Pages > Build and deployment > Source: GitHub Actions.
 
 on:
@@ -46,7 +47,7 @@ jobs:
       - name: Assemble the site
         run: |
           mkdir -p _site
-          cp -r site/. _site/
+          cp -r site/public/. _site/
           mkdir -p _site/demo
           cp -r web/dist-demo/. _site/demo/
           touch _site/.nojekyll
