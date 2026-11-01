@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, insert, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
+from suckerpot_db.locks import ABUSE_SMTP_PROFILE
 from suckerpot_db.models import (
     AbuseRecipientRow,
     AbuseReportRow,
@@ -70,6 +71,8 @@ _MAILBOX = re.compile(r"^[A-Za-z0-9._%+\-]{1,64}@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+
 _NAME = re.compile(r"^[A-Za-z0-9 .,'()_\-]{0,100}$")
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
 
+PROFILE_LOCK_TIMEOUT = "70s"  # a send ends within 60 s
+OPEN = ("pending", "sending")  # a request that has not finished
 SmtpMode = Literal["off", "click", "auto"]
 Security = Literal["starttls", "ssl"]
 
@@ -273,6 +276,17 @@ async def sent_today(db: AsyncSession) -> int:
     return int(await db.scalar(text(SENT_TODAY_SQL)) or 0)
 
 
+async def _lock_profile(db: AsyncSession) -> bool:
+    """Wait for a report mail in flight (ingest holds this lock shared while it sends)."""
+    await db.execute(text(f"SET LOCAL lock_timeout = '{PROFILE_LOCK_TIMEOUT}'"))
+    try:
+        await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": ABUSE_SMTP_PROFILE})
+    except DBAPIError:
+        await db.rollback()
+        return False
+    return True
+
+
 async def _profile_out(db: AsyncSession) -> SmtpOut:
     profile = await load_profile(db)
     last = (
@@ -389,6 +403,10 @@ async def put_smtp(body: SmtpBody, request: Request, db: DbSession) -> Response:
         ciphertext, nonce = box.encrypt(PASSWORD_AAD, Credential(key=body.password))
         values |= {"password_ciphertext": ciphertext, "password_nonce": nonce}
         changed.append("password")
+    if not await _lock_profile(db):
+        return _refuse(
+            409, "A report is being sent right now. Try again in a minute.", "already_sending"
+        )
     if old is None:
         await db.execute(insert(ReportSmtpRow).values(id=1, **values))
     else:
@@ -410,6 +428,10 @@ async def delete_smtp(body: PasswordBody, request: Request, db: DbSession) -> Re
     principal, refused = await reauth.guard(request, body.current_password, "smtp profile removal")
     if refused is not None:
         return refused
+    if not await _lock_profile(db):
+        return _refuse(
+            409, "A report is being sent right now. Try again in a minute.", "already_sending"
+        )
     await db.execute(delete(ReportSmtpRow).where(ReportSmtpRow.id == 1))
     # Nothing may leave after the profile is gone.
     await db.execute(
@@ -437,7 +459,7 @@ async def test_smtp(body: PasswordBody, request: Request, db: DbSession) -> Resp
     busy = await db.scalar(
         select(func.count())
         .select_from(AbuseSendRequestRow)
-        .where(AbuseSendRequestRow.kind == "test", AbuseSendRequestRow.status == "pending")
+        .where(AbuseSendRequestRow.kind == "test", AbuseSendRequestRow.status.in_(OPEN))
     )
     if busy:
         return _refuse(409, "A test is already waiting to be sent.", "already_queued")
@@ -529,7 +551,7 @@ async def send_report(
     if await db.scalar(
         select(func.count())
         .select_from(AbuseSendRequestRow)
-        .where(AbuseSendRequestRow.report_id == row.id, AbuseSendRequestRow.status == "pending")
+        .where(AbuseSendRequestRow.report_id == row.id, AbuseSendRequestRow.status.in_(OPEN))
     ):
         return _refuse(409, "This report is already waiting to be sent.", "already_queued")
     bundle = await load_settings(db)
@@ -569,7 +591,8 @@ async def cancel_send(public_id: uuid.UUID, request: Request, db: DbSession) -> 
     if loaded is None:
         return _refuse(404, "Report not found.", "not_found")
     row = loaded[0]
-    # Ingest locks the request while it sends: wait a moment, then say so instead of hanging.
+    # Only a request nobody started can be cancelled: ingest marks it ``sending`` (committed)
+    # before it connects, and from then on the mail may be on the wire.
     await db.execute(text("SET LOCAL lock_timeout = '2s'"))
     try:
         res = await db.execute(
@@ -582,6 +605,13 @@ async def cancel_send(public_id: uuid.UUID, request: Request, db: DbSession) -> 
         return _refuse(409, "The report is being sent right now.", "already_sending")
     count = int(res.rowcount or 0)  # type: ignore[attr-defined]
     if count == 0:
+        if await db.scalar(
+            select(func.count())
+            .select_from(AbuseSendRequestRow)
+            .where(AbuseSendRequestRow.report_id == row.id, AbuseSendRequestRow.status == "sending")
+        ):
+            await db.rollback()
+            return _refuse(409, "The report is being sent right now.", "already_sending")
         await db.rollback()
         return _refuse(409, "Nothing is waiting to be sent for this report.", "nothing_to_cancel")
     principal = await current_principal(request)

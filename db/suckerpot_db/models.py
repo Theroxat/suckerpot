@@ -1165,6 +1165,8 @@ class AbuseSendRequestRow(Base):
         DateTime(timezone=True), server_default=_now(), nullable=False
     )
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # pending | sending | sent | failed | cancelled
     status: Mapped[str] = mapped_column(Text, server_default=text("'pending'"), nullable=False)
     error_code: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

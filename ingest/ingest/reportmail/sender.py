@@ -27,6 +27,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from suckerpot_db.locks import ABUSE_SMTP_PROFILE
 from suckerpot_db.secretbox import SecretBox, SecretError
 from suckerpot_reporting import (
     Evidence,
@@ -72,6 +73,21 @@ MARK_AUTO = (
     "reviewed_at = now(), reviewed_by = 'auto', reviewed_revision = revision "
     "WHERE id = :i AND status IN ('draft', 'reviewed')"
 )
+
+
+# Sends that left today (UTC), as an SQL scalar for the daily cap.
+SENT_TODAY = (
+    "SELECT count(*) FROM abuse_send_requests s WHERE s.kind = 'send' AND s.status = 'sent' "
+    "AND s.done_at >= (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')"
+)
+STALE_SENDING_S = SMTP_DEADLINE_S + 30
+
+
+@dataclass(frozen=True, slots=True)
+class Prepared:
+    raw: bytes
+    rcpt: str
+    report: dict[str, Any] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,15 +167,23 @@ class ReportSender:
     # -- one cycle -----------------------------------------------------------------------
 
     async def run(self, now: datetime) -> None:
+        await self._sweep()
         async with self.factory() as session:
+            profile = await self.load_profile(session)
             ids = (
                 (
                     await session.execute(
                         text(
-                            "SELECT id FROM abuse_send_requests WHERE status = 'pending' "
-                            "ORDER BY id LIMIT :n"
+                            "SELECT id FROM abuse_send_requests q WHERE q.status = 'pending' "  # noqa: S608
+                            "AND (q.scheduled_at IS NULL OR q.scheduled_at <= :now) "
+                            "AND (NOT q.auto OR (" + SENT_TODAY + ") < :cap) "
+                            "ORDER BY q.auto, q.id LIMIT :n"
                         ),
-                        {"n": MAX_PER_CYCLE},
+                        {
+                            "now": now,
+                            "cap": profile.daily_cap if profile is not None else 0,
+                            "n": MAX_PER_CYCLE,
+                        },
                     )
                 )
                 .scalars()
@@ -168,6 +192,19 @@ class ReportSender:
         for rid in ids:
             await self._handle(rid, now)
         await self.schedule(now)
+
+    async def _sweep(self) -> None:
+        """A request left in ``sending`` (ingest died around the delivery) ended in an outcome
+        nobody knows. It is failed, never retried: a second mail would be worse."""
+        async with self.factory() as session, session.begin():
+            await session.execute(
+                text(
+                    "UPDATE abuse_send_requests SET status = 'failed', "
+                    "error_code = 'unknown_outcome', done_at = now() "
+                    "WHERE status = 'sending' AND started_at < now() - make_interval(secs => :s)"
+                ),
+                {"s": STALE_SENDING_S},
+            )
 
     async def schedule(self, now: datetime) -> int:
         """Auto mode: a pending request, ``auto_hold_minutes`` ahead, for each ready report that
@@ -196,74 +233,123 @@ class ReportSender:
             )
             return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
-    async def _sent_today(self, session: AsyncSession) -> int:
-        return int(
-            await session.scalar(
-                text(
-                    "SELECT count(*) FROM abuse_send_requests WHERE kind = 'send' "
-                    "AND status = 'sent' AND done_at >= "
-                    "(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')"
-                )
-            )
-            or 0
-        )
-
     async def _finish(
         self, session: AsyncSession, rid: int, status: str, code: str | None = None
     ) -> None:
         await session.execute(
             text(
                 "UPDATE abuse_send_requests SET status = :s, error_code = :c, done_at = now() "
-                "WHERE id = :i AND status = 'pending'"
+                "WHERE id = :i AND status IN ('pending', 'sending')"
             ),
             {"s": status, "c": code, "i": rid},
         )
 
+    async def _claim(self, rid: int) -> bool:
+        """``sending`` is committed on its own BEFORE anything is connected. From here on the
+        request is never picked again: a crash leaves it ``sending`` and the sweep fails it."""
+        async with self.factory() as session, session.begin():
+            claimed = await session.execute(
+                text(
+                    "UPDATE abuse_send_requests SET status = 'sending', started_at = now() "
+                    "WHERE id = :i AND status = 'pending'"
+                ),
+                {"i": rid},
+            )
+            return claimed.rowcount == 1  # type: ignore[attr-defined,no-any-return]
+
     # -- one request ---------------------------------------------------------------------
 
     async def _handle(self, rid: int, now: datetime) -> None:
+        # One transaction for the whole mail. Its shared advisory lock makes the API wait when
+        # the owner edits or deletes the profile while a mail is in flight.
         async with self.factory() as session, session.begin():
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock_shared(:k)"), {"k": ABUSE_SMTP_PROFILE}
+            )
             row = (
                 await session.execute(
                     text(
                         "SELECT id, report_id, kind, auto, requested_by, requested_at, "
                         "scheduled_at FROM abuse_send_requests "
-                        "WHERE id = :i AND status = 'pending' FOR UPDATE SKIP LOCKED"
+                        "WHERE id = :i AND status = 'pending'"
                     ),
                     {"i": rid},
                 )
             ).first()
             if row is None:
-                return  # cancelled meanwhile, or the API holds the row
+                return  # cancelled meanwhile
             req = Request(*row)
             profile = await self.load_profile(session)
             if profile is None:
                 await self._finish(session, rid, "failed", "not_configured")
-                return
-            if req.scheduled_at is not None and req.scheduled_at > now:
                 return
             if req.kind == "send":
                 refused = self._mode_refusal(req, profile)
                 if refused is not None:
                     await self._finish(session, rid, refused[0], refused[1])
                     return
-                if req.auto and await self._sent_today(session) >= profile.daily_cap:
-                    return  # the cap is per UTC day: it stays pending until tomorrow
+            if (
+                req.auto
+                and req.kind == "send"
+                and int(await session.scalar(text(SENT_TODAY)) or 0) >= profile.daily_cap
+            ):
+                return  # the cap is per UTC day: it stays pending until tomorrow
             if not gate_open(self.gate):
                 # Nothing is attempted: no socket, no tunnel. A send waits for the VPN.
                 if req.kind == "test" and now - req.requested_at > TEST_EGRESS_WAIT:
                     await self._finish(session, rid, "failed", "egress_closed")
                 return
             try:
-                await self._send(session, req, profile, now)
-            except SendFailure as exc:
-                if exc.code == "egress_closed" and req.kind == "send":
-                    return  # the gate closed under us: still pending
+                prepared = await self._prepare(session, req, profile, now)
+            except SendFailure as exc:  # nothing was sent: the guard or the report said no
                 await self._finish(session, rid, "failed", exc.stored)
                 log.info("abuse mail request %s failed (%s)", rid, exc.code)
+                return
             except Exception as exc:  # never let a message text escape
                 log.warning("abuse mail request %s failed (%s)", rid, type(exc).__name__)
                 await self._finish(session, rid, "failed", "internal")
+                return
+            if not await self._claim(rid):
+                return  # the owner cancelled it in the meantime
+            await self._deliver_and_record(session, req, profile, prepared)
+
+    async def _deliver_and_record(
+        self, session: AsyncSession, req: Request, profile: Profile, prepared: Prepared
+    ) -> None:
+        try:
+            await self._deliver(profile, prepared.raw, prepared.rcpt)
+        except SendFailure as exc:
+            if exc.code == "egress_closed" and req.kind == "send":
+                # Raised before any connection existed: nothing was sent, so it may wait.
+                await session.execute(
+                    text(
+                        "UPDATE abuse_send_requests SET status = 'pending', started_at = NULL "
+                        "WHERE id = :i AND status = 'sending'"
+                    ),
+                    {"i": req.id},
+                )
+                return
+            await self._finish(session, req.id, "failed", exc.stored)
+            log.info("abuse mail request %s failed (%s)", req.id, exc.code)
+            return
+        except Exception as exc:  # after the claim an unexpected error leaves the outcome unknown
+            log.warning("abuse mail request %s failed (%s)", req.id, type(exc).__name__)
+            await self._finish(session, req.id, "failed", "unknown_outcome")
+            return
+        await self._mark_done(session, req, prepared)
+
+    async def _mark_done(self, session: AsyncSession, req: Request, prepared: Prepared) -> None:
+        """The mail is gone. A failure to mark the report must not stop the request ending as
+        sent; if even the commit fails the request stays ``sending`` and is never sent again."""
+        if prepared.report is not None:
+            stamp: dict[str, Any] = {"i": prepared.report["id"], "by": req.requested_by[:120]}
+            auto_review = req.auto and prepared.report["status"] == "draft"
+            try:
+                async with session.begin_nested():
+                    await session.execute(text(MARK_AUTO if auto_review else MARK_SENT), stamp)
+            except DBAPIError:
+                log.warning("abuse report %s was sent but could not be marked", stamp["i"])
+        await self._finish(session, req.id, "sent")
 
     @staticmethod
     def _mode_refusal(req: Request, profile: Profile) -> tuple[str, str] | None:
@@ -273,17 +359,15 @@ class ReportSender:
             return ("cancelled", "mode_changed")
         return None
 
-    async def _send(
+    async def _prepare(
         self, session: AsyncSession, req: Request, profile: Profile, now: datetime
-    ) -> None:
+    ) -> Prepared:
+        """Build and guard the complete message. Raises before anything is claimed or sent."""
         terms = await self.terms.get()
         if req.kind == "test":
             raw = build_test_message(profile)
-            rcpt = profile.from_address
-            check_message(raw, profile, rcpt, terms)
-            await self._deliver(profile, raw, rcpt)
-            await self._finish(session, req.id, "sent")
-            return
+            check_message(raw, profile, profile.from_address, terms)
+            return Prepared(raw, profile.from_address, None)
         if req.report_id is None:
             raise SendFailure("not_ready")
         report = await self._load_report(session, req.report_id)
@@ -291,33 +375,21 @@ class ReportSender:
             raise SendFailure("not_ready")
         rendered, ctx = await self._render(session, report)
         raw = build_message(profile, rendered, now=now)
-        rcpt = rendered.to
-        check_message(raw, profile, rcpt, terms, ctx=ctx, rendered=rendered)
-        await self._deliver(profile, raw, rcpt)
-        stamp: dict[str, Any] = {"i": report["id"], "by": req.requested_by[:120]}
-        auto_review = req.auto and report["status"] == "draft"
-        # The mail is gone: whatever happens to the bookkeeping, the request must end as sent,
-        # or the next cycle would send it again.
-        try:
-            async with session.begin_nested():
-                await session.execute(
-                    text(MARK_AUTO if auto_review else MARK_SENT),
-                    stamp,
-                )
-        except DBAPIError:
-            log.warning("abuse report %s was sent but could not be marked", report["id"])
-        await self._finish(session, req.id, "sent")
+        check_message(raw, profile, rendered.to, terms, ctx=ctx, rendered=rendered)
+        return Prepared(raw, rendered.to, report)
 
     async def _deliver(self, profile: Profile, raw: bytes, rcpt: str) -> None:
         try:
             self.gate.require_open()  # before any thread, socket or tunnel exists
+            # The thread enforces the deadline itself; this is only a backstop.
             await asyncio.wait_for(
-                asyncio.to_thread(deliver, self.gate, profile, raw, rcpt), SMTP_DEADLINE_S
+                asyncio.to_thread(deliver, self.gate, profile, raw, rcpt),
+                SMTP_DEADLINE_S + 10,
             )
         except EgressClosed:
             raise SendFailure("egress_closed") from None
         except TimeoutError:
-            raise SendFailure("timeout") from None
+            raise SendFailure("unknown_outcome") from None
 
     # -- the report ----------------------------------------------------------------------
 

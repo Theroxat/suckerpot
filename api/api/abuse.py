@@ -25,7 +25,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import ColumnElement, delete, func, literal_column, select, update
+from sqlalchemy import ColumnElement, delete, func, literal_column, select, text, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db.models import (
@@ -803,11 +803,27 @@ async def set_status(
         return error(409, "The draft changed while you were reading it.", "revision_mismatch")
     if body.to == "sent":
         # Marked sent by hand: a send request still waiting for this report must not go out.
-        await db.execute(
-            update(AbuseSendRequestRow)
-            .where(AbuseSendRequestRow.report_id == row.id, AbuseSendRequestRow.status == "pending")
-            .values(status="cancelled")
-        )
+        # One that ingest already started (``sending``) cannot be stopped: say so.
+        await db.execute(text("SET LOCAL lock_timeout = '2s'"))
+        try:
+            await db.execute(
+                update(AbuseSendRequestRow)
+                .where(
+                    AbuseSendRequestRow.report_id == row.id,
+                    AbuseSendRequestRow.status == "pending",
+                )
+                .values(status="cancelled")
+            )
+        except DBAPIError:
+            await db.rollback()
+            return error(409, "The report is being sent right now.", "already_sending")
+        if await db.scalar(
+            select(func.count())
+            .select_from(AbuseSendRequestRow)
+            .where(AbuseSendRequestRow.report_id == row.id, AbuseSendRequestRow.status == "sending")
+        ):
+            await db.rollback()
+            return error(409, "The report is being sent right now.", "already_sending")
     await audit_db.record(
         db,
         actor=actor,

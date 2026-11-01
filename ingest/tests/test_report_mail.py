@@ -118,14 +118,19 @@ class FakeSMTP:
 
     instances: ClassVar[list[FakeSMTP]] = []
     fail: ClassVar[dict[str, BaseException]] = {}
+    hold: ClassVar[threading.Event | None] = None  # sendmail waits for it (a send in flight)
+    entered: ClassVar[threading.Event] = threading.Event()
 
     def __init__(self, gate: EgressGate, host: str, port: int, **kwargs: Any) -> None:
-        if "connect" in FakeSMTP.fail:
-            raise FakeSMTP.fail["connect"]
         self.gate, self.host, self.port, self.kwargs = gate, host, port, kwargs
         self.calls: list[str] = []
         self.sent: tuple[str, list[str], bytes] | None = None
         FakeSMTP.instances.append(self)
+
+    def connect(self, host: str, port: int) -> None:
+        if "connect" in FakeSMTP.fail:
+            raise FakeSMTP.fail["connect"]
+        self.host, self.port = host, port
 
     def __enter__(self) -> FakeSMTP:
         return self
@@ -149,6 +154,9 @@ class FakeSMTP:
             raise FakeSMTP.fail["auth"]
 
     def sendmail(self, sender: str, rcpts: list[str], raw: bytes) -> None:
+        FakeSMTP.entered.set()
+        if FakeSMTP.hold is not None:
+            FakeSMTP.hold.wait(10)
         if "send" in FakeSMTP.fail:
             raise FakeSMTP.fail["send"]
         self.calls.append("send")
@@ -159,6 +167,8 @@ class FakeSMTP:
 def smtp(monkeypatch: pytest.MonkeyPatch) -> type[FakeSMTP]:
     FakeSMTP.instances = []
     FakeSMTP.fail = {}
+    FakeSMTP.hold = None
+    FakeSMTP.entered = threading.Event()
     monkeypatch.setattr(outgoing, "TunnelSMTP", FakeSMTP)
     monkeypatch.setattr(outgoing, "TunnelSMTP_SSL", FakeSMTP)
     return FakeSMTP
@@ -279,7 +289,9 @@ def test_implicit_tls_uses_the_ssl_client_with_a_verifying_context(
         ("send", smtplib.SMTPRecipientsRefused({"abuse@example.net": (550, b"no")}), "refused"),
         ("send", smtplib.SMTPDataError(554, b"rejected"), "refused"),
         ("send", smtplib.SMTPSenderRefused(550, b"no", "sender@mail.example.org"), "refused"),
-        ("send", TimeoutError("slow"), "timeout"),
+        ("send", TimeoutError("slow"), "unknown_outcome"),  # DATA may have started
+        ("send", smtplib.SMTPServerDisconnected("gone"), "unknown_outcome"),
+        ("send", OSError("reset"), "unknown_outcome"),
     ],
 )  # fmt: skip
 def test_errors_map_to_constant_codes_without_secrets(
@@ -347,7 +359,7 @@ def proxy() -> Any:
     listener.close()
 
 
-def gate_towards(listener: Listener, *, open_: bool) -> EgressGate:
+def gate_towards(listener: Any, *, open_: bool) -> EgressGate:
     gate = fake_gate(open_=open_)
     gate.settings = EgressSettings(
         proxy_url=f"http://127.0.0.1:{listener.port}", proxy_password="t" * 24
@@ -500,3 +512,63 @@ def test_every_planted_form_in_any_header_or_part_blocks_the_send(
         check_message(plant(case["text"], where), PROFILE, "abuse@example.net", TERMS, ctx=ctx)
     assert err.value.code == "guard_failed"
     assert set(case["codes"]) <= set(err.value.reasons), (where, err.value.reasons)
+
+
+# ---- the deadline lives in the delivery thread ---------------------------------------------
+
+
+class Dripper:
+    """A stand-in proxy that accepts the CONNECT, then drips the SMTP banner one byte at a time:
+    no single socket operation ever times out, only the overall deadline can end it."""
+
+    def __init__(self) -> None:
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(4)
+        self.sock.settimeout(0.05)
+        self.port: int = self.sock.getsockname()[1]
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                conn, _ = self.sock.accept()
+            except (TimeoutError, OSError):
+                continue
+            try:
+                conn.settimeout(2.0)
+                conn.recv(4096)
+                conn.sendall(b"HTTP/1.1 200 OK\r\n\r\n")
+                for byte in b"220 smtp.example.org ESMTP ready\r\n" * 40:
+                    if self._stop.is_set():
+                        break
+                    conn.sendall(bytes([byte]))
+                    self._stop.wait(0.15)
+            except OSError:
+                pass
+            finally:
+                conn.close()
+
+    def close(self) -> None:
+        self._stop.set()
+        self._thread.join(3)
+        self.sock.close()
+
+
+def test_a_dripping_server_cannot_outlive_the_deadline() -> None:
+    import time
+
+    drip = Dripper()
+    try:
+        started = time.monotonic()
+        with pytest.raises(SendFailure) as err:
+            deliver(
+                gate_towards(drip, open_=True), PROFILE, b"x", "abuse@example.net", deadline_s=1.5
+            )
+        elapsed = time.monotonic() - started
+    finally:
+        drip.close()
+    assert err.value.code == "timeout"  # still before the message: a plain timeout
+    assert elapsed < 5.0

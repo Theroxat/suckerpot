@@ -15,7 +15,7 @@ def test_public_names_are_accepted(host: str) -> None:
 @pytest.mark.parametrize(
     "host",
     [
-        "", "mail", "localhost", "192.0.2.10", "2130706433", "0x7f.0.0.1", "1.2.3.4", "[::1]",
+        "", "mail", "localhost", "192.0.2.10", "2130706433", "0x7f.0.0.1", "203.0.113.4", "[::1]",
         "::1", "mail.local", "mail.internal", "mail.lan", "mail.localdomain", "mail.home.arpa",
         "host.corp", "-a.example.org", "a-.example.org", "a_b.example.org",
         "mail.example.org.", "a..example.org", "a" * 64 + ".example.org", ("a." * 130) + "org",

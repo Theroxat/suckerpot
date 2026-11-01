@@ -14,6 +14,20 @@ from ingest.alerts.send import Sender, SendError
 
 from .helpers import fake_gate
 
+SELF = "203.0.113.77"
+
+
+def make_terms(*, address: bool = True) -> Any:
+    from suckerpot_reporting import SelfTermRow, load_self_terms
+
+    rows = [SelfTermRow(kind="address", value=SELF, source="manual")] if address else []
+    return load_self_terms(rows, {})
+
+
+async def known_terms() -> Any:
+    return make_terms()
+
+
 TOKEN = "T" * 30
 DISCORD = f"https://discord.com/api/webhooks/123456789012345678/{TOKEN}"
 
@@ -29,7 +43,12 @@ def sender(
         return response
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(wrapped), follow_redirects=False)
-    return Sender(settings or AlertSettings(), client=client, gate=gate or fake_gate()), seen
+    return (
+        Sender(
+            settings or AlertSettings(), client=client, gate=gate or fake_gate(), terms=known_terms
+        ),
+        seen,
+    )
 
 
 async def test_discord_post_goes_to_the_host_name() -> None:
@@ -42,7 +61,7 @@ async def test_discord_post_goes_to_the_host_name() -> None:
 
 async def test_closed_gate_sends_nothing_and_is_retryable() -> None:
     gate = fake_gate(open_=False, reason="tunnel_down")
-    s = Sender(AlertSettings(), gate=gate)  # the real, gate-checked client
+    s = Sender(AlertSettings(), gate=gate, terms=known_terms)  # the real, gate-checked client
     with pytest.raises(SendError) as err:
         await s.send("discord", DISCORD, sample_message())
     assert err.value.code == "egress_closed" and err.value.retryable
@@ -233,7 +252,7 @@ async def test_the_whole_smtp_exchange_has_a_deadline(
 
 
 def test_the_http_client_keeps_no_connections_alive() -> None:
-    s = Sender(AlertSettings(), gate=fake_gate())
+    s = Sender(AlertSettings(), gate=fake_gate(), terms=known_terms)
     pool = s.client._transport._inner._pool  # type: ignore[attr-defined]
     assert pool._max_keepalive_connections == 0
 

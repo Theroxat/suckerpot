@@ -4,12 +4,14 @@ self address fails closed). The SMTP client is a fake: no test opens a connectio
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import email
 import email.policy
 import json
 import os
 import smtplib
+import threading
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -18,6 +20,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from suckerpot_db import create_engine
+from suckerpot_db.locks import ABUSE_SMTP_PROFILE
 from suckerpot_db.secretbox import Credential, SecretBox
 from suckerpot_egress import EgressClosed
 
@@ -215,6 +218,8 @@ def _role_url_api() -> str:
 def smtp(monkeypatch: pytest.MonkeyPatch) -> type[FakeSMTP]:
     FakeSMTP.instances = []
     FakeSMTP.fail = {}
+    FakeSMTP.hold = None
+    FakeSMTP.entered = threading.Event()
     monkeypatch.setattr(outgoing, "TunnelSMTP", FakeSMTP)
     monkeypatch.setattr(outgoing, "TunnelSMTP_SSL", FakeSMTP)
     return FakeSMTP
@@ -454,7 +459,7 @@ async def test_an_unusable_profile_fails_the_request(world: World) -> None:
     [
         (smtplib.SMTPAuthenticationError(535, b"nope"), "auth_failed"),
         (smtplib.SMTPRecipientsRefused({"x": (550, b"no")}), "refused"),
-        (TimeoutError("slow"), "timeout"),
+        (TimeoutError("slow"), "unknown_outcome"),  # in DATA: nobody knows
     ],
 )
 async def test_a_failed_send_keeps_the_report_ready(
@@ -543,3 +548,136 @@ async def test_a_cancelled_auto_request_is_not_scheduled_again(world: World) -> 
     async with world.owner.connect() as conn:
         count = await conn.scalar(text("SELECT count(*) FROM abuse_send_requests"))
     assert count == 1 and FakeSMTP.instances == []
+
+
+# ---- at most once ----------------------------------------------------------------------------
+
+
+async def _status(world: World, rid: int) -> Any:
+    return await world.request(rid)
+
+
+async def test_a_crash_after_the_delivery_never_sends_a_second_time(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The commit that would record the send is killed. The request was marked ``sending`` in its
+    own earlier transaction, so no later cycle picks it again."""
+    await world.self_address()
+    await world.profile()
+    report = await world.report(status="reviewed")
+    rid = await world.ask(report)
+
+    async def killed(*_a: object, **_k: object) -> None:
+        raise RuntimeError("process died before the commit")
+
+    monkeypatch.setattr(ReportSender, "_mark_done", killed)
+    with pytest.raises(RuntimeError):
+        await world.sender().run(NOW)
+    assert len(FakeSMTP.instances) == 1  # the mail went
+    req = await world.request(rid)
+    assert req.status == "sending" and req.started_at is not None and req.done_at is None
+    assert (await world.report_row(report)).status == "reviewed"  # nothing recorded
+    monkeypatch.undo()
+    fresh = world.sender()
+    await fresh.run(NOW)
+    await fresh.run(NOW + timedelta(hours=3))
+    assert len(FakeSMTP.instances) == 1  # a sending request is never picked again
+    assert (await world.request(rid)).status == "sending"  # not yet past the deadline
+    async with world.owner.begin() as conn:
+        await conn.execute(
+            text("UPDATE abuse_send_requests SET started_at = now() - interval '10 minutes'")
+        )
+    await fresh.run(NOW)
+    req = await world.request(rid)
+    assert req.status == "failed" and req.error_code == "unknown_outcome" and req.done_at
+    await fresh.run(NOW + timedelta(hours=3))
+    assert len(FakeSMTP.instances) == 1
+    assert (await world.report_row(report)).status == "reviewed"  # the owner decides
+
+
+async def test_a_timeout_during_data_is_an_unknown_outcome_and_is_not_retried(
+    world: World,
+) -> None:
+    await world.self_address()
+    await world.profile()
+    report = await world.report(status="reviewed")
+    rid = await world.ask(report)
+    FakeSMTP.fail["send"] = TimeoutError("slow")
+    s = world.sender()
+    await s.run(NOW)
+    req = await world.request(rid)
+    assert req.status == "failed" and req.error_code == "unknown_outcome"
+    FakeSMTP.fail = {}
+    await s.run(NOW + timedelta(hours=1))
+    assert len(FakeSMTP.instances) == 1
+    assert (await world.report_row(report)).status == "reviewed"
+
+
+async def test_the_profile_is_locked_while_a_mail_is_in_flight(world: World) -> None:
+    await world.self_address()
+    await world.profile()
+    report = await world.report(status="reviewed")
+    rid = await world.ask(report)
+    FakeSMTP.hold = threading.Event()
+    task = asyncio.create_task(world.sender().run(NOW))
+    try:
+        for _ in range(100):
+            if FakeSMTP.entered.is_set():
+                break
+            await asyncio.sleep(0.1)
+        assert FakeSMTP.entered.is_set()
+        assert (await world.request(rid)).status == "sending"
+        async with world.api.connect() as conn:  # what the API takes to change the profile
+            free = await conn.scalar(
+                text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": ABUSE_SMTP_PROFILE}
+            )
+        assert free is False
+    finally:
+        assert FakeSMTP.hold is not None
+        FakeSMTP.hold.set()
+        await task
+    async with world.api.connect() as conn:
+        assert await conn.scalar(
+            text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": ABUSE_SMTP_PROFILE}
+        )
+    assert (await world.request(rid)).status == "sent"
+
+
+async def test_non_automatic_requests_go_first_and_a_reached_cap_skips_the_automatic(
+    world: World,
+) -> None:
+    await world.self_address()
+    await world.profile(mode="auto", hold=10, cap=1)
+    auto_one = await world.report(status="reviewed")
+    auto_two = await world.report(status="reviewed")
+    click_report = await world.report(status="reviewed")
+    s = world.sender()
+    await s.run(NOW)  # schedules the three reports
+    async with world.owner.begin() as conn:
+        # the owner clicked Send on the last one: a plain request, due at once
+        await conn.execute(
+            text("DELETE FROM abuse_send_requests WHERE report_id = :r"), {"r": click_report}
+        )
+    await world.ask(click_report)
+    later = datetime.now(UTC) + timedelta(minutes=11)
+    await s.run(later)
+    # The plain request goes first and spends the cap (1): the automatic ones stay pending.
+    assert len(FakeSMTP.instances) == 1
+    async with world.owner.connect() as conn:
+        rows = (
+            await conn.execute(
+                text("SELECT report_id, status, auto FROM abuse_send_requests ORDER BY id")
+            )
+        ).all()
+    assert [(r.report_id, r.status) for r in rows if not r.auto] == [(click_report, "sent")]
+    assert {r.report_id for r in rows if r.auto and r.status == "pending"} == {auto_one, auto_two}
+
+
+async def test_a_future_schedule_is_not_picked(world: World) -> None:
+    await world.self_address()
+    await world.profile(mode="auto", hold=60)
+    await world.report(status="reviewed")
+    s = world.sender()
+    await s.run(NOW)
+    await s.run(NOW + timedelta(minutes=30))
+    assert FakeSMTP.instances == []

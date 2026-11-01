@@ -31,6 +31,7 @@ from test_abuse_integration import (
 )
 
 import api.abuse_core as core
+from api import abuse_smtp
 
 pytestmark = [
     pytest.mark.integration,
@@ -137,7 +138,7 @@ async def test_an_unconfigured_profile(api: httpx.AsyncClient) -> None:
     "host",
     ["192.0.2.10", "2130706433", "0x7f.1", "localhost", "mail", "smtp.local", "smtp.internal",
      "smtp.lan", "-bad.example.org", "bad_.example.org", "a" * 64 + ".example.org", "[::1]",
-     "smtp.example.org.", "smtp.home.arpa", "1.2.3.4"],
+     "smtp.example.org.", "smtp.home.arpa", "203.0.113.4"],
 )  # fmt: skip
 async def test_the_host_must_be_a_public_dns_name(api: httpx.AsyncClient, host: str) -> None:
     r = await put_profile(api, host=host)
@@ -381,14 +382,44 @@ async def test_cancel(api: httpx.AsyncClient) -> None:
 
 
 async def test_a_request_being_sent_cannot_be_cancelled(api: httpx.AsyncClient) -> None:
-    """Ingest keeps the request row locked while it sends: the cancel says so, it does not hang."""
+    """Ingest marks the request ``sending`` before it connects: the mail may be on the wire."""
     await put_profile(api)
     assert (await api.post(f"/api/v1/abuse/reports/{SENT_ID}/send")).status_code == 202
     async with owner_engine() as owner, owner.begin() as conn:
-        await conn.execute(text("SELECT id FROM abuse_send_requests FOR UPDATE"))
-        r = await api.post(f"/api/v1/abuse/reports/{SENT_ID}/send/cancel")
+        await conn.execute(
+            text("UPDATE abuse_send_requests SET status = 'sending', started_at = now()")
+        )
+    r = await api.post(f"/api/v1/abuse/reports/{SENT_ID}/send/cancel")
     assert r.status_code == 409 and r.json()["code"] == "already_sending"
-    assert await count("SELECT status FROM abuse_send_requests") == "pending"
+    assert await count("SELECT status FROM abuse_send_requests") == "sending"
+    again = await api.post(f"/api/v1/abuse/reports/{SENT_ID}/send")
+    assert again.status_code == 409 and again.json()["code"] == "already_queued"
+    rev = (await api.get(f"/api/v1/abuse/reports/{SENT_ID}")).json()["revision"]
+    by_hand = await api.post(
+        f"/api/v1/abuse/reports/{SENT_ID}/status", json={"to": "sent", "revision": rev}
+    )
+    assert by_hand.status_code == 409 and by_hand.json()["code"] == "already_sending"
+    assert await count("SELECT status FROM abuse_reports WHERE public_id = :p", p=SENT_ID) == (
+        "reviewed"
+    )
+
+
+async def test_profile_changes_wait_for_a_mail_in_flight(
+    api: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await put_profile(api)
+    monkeypatch.setattr(abuse_smtp, "PROFILE_LOCK_TIMEOUT", "1s")
+    async with owner_engine() as owner, owner.begin() as conn:
+        # what ingest holds, shared, while it sends
+        await conn.execute(text("SELECT pg_advisory_xact_lock_shared(25001)"))
+        edit = await put_profile(api, mode="auto")
+        gone = await api.request(
+            "DELETE", "/api/v1/abuse/smtp", json={"current_password": PASSWORD}
+        )
+    for r in (edit, gone):
+        assert r.status_code == 409 and r.json()["code"] == "already_sending"
+    assert (await api.get("/api/v1/abuse/smtp")).json()["mode"] == "click"  # untouched
+    assert (await put_profile(api, mode="auto")).status_code == 200  # the lock is gone
 
 
 async def test_marking_sent_by_hand_withdraws_a_waiting_request(api: httpx.AsyncClient) -> None:

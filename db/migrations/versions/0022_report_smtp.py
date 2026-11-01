@@ -13,7 +13,10 @@ Revises: 0021
   exists (``sent_via = 'smtp'``, guard passed); draft to sent is possible for ingest only, and
   ``reviewed_by = 'auto'`` marks an automatic send. The API can never write ``sent_via = 'smtp'``.
 * ``abuse_send_requests_guard``: the API may only insert pending, non-automatic requests and may
-  only cancel a pending one; ingest may only insert automatic pending ``send`` requests.
+  only cancel a pending one; ingest may only insert automatic pending ``send`` requests. Delivery
+  is at most once: ingest commits ``sending`` (with ``started_at``) before it connects, only
+  ``pending`` rows are ever picked, and a ``sending`` row that is never finished becomes
+  ``failed`` / ``unknown_outcome`` and is not retried.
 """
 
 from collections.abc import Sequence
@@ -70,11 +73,11 @@ BEGIN
     IF ingest_mode THEN
         smtp_send := NEW.status = 'sent' AND OLD.status <> 'sent';
         IF smtp_send THEN
-            -- Mail left through the SMTP profile: a pending request for this report must exist.
+            -- Mail left through the SMTP profile: a request for this report must be in 'sending'.
             IF NEW.sent_via IS DISTINCT FROM 'smtp' OR NOT NEW.guard_ok OR NOT EXISTS (
                 SELECT 1 FROM abuse_send_requests
-                WHERE report_id = OLD.id AND kind = 'send' AND status = 'pending') THEN
-                RAISE EXCEPTION 'a report is sent by ingest only for a pending send request'
+                WHERE report_id = OLD.id AND kind = 'send' AND status = 'sending') THEN
+                RAISE EXCEPTION 'a report is sent by ingest only for a request being sent'
                     USING ERRCODE = '23514';
             END IF;
             IF NEW.evidence IS DISTINCT FROM OLD.evidence
@@ -192,14 +195,23 @@ BEGIN
        OR NEW.scheduled_at IS DISTINCT FROM OLD.scheduled_at THEN
         RAISE EXCEPTION 'a send request is immutable' USING ERRCODE = '23514';
     END IF;
-    IF OLD.status <> 'pending' THEN
+    IF OLD.status IN ('sent', 'failed', 'cancelled') THEN
         RAISE EXCEPTION 'a finished send request cannot change' USING ERRCODE = '23514';
     END IF;
     IF NOT ingest_mode THEN
-        IF NEW.status <> 'cancelled' THEN
+        -- The API cancels a request that nobody has started. Once ingest set it to 'sending'
+        -- the mail may already be on the wire: nothing changes it but ingest.
+        IF OLD.status <> 'pending' OR NEW.status <> 'cancelled' THEN
             RAISE EXCEPTION 'a request can only be cancelled here' USING ERRCODE = '23514';
         END IF;
         NEW.done_at := now();  -- the API cannot write done_at itself
+    ELSIF OLD.status = 'pending' AND NEW.status NOT IN ('pending', 'sending', 'failed', 'cancelled')
+    THEN
+        RAISE EXCEPTION 'a request is sent only after it was marked sending'
+            USING ERRCODE = '23514';
+    ELSIF OLD.status = 'sending' AND NEW.status NOT IN ('sending', 'sent', 'failed', 'pending')
+    THEN
+        RAISE EXCEPTION 'invalid send request transition' USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
 END
@@ -279,11 +291,12 @@ def upgrade() -> None:
             requested_at timestamptz NOT NULL DEFAULT now(),
             scheduled_at timestamptz,
             status text NOT NULL DEFAULT 'pending'
-                CHECK (status IN ('pending', 'sent', 'failed', 'cancelled')),
+                CHECK (status IN ('pending', 'sending', 'sent', 'failed', 'cancelled')),
             error_code text CHECK (char_length(error_code) <= 120),
+            started_at timestamptz,
             done_at timestamptz,
             CHECK ((kind = 'send') = (report_id IS NOT NULL)),
-            CHECK ((status = 'pending') = (done_at IS NULL))
+            CHECK ((status IN ('pending', 'sending')) = (done_at IS NULL))
         )
         """
     )
