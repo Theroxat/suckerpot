@@ -65,7 +65,9 @@ psqlx() {
 }
 
 echo "restore: checking that the dump is readable"
-if ! read_dump | docker compose exec -T db pg_restore -l > /dev/null; then
+# Read the whole stream inside the container: pg_restore -l stops after the table of contents,
+# and an early exit would make the writer fail with SIGPIPE under pipefail.
+if ! read_dump | docker compose exec -T db sh -c 'pg_restore -l > /dev/null; rc=$?; cat > /dev/null; exit $rc'; then
   echo "restore: the dump is not readable (pg_restore -l failed), nothing was changed" >&2
   exit 1
 fi
