@@ -47,5 +47,9 @@ test-results/
 *.swp
 docs/_build/
 
+# Installer log and update/rollback state (host-local)
+install.log
+.suckerpot-state/
+
 # Local orchestration handoff (never commit)
 .handoff/
