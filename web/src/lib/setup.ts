@@ -65,7 +65,7 @@ export function normalizeSetup(raw: unknown): SetupItem[] {
 
 /** An in-app path only: never follow an absolute URL the server sends. */
 export function safeHref(href: string | null | undefined): string | null {
-  return href && href.startsWith("/") && !href.startsWith("//") ? href : null
+  return href && /^\/(?![/\\])/.test(href) ? href : null
 }
 
 /** "5 of 8 steps are done, 1 needs attention." */
