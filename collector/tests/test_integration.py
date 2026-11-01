@@ -7,6 +7,7 @@ Runs as the least-privilege ``suckerpot_collector`` / ``suckerpot_analyzer`` rol
 
 from __future__ import annotations
 
+import asyncio
 import os
 import struct
 import subprocess
@@ -18,6 +19,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -93,9 +95,18 @@ def _role_engine(user: str, password: str) -> AsyncEngine:
 async def owner() -> AsyncIterator[AsyncEngine]:
     _alembic("upgrade", "head")
     engine = create_async_engine(database_url_from_env(ENV))
-    async with engine.begin() as conn:
-        await conn.run_sync(lambda c: apply_roles(c, ENV))
-        await conn.execute(text(f"TRUNCATE {TABLES} CASCADE"))
+    # Retry when Postgres picks the reset as a deadlock victim (TRUNCATE ... CASCADE can cross a
+    # TimescaleDB background job).
+    for attempt in range(5):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(lambda c: apply_roles(c, ENV))
+                await conn.execute(text(f"TRUNCATE {TABLES} CASCADE"))
+            break
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) != "40P01" or attempt == 4:
+                raise
+            await asyncio.sleep(0.2 * (attempt + 1))
     yield engine
     await engine.dispose()
 
