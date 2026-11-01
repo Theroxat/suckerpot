@@ -110,7 +110,10 @@ async def engine(migrated: None) -> AsyncIterator[AsyncEngine]:
         "enrichment_status, sessions_daily, system_status, maintenance_log, "
         "provider_secrets, provider_test_requests, cve, cve_sync_state, "
         "indicators, indicator_sessions, indicator_intel, indicator_contacts, "
-        "indicator_contact_checks RESTART IDENTITY CASCADE",
+        "indicator_contact_checks, rdap_bootstrap, abuse_networks, abuse_lookups, "
+        "abuse_recipients, abuse_reports, abuse_report_subjects, abuse_report_requests, "
+        "report_settings, report_self_terms, samples, sample_sources, sample_links, "
+        "fetch_targets RESTART IDENTITY CASCADE",
     )
     yield eng
     await eng.dispose()

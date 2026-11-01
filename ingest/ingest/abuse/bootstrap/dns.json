@@ -1,0 +1,8 @@
+{"description": "Seed only.",
+ "services": [
+  [["com"], ["https://rdap.verisign.com/com/v1/"]],
+  [["net"], ["https://rdap.verisign.com/net/v1/"]],
+  [["org"], ["https://rdap.publicinterestregistry.org/rdap/"]],
+  [["info"], ["https://rdap.identitydigital.services/rdap/"]],
+  [["io"], ["https://rdap.identitydigital.services/rdap/"]]
+ ]}

@@ -13,6 +13,7 @@ from suckerpot_db import create_engine, create_session_factory
 from suckerpot_db.diskguard import max_db_bytes
 from suckerpot_db.secretbox import SecretBox, SecretError, box_from_env
 
+from ingest.abuse import AbuseWorker
 from ingest.alerts import AlertWorker
 from ingest.alerts.config import AlertSettings
 from ingest.attack import AttackCatalogWorker, load_attack
@@ -168,6 +169,7 @@ async def run() -> None:
             enrich.smtp_password,
         ),
         ReportWorker(features, factory),
+        AbuseWorker(features, factory),
     ]
     for worker in feature_workers:
         appliers.append(worker.apply_settings)

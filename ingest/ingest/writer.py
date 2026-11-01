@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_common import Event
 from suckerpot_db.models import EventRow, IpReputationRow, SessionRow, TechniqueDailyRow
 
+from ingest.abuse import identity
 from ingest.aggregate import SessionDelta, compute_session_deltas
 from ingest.bruteforce import TAG as BRUTE_TAG
 from ingest.diskguard import DiskGuard
@@ -189,6 +190,7 @@ async def write_batch(
         if degraded and guard is not None:
             guard.degrade_rows(rows)  # after tagging, which needs the full payload
         await session.execute(insert(EventRow), rows)
+        await identity.record(session, events)
         stmt = pg_insert(SessionRow)
         ex = stmt.excluded
         t = SessionRow.__table__
