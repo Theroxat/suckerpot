@@ -78,6 +78,8 @@ class Store(Protocol):
         sent_at: datetime | None,
     ) -> None: ...
     async def upsert_targets(self, targets: list[wire.Target]) -> None: ...
+    async def revealable(self, value_bs: set[str]) -> set[str]: ...
+    async def reveal_values(self, kind: str) -> list[str]: ...
     async def refresh_mine(self) -> None: ...
     async def mark_mine_blinded(self, value_bs: set[str]) -> None: ...
     async def save_summary(self, data: dict[str, Any]) -> None: ...
@@ -275,6 +277,44 @@ class SqlStore:
                 ),
                 {"d": json.dumps(data)},
             )
+
+    async def revealable(self, value_bs: set[str]) -> set[str]:
+        """Hashes this node may reveal: targets the hub confirmed that it holds only blinded."""
+        if not value_bs:
+            return set()
+        async with self.factory() as session:
+            rows = await session.execute(
+                text(
+                    "SELECT DISTINCT value_b FROM network_targets "
+                    "WHERE value_b = ANY(:v) AND value IS NULL "
+                    "AND state IN ('confirmed', 'reported', 'taken_down')"
+                ),
+                {"v": sorted(value_bs)},
+            )
+            return {r.value_b for r in rows}
+
+    async def reveal_values(self, kind: str) -> list[str]:
+        """Clear values eligible for a reveal: the same rows the batch builder submits.
+
+        Download URLs (or their hosts) of real, non-benign, non-scanner sessions only; any other
+        indicator role is never revealed, whatever hash the hub asks for.
+        """
+        column = "i.value" if kind == "url" else "i.host"
+        async with self.factory() as session:
+            rows = await session.execute(
+                text(
+                    f"SELECT DISTINCT {column} AS v FROM indicators i "  # noqa: S608
+                    f"WHERE {column} IS NOT NULL AND i.type = 'url' "
+                    "AND i.role = 'download_host' AND NOT i.demo "
+                    f"AND i.last_seen >= now() - interval '{MINE_DAYS} days' "
+                    "AND EXISTS (SELECT 1 FROM indicator_sessions x "
+                    "JOIN sessions s ON s.session_id = x.session_id "
+                    "WHERE x.indicator_id = i.id AND NOT s.benign AND s.scanner_name IS NULL) "
+                    "LIMIT :lim"
+                ),
+                {"lim": RECENT_VALUES_LIMIT},
+            )
+            return [r.v for r in rows]
 
     async def recent_values(self, kind: str) -> list[str]:
         """Recent indicator values: full URLs for ``url``, host names for ``domain``."""

@@ -72,6 +72,7 @@ class MemoryStore:
         self.summary: dict[str, Any] | None = None
         self.values: dict[str, list[str]] = {"url": [], "domain": []}
         self.mine: set[str] = set()
+        self.reveal_pool: dict[str, list[str]] = {}
         self.wiped = 0
 
     async def membership(self) -> Membership:
@@ -115,6 +116,17 @@ class MemoryStore:
 
     async def recent_values(self, kind: str) -> list[str]:
         return list(self.values.get(kind, []))
+
+    async def reveal_values(self, kind: str) -> list[str]:
+        return list(self.reveal_pool.get(kind, self.values.get(kind, [])))
+
+    async def revealable(self, value_bs: set[str]) -> set[str]:
+        return {
+            t.value_b
+            for t in self.targets.values()
+            if t.value_b in value_bs and t.value is None
+            and t.state in ("confirmed", "reported", "taken_down")
+        }
 
 
 class FakeHub:

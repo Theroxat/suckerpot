@@ -83,10 +83,17 @@ async def answer_reveals(
     """Send the clear value of requested hashes this node holds. Returns how many were sent."""
     if not asked or terms is None:
         return 0
-    wanted: dict[tuple[str, str], None] = {(r.kind, r.value_b): None for r in asked}
+    # Only a hash we hold as a confirmed, blinded network target is ever revealed (a hub asking
+    # for any other hash learns nothing), at most MAX_REVEALS per pull.
+    allowed = await store.revealable({r.value_b for r in asked[:PAGE]})
+    wanted: dict[tuple[str, str], None] = {
+        (r.kind, r.value_b): None for r in asked[:PAGE] if r.value_b in allowed
+    }
+    if not wanted:
+        return 0
     known: dict[tuple[str, str], str] = {}
     for kind in {k for k, _ in wanted}:
-        for value_b, clear in _clear_by_blind(kind, await store.recent_values(kind)).items():
+        for value_b, clear in _clear_by_blind(kind, await store.reveal_values(kind)).items():
             if (kind, value_b) in wanted:
                 known[(kind, value_b)] = clear
     items: list[dict[str, str]] = []
