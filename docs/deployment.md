@@ -292,7 +292,7 @@ Nothing leaves. Lookups wait with a reason in Settings, events are still stored,
 
 ## Anonymous reporting
 
-The stack prepares abuse reports and CERT exports. It never sends anything: you read each report and send it yourself, from your own anonymous mailbox, behind your VPN. It needs the [anonymous egress](#anonymous-egress-vpn) (RDAP lookups go through the tunnel).
+The stack prepares abuse reports and CERT exports. By default it sends nothing: you read each report and send it yourself, from your own anonymous mailbox, behind your VPN (the To send queue helps). Optional SMTP sending can be set up in Settings > Reporting > Sending; it is off by default and only ever leaves through the VPN. It needs the [anonymous egress](#anonymous-egress-vpn) (RDAP lookups go through the tunnel).
 
 ### 1. Turn the worker on
 

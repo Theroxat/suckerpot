@@ -524,7 +524,7 @@ Details in [Architecture](ARCHITECTURE.md#anonymous-egress-m21) and [Deployment]
 
 ## Anonymous reporting (M22)
 
-Details in [Architecture](ARCHITECTURE.md#anonymous-reporting-m22), [Deployment](deployment.md#anonymous-reporting) and [Security](SECURITY.md#anonymous-reporting-m22). The worker is off by default. It only prepares drafts; it never sends mail. RDAP lookups go through the VPN egress gate, so the `egress` profile must be on.
+Details in [Architecture](ARCHITECTURE.md#anonymous-reporting-m22), [Deployment](deployment.md#anonymous-reporting) and [Security](SECURITY.md#anonymous-reporting-m22). The worker is off by default. It only prepares drafts; it sends nothing unless you set up SMTP sending in Settings > Reporting (off by default, [M25 design](design/m25.md)). RDAP lookups go through the VPN egress gate, so the `egress` profile must be on.
 
 | Variable | Default | Description |
 | --- | --- | --- |

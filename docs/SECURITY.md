@@ -309,7 +309,7 @@ Fake services must look real to an attacker. Banners and versions are plausible 
 
 ## Anonymous reporting (M22)
 
-The owner reports hostile networks and shares indicators as an anonymous whistleblower. The stack only prepares the text and files. It never sends mail, never submits to a CERT or a malware repository, and stores no mail credentials. Abuse desks often forward a report to their customer, who is the attacker, so a report must not lead back to the owner. Design: [M22 design](design/m22.md).
+The owner reports hostile networks and shares indicators as an anonymous whistleblower. The stack only prepares the text and files. By default it sends no mail and stores no mail credentials; it never submits to a CERT or a malware repository. Optional SMTP sending (M25, off by default) stores an encrypted password the API cannot read back, and mail leaves only through the VPN after the identity guard has checked the complete message, envelope and EHLO name; with the tunnel down nothing is sent. Abuse desks often forward a report to their customer, who is the attacker, so a report must not lead back to the owner. Design: [M22 design](design/m22.md).
 
 ### What a report never contains
 

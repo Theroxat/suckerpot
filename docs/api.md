@@ -698,7 +698,7 @@ The state of the anonymous egress, for the Settings card.
 
 ## Abuse reports (M22)
 
-The API prepares reports and never sends them. Every `GET` is open to both roles, except settings and self terms (administrators only). Every write needs an administrator, the CSRF header and an allowed origin. Lists use cursor pagination (`limit` up to 100).
+The API prepares reports and never talks SMTP itself: optional sending (M25) queues a request that ingest delivers through the VPN. Every `GET` is open to both roles, except settings and self terms (administrators only). Every write needs an administrator, the CSRF header and an allowed origin. Lists use cursor pagination (`limit` up to 100).
 
 Every render, download and export runs the identity guard before it returns. A failure answers `409` with `{"detail", "code": "identity_guard_failed", "reasons": [...]}`. Reasons are constant codes, never the matched value (see [Security](SECURITY.md#the-identity-guard)). When a required wording setting is empty the answer is `409` with `code: "settings_incomplete"` and the missing field names.
 

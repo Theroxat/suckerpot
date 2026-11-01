@@ -352,7 +352,7 @@ Two parts run inside the normal write path rather than on a timer. While writing
 
 ### Anonymous reporting (M22)
 
-The stack prepares abuse reports for the networks that host hostile sources, payload hosts and C2 servers, and indicator exports for CERTs. It never sends anything: the owner reads each draft and sends it from his own mailbox. Design: [M22 design](design/m22.md).
+The stack prepares abuse reports for the networks that host hostile sources, payload hosts and C2 servers, and indicator exports for CERTs. By default it sends nothing: the owner reads each draft and sends it from their own mailbox. Optional SMTP sending (off by default) goes through the VPN only, after a last identity check on the complete message. Design: [M22 design](design/m22.md), [M25 design](design/m25.md).
 
 Two pieces share one set of rules.
 
