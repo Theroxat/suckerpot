@@ -33,6 +33,10 @@ class Reply:
     signature_ok: bool
 
     @property
+    def has_signature(self) -> bool:
+        return sign.H_HUB_SIGNATURE in self.headers
+
+    @property
     def error(self) -> str | None:
         return self.json.get("error") if isinstance(self.json, dict) else None
 
@@ -57,11 +61,11 @@ class NodeClient:
     def fingerprint(self) -> str:
         return sign.fingerprint(self.public)
 
-    def _reply(self, resp: httpx.Response, nonce: str) -> Reply:
+    def _reply(self, resp: httpx.Response, binding: sign.RequestBinding) -> Reply:
         ok = sign.verify_response(
             self.hub_key,
             resp.headers.get(sign.H_HUB_SIGNATURE),
-            nonce,
+            binding,
             resp.status_code,
             resp.content,
         )
@@ -80,7 +84,8 @@ class NodeClient:
             content=body,
             headers={sign.H_NONCE: nonce, "Content-Type": "application/json"},
         )
-        return self._reply(resp, nonce)
+        binding = sign.RequestBinding.unsigned(method, path, nonce, body)
+        return self._reply(resp, binding)
 
     async def call(
         self,
@@ -125,7 +130,14 @@ class NodeClient:
             headers.pop(name, None)
         headers["Content-Type"] = "application/json"
         resp = await self.http.request(method, path, content=body, headers=headers)
-        return self._reply(resp, n)
+        binding = sign.RequestBinding.signed(
+            method,
+            path,
+            headers.get(sign.H_KEY, ""),
+            headers.get(sign.H_NONCE, ""),
+            headers.get(sign.H_SIGNATURE, ""),
+        )
+        return self._reply(resp, binding)
 
     async def enrol(
         self,

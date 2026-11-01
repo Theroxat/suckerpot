@@ -52,7 +52,7 @@ class Node(Base):
     show_country: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     enrolled_day: Mapped[date] = mapped_column(Date)
     last_active_day: Mapped[date] = mapped_column(Date)
-    reputation: Mapped[float] = mapped_column(Float(24), server_default=text("0.5"))
+    reputation: Mapped[float] = mapped_column(Float(24), server_default=text("0.6"))
     standing: Mapped[str] = mapped_column(Text, server_default=text("'active'"))
     protocol: Mapped[str] = mapped_column(Text)
     pseudonym_changed_day: Mapped[date | None] = mapped_column(Date)
@@ -85,6 +85,7 @@ class Batch(Base):
     )
     day: Mapped[date] = mapped_column(Date, primary_key=True)
     batch_id: Mapped[bytes] = mapped_column(LargeBinary)
+    items: Mapped[int] = mapped_column(Integer, server_default=text("0"))
 
 
 class Observation(Base):
@@ -109,6 +110,7 @@ class Observation(Base):
     attempts: Mapped[int | None] = mapped_column(SmallInteger)
     fetched: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     file_type: Mapped[str | None] = mapped_column(Text)
+    via: Mapped[str | None] = mapped_column(Text)
 
 
 class Target(Base):

@@ -16,6 +16,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import math
+import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -25,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_netproto import blind
 from suckerpot_netproto.enums import SEVERE_ACTIVITIES
 
+from .. import consensus
 from ..config import Settings
 from ..never import Never
 from . import render
@@ -63,8 +65,14 @@ class QueueResult:
         self.skipped[why] = self.skipped.get(why, 0) + 1
 
 
-async def reportable_ids(session: AsyncSession, s: Settings, today: date) -> set[str]:
-    """Targets whose evidence passes the severity rules, among confirmed unreported ones."""
+async def reportable_ids(
+    session: AsyncSession, s: Settings, today: date, eligible: list[uuid.UUID]
+) -> set[str]:
+    """Targets whose evidence passes the severity rules, among confirmed unreported ones.
+
+    Only observations of eligible nodes count, and the severe activity must also be in the
+    target's k-supported ``activity``: fresh keys cannot make a quiet address reportable.
+    """
     since = today - timedelta(days=s.window_days)
     rows = await session.execute(
         text(
@@ -77,21 +85,26 @@ async def reportable_ids(session: AsyncSession, s: Settings, today: date) -> set
               AND (
                 (t.kind IN ('c2_ip', 'c2_domain'))
                 OR (t.kind = 'ip' AND (
-                      (SELECT count(DISTINCT o.node_id) FROM observations o
+                      (t.activity && CAST(:severe AS text[])
+                       AND (SELECT count(DISTINCT o.node_id) FROM observations o
                         WHERE o.kind = 'ip' AND o.value = t.value AND o.day >= :since
-                          AND o.activity && CAST(:severe AS text[])) >= :min_nodes
+                          AND o.node_id = ANY(:eligible)
+                          AND o.activity && CAST(:severe AS text[])) >= :min_nodes)
                    OR (SELECT count(DISTINCT o.node_id) FROM observations o
                         WHERE o.kind = 'ip' AND o.value = t.value AND o.day >= :since
+                          AND o.node_id = ANY(:eligible)
                           AND o.attempts >= 3) >= :min_nodes))
                 OR (t.kind IN ('url', 'domain') AND (
                       SELECT count(DISTINCT o.node_id) FROM observations o
                        WHERE o.kind = t.kind AND o.value = coalesce(t.value_b, t.value)
-                         AND o.day >= :since AND o.fetched) >= :fetched)
+                         AND o.day >= :since AND o.fetched
+                         AND o.node_id = ANY(:eligible)) >= :fetched)
               )
             """
         ),
         {
             "since": since,
+            "eligible": eligible,
             "severe": sorted(SEVERE_ACTIVITIES),
             "min_nodes": s.min_nodes,
             "fetched": MIN_FETCHED_NODES,
@@ -104,7 +117,8 @@ async def reportable_ids(session: AsyncSession, s: Settings, today: date) -> set
 async def candidates(
     session: AsyncSession, s: Settings, today: date, never: Never
 ) -> list[Candidate]:
-    ids = await reportable_ids(session, s, today)
+    eligible = list(await consensus.eligible_nodes(session, s, today))
+    ids = await reportable_ids(session, s, today, eligible)
     if not ids:
         return []
     rows = (
@@ -124,6 +138,7 @@ async def candidates(
         host = r.value
         if r.kind == "c2_ip":
             value, _, p = r.value.rpartition(":")
+            value = value.strip("[]")
             port, host = int(p), value
         elif r.kind == "url":
             host = blind.url_host(r.value).strip("[]")
@@ -290,7 +305,7 @@ async def _load_targets(
         value, port = r.value, None
         if r.kind == "c2_ip":
             value, _, p = r.value.rpartition(":")
-            port = int(p)
+            value, port = value.strip("[]"), int(p)
         out.append(
             render.ReportTarget(
                 id=r.id,
@@ -311,13 +326,21 @@ async def _load_targets(
 
 
 async def auto_approve(session: AsyncSession, s: Settings, today: date) -> int:
-    """In ``auto`` mode, queued reports become approved after the hold. Never in ``review``."""
+    """In ``auto`` mode, queued reports become approved after the hold. Never in ``review``.
+
+    Auto mode stays closed until the network has ``HUB_AUTO_MIN_COHORTS`` independent enrolment
+    cohorts among its eligible nodes, and a report about command-and-control endpoints is never
+    approved automatically: an operator approves those.
+    """
     if s.report_mode != "auto":
+        return 0
+    eligible = await consensus.eligible_nodes(session, s, today)
+    if len({n.cohort for n in eligible.values()}) < s.auto_min_cohorts:
         return 0
     result = await session.execute(
         text(
             "UPDATE reports SET state = 'approved', approved_by = 'auto' "
-            "WHERE state = 'queued' AND created_day <= :cutoff"
+            "WHERE state = 'queued' AND kind <> 'c2' AND created_day <= :cutoff"
         ),
         {"cutoff": today - timedelta(days=hold_days(s))},
     )

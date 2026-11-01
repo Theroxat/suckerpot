@@ -269,3 +269,58 @@ def test_build_rows_payload_host_on_never_list_is_not_stored() -> None:
     never = Never.from_rows([("8.8.8.0/24", "ip")])
     out, _, rejected = build_rows(_batch(payloads=[{"url_b": H1, "host_ip": "8.8.8.8"}]), never)
     assert {(r["kind"]) for r in out} == {"url"} and not rejected
+
+
+# --- review fixes: rate limit keys, eviction, never-list parsing ---
+
+
+def test_ipv6_clients_share_a_slash_64() -> None:
+    a = fake_request(("2001:db8:1:2:aaaa::1", 1))
+    b = fake_request(("2001:db8:1:2:bbbb::9", 1))
+    c = fake_request(("2001:db8:1:3::1", 1))
+    assert client_address(a, False) == client_address(b, False) == "2001:db8:1:2::/64"
+    assert client_address(c, False) != client_address(a, False)
+    clock = Clock()
+    lim = AddressLimiter(
+        per_min=1, per_day=100, failures_per_min=10, trust_proxy=False, clock=clock
+    )
+    assert lim.check_unsigned(a) == 0 and lim.check_unsigned(b) > 0  # same prefix, same bucket
+    assert lim.check_unsigned(c) == 0
+
+
+def test_pending_challenges_are_capped_per_prefix() -> None:
+    lim = AddressLimiter(
+        per_min=100, per_day=1000, failures_per_min=10, challenges_per_prefix=2,
+        trust_proxy=False, clock=Clock(),
+    )  # fmt: skip
+    req = fake_request(("203.0.113.5", 1))
+    assert (lim.check_challenge(req), lim.check_challenge(req)) == (0, 0)
+    assert lim.check_challenge(req) > 0
+    assert lim.check_challenge(fake_request(("203.0.113.6", 1))) == 0
+
+
+def test_eviction_drops_the_oldest_window_not_everything(monkeypatch: pytest.MonkeyPatch) -> None:
+    import hub.ratelimit as rl
+
+    monkeypatch.setattr(rl, "MAX_ENTRIES", 3)
+    clock = Clock()
+    c = Counter(60, 1, clock)
+    for key in "abc":
+        assert c.hit(key) == 0
+    assert c.hit("d") == 0  # evicts "a" only
+    assert c.hit("b") > 0 and c.hit("c") > 0 and c.hit("d") > 0  # others keep their counts
+    assert c.hit("a") == 0  # a was evicted, so it starts fresh
+
+
+def test_never_list_parses_bracketed_ipv6_c2_values() -> None:
+    from hub.never import split_host_port
+    from hub.routes.observations import c2_value
+
+    never = Never.from_rows([("2001:4860:4860::8888", "ip"), ("8.8.8.0/24", "ip")])
+    assert c2_value("2001:4860:4860::8888", 53) == "[2001:4860:4860::8888]:53"
+    assert c2_value("8.8.8.8", 53) == "8.8.8.8:53"
+    assert never.matches("c2_ip", c2_value("2001:4860:4860::8888", 53))
+    assert never.matches("c2_ip", "8.8.8.8:53") and not never.matches("c2_ip", "[2606:4700::1]:53")
+    assert split_host_port("[2001:db8::1]:53") == ("2001:db8::1", 53)
+    assert split_host_port("2001:db8::1") == ("2001:db8::1", None)
+    assert split_host_port("198.51.100.1:23") == ("198.51.100.1", 23)

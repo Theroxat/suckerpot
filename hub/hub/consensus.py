@@ -20,7 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings
-from .never import Never
+from .never import Never, split_host_port
 from .support import first_day_supported, k_supported, last_day_supported
 
 log = logging.getLogger("hub.consensus")
@@ -33,6 +33,12 @@ TAKEDOWN_DOWN_DAYS = 3
 TAKEDOWN_RETURN_DAYS = 14
 RE_REPORT_DAYS = 30
 BLINDED = frozenset({"url", "domain", "c2_domain"})
+# Kinds that need twice the nodes unless an external source knows them. Only an address can be
+# looked up; a blinded value never can, so it always needs twice the nodes.
+DOUBLE_KINDS = frozenset({"ip", "c2_ip", "url", "domain", "c2_domain"})
+LOOKUP_KINDS = frozenset({"ip", "c2_ip"})
+C2_KINDS = frozenset({"c2_ip", "c2_domain"})
+MIN_FETCHED_NODES = 2
 
 Corroborate = Callable[[str], Awaitable[bool]]
 
@@ -56,6 +62,8 @@ class Group:
     tags: set[str] = field(default_factory=set)
     families: set[str] = field(default_factory=set)
     days_by_node: dict[uuid.UUID, set[date]] = field(default_factory=dict)
+    fetched_nodes: set[uuid.UUID] = field(default_factory=set)
+    via: set[str] = field(default_factory=set)
     seen: dict[str, dict[str, set[object]]] = field(
         default_factory=lambda: {"services": {}, "activity": {}, "tags": {}, "families": {}}
     )
@@ -85,7 +93,8 @@ async def eligible_nodes(
               AND n.enrolled_day <= :oldest
               AND n.reputation >= CAST(:min_rep AS real)
               AND (SELECT count(*) FROM batches b
-                   WHERE b.node_id = n.id AND b.day >= :since AND b.day < :today) >= :min_days
+                   WHERE b.node_id = n.id AND b.items > 0
+                     AND b.day >= :since AND b.day < :today) >= :min_days
             """
         ),
         {
@@ -109,6 +118,7 @@ def evaluate(
     *,
     never: Never,
     corroborated: bool | None,
+    via_ok: bool = True,
 ) -> Verdict:
     """Apply the confirmation rules to one group. ``corroborated`` is None when not looked up.
 
@@ -130,11 +140,15 @@ def evaluate(
     shares = Counter(n.cohort for n in nodes)
     if max(shares.values()) / count > s.cohort_max_share:
         return Verdict(False, "cohort", weight, countries)
-    if group.kind == "ip" and count < 2 * s.min_nodes:
+    if group.kind in DOUBLE_KINDS and count < 2 * s.min_nodes:
+        if group.kind not in LOOKUP_KINDS:
+            return Verdict(False, "uncorroborated", weight, countries)
         if corroborated is None:
             return Verdict(False, "need_corroboration", weight, countries)
         if not corroborated:
             return Verdict(False, "uncorroborated", weight, countries)
+    if group.kind in C2_KINDS and not via_ok:
+        return Verdict(False, "no_dropper", weight, countries)
     return Verdict(True, "confirmed", weight, countries)
 
 
@@ -148,7 +162,8 @@ async def load_groups(
     rows = await session.execute(
         text(
             """
-            SELECT o.kind, o.value, o.node_id, o.day, o.services, o.activity, o.tags, o.families
+            SELECT o.kind, o.value, o.node_id, o.day, o.services, o.activity, o.tags, o.families,
+                   o.fetched, o.via
             FROM observations o
             JOIN (SELECT kind, value FROM observations
                   WHERE day >= :since AND day < :today AND node_id = ANY(:nodes)
@@ -174,6 +189,10 @@ async def load_groups(
         g.tags.update(r.tags or ())
         g.families.update(r.families or ())
         g.days_by_node.setdefault(r.node_id, set()).add(r.day)
+        if r.fetched:
+            g.fetched_nodes.add(r.node_id)
+        if r.via:
+            g.via.add(r.via)
         for name in ("services", "activity", "tags", "families"):
             for v in getattr(r, name) or ():
                 g.seen[name].setdefault(v, set()).add(r.node_id)
@@ -193,10 +212,10 @@ _UPSERT = text(
       confirmed_day = CASE WHEN targets.state IN ('candidate', 'expired')
                                 AND EXCLUDED.state = 'confirmed'
                            THEN EXCLUDED.confirmed_day ELSE targets.confirmed_day END,
-      node_count = CASE WHEN targets.state = 'candidate' THEN EXCLUDED.node_count
-                        ELSE GREATEST(targets.node_count, EXCLUDED.node_count) END,
-      country_count = CASE WHEN targets.state = 'candidate' THEN EXCLUDED.country_count
-                           ELSE GREATEST(targets.country_count, EXCLUDED.country_count) END,
+      node_count = CASE WHEN targets.state IN ('candidate', 'expired')
+                        THEN EXCLUDED.node_count ELSE targets.node_count END,
+      country_count = CASE WHEN targets.state IN ('candidate', 'expired')
+                           THEN EXCLUDED.country_count ELSE targets.country_count END,
       weight = EXCLUDED.weight,
       first_day = CASE WHEN targets.state = 'candidate' THEN EXCLUDED.first_day
                        WHEN EXCLUDED.state <> 'confirmed' THEN targets.first_day
@@ -258,11 +277,21 @@ async def run_consensus(
     link_kinds: list[str] = []
     link_keys: list[str] = []
     link_nodes: list[uuid.UUID] = []
-    for (kind, value), group in groups.items():
-        verdict = evaluate(group, eligible, s, never=never, corroborated=None)
+    droppers: set[str] = set()  # sha256 values confirmed in this run and fetched by 2+ nodes
+    ordered = sorted(groups.items(), key=lambda kv: kv[0][0] != "sha256")
+    for (kind, value), group in ordered:
+        via_ok = bool(group.via & droppers)
+        verdict = evaluate(group, eligible, s, never=never, corroborated=None, via_ok=via_ok)
         if verdict.reason == "need_corroboration":
-            ok = await corroborate(value) if corroborate is not None else False
-            verdict = evaluate(group, eligible, s, never=never, corroborated=ok)
+            host = split_host_port(value)[0] if kind == "c2_ip" else value
+            ok = await corroborate(host) if corroborate is not None else False
+            verdict = evaluate(group, eligible, s, never=never, corroborated=ok, via_ok=via_ok)
+        if (
+            kind == "sha256"
+            and verdict.confirmed
+            and len(group.fetched_nodes & eligible.keys()) >= MIN_FETCHED_NODES
+        ):
+            droppers.add(value)
         result.reasons[verdict.reason] += 1
         if verdict.reason == "never_list":
             continue

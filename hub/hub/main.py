@@ -41,6 +41,7 @@ def build_context(
             per_min=settings.unsigned_per_min,
             per_day=settings.unsigned_per_day,
             failures_per_min=settings.auth_failures_per_min,
+            challenges_per_prefix=settings.challenges_per_prefix,
             trust_proxy=settings.trust_proxy,
             clock=clock,
         ),

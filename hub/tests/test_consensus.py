@@ -60,6 +60,27 @@ async def test_five_aged_nodes_on_two_days_are_confirmed(env: Env) -> None:
 
 
 @pytest.mark.integration
+async def test_five_eligible_nodes_with_start_reputation_confirm_a_target(env: Env) -> None:
+    from hub.reputation import START
+
+    nodes = await add_nodes(env.worker, 5, reputation=START)
+    await observe(env.worker, nodes, "sha256", "ab" * 32, [D1, D2])
+    await run(env)
+    assert (await target(env.worker, "sha256", "ab" * 32))["state"] == "confirmed"
+
+
+@pytest.mark.integration
+async def test_default_reputation_of_a_new_row_is_the_start_value(env: Env) -> None:
+    from hub.reputation import START
+
+    (n,) = await add_nodes(env.worker, 1)
+    async with env.worker() as s:
+        await s.execute(text("UPDATE nodes SET reputation = DEFAULT WHERE id = :i"), {"i": n})
+        rep = (await s.execute(text("SELECT reputation FROM nodes"))).scalar_one()
+    assert rep == pytest.approx(START)
+
+
+@pytest.mark.integration
 async def test_four_nodes_stay_candidate(env: Env) -> None:
     nodes = await add_nodes(env.worker, 4)
     await observe(env.worker, nodes, "ip", IP, [D1, D2])
@@ -111,7 +132,7 @@ async def test_nodes_need_seven_active_days(env: Env) -> None:
 
 @pytest.mark.integration
 async def test_low_weight_blocks(env: Env) -> None:
-    nodes = await add_nodes(env.worker, 5, reputation=0.5)  # 5 x 0.5 = 2.5 < 3.0
+    nodes = await add_nodes(env.worker, 5, reputation=0.5)  # 5 x 0.5 = 2.5 < 3.0 (below start)
     await observe(env.worker, nodes, "sha256", "ab" * 32, [D1, D2])
     await run(env)
     assert (await target(env.worker, "sha256", "ab" * 32))["state"] == "candidate"
@@ -163,7 +184,9 @@ async def test_single_node_values_get_no_row(env: Env) -> None:
 
 @pytest.mark.integration
 async def test_blinded_kind_keeps_value_b_only(env: Env) -> None:
-    nodes = await add_nodes(env.worker, 5)
+    nodes = await add_nodes(
+        env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
+    )
     await observe(env.worker, nodes, "url", "ab" * 32, [D1, D2], fetched=True)
     await run(env)
     t = await target(env.worker, "url", "ab" * 32)
@@ -281,7 +304,9 @@ async def test_dispute_lowers_contributors_and_suspends_silently(env: Env) -> No
 
 @pytest.mark.integration
 async def test_revealed_never_listed_value_is_disputed(env: Env) -> None:
-    nodes = await add_nodes(env.worker, 5)
+    nodes = await add_nodes(
+        env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
+    )
     await observe(env.worker, nodes, "url", "ab" * 32, [D1, D2])
     await run(env)
     async with env.worker() as s:
@@ -322,7 +347,7 @@ async def test_reputation_rewards_once_per_day(env: Env) -> None:
 
 @pytest.mark.integration
 async def test_reputation_takedown_bonus_and_cap(env: Env) -> None:
-    nodes = await add_nodes(env.worker, 1, reputation=0.5)
+    nodes = await add_nodes(env.worker, 2, reputation=0.5)  # two enrolment cohorts
     async with env.worker() as s:
         for i in range(8):
             await s.execute(
@@ -332,10 +357,11 @@ async def test_reputation_takedown_bonus_and_cap(env: Env) -> None:
                 ),
                 {"i": f"t_{i:012x}", "v": f"45.1.1.{i}", "d": TODAY},
             )
-            await s.execute(
-                text("INSERT INTO target_contributors VALUES (:i, :n)"),
-                {"i": f"t_{i:012x}", "n": nodes[0]},
-            )
+            for n in nodes:
+                await s.execute(
+                    text("INSERT INTO target_contributors VALUES (:i, :n)"),
+                    {"i": f"t_{i:012x}", "n": n},
+                )
         await s.execute(
             text(
                 "UPDATE targets SET state = 'taken_down', taken_down_day = :d WHERE id = 't_000000000000'"
@@ -344,8 +370,8 @@ async def test_reputation_takedown_bonus_and_cap(env: Env) -> None:
         )
         await s.commit()
         await reputation.run_daily(s, env.settings, TODAY + timedelta(days=1))
-        rep = (await s.execute(text("SELECT reputation FROM nodes"))).scalar_one()
-    assert rep == pytest.approx(0.5 + 0.05 + 0.02)  # +0.01 x 5 (capped) + 0.02
+        reps = (await s.execute(text("SELECT reputation FROM nodes"))).scalars().all()
+    assert all(r == pytest.approx(0.5 + 0.05 + 0.02) for r in reps)  # +0.01 x 5 (capped) + 0.02
 
 
 @pytest.mark.integration
@@ -460,3 +486,115 @@ async def test_up_votes_bring_a_taken_down_target_back(env: Env) -> None:
     assert (
         t["state"] == "reported" and t["taken_down_day"] is None
     )  # reported 8 days ago: no re-report yet
+
+
+# --- Sybil hardening: corroboration for every kind, droppers for C2, empty batches ---
+
+
+def ten(env: Env) -> Any:
+    return add_nodes(
+        env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
+    )
+
+
+@pytest.mark.integration
+async def test_url_and_c2_and_payload_host_need_twice_the_nodes(env: Env) -> None:
+    five = await add_nodes(env.worker, 5)
+    await observe(env.worker, five, "url", "ab" * 32, [D1, D2], fetched=True)
+    await observe(env.worker, five, "c2_ip", "45.8.8.8:23", [D1, D2], via="cd" * 32)
+    await observe(env.worker, five, "c2_domain", "ef" * 32, [D1, D2], via="cd" * 32)
+    await observe(env.worker, five, "ip", "45.8.8.9", [D1, D2], activity=["download"])
+    await run(env, ok=False)
+    for kind, value in (
+        ("url", "ab" * 32),
+        ("c2_ip", "45.8.8.8:23"),
+        ("c2_domain", "ef" * 32),
+        ("ip", "45.8.8.9"),
+    ):
+        assert (await target(env.worker, kind, value))["state"] == "candidate", kind
+
+
+@pytest.mark.integration
+async def test_c2_address_may_be_corroborated_by_an_external_source(env: Env) -> None:
+    five = await add_nodes(env.worker, 5)
+    await observe(env.worker, five, "sha256", "cd" * 32, [D1, D2], fetched=True)
+    await observe(env.worker, five, "c2_ip", "45.8.8.8:23", [D1, D2], via="cd" * 32)
+    await run(env, ok=True)
+    assert (await target(env.worker, "c2_ip", "45.8.8.8:23"))["state"] == "confirmed"
+
+
+@pytest.mark.integration
+async def test_c2_needs_a_confirmed_dropper_fetched_by_two_eligible_nodes(env: Env) -> None:
+    nodes = await ten(env)
+    await observe(env.worker, nodes, "c2_ip", "45.8.8.1:23", [D1, D2], via="aa" * 32)
+    await observe(env.worker, nodes, "c2_ip", "45.8.8.2:23", [D1, D2], via="bb" * 32)
+    await observe(env.worker, nodes, "c2_ip", "45.8.8.3:23", [D1, D2])  # no dropper named
+    await observe(env.worker, nodes, "sha256", "aa" * 32, [D1, D2], fetched=True)
+    await observe(env.worker, nodes, "sha256", "bb" * 32, [D1, D2], fetched=False)
+    await run(env)
+    got = {
+        v: (await target(env.worker, "c2_ip", v))["state"]
+        for v in ("45.8.8.1:23", "45.8.8.2:23", "45.8.8.3:23")
+    }
+    assert got == {
+        "45.8.8.1:23": "confirmed",
+        "45.8.8.2:23": "candidate",
+        "45.8.8.3:23": "candidate",
+    }
+
+
+@pytest.mark.integration
+async def test_empty_batches_do_not_keep_a_node_eligible(env: Env) -> None:
+    nodes = await add_nodes(env.worker, 5)
+    async with env.worker() as s:
+        await s.execute(
+            text("UPDATE batches SET items = 0 WHERE node_id = ANY(:i)"), {"i": nodes[:3]}
+        )
+        await s.commit()
+    await observe(env.worker, nodes, "sha256", "ab" * 32, [D1, D2])
+    await run(env)
+    assert (await target(env.worker, "sha256", "ab" * 32))[
+        "state"
+    ] == "candidate"  # only 2 eligible
+
+
+@pytest.mark.integration
+async def test_reputation_bonus_needs_two_cohorts(env: Env) -> None:
+    (n,) = await add_nodes(env.worker, 1, reputation=0.5)
+    (m,) = await add_nodes(env.worker, 1, reputation=0.5, enrolled=[TODAY - timedelta(days=40)])
+    async with env.worker() as s:
+        for tid, members in (("t_000000000001", [n]), ("t_000000000002", [n, m])):
+            await s.execute(
+                text(
+                    "INSERT INTO targets (id, kind, value, state, confirmed_day, first_day, last_day) VALUES (:i,'ip',:v,'confirmed',:d,:d,:d)"
+                ),
+                {"i": tid, "v": f"45.1.1.{tid[-1]}", "d": TODAY},
+            )
+            for member in members:
+                await s.execute(
+                    text("INSERT INTO target_contributors VALUES (:i, :n)"), {"i": tid, "n": member}
+                )
+        await s.commit()
+        await reputation.run_daily(s, env.settings, TODAY + timedelta(days=1))
+        reps: dict[Any, Any] = dict(
+            (await s.execute(text("SELECT id, reputation FROM nodes"))).all()
+        )
+    # n is in a one-cohort target and a two-cohort target: one bonus; m only the two-cohort one
+    assert reps[n] == pytest.approx(0.51) and reps[m] == pytest.approx(0.51)
+
+
+@pytest.mark.integration
+async def test_published_counts_are_frozen_at_confirmation(env: Env) -> None:
+    nodes = await add_nodes(env.worker, 6, countries=["CH", "DE", "FR", None, None, None])
+    await observe(env.worker, nodes[:5], "sha256", "ab" * 32, [D1, D2])
+    await run(env)
+    before = await target(env.worker, "sha256", "ab" * 32)
+    assert (before["node_count"], before["country_count"]) == (5, 3)
+    # a sixth node with a fourth country sees the listed value: nothing a member sees moves
+    async with env.worker() as s:
+        await s.execute(text("UPDATE nodes SET country = 'IT' WHERE id = :i"), {"i": nodes[5]})
+        await s.commit()
+    await observe(env.worker, nodes[5:], "sha256", "ab" * 32, [D1, D2])
+    await run(env)
+    after = await target(env.worker, "sha256", "ab" * 32)
+    assert (after["node_count"], after["country_count"], after["seq"]) == (5, 3, before["seq"])

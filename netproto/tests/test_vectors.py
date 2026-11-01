@@ -47,13 +47,16 @@ def test_request_vectors(case: dict[str, Any]) -> None:
     )
 
 
-@pytest.mark.parametrize("case", V["responses"], ids=lambda c: str(c["status"]))
+@pytest.mark.parametrize("case", V["responses"], ids=lambda c: c["name"])
 def test_response_vectors(case: dict[str, Any]) -> None:
     body = case["body"].encode()
-    assert sign.canonical_response(V["nonce"], case["status"], body) == case["canonical"]
-    assert sign.sign_response(HUB_SEED, V["nonce"], case["status"], body) == case["signature"]
+    binding = sign.RequestBinding(
+        case["method"], case["target"], V["nonce"], case["node"], case["digest"]
+    )
+    assert sign.canonical_response(binding, case["status"], body) == case["canonical"]
+    assert sign.sign_response(HUB_SEED, binding, case["status"], body) == case["signature"]
     assert sign.verify_response(
-        V["hub"]["hub_key"], case["signature"], V["nonce"], case["status"], body
+        V["hub"]["hub_key"], case["signature"], binding, case["status"], body
     )
 
 

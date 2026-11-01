@@ -187,6 +187,11 @@ async def test_suspended_node_is_not_told_and_nothing_is_stored(env: Env) -> Non
     assert r.status == 200 and r.json["accepted"]["sources"] == 1 and r.json["duplicate"] is False
     assert await rows(env) == []
     assert (await node.call("GET", "/v1/node")).json["standing"] == "low"
+    # the day marker exists, so a repeat answers like it does for any other node
+    async with env.worker() as s:
+        assert (await s.execute(text("SELECT count(*) FROM batches"))).scalar_one() == 1
+    again = await node.call("POST", "/v1/observations", batch(DAY, sources=[source("8.8.8.8")]))
+    assert (again.status, again.error) == (400, "invalid_payload")
 
 
 async def test_padded_and_unpadded_bodies_are_both_fine(env: Env) -> None:
@@ -209,3 +214,31 @@ async def test_documentation_ranges_need_the_test_flag(env_factory: Any) -> None
     (node,) = await env.enrolled()
     r = await node.call("POST", "/v1/observations", batch(DAY, sources=[source("198.51.100.7")]))
     assert r.error == "invalid_payload"
+
+
+async def test_empty_batch_is_accepted_but_is_not_activity(env: Env) -> None:
+    (node,) = await env.enrolled()
+    r = await node.call("POST", "/v1/observations", batch(DAY))
+    assert r.status == 200 and r.json["accepted"] == {
+        "sources": 0,
+        "payloads": 0,
+        "c2": 0,
+        "files": 0,
+    }
+    async with env.worker() as s:
+        assert (await s.execute(text("SELECT items FROM batches"))).scalar_one() == 0
+    assert (await node.call("GET", "/v1/node")).json["active_days_14"] == 0
+    full = await node.call(
+        "POST", "/v1/observations", batch("2026-10-30", sources=[source("8.8.4.4")])
+    )
+    assert full.status == 200
+    assert (await node.call("GET", "/v1/node")).json["active_days_14"] == 1
+
+
+async def test_c2_dropper_hash_is_stored(env: Env) -> None:
+    (node,) = await env.enrolled()
+    r = await node.call(
+        "POST", "/v1/observations", batch(DAY, c2=[{"ip": "9.9.9.9", "port": 23, "via_sha256": H3}])
+    )
+    assert r.status == 200
+    assert [x["via"] for x in await rows(env, "kind = 'c2_ip'")] == [H3]

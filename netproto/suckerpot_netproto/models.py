@@ -51,6 +51,11 @@ _DOC_NETS = tuple(
     ipaddress.ip_network(n)
     for n in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "2001:db8::/32")
 )
+# Prefixes that carry an IPv4 address inside an IPv6 one (NAT64, Teredo, 6to4): refused, so no
+# never-list entry or reporting rule can be bypassed by wrapping an address.
+_EMBEDDING_NETS = tuple(
+    ipaddress.ip_network(n) for n in ("64:ff9b::/96", "64:ff9b:1::/48", "2001::/32", "2002::/16")
+)
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _COUNTRY = re.compile(r"^[A-Z]{2}$")
 _TARGET_ID = re.compile(r"^t_[0-9a-f]{12}$")
@@ -64,6 +69,8 @@ def parse_global_ip(value: str, *, allow_documentation: bool = False) -> str:
         raise ValueError("not an IP address") from exc
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         raise ValueError("IPv4-mapped address")
+    if isinstance(ip, ipaddress.IPv6Address) and any(ip in net for net in _EMBEDDING_NETS):
+        raise ValueError("address embeds an IPv4 address")
     if allow_documentation and any(ip in net for net in _DOC_NETS if net.version == ip.version):
         return str(ip)
     if not ip.is_global or ip.is_multicast:
