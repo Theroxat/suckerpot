@@ -316,7 +316,29 @@ It renders every open report in every format and the last 7 days of STIX and MIS
 
 ### 5. Send by hand
 
-Open a report at Defend > Abuse reports, check the identity card, copy To, Subject and Body (or download `report.txt` and `evidence.csv` to attach), send it from your alias, then use "Mark sent". The dashboard cannot send and has no mail settings. Sample bundles are uploaded by hand to the repository you choose.
+Open a report at Defend > Abuse reports, check the identity card, copy To, Subject and Body (or download `report.txt` and `evidence.csv` to attach), send it from your alias, then use "Mark sent". Sample bundles are uploaded by hand to the repository you choose. You can also let the dashboard send the mail for you, as described in [Sending reports](#sending-reports).
+
+### Sending reports
+
+By default you send each report yourself. The dashboard can also send it through your VPN, once you save an SMTP profile. Both paths need the [anonymous egress](#anonymous-egress-vpn) to be up.
+
+**The To send queue.** Open Defend > Abuse reports and choose To send. It walks through the ready reports, oldest first, one at a time. For each report it shows the recipient, the subject and the body, with copy buttons. "Open in mail app" opens a `mailto:` link with the recipient and the subject. The full plain-text body is copied to the clipboard on every click, so a long report is one paste away. "Sent, next" marks the report as sent and opens the next one. Check the sender address in your mail app before you send, and connect that mailbox through your VPN.
+
+**The three modes.** Pick the mode in Settings > Reporting > Sending:
+
+| Mode | What happens |
+| --- | --- |
+| `off` (default) | Nothing is sent. Use the To send queue. |
+| `click` | A "Send now" button sends a ready report, after a confirmation. |
+| `auto` | Ready reports are sent after a hold time (default 60 minutes, 10 to 1440). While a report waits, the page shows the time it will go, with a Cancel button. At most `daily_cap` reports are sent per UTC day (default 20, 1 to 200). |
+
+Demo reports are never sent. A report that fails the identity guard, or that still misses a wording setting, is never sent in any mode. "Send a test" sends a short neutral message to the sender address itself, so you can check the profile first.
+
+**Setting up SMTP.** You need an SMTP server that accepts your login with STARTTLS (usually port 587) or with SMTPS (usually port 465). Enter the server's DNS name, not an IP address, with the port, the security, the login name, the sender address and the password. Saving the profile asks for your dashboard password again. The SMTP password is stored encrypted. The dashboard never shows it again. The API reference is in [Sending abuse reports](api.md#sending-abuse-reports-m25).
+
+**Free Proton has no SMTP.** Proton gives SMTP access only with a paid plan. You also need a custom domain on that plan, and an SMTP token from Proton's settings. The token is the SMTP password. Free Proton addresses have no SMTP access at all, so keep the mode at `off` and use the To send queue with them. The Proton preset in Settings fills in the server and the port for you.
+
+**Mail only leaves through the VPN.** The API has no route out and never connects to a mail server. Ingest sends the mail through the VPN proxy, with the certificate always checked. Before each send, ingest rebuilds the complete message, headers included, and runs the identity guard on it again. While the VPN gate is closed, nothing is sent: a send waits, and a test fails after two minutes.
 
 ## Host safeguards
 

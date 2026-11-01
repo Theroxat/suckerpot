@@ -137,6 +137,10 @@ These pages are generated from the code, so they match the running version. Use 
 | `POST` | `/api/v1/samples/{sha256}/archive` | Download a sample as a password-protected zip (administrators only) |
 | `GET` | `/api/v1/egress` | State of the egress gate, collector quota and quarantine use |
 | `GET` | `/api/v1/abuse/...` | Abuse reports, recipients, settings, self terms and exports (M22). See [Abuse reports](#abuse-reports-m22). |
+| `GET`, `PUT`, `DELETE` | `/api/v1/abuse/smtp` | The optional SMTP profile for sending reports (administrators only). See [Sending abuse reports](#sending-abuse-reports-m25). |
+| `GET` | `/api/v1/abuse/send-queue` | Ready reports, one page at a time, for the To send view (administrators only). See [Sending abuse reports](#sending-abuse-reports-m25). |
+| `GET`, `PUT`, `DELETE` | `/api/v1/settings/vpn` | The WireGuard configuration of the `vpn` service and the trusted exits (administrators only). See [VPN settings](#vpn-settings-m23-m24). |
+| `GET` | `/api/v1/setup/status` | The setup checklist (administrators only). See [Setup checklist](#setup-checklist-m24). |
 | `GET` | `/api/v1/settings/enrichment` | GeoIP database status and reputation quotas. See [Enrichment status](#get-apiv1settingsenrichment). |
 | `PUT` | `/api/v1/settings/providers/{provider}` | Set or replace an enrichment API key. See [Provider keys](#provider-keys). |
 | `DELETE` | `/api/v1/settings/providers/{provider}` | Remove a key set in Settings. See [Provider keys](#provider-keys). |
@@ -706,7 +710,7 @@ Every render, download and export runs the identity guard before it returns. A f
 | --- | --- | --- |
 | `GET` | `/api/v1/abuse/status` | Worker on or off, gate state, RDAP quota, whether a self address is known (never the value), counts per status |
 | `GET` | `/api/v1/abuse/reports` | Reports, newest change first. Filters: `status`, `kind`, `recipient`, `demo`. |
-| `GET` | `/api/v1/abuse/reports/{public_id}` | One report: subjects, guard result, redaction counters, revision, history |
+| `GET` | `/api/v1/abuse/reports/{public_id}` | One report: subjects, guard result, redaction counters, revision, history and the send state (`send_state`, M25) |
 | `GET` | `/api/v1/abuse/reports/{public_id}/render` | `format=text`, `xarf` or `eml`, optional `subject`. Returns To, Subject, body, attachments and revision. |
 | `GET` | `/api/v1/abuse/reports/{public_id}/download` | A file: `format=txt`, `eml`, `evidence_csv` or `xarf_yaml`. Attachment, `no-store`, `nosniff`. Audited. |
 | `POST` | `/api/v1/abuse/reports/{public_id}/status` | Body `{to, revision, sent_at?}`. `409` on a stale revision or an invalid change. Audited. |
@@ -719,6 +723,303 @@ Every render, download and export runs the identity guard before it returns. A f
 | `POST` | `/api/v1/abuse/exports/samples` | Up to 10 stored samples in one AES-256 zip (password `infected`) with a hash table. Administrators only, password asked again, 5 per hour. A sample that contains a self term is excluded and counted in `X-Excluded`. |
 
 Statuses: `draft`, `reviewed`, `sent`, `closed`, `discarded`, `superseded`. Kinds: `attack_source`, `payload_host`, `c2`.
+
+## Sending abuse reports (M25)
+
+Sending is optional and off by default. An administrator saves an SMTP profile and picks a mode in Settings > Reporting > Sending. The API never opens a connection to a mail server: it stores the profile and writes rows in `abuse_send_requests`. Ingest sends the mail through the VPN. Setup steps are in [Deployment](deployment.md#sending-reports).
+
+Every route in this section is administrator only, including the `GET` routes. A viewer gets `403` with `admin_required`. Writes need the CSRF header and an allowed origin. Some routes also ask for the administrator's password again:
+
+| Route | Password in the body |
+| --- | --- |
+| `PUT /api/v1/abuse/smtp` | `current_password` |
+| `DELETE /api/v1/abuse/smtp` | `current_password` |
+| `POST /api/v1/abuse/smtp/test` | `current_password` |
+| `POST /api/v1/abuse/reports/{public_id}/send` | none |
+| `POST /api/v1/abuse/reports/{public_id}/send/cancel` | none |
+
+The re-authentication rules are the same as for the provider keys (see [Provider keys](#provider-keys)): a wrong password is `403` with `reauth_failed`, and five wrong passwords in a row end the session (`401`, `session_revoked`). Send and cancel do not ask for the password. The web app asks for a confirmation instead, and ingest runs the identity guard again before any mail leaves.
+
+### `GET /api/v1/abuse/smtp`
+
+The profile. The password is never returned. `password_set` says whether one is stored.
+
+```json
+{
+  "configured": true,
+  "password_set": true,
+  "host": "smtp.example.org",
+  "port": 587,
+  "security": "starttls",
+  "username": "reports@example.org",
+  "from_address": "reports@example.org",
+  "from_name": "",
+  "mode": "click",
+  "auto_hold_minutes": 60,
+  "daily_cap": 20,
+  "sent_today": 2,
+  "last_test": {"status": "sent", "error_code": null, "requested_at": "2026-10-30T09:00:00Z", "done_at": "2026-10-30T09:00:41Z"},
+  "updated_at": "2026-10-30T08:55:00Z",
+  "updated_by": "admin"
+}
+```
+
+- `configured` is `true` when a host and a sender address are saved, and either a password is stored or the username is empty.
+- `sent_today` counts the reports sent since midnight UTC. The daily cap applies to automatic sends only.
+- `last_test` is the latest test message, or `null`. Read it here after you ask for a test.
+- Without a saved profile the answer is the same shape with `configured` and `password_set` set to `false`, `host` and `from_address` empty, and `mode` set to `off`.
+
+### `PUT /api/v1/abuse/smtp`
+
+Saves the profile. The answer is the new `GET` shape.
+
+| Field | Rule |
+| --- | --- |
+| `host` | A DNS name such as `smtp.example.org`. Not an IP address, not a single label, not an internal name (`local`, `lan`, `internal` and similar). |
+| `port` | 1 to 65535 |
+| `security` | `starttls` or `ssl`. Plain text is not offered. The certificate is always checked. |
+| `username` | Optional, up to 254 characters, no control characters |
+| `from_address` | A mailbox on a public domain, for example `reports@example.org` |
+| `from_name` | Optional, up to 100 characters: letters, digits, spaces and `.,'()_-` |
+| `password` | The SMTP password, up to 256 characters. Leave it out to keep the stored one. Required on the first save. Stored encrypted and never returned. |
+| `mode` | `off` (default), `click` or `auto`. See [Sending reports](deployment.md#sending-reports). |
+| `auto_hold_minutes` | 10 to 1440, default 60 |
+| `daily_cap` | 1 to 200, default 20 |
+| `current_password` | The administrator's own password |
+
+`from_name` and `from_address` go through the identity guard. A value that points to the owner is refused.
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `422` | `invalid_host` | The host is not a public DNS name |
+| `422` | `invalid_from_address` | The sender address is not a valid mailbox |
+| `422` | `invalid_from_name` | The sender name has characters that are not allowed |
+| `422` | `invalid_credentials` | A control character in the username or the password |
+| `422` | `identity_guard_failed` | The name or address failed the identity guard. The answer lists the constant `reasons`, never the value. |
+| `422` | `password_required` | First save without a password |
+| `503` | `editing_disabled` | `SETTINGS_ENCRYPTION_KEY` is not set, so no password can be stored |
+| `409` | `already_sending` | A report mail is being sent right now. Try again in a minute. |
+| `403` | `reauth_failed` | Wrong `current_password` |
+
+Changing the mode to anything but `auto` makes ingest cancel the automatic requests still waiting, with the error code `mode_changed`. The audit log records the changed field names, never the values.
+
+### `DELETE /api/v1/abuse/smtp`
+
+Body `{"current_password": "..."}`. Removes the profile and the stored password. Every pending request is cancelled. Answers `204`. Also `409` with `already_sending` while a mail is in flight.
+
+### `POST /api/v1/abuse/smtp/test`
+
+Body `{"current_password": "..."}`. Queues a short neutral message to `from_address` itself. Answers `202`:
+
+```json
+{"id": 4123, "status": "pending", "scheduled_at": null}
+```
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `409` | `smtp_not_configured` | Save the profile first |
+| `409` | `already_queued` | A test is already waiting. Only one test at a time. |
+| `403` | `reauth_failed` | Wrong password |
+
+If the VPN gate is closed, a test waits for up to two minutes and then fails with `egress_closed`. Read the result in `last_test` of `GET /api/v1/abuse/smtp`.
+
+### `GET /api/v1/abuse/send-queue`
+
+The ready reports, oldest first, one page at a time. This feeds the To send view. A report is ready when it is a draft or reviewed, it is not a demo, its recipient is known and not muted, and the identity guard passes right now.
+
+| Parameter | Meaning |
+| --- | --- |
+| `limit` | 1 to 25, default 10 |
+| `cursor` | The `next_cursor` of the previous page. Opaque. An invalid cursor returns `400` with `invalid_cursor`. |
+
+```json
+{
+  "items": [
+    {
+      "id": "3f2c9a1e-5b7d-4e8a-9c21-7d4b6e0f8a12",
+      "recipient": "abuse@example.org",
+      "subject": "Report: login attempts from 198.51.100.7",
+      "body_text": "Plain-text body of the report ...",
+      "scheduled_at": null,
+      "last_request": null
+    }
+  ],
+  "next_cursor": null,
+  "mode": "off",
+  "missing": []
+}
+```
+
+- `id` is the report's public ID, the same value as in the report routes.
+- `last_request` is the newest send request of the report, or `null`. `scheduled_at` is set while an automatic send waits for its hold time.
+- A report that fails the guard when it is read is left out. A page can therefore hold fewer than `limit` items while `next_cursor` is still set. Keep paging until `next_cursor` is `null`.
+- When a wording setting is still empty, `items` is empty and `missing` lists the fields to fill.
+- `mode` tells the web app whether the "Send now" button is shown.
+
+### `POST /api/v1/abuse/reports/{public_id}/send`
+
+Queues one report for sending. The mode must be `click` or `auto`. The body is optional. Send `{"revision": 3}` to make sure the draft you read is still the current one. Answers `202` with the new request, for example `{"id": 4124, "status": "pending", "scheduled_at": null}`. Ingest sends it later, through the VPN.
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `404` | `not_found` | No such report |
+| `409` | `smtp_not_configured` | No profile saved |
+| `409` | `smtp_off` | The mode is `off` |
+| `409` | `revision_mismatch` | The draft changed since you read it |
+| `409` | `identity_guard_failed` | The guard refused the report. The answer lists `reasons`. |
+| `409` | `demo_report` | Demo reports are never sent |
+| `409` | `report_not_ready` | The report is not a draft or reviewed, it is muted, or it has no mailbox |
+| `409` | `already_queued` | A request for this report is already waiting or sending |
+| `409` | `settings_incomplete` | Wording settings are empty. The answer lists `missing`. |
+| `409` | `evidence_invalid` | The stored evidence could not be rendered |
+
+### `POST /api/v1/abuse/reports/{public_id}/send/cancel`
+
+Cancels the requests of one report that have not started. Answers `200` with `{"cancelled": 1}`.
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `404` | `not_found` | No such report |
+| `409` | `nothing_to_cancel` | Nothing is waiting for this report |
+| `409` | `already_sending` | Ingest has started the connection. The mail may already be on its way, so it cannot be cancelled. |
+
+### Report detail: `send_state`
+
+`GET /api/v1/abuse/reports/{public_id}` adds `send_state`:
+
+```json
+"send_state": {
+  "scheduled_at": "2026-10-30T10:00:00Z",
+  "last_request": {"status": "pending", "error_code": null, "requested_at": "2026-10-30T09:00:00Z", "done_at": null}
+}
+```
+
+`last_request` is `null` when the report was never queued. `scheduled_at` is set only while an automatic send waits for its hold time.
+
+### Request statuses
+
+| Status | Meaning |
+| --- | --- |
+| `pending` | Waiting for its hold time, for the VPN gate, or for ingest |
+| `sending` | Ingest has started the connection. It cannot be cancelled any more. |
+| `sent` | The server accepted the mail. The report is now `sent`, with `sent_via` set to `smtp`. |
+| `failed` | Not sent. `error_code` says why. The report stays ready. |
+| `cancelled` | Cancelled by the owner, cancelled because the mode changed, or the profile was removed. |
+
+### Error codes of a failed request
+
+These are stored in `error_code`. The values are constants. No server message, address or body text is ever stored.
+
+| Code | Meaning |
+| --- | --- |
+| `auth_failed` | The server refused the login |
+| `tls_failed` | TLS could not be set up, or the certificate did not match the host |
+| `refused` | The server refused the sender or the recipient |
+| `timeout` | The server did not answer in time |
+| `network` | A connection problem |
+| `unknown_outcome` | The connection broke after the message data started. The server may have accepted the mail. It is never retried. Check the recipient's mailbox before you send again. |
+| `egress_closed` | The VPN gate is closed. A send stays `pending` and waits. A test fails after two minutes. |
+| `guard_failed:<codes>` | The identity guard refused the complete message, headers included. The codes after the colon are the guard's constant reason codes (see [Security](SECURITY.md#the-identity-guard)). |
+| `not_ready` | The report changed and is no longer ready |
+| `not_configured` | No profile was found when ingest looked |
+| `mode_off` | The mode is `off` |
+| `mode_changed` | An automatic request was cancelled because the mode is no longer `auto` |
+| `internal` | An unexpected error before anything was sent |
+
+### Audit
+
+Each change is audited with the actor and the client address: `abuse.smtp.update`, `abuse.smtp.delete`, `abuse.smtp.test`, `abuse.send` (report ID and mode) and `abuse.send.cancel`. Entries never hold the password or the message body.
+
+## VPN settings (M23, M24)
+
+Administrators only, for every route below. Writes need the CSRF header and an allowed origin. The WireGuard file itself is never returned or logged. The answers show only the endpoint, the addresses and a short fingerprint of the peer key. The design is in [M23](design/m23.md) and [M24](design/m24.md).
+
+| Method | Path | Body | Answer |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/settings/vpn` | none | The settings (see below) |
+| `PUT` | `/api/v1/settings/vpn` | `{"conf": "...", "password": "..."}` | `200` with the settings after the upload |
+| `DELETE` | `/api/v1/settings/vpn` | `{"password": "..."}` | `204`. The `vpn` service goes back to the values in `.env`. |
+| `POST` | `/api/v1/settings/vpn/check` | none | `202` with `requested_at` |
+| `POST` | `/api/v1/settings/vpn/reconnect` | `{"password": "..."}` | `202` with `requested_at` |
+| `POST` | `/api/v1/settings/vpn/trusted-exits` | `{"password": "..."}` | `201` with the new range |
+| `DELETE` | `/api/v1/settings/vpn/trusted-exits/{exit_id}` | `{"password": "..."}` | `204` |
+
+The `password` field is the administrator's own password. In this section, "Check now" is the only write that does not ask for it.
+
+### `GET /api/v1/settings/vpn`
+
+| Field | Content |
+| --- | --- |
+| `source` | `env` (the values from `.env`) or `upload` (a file uploaded here) |
+| `uploaded_at`, `uploaded_by` | When and by whom the file was uploaded. `null` for `env`. |
+| `endpoint_ip`, `endpoint_port`, `addresses`, `peer_key_fingerprint` | The parts of the configuration that are safe to show |
+| `gate` | `{state, reason, egress_ip, egress_asn, egress_org, checked_at}` of the ingest egress gate. `state` is `open` or `closed`. `egress_ip` is the VPN exit address. |
+| `trusted_exits` | `[{id, cidr, created_at, created_by}]`, at most 8 |
+| `trust_candidate` | The range the gate would trust now, or `null` |
+| `trust_blocked` | `exit_is_self` or `exit_asn_denied` when the candidate must not be trusted, otherwise `null` |
+| `config_writable` | `false` when the configuration volume is missing or read-only. Uploads then answer `503`. |
+| `last_check_request` | `{requested_at, done_at}` of the latest "Check now", or `null`. `done_at` is `null` until ingest has checked. |
+
+### `PUT /api/v1/settings/vpn`
+
+Uploads a wg-quick file. The parser is strict. It accepts only the keys it knows, and it refuses anything that runs a command or changes routing. Errors:
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `413` | `too_large` | The file is larger than 4 KiB |
+| `422` | `invalid_wireguard_config` | The answer lists `problems`, codes such as `forbidden_key`, `preshared_key_refused`, `bad_private_key`, `endpoint_not_ip` or `not_full_tunnel` (the peer must route `0.0.0.0/0`) |
+| `503` | `vpn_config_unavailable` | The configuration volume cannot be written |
+| `403` | `reauth_failed` | Wrong password |
+
+### `POST /api/v1/settings/vpn/check`
+
+Asks ingest to check the egress gate now. It changes nothing else and needs no password. Ingest picks the request up within a few seconds. Read the answer in `last_check_request`. At most one request per 10 seconds: a second one answers `429` with `too_soon` and a `Retry-After` header.
+
+### `POST /api/v1/settings/vpn/reconnect`
+
+Restarts the tunnel. The `vpn` service watches a marker file and restarts when it changes. Outbound lookups pause until the tunnel is back. At most one reconnect per 60 seconds (`429`, `too_soon`). Audit action: `vpn.reconnect`.
+
+### `POST /api/v1/settings/vpn/trusted-exits`
+
+Trusts the range in `trust_candidate`. The API stores the /24 (IPv4) or /48 (IPv6) that contains the exit address the gate saw. A client cannot send its own range. Once the range is trusted, the gate accepts exits in it. Errors:
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `409` | `no_candidate` | There is no exit range to trust right now |
+| `409` | `exit_is_self` or `exit_asn_denied` | The exit must not be trusted. See `trust_blocked`. |
+| `409` | `too_many` | Eight ranges are already trusted. Remove one first. |
+
+### `DELETE /api/v1/settings/vpn/trusted-exits/{exit_id}`
+
+Removes one trusted range. Answers `204`.
+
+## Setup checklist (M24)
+
+`GET /api/v1/setup/status` is for administrators only. It returns the checklist of the Settings page and the last tour step. Every item is computed from real state. `detail` is a short English sentence. It never contains a key, an address or a mailbox. `href` is the dashboard path that fixes the item.
+
+```json
+{
+  "items": [
+    {"id": "sensors", "state": "ok", "detail": "All 12 sensors sent events in the last 24 hours.", "href": "/settings"},
+    {"id": "vpn", "state": "warning", "detail": "The egress gate is closed (tunnel_down). Outbound lookups are paused.", "href": "/settings?tab=vpn"}
+  ]
+}
+```
+
+`state` is one of `ok`, `todo`, `warning` or `off`. The items always come in the same order:
+
+| `id` | `ok` when | Other states |
+| --- | --- | --- |
+| `sensors` | Every sensor sent an event in the last 24 hours | `warning` names the silent sensors |
+| `vpn` | The ingest egress gate is open | `todo`: the gate has not reported yet. `warning`: the gate is closed, with its reason. |
+| `collector` | Payload fetching is on and its gate is open | `off`: `COLLECTOR_ENABLED` is false. `warning`: on, but its gate is closed. |
+| `reporting_settings` | Every wording field is filled | `todo` names the empty fields |
+| `self_address` | The honeypot's own address is known | `todo` |
+| `abuse_worker` | `ABUSE_REPORTS_ENABLED` is true | `off` |
+| `alerts` | At least one alert channel is enabled | `off` |
+| `provider_keys` | The AbuseIPDB and GreyNoise keys are set | `warning` names the missing key. `off` when neither is set. |
+
+If one check cannot read its data, that item becomes `warning` with the detail "This could not be checked right now.". The other items still answer. The host firewall cannot be seen from inside the stack, so it is not an item. Use `just egress-check` to test it.
 
 ## Campaigns and MITRE ATT&CK (M15)
 
