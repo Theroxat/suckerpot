@@ -1,0 +1,253 @@
+# Selfhostr network hub. A SEPARATE deployment: it is not part of the node stack's
+# docker-compose.yml and never runs on a member's connection. Start it from this directory:
+#   cp .env.example .env   # fill in
+#   docker compose up -d --build        (build context is the repository root)
+#
+# Privacy: no service logs a client address. Caddy discards its logs, uvicorn runs without an
+# access log, the application keeps rate-limit state in memory under a daily random key.
+
+name: selfhostr-hub
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: { max-size: "5m", max-file: "3" }
+
+x-hub-env: &hub-env
+  HUB_SIGNING_KEY_FILE: /run/secrets/hub_signing_key
+  HUB_POW_DIFFICULTY: ${HUB_POW_DIFFICULTY:-27}
+  HUB_ENROL_SOFT_CAP: ${HUB_ENROL_SOFT_CAP:-50}
+  HUB_ENROL_HARD_CAP: ${HUB_ENROL_HARD_CAP:-200}
+  HUB_NODE_MIN_AGE_DAYS: ${HUB_NODE_MIN_AGE_DAYS:-14}
+  HUB_NODE_MIN_ACTIVE_DAYS: ${HUB_NODE_MIN_ACTIVE_DAYS:-7}
+  HUB_MIN_NODES: ${HUB_MIN_NODES:-5}
+  HUB_MIN_WEIGHT: ${HUB_MIN_WEIGHT:-3.0}
+  HUB_MIN_REPUTATION: ${HUB_MIN_REPUTATION:-0.3}
+  HUB_WINDOW_DAYS: ${HUB_WINDOW_DAYS:-7}
+  HUB_COHORT_MAX_SHARE: ${HUB_COHORT_MAX_SHARE:-0.5}
+  HUB_OBS_RETENTION_DAYS: ${HUB_OBS_RETENTION_DAYS:-14}
+
+services:
+  caddy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    <<: *hardening
+    user: "65532:65532"
+    environment:
+      HUB_DOMAIN: ${HUB_DOMAIN:?HUB_DOMAIN must be set in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    # Lets the non-root user bind 80 and 443 inside the container without any capability.
+    sysctls:
+      - net.ipv4.ip_unprivileged_port_start=0
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    tmpfs:
+      - /config:rw,noexec,nosuid,nodev,size=8m,uid=65532,gid=65532
+    networks: [hub-edge, hub-public]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      hub-api:
+        condition: service_healthy
+
+  hub-api:
+    build:
+      context: ..
+      dockerfile: hub/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      <<: *hub-env
+      HUB_DATABASE_URL: postgresql+asyncpg://hub_api:${HUB_API_DB_PASSWORD:?HUB_API_DB_PASSWORD must be set}@hub-db:5432/hub
+      # Caddy is the only peer; it puts the real address in the forwarding header, which the
+      # rate limiter hashes in memory and never stores.
+      HUB_TRUST_PROXY: "1"
+    secrets: [hub_signing_key]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    networks: [hub-edge, hub-internal]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      hub-migrate:
+        condition: service_completed_successfully
+
+  hub-worker:
+    build:
+      context: ..
+      dockerfile: hub/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    command: ["python", "-m", "hub.worker"]
+    environment:
+      <<: *hub-env
+      HUB_WORKER_DATABASE_URL: postgresql+asyncpg://hub_worker:${HUB_WORKER_DB_PASSWORD:?HUB_WORKER_DB_PASSWORD must be set}@hub-db:5432/hub
+      HUB_REPORT_MODE: ${HUB_REPORT_MODE:-review}
+      HUB_REPORT_HOLD_HOURS: ${HUB_REPORT_HOLD_HOURS:-24}
+      HUB_REPORT_DAILY_CAP: ${HUB_REPORT_DAILY_CAP:-100}
+      HUB_REPORT_TEMPLATE_FILE: ${HUB_REPORT_TEMPLATE_FILE:-}
+      HUB_REPORT_REPLY_TO: ${HUB_REPORT_REPLY_TO:-}
+      HUB_SMTP_HOST: ${HUB_SMTP_HOST:-}
+      HUB_SMTP_PORT: ${HUB_SMTP_PORT:-587}
+      HUB_SMTP_USER: ${HUB_SMTP_USER:-}
+      HUB_SMTP_PASSWORD: ${HUB_SMTP_PASSWORD:-}
+      HUB_SMTP_FROM: ${HUB_SMTP_FROM:-}
+      HUB_SMTP_STARTTLS: ${HUB_SMTP_STARTTLS:-true}
+      HUB_ABUSEIPDB_KEY: ${HUB_ABUSEIPDB_KEY:-}
+      HUB_GREYNOISE_KEY: ${HUB_GREYNOISE_KEY:-}
+    healthcheck:
+      test: ["CMD", "python", "-m", "hub.worker", "--health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    # Only service with a route out (RDAP and the report mailbox).
+    networks: [hub-internal, hub-out]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      hub-migrate:
+        condition: service_completed_successfully
+
+  # Operator CLI: docker compose run --rm hub-admin reports list
+  hub-admin:
+    build:
+      context: ..
+      dockerfile: hub/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    entrypoint: ["python", "-m", "hub.admin"]
+    profiles: [tools]
+    environment:
+      HUB_WORKER_DATABASE_URL: postgresql+asyncpg://hub_worker:${HUB_WORKER_DB_PASSWORD:?HUB_WORKER_DB_PASSWORD must be set}@hub-db:5432/hub
+    networks: [hub-internal]
+    mem_limit: 256m
+    pids_limit: 64
+
+  hub-migrate:
+    build:
+      context: ..
+      dockerfile: hub/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    command: ["python", "-m", "hub.migrate"]
+    environment:
+      HUB_MIGRATE_DATABASE_URL: postgresql+asyncpg://hub:${HUB_DB_PASSWORD:?HUB_DB_PASSWORD must be set}@hub-db:5432/hub
+      HUB_DB_PASSWORD: ${HUB_DB_PASSWORD}
+      HUB_API_DB_PASSWORD: ${HUB_API_DB_PASSWORD}
+      HUB_WORKER_DB_PASSWORD: ${HUB_WORKER_DB_PASSWORD}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    networks: [hub-internal]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    restart: "no"
+    depends_on:
+      hub-db:
+        condition: service_healthy
+
+  hub-db:
+    image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+    <<: *hardening
+    user: "999:999"
+    environment:
+      POSTGRES_DB: hub
+      POSTGRES_USER: hub
+      POSTGRES_PASSWORD: ${HUB_DB_PASSWORD:?HUB_DB_PASSWORD must be set}
+    # No connection or statement logging: they would record who connected and what was asked.
+    command:
+      - postgres
+      - -c
+      - log_connections=off
+      - -c
+      - log_disconnections=off
+      - -c
+      - log_statement=none
+      - -c
+      - log_min_duration_statement=-1
+      - -c
+      - log_hostname=off
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    tmpfs:
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=1m,uid=999,gid=999
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=999,gid=999
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hub -d hub"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [hub-internal]
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 200
+    restart: unless-stopped
+
+  # Daily dump with the owner account, 7 kept. Dumps hold node keys and 14 days of
+  # observations: keep the volume private.
+  hub-backup:
+    image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+    <<: *hardening
+    user: "999:999"
+    environment:
+      PGHOST: hub-db
+      PGUSER: hub
+      PGDATABASE: hub
+      PGPASSWORD: ${HUB_DB_PASSWORD}
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          pg_dump -Fc -f "/backups/hub-$$(date +%F).dump" && \
+            ls -1t /backups/hub-*.dump | tail -n +8 | xargs -r rm -f
+          sleep 86400
+        done
+    volumes:
+      - backups:/backups
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m,uid=999,gid=999
+    networks: [hub-internal]
+    mem_limit: 256m
+    pids_limit: 64
+    restart: unless-stopped
+    depends_on:
+      hub-db:
+        condition: service_healthy
+
+secrets:
+  hub_signing_key:
+    file: ${HUB_SIGNING_KEY_PATH:-./secrets/hub_signing_key}
+
+volumes:
+  db-data:
+    external: true
+    name: ${HUB_VOLUME_PREFIX:?HUB_VOLUME_PREFIX must be set}_db-data
+  backups:
+    external: true
+    name: ${HUB_VOLUME_PREFIX}_backups
+  caddy-data:
+
+networks:
+  hub-public:
+    driver: bridge
+  hub-edge:
+    internal: true
+  hub-internal:
+    internal: true
+  hub-out:
+    driver: bridge

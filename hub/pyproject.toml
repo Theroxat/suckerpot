@@ -1,0 +1,59 @@
+[project]
+name = "suckerpot-hub"
+version = "0.1.0"
+description = "Selfhostr network hub: signed API, consensus, reputation and grouped abuse reports (a separate deployable)"
+requires-python = ">=3.13"
+dependencies = [
+    "suckerpot-netproto",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.32,<1",
+    "sqlalchemy[asyncio]>=2.0.36,<3",
+    "asyncpg>=0.30",
+    "alembic>=1.14,<2",
+    "httpx>=0.27,<1",
+    "pyyaml>=6,<7",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "types-pyyaml",
+]
+
+[tool.uv.sources]
+suckerpot-netproto = { path = "../netproto" }
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hub"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S608", "E501"]
+"migrations/**" = ["S608", "E501"]
+"hub/roles.py" = ["S608"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+exclude = ["^\\.venv/"]
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["integration: needs a real PostgreSQL (skipped unless HUB_TEST_DATABASE_URL is set)"]
