@@ -1,0 +1,41 @@
+# Edge of the hub. Nothing about a client is logged: no access log, and the default logger
+# writes nowhere (client addresses show up in TLS error lines otherwise).
+{
+	admin off
+	log {
+		output discard
+	}
+	servers {
+		protocols h1 h2
+		max_header_size 16KB
+		timeouts {
+			read_header 10s
+			read_body 20s
+			write 30s
+			idle 2m
+		}
+	}
+}
+
+{$HUB_DOMAIN} {
+	log {
+		output discard
+	}
+	request_body {
+		max_size 1MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Cache-Control "no-store"
+		-Server
+	}
+	handle /v1/* {
+		# Caddy replaces any client-supplied forwarding header with the real peer address.
+		reverse_proxy hub-api:8080
+	}
+	handle {
+		respond "Not Found" 404
+	}
+}

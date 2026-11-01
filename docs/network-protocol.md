@@ -64,6 +64,14 @@ Every address and name below is a placeholder (documentation ranges and `example
   the answer otherwise (`hub_signature`, a node-side code). Binding the request nonce stops a
   recorded answer from being replayed to another request.
 
+- **Unsigned requests.** A client SHOULD send `X-SPN-Nonce` (16 random bytes, base64url) on the
+  unsigned endpoints too. When the header is well formed, the hub signs its answer exactly as above,
+  so a node can check that `/v1/info` and the enrolment challenge come from the pinned hub. Without
+  the header the answer carries no signature.
+- **Client address.** The hub never stores or logs the client address. It keeps in memory only a
+  keyed hash of it, under a random key replaced every day, to rate limit unsigned requests and
+  repeated authentication failures.
+
 ## Errors
 
 Status 4xx or 5xx with the body `{"error": "<code>"}`.
