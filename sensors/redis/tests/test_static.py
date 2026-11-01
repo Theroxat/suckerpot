@@ -142,6 +142,8 @@ def _string_literals(tree: ast.AST) -> list[str]:
 def test_no_giveaways_in_package() -> None:
     for path in sorted(PKG.rglob("*.py")):
         assert "honeypot" not in path.read_text().lower(), path
+        assert "selfhostr" not in path.read_text().lower(), path
         for text in _string_literals(ast.parse(path.read_text())):
             assert "suckerpot" not in text.replace("suckerpot_common", ""), (path, text)
             assert "honeypot" not in text, (path, text)
+            assert "selfhostr" not in text, (path, text)

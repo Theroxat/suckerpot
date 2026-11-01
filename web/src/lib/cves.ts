@@ -224,7 +224,7 @@ export const UNTRUSTED_END = "--- End of untrusted data ---"
 
 /**
  * The trap sheet an owner can paste into a ticket or hand to a builder. It is plain text and
- * triggers nothing: SuckerPot never builds or deploys a trap on its own. Everything that came
+ * triggers nothing: Selfhostr never builds or deploys a trap on its own. Everything that came
  * from a public feed (title, links) sits inside a delimited, quoted block, so it cannot pass for
  * an instruction.
  */

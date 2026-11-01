@@ -113,5 +113,5 @@ def test_no_giveaway_words_in_package() -> None:
     """Nothing a client can see names the project or the framework."""
     for path in sorted(PKG.rglob("*.py")):
         text = path.read_text().lower().replace("suckerpot_common", "")
-        for word in ("honeypot", "suckerpot", "starlette", "uvicorn"):
+        for word in ("honeypot", "suckerpot", "selfhostr", "starlette", "uvicorn"):
             assert word not in text, f"{path.name} mentions {word}"
