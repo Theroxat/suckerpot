@@ -159,6 +159,38 @@ services:
       db:
         condition: service_healthy
 
+  # Daily database dump into the external `backups` volume (7 kept). Backend network only: no
+  # route out. Uses the owner account like `migrate`; the image already ships a matching pg_dump.
+  backup:
+    image: timescale/timescaledb:2.22.1-pg17
+    <<: *hardening
+    user: "70:70"
+    entrypoint: ["/bin/sh", "/backup-service.sh"]
+    environment:
+      <<: *db-env
+      POSTGRES_USER: ${POSTGRES_USER:-suckerpot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+    volumes:
+      - ./scripts/backup-service.sh:/backup-service.sh:ro
+      - backups:/backups
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m,uid=70,gid=70
+    networks: [backend]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "find /backups -maxdepth 1 -name 'suckerpot-*.dump' -mmin -1560 | grep -q ."]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 10m
+    depends_on:
+      db:
+        condition: service_healthy
+
   ingest:
     build:
       context: .
@@ -1369,24 +1401,67 @@ networks:
       com.docker.network.bridge.name: sp-dashboard
       com.docker.network.bridge.enable_ip_masquerade: "false"
 
+# Every data volume is EXTERNAL with a fixed name, so `docker compose down -v`, a different
+# project name or a throwaway checkout can never delete or silently recreate the live data.
+# `just up` (scripts/ensure-volumes.sh) creates the missing ones first. The test overlays
+# (docker-compose.it.yml, docker-compose.ci.yml) turn every one of them back into a
+# project-local volume. To delete data on purpose, see docs/deployment.md ("Deleting data").
 volumes:
   redis-data:
+    external: true
+    name: suckerpot_redis-data
   db-data:
+    external: true
+    name: suckerpot_db-data
   ssh-hostkeys:
+    external: true
+    name: suckerpot_ssh-hostkeys
   rdp-data:
+    external: true
+    name: suckerpot_rdp-data
   telnet-data:
+    external: true
+    name: suckerpot_telnet-data
   web-data:
+    external: true
+    name: suckerpot_web-data
   redis-sensor-data:
+    external: true
+    name: suckerpot_redis-sensor-data
   docker-sensor-data:
+    external: true
+    name: suckerpot_docker-sensor-data
   mysql-sensor-data:
+    external: true
+    name: suckerpot_mysql-sensor-data
   mssql-sensor-data:
+    external: true
+    name: suckerpot_mssql-sensor-data
   adb-sensor-data:
+    external: true
+    name: suckerpot_adb-sensor-data
   smb-sensor-data:
+    external: true
+    name: suckerpot_smb-sensor-data
   sip-sensor-data:
+    external: true
+    name: suckerpot_sip-sensor-data
   synology-sensor-data:
+    external: true
+    name: suckerpot_synology-sensor-data
   geoip-data:
+    external: true
+    name: suckerpot_geoip-data
   # Files fetched by the collector (0400, never executed). Read-only for analyzer and api.
   quarantine:
-  # Uploaded WireGuard settings (M23): read-write in api, read-only in vpn, nowhere else.
-  # Its initial owner comes from the /vpn-config directory of the api image (uid 10001).
+    external: true
+    name: suckerpot_quarantine
+  # Uploaded WireGuard settings (M23): read-write in api, read-only in vpn only. Its initial owner
+  # comes from the /vpn-config directory of the api image (uid 10001).
   vpn-config:
+    external: true
+    name: suckerpot_vpn-config
+  # Daily database dumps written by the backup service (owned by uid 70, see ensure-volumes.sh).
+  backups:
+    external: true
+    name: suckerpot_backups

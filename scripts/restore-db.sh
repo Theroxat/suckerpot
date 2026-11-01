@@ -2,7 +2,10 @@
 # Restores a dump made by scripts/backup-db.sh into the running db container.
 # THIS REPLACES THE WHOLE DATABASE.
 #
-#   scripts/restore-db.sh [--yes] FILE
+#   scripts/restore-db.sh [--yes] FILE|latest|volume:NAME
+#
+# FILE is a dump on the host (made by scripts/backup-db.sh). "latest" and "volume:NAME" read
+# a dump of the daily `backup` service from the external suckerpot_backups volume.
 #
 # Steps: stop ingest and api, recreate the database, restore the dump with the
 # TimescaleDB pre/post-restore hooks, run migrations (which re-apply the role
@@ -14,10 +17,36 @@ cd "$(dirname "$0")/.."
 yes=0
 if [ "${1:-}" = "--yes" ]; then yes=1; shift; fi
 file=${1:-}
-if [ -z "$file" ] || [ ! -f "$file" ]; then
-  echo "usage: $0 [--yes] DUMP_FILE" >&2
-  exit 2
-fi
+image=$(awk '/^  db:/ {indb=1} indb && /image: / {print $2; exit}' docker-compose.yml)
+# Runs a command on the backups volume (read-only, no network).
+in_backups() {
+  docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true \
+    --user 70:70 -v suckerpot_backups:/b:ro --entrypoint "$1" "$image" "${@:2}"
+}
+from_volume=""
+case $file in
+  latest)
+    from_volume=$(in_backups sh -c 'ls -1t /b/suckerpot-*.dump 2>/dev/null | head -n 1' || true)
+    from_volume=${from_volume##*/}
+    [ -n "$from_volume" ] || { echo "restore: no dump in the suckerpot_backups volume" >&2; exit 2; }
+    file="volume:$from_volume"
+    ;;
+  volume:*)
+    from_volume=${file#volume:}
+    case $from_volume in *[!A-Za-z0-9._-]* | .* | "") echo "restore: bad dump name" >&2; exit 2 ;; esac
+    in_backups test -s "/b/$from_volume" || { echo "restore: $from_volume not found in the backups volume" >&2; exit 2; }
+    ;;
+  *)
+    if [ -z "$file" ] || [ ! -f "$file" ]; then
+      echo "usage: $0 [--yes] DUMP_FILE|latest|volume:NAME" >&2
+      exit 2
+    fi
+    ;;
+esac
+# Streams the chosen dump to stdout.
+read_dump() {
+  if [ -n "$from_volume" ]; then in_backups cat "/b/$from_volume"; else cat "$file"; fi
+}
 
 if [ "$yes" -ne 1 ]; then
   echo "WARNING: this DELETES the current SuckerPot database and replaces it with:"
@@ -49,7 +78,7 @@ psqlx "$db" -c "SELECT timescaledb_pre_restore()" > /dev/null
 # Owners and ACLs are not restored: the roles are re-created by the migration below.
 docker compose exec -T db sh -c \
   'PGPASSWORD="$POSTGRES_PASSWORD" exec pg_restore -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl --exit-on-error' \
-  < "$file"
+  < <(read_dump)
 psqlx "$db" -c "SELECT timescaledb_post_restore()" > /dev/null
 
 echo "restore: running migrations"

@@ -216,6 +216,10 @@ The admin can enter the AbuseIPDB, GreyNoise, MaxMind, NVD and GitHub keys on th
 - **Key quality.** `SETTINGS_ENCRYPTION_KEY` must decode to at least 32 bytes with at least 16 distinct byte values, and must differ from `SESSION_SECRET` and every `*_PASSWORD` variable. Otherwise editing is disabled.
 - **Least privilege.** The API role may write `provider_secrets`. The ingest role may only read it. The API still has no internet access: "Test key" leaves a request in the database, and ingest makes the one real call and spends one unit of the provider's daily quota.
 
+### Data volumes and backups
+
+All data volumes are `external: true` with fixed `suckerpot_*` names, so `down -v`, a wrong project name or a throwaway checkout cannot delete them (an incident on 2026-11-01 destroyed every volume that way). The test overlays make them project-local and guardrail tests enforce it. The `backup` service has no route out, runs non-root with a read-only root filesystem, and writes daily dumps with mode 0600 into the `backups` volume. Dumps hold captured attack data: treat them as private.
+
 ### Secrets policy
 
 - Every secret must be at least 24 characters long, and no two secrets may be equal. Redis checks all its passwords, and the migration step checks the three database passwords.

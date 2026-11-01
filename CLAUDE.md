@@ -207,6 +207,7 @@ Python, Node and Playwright never run on the host: every `just` recipe runs insi
 | --- | --- |
 | `just up` / `just down` / `just logs ingest api` | Stack lifecycle (`up` waits for healthy) |
 | `just up-test` | Stack with dashboard auth OFF (`docker-compose.ci.yml`); needed by `ssh-test`, `telnet-test`, `rdp-test`, `http-test` |
+| `just backup` / `just restore latest` | Dump now into the external `suckerpot_backups` volume (the `backup` service also dumps daily, 7 kept) / replace the DB from a dump. Data volumes are `external: true` (`suckerpot_*`); test overlays make them local, never reuse the live project name for tests (`docs/deployment.md`) |
 | `just check` | `lint` + `typecheck` (mypy strict) + `test` + `web-build` |
 | `just test` | Unit tests of every Python package (`-m 'not integration'`) then vitest |
 | `just test-integration` | `-m integration` tests in `db`, `ingest`, `api`, against a throwaway compose project (never the live volumes) using the `docker-compose.it.yml` overlay. Needs every `REDIS_SENSOR_*_PASSWORD` set (≥ 24 chars) |

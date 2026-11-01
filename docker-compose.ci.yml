@@ -11,3 +11,25 @@ services:
     environment:
       API_AUTH_DISABLED: "true"
       SUCKERPOT_DEMO: "1"
+
+# Project-local volumes: the base file declares every data volume as external and named
+# suckerpot_*; a test run must never mount those. `!override {}` drops that declaration.
+volumes:
+  redis-data: !override {}
+  db-data: !override {}
+  ssh-hostkeys: !override {}
+  rdp-data: !override {}
+  telnet-data: !override {}
+  web-data: !override {}
+  redis-sensor-data: !override {}
+  docker-sensor-data: !override {}
+  mysql-sensor-data: !override {}
+  mssql-sensor-data: !override {}
+  adb-sensor-data: !override {}
+  smb-sensor-data: !override {}
+  sip-sensor-data: !override {}
+  synology-sensor-data: !override {}
+  geoip-data: !override {}
+  quarantine: !override {}
+  vpn-config: !override {}
+  backups: !override {}

@@ -110,7 +110,7 @@ The API documentation pages (`/docs`) are off by default. To turn them on while 
 | Command | Effect |
 | --- | --- |
 | `just down` or `docker compose down` | Stops the containers. Data volumes are kept. |
-| `docker compose down -v` | Stops the containers **and deletes all data volumes**. This cannot be undone. |
+| `docker compose down -v` | Stops the containers. The data volumes are external, so Compose keeps them. Remove one by name only on purpose: see [Deployment](deployment.md#deleting-data-on-purpose). |
 
 ## Next steps
 

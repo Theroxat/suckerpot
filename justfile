@@ -7,6 +7,8 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 uv_image := "ghcr.io/astral-sh/uv:0.8.24-python3.13-bookworm-slim"
 uv_cache := "suckerpot-uv-cache"
 project := env_var_or_default("COMPOSE_PROJECT_NAME", "suckerpot")
+# Every recipe uses the same project name (the live one by default), whatever the folder is called.
+export COMPOSE_PROJECT_NAME := project
 node_image := "node:22.21.1-bookworm-slim"
 playwright_image := "mcr.microsoft.com/playwright:v1.64.1-noble"
 web_cache := "suckerpot-web-cache"
@@ -18,8 +20,11 @@ packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet s
 default:
     @just --list
 
-# Build the images and start the stack, waiting until everything is healthy.
-up: ports
+# Build the images and start the stack, waiting until everything is healthy. The data volumes
+# are external: they are created first, and the start is refused if the database volume is gone
+# while the backups volume still holds dumps (--force-empty accepts an empty database on purpose).
+up *flags: ports
+    scripts/ensure-volumes.sh {{flags}}
     docker compose up -d --build --wait
 
 # Start the stack for tests: dashboard authentication OFF (docker-compose.ci.yml).
@@ -28,6 +33,11 @@ up: ports
 up-test: ports
     #!/usr/bin/env bash
     set -euo pipefail
+    # The test overlay makes every volume project-local: under the live project name that would
+    # collide with the live volumes. Always a separate project.
+    if [ "{{project}}" = "suckerpot" ] || [ "${COMPOSE_PROJECT_NAME:-}" = "suckerpot" ]; then
+      export COMPOSE_PROJECT_NAME=sp-test
+    fi
     : "${ADMIN_PASSWORD_HASH:=test-placeholder}"
     : "${SESSION_SECRET:=test-placeholder-session-secret-not-used}"
     export ADMIN_PASSWORD_HASH SESSION_SECRET
@@ -127,11 +137,19 @@ rdp-test:
 telnet-test:
     scripts/telnet-test.sh
 
-# Dump the database into ./backups (BACKUP_DIR, BACKUP_KEEP): see scripts/backup-db.sh.
+# Dump the database now into the suckerpot_backups volume (the backup service also does it daily, 7 kept).
 backup:
+    docker compose exec -T backup /bin/sh /backup-service.sh now
+
+# Dump the database into the host folder ./backups (BACKUP_DIR, BACKUP_KEEP): see scripts/backup-db.sh.
+backup-host:
     scripts/backup-db.sh
 
-# Restore a dump, replacing the whole database (asks for confirmation): just restore backups/FILE.dump
+# List the dumps in the suckerpot_backups volume.
+backups:
+    docker compose exec -T backup ls -lh /backups
+
+# Restore a dump, replacing the whole database (asks for confirmation): just restore latest | FILE | volume:NAME
 restore file:
     scripts/restore-db.sh {{file}}
 
@@ -180,6 +198,11 @@ test-integration:
     exec 9>/tmp/suckerpot-it.lock
     flock 9
     it="{{project}}-it-$(printf %s "$PWD" | sha256sum | cut -c1-6)-$$"
+    # Defence in depth: never run against the live project (its volumes would be mounted by name).
+    if [ "$it" = "suckerpot" ] || [ "$it" = "{{project}}" ] || [[ "$it" != *-it-* ]]; then
+      echo "test-integration: refusing to run, project name '$it' is not a throwaway '-it-' project" >&2
+      exit 1
+    fi
     trap 'docker compose -p "$it" -f docker-compose.yml -f docker-compose.it.yml down -v >/dev/null 2>&1' EXIT
     docker compose -p "$it" -f docker-compose.yml -f docker-compose.it.yml up -d --build --wait db redis
     {{just_executable()}} _cache

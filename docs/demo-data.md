@@ -75,7 +75,7 @@ docker compose --profile tools run --rm demo --days 2 --sessions 50 --dry-run
 
 ## Running it twice
 
-Each run adds data. To start from scratch, stop the stack and delete the database volume with `docker compose down -v`. This deletes all data, real or fake.
+Each run adds data. To start from scratch on purpose, stop the stack and remove the database volume by name (`docker volume rm suckerpot_db-data`); `docker compose down -v` no longer deletes the data volumes, which are external. See [Deployment](deployment.md#deleting-data-on-purpose). This deletes all data, real or fake.
 
 ## Screenshots use demo data only
 
