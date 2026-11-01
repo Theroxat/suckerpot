@@ -8,6 +8,7 @@ import { IPChip } from "@/components/ip-chip"
 import { PageHeader } from "@/components/page-header"
 import { RelativeTime } from "@/components/relative-time"
 import { ArchiveButton } from "@/components/samples/archive-dialog"
+import { BundleCard, BundleToggle } from "@/components/samples/bundle"
 import { ChainSteps } from "@/components/samples/chain-steps"
 import { StringsList } from "@/components/samples/strings-list"
 import { SensorBadge } from "@/components/sensor-badge"
@@ -234,10 +235,18 @@ export function SampleDetailPage() {
         title={familyLabel(item.family)}
         eyebrow={back}
         description={<span className="normal-nums">{describeSample(d)}</span>}
-        actions={item.stored && canWrite ? <ArchiveButton sha256={sha256} /> : undefined}
+        actions={
+          item.stored && canWrite ? (
+            <>
+              <BundleToggle sha256={sha256} />
+              <ArchiveButton sha256={sha256} />
+            </>
+          ) : undefined
+        }
       />
 
       <div className="space-y-4">
+        {canWrite ? <BundleCard /> : null}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-fg-muted">
           <SeverityBadge severity={item.severity} />
           <span>{describeKind(item)}</span>

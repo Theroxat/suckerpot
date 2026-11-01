@@ -46,6 +46,21 @@ export function formatAbsolute(iso: string | Date): string {
   return absolute.format(typeof iso === "string" ? new Date(iso) : iso)
 }
 
+const windowFmt = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+})
+
+/** A time window to the minute, compact: "Oct 31, 13:53 – 17:53" (browser time zone). */
+export function formatWindow(start: string | Date, end: string | Date): string {
+  const a = typeof start === "string" ? new Date(start) : start
+  const b = typeof end === "string" ? new Date(end) : end
+  return a <= b ? windowFmt.formatRange(a, b) : windowFmt.format(a)
+}
+
 export function formatClock(iso: string | Date): string {
   return clock.format(typeof iso === "string" ? new Date(iso) : iso)
 }

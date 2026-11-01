@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { Link } from "react-router"
 import { RelativeTime } from "@/components/relative-time"
 import { SeverityBadge } from "@/components/severity-badge"
@@ -7,19 +8,21 @@ import { describeKind, familyLabel, shortHash, type SampleItem } from "@/lib/sam
 import { cn } from "@/lib/utils"
 
 export const SAMPLE_GRID = "md:grid-cols-[minmax(0,1fr)_6rem_5rem_5rem_6rem] md:gap-x-4"
+/** The same grid with a narrow last column for a row action (the bundle toggle). */
+export const SAMPLE_GRID_ACTION = "md:grid-cols-[minmax(0,1fr)_6rem_5rem_5rem_6rem_2rem] md:gap-x-4"
 
 /**
  * One collected file. The row opens the sample page; the family and the rule names stay
  * independently clickable and open the filtered list.
  */
-export function SampleRow({ item }: { item: SampleItem }) {
+export function SampleRow({ item, action }: { item: SampleItem; action?: ReactNode }) {
   const to = `/malware/samples/${item.sha256}`
   const family = familyLabel(item.family)
   return (
     <div
       className={cn(
         "group/row relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3 transition-colors duration-150 hover:bg-surface-hover/50 sm:px-5",
-        SAMPLE_GRID,
+        action ? SAMPLE_GRID_ACTION : SAMPLE_GRID,
       )}
     >
       <Link
@@ -65,6 +68,7 @@ export function SampleRow({ item }: { item: SampleItem }) {
           <span className="text-fg">{formatNumber(item.sessions)}</span>{" "}
           {item.sessions === 1 ? "session" : "sessions"}
         </span>
+        {action ? <span className="relative z-10 -my-1.5 ml-auto">{action}</span> : null}
       </p>
 
       <span className="hidden text-right text-sm text-fg tabular-nums md:block">
@@ -79,6 +83,9 @@ export function SampleRow({ item }: { item: SampleItem }) {
       <span className="relative z-10 hidden justify-self-end md:block">
         <RelativeTime iso={item.last_seen} className="text-xs" />
       </span>
+      {action ? (
+        <span className="relative z-10 hidden justify-self-end md:block">{action}</span>
+      ) : null}
     </div>
   )
 }
