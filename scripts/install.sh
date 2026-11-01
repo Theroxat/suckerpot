@@ -486,9 +486,10 @@ SUCKERPOT_VOLUME_PREFIX=$prefix bash scripts/ensure-volumes.sh
 # ---------------------------------------------------------------- 8. guards
 step 8 "Checking the port layout and VPN settings"
 scripts/check-ports.sh
-if [ -n "$wg_conf" ]; then
-  scripts/check-vpn-env.sh
-else
+# Empty VPN_WG_* values are valid (the vpn container idles until a file is uploaded), so this
+# always runs: it still checks the egress passwords and any WireGuard values that were written.
+scripts/check-vpn-env.sh
+if [ -z "$wg_conf" ]; then
   note "no WireGuard file given: upload it in the dashboard (Settings > VPN); the gate stays closed until then"
 fi
 

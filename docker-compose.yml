@@ -258,6 +258,9 @@ services:
       BLOCKLIST_NEVER: ${BLOCKLIST_NEVER:-}
       AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
       INDICATORS_KEEP_DOCUMENTATION: ${INDICATORS_KEEP_DOCUMENTATION:-false}
+      # Daily check for a newer release (M28): one anonymous GET through the egress proxy.
+      UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-true}
+      UPDATE_CHECK_REPO: ${UPDATE_CHECK_REPO:-Theroxat/suckerpot}
       # This deployment's own names: never recorded as attack infrastructure.
       API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
       API_ALLOWED_ORIGINS: ${API_ALLOWED_ORIGINS:-}
@@ -395,6 +398,37 @@ services:
       LOGIN_RATE_USER: ${LOGIN_RATE_USER:-10}
       AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
       API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
+      # Setup checklist and wizard (M28): which sensors are on and which ports the owner must forward.
+      SENSOR_SSH: ${SENSOR_SSH:-1}
+      SENSOR_TELNET: ${SENSOR_TELNET:-1}
+      SENSOR_WEB: ${SENSOR_WEB:-1}
+      SENSOR_RDP: ${SENSOR_RDP:-1}
+      SENSOR_REDIS: ${SENSOR_REDIS:-1}
+      SENSOR_DOCKER: ${SENSOR_DOCKER:-1}
+      SENSOR_MYSQL: ${SENSOR_MYSQL:-1}
+      SENSOR_MSSQL: ${SENSOR_MSSQL:-1}
+      SENSOR_ADB: ${SENSOR_ADB:-1}
+      SENSOR_SMB: ${SENSOR_SMB:-1}
+      SENSOR_SIP: ${SENSOR_SIP:-1}
+      SENSOR_SYNOLOGY: ${SENSOR_SYNOLOGY:-1}
+      SSH_HOST_PORT: ${SSH_HOST_PORT:-22}
+      TELNET_HOST_PORT: ${TELNET_HOST_PORT:-23}
+      HTTP_HOST_PORT: ${HTTP_HOST_PORT:-80}
+      HTTPS_HOST_PORT: ${HTTPS_HOST_PORT:-443}
+      RDP_HOST_PORT: ${RDP_HOST_PORT:-3389}
+      REDIS_HOST_PORT: ${REDIS_HOST_PORT:-6379}
+      DOCKER_HOST_PORT: ${DOCKER_HOST_PORT:-2375}
+      MYSQL_HOST_PORT: ${MYSQL_HOST_PORT:-3306}
+      MSSQL_HOST_PORT: ${MSSQL_HOST_PORT:-1433}
+      ADB_HOST_PORT: ${ADB_HOST_PORT:-5555}
+      SMB_HOST_PORT: ${SMB_HOST_PORT:-445}
+      SIP_HOST_PORT: ${SIP_HOST_PORT:-5060}
+      SYNOLOGY_HTTP_HOST_PORT: ${SYNOLOGY_HTTP_HOST_PORT:-5000}
+      SYNOLOGY_HTTPS_HOST_PORT: ${SYNOLOGY_HTTPS_HOST_PORT:-5001}
+      DASHBOARD_PORT: ${DASHBOARD_PORT:-8443}
+      # Update check (M28): the version shown in Settings; ingest does the daily lookup.
+      UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-true}
+      UPDATE_CHECK_REPO: ${UPDATE_CHECK_REPO:-Theroxat/suckerpot}
       # Machine-readable blocklist feeds (M16), outside /api/v1 and off by default.
       FEEDS_ENABLED: ${FEEDS_ENABLED:-false}
       # Egress card in Settings (quota meter and quarantine cap).
