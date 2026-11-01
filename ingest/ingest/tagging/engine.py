@@ -27,7 +27,7 @@ Event rules see ``type``, ``sensor`` and a whitelist of ``data.*`` fields. Sessi
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -214,7 +214,7 @@ def _fields_of(cond: Cond) -> set[str]:
     return set().union(*(_fields_of(c) for c in cond.children)) if cond.children else set()
 
 
-def _parse_cond(raw: Any, depth: int, where: str) -> Cond:
+def _parse_cond(raw: Any, depth: int, where: str, fields: frozenset[str] | None = None) -> Cond:
     if depth > MAX_DEPTH:
         raise RuleError(f"{where}: conditions nested too deeply")
     if not isinstance(raw, Mapping):
@@ -223,11 +223,11 @@ def _parse_cond(raw: Any, depth: int, where: str) -> Cond:
         if kind in raw:
             if len(raw) != 1 or not isinstance(raw[kind], list) or not raw[kind]:
                 raise RuleError(f"{where}: '{kind}' takes a non-empty list")
-            return Node(kind, tuple(_parse_cond(c, depth + 1, where) for c in raw[kind]))
+            return Node(kind, tuple(_parse_cond(c, depth + 1, where, fields) for c in raw[kind]))
     if "not" in raw:
         if len(raw) != 1:
             raise RuleError(f"{where}: 'not' takes exactly one condition")
-        return Node("not", (_parse_cond(raw["not"], depth + 1, where),))
+        return Node("not", (_parse_cond(raw["not"], depth + 1, where, fields),))
     keys = set(raw) - {"field", "ci"}
     if "field" not in raw or len(keys) != 1:
         raise RuleError(f"{where}: a leaf needs 'field' and exactly one operator")
@@ -256,7 +256,10 @@ def _parse_cond(raw: Any, depth: int, where: str) -> Cond:
             raise RuleError(f"{where}: {op} needs non-empty strings")
     if op == "command_any" and not all(isinstance(i, str) and "/" not in i for i in arg):
         raise RuleError(f"{where}: command_any takes bare command names")
-    if fld in EVENT_FIELDS or fld in SESSION_FIELDS:
+    if fields is not None:
+        if fld not in fields:  # a caller with its own vocabulary (the reply rules)
+            raise RuleError(f"{where}: field {fld!r} is not allowed")
+    elif fld in EVENT_FIELDS or fld in SESSION_FIELDS:
         pass
     elif isinstance(fld, str) and fld.startswith("data.") and fld[5:] in DATA_FIELDS:
         pass
@@ -265,12 +268,18 @@ def _parse_cond(raw: Any, depth: int, where: str) -> Cond:
     return Leaf(fld, op, arg, ci)
 
 
-def compile_condition(raw: Any, where: str) -> Cond:
+def compile_condition(raw: Any, where: str, *, fields: frozenset[str] | None = None) -> Cond:
     """Compile a ``when:`` condition of any rule-like file; raises RuleError on a bad one.
 
-    Public so other rule files (the ATT&CK mapping) share the grammar and its safety limits.
+    Public so other rule files (the ATT&CK mapping, the reply classifier) share the grammar and
+    its safety limits. ``fields`` replaces the event/session field whitelist with the caller's own.
     """
-    return _parse_cond(raw, 0, where)
+    return _parse_cond(raw, 0, where, fields)
+
+
+def evaluate(cond: Cond, get: Callable[[str], Any]) -> bool:
+    """Evaluate a compiled condition; ``get`` maps a field name to its value (None if absent)."""
+    return _eval(cond, get)
 
 
 def match_event_condition(cond: Cond, etype: str, sensor: str, data: Mapping[str, Any]) -> bool:

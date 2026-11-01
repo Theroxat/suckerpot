@@ -37,6 +37,7 @@ from ingest.enrichment.status import publish_status
 from ingest.features import FeatureSettings, FeatureWorker
 from ingest.indicators import IndicatorExtractor, IndicatorSettings
 from ingest.llm import ExplainerWorker
+from ingest.replies import ReplyWorker
 from ingest.reports import ReportWorker
 from ingest.scanners import load_scanners
 from ingest.scripts import ScriptWorker, load_annotations
@@ -178,6 +179,9 @@ async def run() -> None:
         ),
         ReportWorker(features, factory),
         AbuseWorker(features, factory, box=load_secret_box()),
+        ReplyWorker(
+            features, factory, box=load_secret_box(), rules_dir=enrich.rules_dir / "replies"
+        ),
     ]
     for worker in feature_workers:
         appliers.append(worker.apply_settings)

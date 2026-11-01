@@ -39,6 +39,8 @@ from suckerpot_db.models import (
     AuditLogRow,
     EnrichmentQuotaRow,
     EnrichmentStatusRow,
+    ReportImapRow,
+    ReportImapStateRow,
     ReportSelfTermRow,
     ReportSettingsRow,
 )
@@ -68,9 +70,13 @@ from api.abuse_core import (
     missing_for,
     release,
     render_checked,
+    reply_args,
     self_address_fresh,
     settings_incomplete_response,
 )
+from api.abuse_outcomes import OutcomeOut, outcomes_for
+from api.abuse_replies import ReplyOut, replies_enabled, replies_of_report
+from api.abuse_replies import counts as reply_counts
 from api.abuse_smtp import SendState, send_state
 from api.auth import Principal, current_principal
 from api.authz import require_admin
@@ -82,7 +88,7 @@ log = logging.getLogger("api.abuse")
 
 MAX_LIMIT = 100
 MAX_TERMS = 500
-TEMPLATE_FIELDS = frozenset({"value", "asn", "network", "count", "date"})
+TEMPLATE_FIELDS = frozenset({"value", "asn", "network", "count", "date", "ref"})
 HISTORY_LIMIT = 50
 STATUSES = ("draft", "reviewed", "sent", "closed", "discarded", "superseded")
 ALLOWED = frozenset(
@@ -144,6 +150,7 @@ class ReportItem(BaseModel):
     updated_at: datetime
     revision: int
     guard: GuardOut
+    outcome: OutcomeOut | None = None  # sent and closed reports only (M26)
 
 
 class ReportPage(BaseModel):
@@ -189,6 +196,8 @@ class ReportDetail(ReportItem):
     reviewed_at: datetime | None
     sent_at: datetime | None
     closed_at: datetime | None
+    replies: list[ReplyOut] = []  # the latest 20 (M26)
+    reply_token: str | None = None  # administrators only
 
 
 class AttachmentOut(BaseModel):
@@ -211,6 +220,15 @@ class RdapQuota(BaseModel):
     limit: int
 
 
+class RepliesStatus(BaseModel):
+    enabled: bool  # the server switch and the saved mailbox are both on
+    configured: bool
+    last_poll_at: datetime | None
+    last_error: str | None
+    unmatched: int
+    needs_review: int
+
+
 class StatusOut(BaseModel):
     enabled: bool
     gate: Literal["open", "closed"]
@@ -219,6 +237,7 @@ class StatusOut(BaseModel):
     self_address_fresh: bool
     counts: dict[str, int]
     waiting_for_contact: int
+    replies: RepliesStatus
 
 
 class WaitingOut(BaseModel):
@@ -236,6 +255,7 @@ class RecipientRow(BaseModel):
     source: str
     muted: bool
     first_seen: datetime
+    reply_domains: list[str] = []  # other domains this provider answers from (M26)
 
 
 class RecipientPage(BaseModel):
@@ -261,6 +281,7 @@ class SettingsOut(BaseModel):
     round_times: bool
     default_options: DefaultOptions
     default_tlp: Literal["clear", "green", "amber", "red"]
+    reference_style: Literal["subject", "subject_and_body", "off"]
     revision: int
 
 
@@ -410,7 +431,13 @@ async def _live_guard(
     ctx = await guard_context(db, row, evidence)
     try:
         rendered = await asyncio.to_thread(
-            render_checked, evidence, bundle.settings, terms, ctx, "text"
+            render_checked,
+            evidence,
+            bundle.settings,
+            terms,
+            ctx,
+            "text",
+            **reply_args(row, bundle),
         )
     except RenderUnavailable:
         return GuardOut(ok=row.guard_ok, codes=list(row.guard_codes))
@@ -418,9 +445,16 @@ async def _live_guard(
 
 
 async def _detail(
-    db: AsyncSession, row: AbuseReportRow, rec: AbuseRecipientRow, bundle: SettingsBundle
+    db: AsyncSession,
+    row: AbuseReportRow,
+    rec: AbuseRecipientRow,
+    bundle: SettingsBundle,
+    *,
+    admin: bool = False,
 ) -> ReportDetail:
     item = _item(row, rec)
+    outcomes = await outcomes_for(db, [(row.id, row.status, row.sent_at)])
+    item = item.model_copy(update={"outcome": outcomes.get(row.id)})
     evidence: Evidence | None
     try:
         evidence = build_evidence(row, rec, bundle)
@@ -480,16 +514,22 @@ async def _detail(
         reviewed_at=row.reviewed_at,
         sent_at=row.sent_at,
         closed_at=row.closed_at,
+        replies=await replies_of_report(db, row.id, row.public_id, admin),
+        reply_token=row.reply_token if admin else None,
     )
 
 
 async def _answer(
-    db: AsyncSession, public_id: uuid.UUID, bundle: SettingsBundle | None = None
+    db: AsyncSession,
+    public_id: uuid.UUID,
+    bundle: SettingsBundle | None = None,
+    *,
+    admin: bool = False,
 ) -> Response | ReportDetail:
     loaded = await _load(db, public_id)
     if loaded is None:
         return _not_found()
-    return await _detail(db, loaded[0], loaded[1], bundle or await load_settings(db))
+    return await _detail(db, loaded[0], loaded[1], bundle or await load_settings(db), admin=admin)
 
 
 # ---- status and lists ----------------------------------------------------------------------
@@ -527,6 +567,13 @@ async def abuse_status(db: DbSession) -> StatusOut:
         .where(AbuseRecipientRow.mailbox.is_(None), AbuseRecipientRow.override_mailbox.is_(None))
     )
     terms = await load_terms(db)
+    unmatched, needs_review = await reply_counts(db)
+    imap = (
+        await db.execute(
+            select(ReportImapRow.enabled, ReportImapRow.password_set).where(ReportImapRow.id == 1)
+        )
+    ).first()
+    imap_state = await db.get(ReportImapStateRow, 1)
     return StatusOut(
         enabled=enabled,
         gate="open" if isinstance(gate, dict) and gate.get("open") is True else "closed",
@@ -535,6 +582,14 @@ async def abuse_status(db: DbSession) -> StatusOut:
         self_address_fresh=await self_address_fresh(db),
         counts=counts,
         waiting_for_contact=int(waiting or 0),
+        replies=RepliesStatus(
+            enabled=bool(replies_enabled() and imap is not None and imap.enabled),
+            configured=bool(imap is not None and imap.password_set),
+            last_poll_at=imap_state.last_poll_at if imap_state else None,
+            last_error=imap_state.last_error if imap_state else None,
+            unmatched=unmatched,
+            needs_review=needs_review,
+        ),
     )
 
 
@@ -583,8 +638,9 @@ async def list_reports(
     )
     rows = (await db.execute(stmt)).all()
     page, more = rows[:limit], len(rows) > limit
+    outcomes = await outcomes_for(db, [(r.id, r.status, r.sent_at) for r, _ in page])
     return ReportPage(
-        items=[_item(r, rec) for r, rec in page],
+        items=[_item(r, rec).model_copy(update={"outcome": outcomes.get(r.id)}) for r, rec in page],
         next_cursor=(
             encode_cursor([page[-1][0].updated_at.isoformat(), page[-1][0].id]) if more else None
         ),
@@ -592,8 +648,11 @@ async def list_reports(
 
 
 @router.get("/abuse/reports/{public_id}", response_model=ReportDetail)
-async def get_report(public_id: PublicId, db: DbSession) -> Response | ReportDetail:
-    return await _answer(db, public_id)
+async def get_report(
+    public_id: PublicId, request: Request, db: DbSession
+) -> Response | ReportDetail:
+    principal = await _principal(request)
+    return await _answer(db, public_id, admin=principal is not None and principal.is_admin)
 
 
 # ---- render and download (guarded) ---------------------------------------------------------
@@ -620,7 +679,14 @@ async def render_report(
         ctx = await guard_context(db, row, evidence)
         terms = await load_terms(db)
         rendered = await asyncio.to_thread(
-            render_checked, evidence, bundle.settings, terms, ctx, format, subject
+            render_checked,
+            evidence,
+            bundle.settings,
+            terms,
+            ctx,
+            format,
+            subject,
+            **reply_args(row, bundle),
         )
         release(rendered.guard)
     except GuardFailed as exc:
@@ -674,7 +740,14 @@ async def download_report(
         terms = await load_terms(db)
         fmt = {"txt": "text", "eml": "eml", "evidence_csv": "text", "xarf_yaml": "xarf"}[format]
         rendered = await asyncio.to_thread(
-            render_checked, evidence, bundle.settings, terms, ctx, fmt, subject
+            render_checked,
+            evidence,
+            bundle.settings,
+            terms,
+            ctx,
+            fmt,
+            subject,
+            **reply_args(row, bundle),
         )
         release(rendered.guard)
         name, media, data = _file_of(format, stem, rendered, evidence)
@@ -833,7 +906,7 @@ async def set_status(
     )
     await db.commit()
     await db.refresh(row)
-    return await _detail(db, row, rec, bundle)
+    return await _detail(db, row, rec, bundle, admin=True)
 
 
 async def _review_blocker(
@@ -915,7 +988,7 @@ async def patch_report(
                 "reviewed_revision": None,
             }
     if not values:
-        return await _detail(db, row, rec, await load_settings(db))
+        return await _detail(db, row, rec, await load_settings(db), admin=True)
     principal = await _principal(request)
     await db.execute(update(AbuseReportRow).where(AbuseReportRow.id == row.id).values(**values))
     await audit_db.record(
@@ -929,7 +1002,7 @@ async def patch_report(
     )
     await db.commit()
     await db.refresh(row)
-    return await _detail(db, row, rec, await load_settings(db))
+    return await _detail(db, row, rec, await load_settings(db), admin=True)
 
 
 class Accepted(BaseModel):
@@ -1027,6 +1100,7 @@ async def list_recipients(
                 source=r.source,
                 muted=r.muted,
                 first_seen=r.first_seen,
+                reply_domains=list(r.reply_domains or []),
             )
             for r in page
         ],
@@ -1123,6 +1197,7 @@ async def patch_recipient(
         source=rec.source,
         muted=rec.muted,
         first_seen=rec.first_seen,
+        reply_domains=list(rec.reply_domains or []),
     )
 
 
@@ -1158,6 +1233,8 @@ class SettingsBody(BaseModel):
     round_times: bool = True
     default_options: DefaultOptions = DefaultOptions()
     default_tlp: Literal["clear", "green", "amber", "red"] = "green"
+    # Where the reply reference is printed; omitted keeps the stored choice.
+    reference_style: Literal["subject", "subject_and_body", "off"] | None = None
     revision: int = Field(ge=0)
 
     @field_validator("reply_contact", "xarf_user_agent")
@@ -1198,6 +1275,7 @@ def _settings_out(bundle: SettingsBundle) -> SettingsOut:
         round_times=bundle.round_times,
         default_options=DefaultOptions(**bundle.option_defaults()),
         default_tlp=bundle.tlp,  # type: ignore[arg-type]
+        reference_style=bundle.reference_style,  # type: ignore[arg-type]
         revision=bundle.revision,
     )
 
@@ -1244,6 +1322,7 @@ async def put_settings(
         "note": body.note,
         "subject_template": body.subject_template,
         "xarf_user_agent": body.xarf_user_agent,
+        "reference_style": body.reference_style or old.reference_style,
     }
     principal = await _principal(request)
     row = await db.get(ReportSettingsRow, 1)
@@ -1286,6 +1365,7 @@ async def put_settings(
         "note": old.settings.note,
         "subject_template": old.settings.subject_template,
         "xarf_user_agent": old.settings.xarf_user_agent,
+        "reference_style": old.reference_style,
         "defaults": {**old.option_defaults(), "round_times": old.round_times, "tlp": old.tlp},
     }
     changed = sorted(k for k, v in {**fields, "defaults": defaults}.items() if before[k] != v)

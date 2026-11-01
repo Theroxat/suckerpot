@@ -49,6 +49,7 @@ from api.abuse_core import (
     missing_for,
     release,
     render_checked,
+    reply_args,
     settings_incomplete_response,
 )
 from api.auth import Principal, current_principal
@@ -518,7 +519,15 @@ async def _live(
     evidence = build_evidence(row, rec, bundle)
     ctx = await guard_context(db, row, evidence)
     terms = await load_terms(db)
-    rendered = await asyncio.to_thread(render_checked, evidence, bundle.settings, terms, ctx, fmt)
+    rendered = await asyncio.to_thread(
+        render_checked,
+        evidence,
+        bundle.settings,
+        terms,
+        ctx,
+        fmt,
+        **reply_args(row, bundle),
+    )
     release(rendered.guard)
     return rendered
 
