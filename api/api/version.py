@@ -53,11 +53,11 @@ def parse_release(tag: object) -> tuple[int, int, int] | None:
 
 
 def update_check_enabled() -> bool:
-    return os.environ.get("UPDATE_CHECK_ENABLED", "true").strip().lower() not in (
-        "0",
-        "false",
-        "no",
-        "off",
+    return os.environ.get("UPDATE_CHECK_ENABLED", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
     )
 
 

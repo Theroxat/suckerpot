@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "0025"
-# Chained on 0022 in this branch; the integration step re-chains it after 0023 and 0024.
+# Chained on 0022 on this branch.
 down_revision: str | None = "0022"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
