@@ -13,7 +13,7 @@ playwright_image := "mcr.microsoft.com/playwright:v1.64.1-noble"
 web_cache := "suckerpot-web-cache"
 web_env := "-e HOME=/tmp -e CI=1 -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e COREPACK_HOME=/cache/corepack -e npm_config_store_dir=/cache/pnpm-store"
 pnpm_setup := "mkdir -p /tmp/bin && corepack enable --install-directory /tmp/bin && export PATH=/tmp/bin:$PATH"
-packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo scripts/guardrails egress analysis reporting collector db ingest api"
+packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo scripts/guardrails egress analysis reporting netproto collector db ingest api hub"
 
 # Fails unless COMPOSE_PROJECT_NAME and SUCKERPOT_VOLUME_PREFIX are set (from .env). Dependency of every recipe that uses the live stack.
 _need-project:
