@@ -129,7 +129,7 @@ export const HELP = {
   },
   "settings-alerts": {
     title: "Alert channels",
-    body: "Where alerts are delivered: Discord, Microsoft Teams or e-mail. The target is checked and stored encrypted, and messages leave through the VPN. Send a test message, then turn rules on from the Alerts page.",
+    body: "Where alerts are delivered: Discord, Microsoft Teams or email. The target is checked and stored encrypted, and messages leave through the VPN. Send a test message, then turn rules on from the Alerts page.",
   },
   "settings-feeds": {
     title: "Feeds",
