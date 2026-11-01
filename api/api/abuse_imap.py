@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db.locks import ABUSE_IMAP_PROFILE
 from suckerpot_db.models import ReportImapRequestRow, ReportImapRow, ReportImapStateRow
 from suckerpot_db.secretbox import Credential, SecretBox
+from suckerpot_db.shared_mail import is_shared_domain
 
 from api import audit as audit_db
 from api import reauth
@@ -46,6 +47,7 @@ MAX_FOLDER: Final = 100
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
 _FOLDER_OK = re.compile(rf"^[ -~]{{1,{MAX_FOLDER}}}$")
 _FOLDER_BAD = frozenset('"\\*%')
+_AUTHSERV = re.compile(r"^[A-Za-z0-9.\-]{1,255}$")
 Security = Literal["ssl", "starttls"]
 Action = Literal["mark_read", "move"]
 
@@ -85,6 +87,12 @@ class ImapOut(BaseModel):
     move_folder: str | None
     poll_minutes: int
     since: date | None
+    # The authserv-id of the Authentication-Results header your mailbox provider adds; without it
+    # no mail counts as authenticated.
+    trusted_authserv_id: str | None = None
+    # True when the mailbox is on a free or shared mail provider: use a dedicated mailbox for abuse
+    # reports, replies from that provider's own domain can never be trusted by domain.
+    shared_mailbox: bool = False
     state: StateOut
     last_test: RequestOut | None = None
     updated_at: datetime | None = None
@@ -106,6 +114,7 @@ class ImapBody(BaseModel):
     move_folder: str | None = Field(default=None, max_length=MAX_FOLDER)
     poll_minutes: int = Field(default=15, ge=5, le=1440)
     since: date | None = None  # mail received earlier is ignored; default: today (UTC)
+    trusted_authserv_id: str | None = Field(default=None, max_length=255)
     current_password: str = Field(max_length=1024, repr=False)  # re-authentication
 
 
@@ -121,6 +130,13 @@ def valid_folder(name: str) -> bool:
     """Printable ASCII, 1 to 100 characters, none of the quote, backslash, ``*`` or ``%``.
     Always sent quoted, so a name can never carry a command."""
     return bool(_FOLDER_OK.match(name)) and not set(name) & _FOLDER_BAD
+
+
+def mailbox_is_shared(host: str, username: str) -> bool:
+    """The provider of the mailbox is a free or shared one (by its host or its address)."""
+    return is_shared_domain(host) or (
+        "@" in username and is_shared_domain(username.rpartition("@")[2])
+    )
 
 
 def _actor(principal: Principal | None) -> str:
@@ -149,6 +165,7 @@ _PROFILE_COLUMNS = (
     ReportImapRow.move_folder,
     ReportImapRow.poll_minutes,
     ReportImapRow.since,
+    ReportImapRow.trusted_authserv_id,
     ReportImapRow.updated_at,
     ReportImapRow.updated_by,
 )
@@ -167,6 +184,7 @@ class Profile:
     move_folder: str | None
     poll_minutes: int
     since: date
+    trusted_authserv_id: str | None
     updated_at: datetime
     updated_by: str | None
 
@@ -236,6 +254,8 @@ async def _profile_out(db: AsyncSession) -> ImapOut:
         move_folder=profile.move_folder,
         poll_minutes=profile.poll_minutes,
         since=profile.since,
+        trusted_authserv_id=profile.trusted_authserv_id,
+        shared_mailbox=mailbox_is_shared(profile.host, profile.username),
         updated_at=profile.updated_at,
         updated_by=profile.updated_by,
         **common,
@@ -297,7 +317,16 @@ async def put_imap(body: ImapBody, request: Request, db: DbSession) -> Response:
         if box is None:
             reason: str = request.app.state.secret_box_reason or "Password storage is disabled."
             return error(503, reason, "editing_disabled")
-    keeps = body.password is None and old is not None and old.password_set
+    authserv = (body.trusted_authserv_id or "").strip().lower() or None
+    if authserv is not None and not _AUTHSERV.match(authserv):
+        return error(422, "The authentication server name is not valid.", "invalid_authserv")
+    # Pointing the profile at another server or account must not reuse the stored password:
+    # it would be sent to whoever the new host is.
+    retargeted = old is not None and (
+        (old.host, old.port, old.username, old.security)
+        != (host, body.port, username, body.security)
+    )
+    keeps = body.password is None and old is not None and old.password_set and not retargeted
     if not (bool(body.password) or keeps):
         return error(422, "Enter the mailbox password.", "password_required")
     principal, refused = await reauth.guard(request, body.current_password, "imap profile change")
@@ -314,6 +343,7 @@ async def put_imap(body: ImapBody, request: Request, db: DbSession) -> Response:
         "processed_action": body.processed_action,
         "move_folder": move_folder if body.processed_action == "move" else None,
         "poll_minutes": body.poll_minutes,
+        "trusted_authserv_id": authserv,
         "updated_at": now,
         "updated_by": _actor(principal)[:120],
     }
@@ -322,7 +352,7 @@ async def put_imap(body: ImapBody, request: Request, db: DbSession) -> Response:
     changed = [
         k
         for k in ("enabled", "host", "port", "security", "username", "folder", "processed_action",
-                  "move_folder", "poll_minutes", "since")
+                  "move_folder", "poll_minutes", "since", "trusted_authserv_id")
         if old is None or getattr(old, k) != values[k]
     ]  # fmt: skip
     if body.password:

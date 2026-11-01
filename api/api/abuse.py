@@ -44,6 +44,7 @@ from suckerpot_db.models import (
     ReportSelfTermRow,
     ReportSettingsRow,
 )
+from suckerpot_db.shared_mail import is_shared_domain
 from suckerpot_reporting import (
     Evidence,
     GuardFailed,
@@ -256,6 +257,9 @@ class RecipientRow(BaseModel):
     muted: bool
     first_seen: datetime
     reply_domains: list[str] = []  # other domains this provider answers from (M26)
+    # The contact is on a free or shared mail provider: its replies are trusted by exact address
+    # only, never by domain.
+    shared_mailbox: bool = False
 
 
 class RecipientPage(BaseModel):
@@ -295,6 +299,10 @@ class TermOut(BaseModel):
 
 
 # ---- helpers -------------------------------------------------------------------------------
+
+
+def _shared(mailbox: str | None) -> bool:
+    return bool(mailbox) and is_shared_domain((mailbox or "").rpartition("@")[2])
 
 
 async def _principal(request: Request) -> Principal | None:
@@ -661,6 +669,7 @@ async def get_report(
 @router.get("/abuse/reports/{public_id}/render", response_model=RenderOut)
 async def render_report(
     public_id: PublicId,
+    request: Request,
     db: DbSession,
     format: ReportFormat = "text",
     subject: Annotated[str | None, Query(max_length=1024)] = None,
@@ -670,6 +679,7 @@ async def render_report(
     if loaded is None:
         return _not_found()
     row, rec = loaded
+    admin = (p := await _principal(request)) is not None and p.is_admin
     bundle = await load_settings(db)
     missing = missing_for(bundle.settings, xarf=format == "xarf")
     if missing:
@@ -686,7 +696,7 @@ async def render_report(
             ctx,
             format,
             subject,
-            **reply_args(row, bundle),
+            **reply_args(row, bundle, admin=admin),
         )
         release(rendered.guard)
     except GuardFailed as exc:
@@ -729,6 +739,7 @@ async def download_report(
     if loaded is None:
         return _not_found()
     row, rec = loaded
+    admin = (p := await _principal(request)) is not None and p.is_admin
     bundle = await load_settings(db)
     missing = missing_for(bundle.settings, xarf=format == "xarf_yaml")
     if missing:
@@ -747,7 +758,7 @@ async def download_report(
             ctx,
             fmt,
             subject,
-            **reply_args(row, bundle),
+            **reply_args(row, bundle, admin=admin),
         )
         release(rendered.guard)
         name, media, data = _file_of(format, stem, rendered, evidence)
@@ -1101,6 +1112,7 @@ async def list_recipients(
                 muted=r.muted,
                 first_seen=r.first_seen,
                 reply_domains=list(r.reply_domains or []),
+                shared_mailbox=_shared(r.override_mailbox or r.mailbox),
             )
             for r in page
         ],
@@ -1198,6 +1210,7 @@ async def patch_recipient(
         muted=rec.muted,
         first_seen=rec.first_seen,
         reply_domains=list(rec.reply_domains or []),
+        shared_mailbox=_shared(rec.override_mailbox or rec.mailbox),
     )
 
 

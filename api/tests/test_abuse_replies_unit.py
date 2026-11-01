@@ -10,12 +10,14 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from api.abuse_imap import ImapBody, valid_folder
+from api.abuse_core import reply_args
+from api.abuse_imap import ImapBody, mailbox_is_shared, valid_folder
 from api.abuse_outcomes import _bucket_start, _next_bucket, _window, no_answer_days, to_out
 from api.abuse_replies import (
     ImportJson,
     ReplyPatch,
     _multipart_file,
+    mask_reference,
     reply_out,
 )
 
@@ -255,3 +257,33 @@ def test_buckets() -> None:
     assert _next_bucket(datetime(2026, 12, 1, tzinfo=UTC), "month") == datetime(
         2027, 1, 1, tzinfo=UTC
     )
+
+
+def test_a_viewer_never_sees_the_reply_token_in_a_subject() -> None:
+    row = reply(subject="Re: Abuse report (ref 3f9a1c7b2e4d) for 198.51.100.23")
+    viewer = reply_out(row, REPORT, admin=False)  # type: ignore[arg-type]
+    assert "3f9a1c7b2e4d" not in viewer.model_dump_json()
+    assert viewer.subject and "198.51.100.23" in viewer.subject and "ref" in viewer.subject
+    owner = reply_out(row, REPORT, admin=True)  # type: ignore[arg-type]
+    assert owner.subject and "3f9a1c7b2e4d" in owner.subject
+    assert mask_reference(None) is None
+    assert "0123456789ab" not in (mask_reference("REF: 0123456789ab and ref#0123456789ab") or "")
+
+
+def test_a_viewer_render_carries_no_reply_token() -> None:
+    row = SimpleNamespace(reply_token="3f9a1c7b2e4d")  # gitleaks:allow
+    bundle = SimpleNamespace(reference_style="subject_and_body")
+    assert reply_args(row, bundle, admin=True) == {  # type: ignore[arg-type]
+        "reply_token": "3f9a1c7b2e4d",  # gitleaks:allow
+        "reference_style": "subject_and_body",
+    }
+    assert reply_args(row, bundle, admin=False) == {  # type: ignore[arg-type]
+        "reply_token": None,
+        "reference_style": "off",
+    }
+
+
+def test_free_mail_mailboxes_are_flagged() -> None:
+    assert mailbox_is_shared("imap.gmail.com", "reports@example.org")
+    assert mailbox_is_shared("mail.example.org", "me@outlook.com")
+    assert not mailbox_is_shared("imap.example.org", "reports@example.org")

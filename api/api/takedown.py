@@ -15,7 +15,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Path, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -38,6 +38,8 @@ from api.abuse_core import error, include_demo
 from api.auth import Principal, current_principal
 from api.cursor import InvalidCursorError, decode_cursor, encode_cursor
 from api.deps import DbSession
+
+TargetId = Annotated[int, Path(ge=1, le=2**62)]  # a bigger number is not a bigint
 
 router = APIRouter(tags=["takedown"])
 
@@ -624,7 +626,7 @@ async def list_targets(
 
 
 @router.get("/takedown/targets/{target_id}", response_model=TargetDetail)
-async def get_target(target_id: int, db: DbSession) -> TargetDetail | JSONResponse:
+async def get_target(target_id: TargetId, db: DbSession) -> TargetDetail | JSONResponse:
     row = (
         await db.execute(
             text(f"{TARGET_SELECT} WHERE t.id = :i AND (NOT t.demo OR :demo)"),
@@ -684,7 +686,7 @@ async def get_target(target_id: int, db: DbSession) -> TargetDetail | JSONRespon
 
 
 @router.post("/takedown/targets/{target_id}/recheck", response_model=Rechecked)
-async def recheck(target_id: int, request: Request, db: DbSession) -> Rechecked | JSONResponse:
+async def recheck(target_id: TargetId, request: Request, db: DbSession) -> Rechecked | JSONResponse:
     """Bring the next check forward. The collector (HTTP) and ingest (listings) do the checking."""
     row = (
         await db.execute(
@@ -731,7 +733,7 @@ async def recheck(target_id: int, request: Request, db: DbSession) -> Rechecked 
 
 
 @router.post("/takedown/targets/{target_id}/stop", response_model=Stopped)
-async def stop(target_id: int, request: Request, db: DbSession) -> Stopped | JSONResponse:
+async def stop(target_id: TargetId, request: Request, db: DbSession) -> Stopped | JSONResponse:
     principal = await current_principal(request)
     found = await db.scalar(
         text("SELECT tracking FROM takedown_targets WHERE id = :i"), {"i": target_id}

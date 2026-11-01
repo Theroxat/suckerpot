@@ -27,6 +27,7 @@ from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db.models import AbuseRecipientRow, AbuseReplyRow, AbuseReportRow
+from suckerpot_db.shared_mail import is_shared_domain
 
 from api import audit as audit_db
 from api.abuse_core import env_flag, error
@@ -57,6 +58,9 @@ Classification = Literal[
 _DOMAIN = re.compile(
     r"^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)+$"
 )
+# The reply token as it appears in a subject: "(ref 0123456789ab)" and the like.
+_REF = re.compile(r"(?<![a-z0-9])ref[ :#]{0,3}[0-9a-f]{12}(?![0-9a-z])", re.I)
+_ADDRESS = re.compile(r"^[a-z0-9._%+\-]{1,64}@[a-z0-9.\-]{1,253}$")
 _TICKET = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
 
 
@@ -149,6 +153,11 @@ def _client_ip(request: Request) -> str | None:
     return request.app.state.auth.client_ip(request)  # type: ignore[no-any-return]
 
 
+def mask_reference(subject: str | None) -> str | None:
+    """A subject without the report's reply token (it proves a reply belongs to the report)."""
+    return None if subject is None else _REF.sub("ref ************", subject)
+
+
 def _is_admin(principal: Principal | None) -> bool:
     return principal is not None and principal.is_admin
 
@@ -178,7 +187,7 @@ def reply_out(row: AbuseReplyRow, report: uuid.UUID | None, admin: bool) -> Repl
         sent_at=row.date_header,
         from_domain=row.from_domain,
         from_address=row.from_address if admin else None,
-        subject=row.subject,
+        subject=row.subject if admin else mask_reference(row.subject),
         auth=row.auth,  # type: ignore[arg-type]
         report=str(report) if report is not None else None,
         match_method=row.match_method,
@@ -539,6 +548,12 @@ async def patch_reply(
             return error(409, "Link the reply to a report first.", "no_report")
         if not _DOMAIN.match(domain):
             return error(409, "This reply has no sender domain to trust.", "no_domain")
+        # A free or shared mail provider speaks for nobody: trust the exact address instead.
+        address = (row.from_address or "").lower()
+        if is_shared_domain(domain):
+            if not _ADDRESS.match(address):
+                return error(409, "This reply has no sender address to trust.", "no_address")
+            domain = address
         domain_note = domain
         names.append("trust_domain")
     if not names:

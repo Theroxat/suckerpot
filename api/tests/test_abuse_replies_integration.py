@@ -135,6 +135,53 @@ async def test_the_password_is_write_only(api: httpx.AsyncClient) -> None:
     assert again.status_code == 200 and again.json()["poll_minutes"] == 30
 
 
+async def test_the_trusted_authserv_id_is_saved_and_validated(api: httpx.AsyncClient) -> None:
+    saved = await api.put(
+        "/api/v1/abuse/imap", json=PROFILE | {"trusted_authserv_id": " MX.Example.ORG "}
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["trusted_authserv_id"] == "mx.example.org"
+    assert (await sql("SELECT trusted_authserv_id FROM report_imap"))[0][0] == "mx.example.org"
+    for bad in ("bad id", "a;b", "x" * 300, "in\nvalid"):
+        r = await api.put("/api/v1/abuse/imap", json=PROFILE | {"trusted_authserv_id": bad})
+        assert r.status_code == 422, (bad, r.text)
+    cleared = await api.put("/api/v1/abuse/imap", json=PROFILE | {"trusted_authserv_id": ""})
+    assert cleared.json()["trusted_authserv_id"] is None
+
+
+async def test_a_free_mail_mailbox_is_flagged_for_the_ui(api: httpx.AsyncClient) -> None:
+    ok = await api.put("/api/v1/abuse/imap", json=PROFILE)
+    assert ok.json()["shared_mailbox"] is False
+    free = await api.put(
+        "/api/v1/abuse/imap", json=PROFILE | {"host": "imap.gmail.com", "username": "me@gmail.com"}
+    )
+    assert free.status_code == 200, free.text
+    assert free.json()["shared_mailbox"] is True
+
+
+async def test_pointing_the_profile_elsewhere_needs_the_password_again(
+    api: httpx.AsyncClient,
+) -> None:
+    assert (await api.put("/api/v1/abuse/imap", json=PROFILE)).status_code == 200
+    no_pw = {k: v for k, v in PROFILE.items() if k != "password"}
+    for over in (
+        {"host": "imap2.example.org"},
+        {"port": 143, "security": "starttls"},
+        {"security": "starttls"},
+        {"username": "other@example.org"},
+    ):
+        r = await api.put("/api/v1/abuse/imap", json=no_pw | over)
+        assert r.status_code == 422 and r.json()["code"] == "password_required", (over, r.text)
+    # The stored password is untouched by the refused attempts and still kept for harmless edits.
+    kept = await api.put("/api/v1/abuse/imap", json=no_pw | {"poll_minutes": 60, "folder": "Abuse"})
+    assert kept.status_code == 200 and kept.json()["password_set"]
+    moved = await api.put(
+        "/api/v1/abuse/imap",
+        json=PROFILE | {"host": "imap2.example.org", "password": "another-one"},
+    )
+    assert moved.status_code == 200 and moved.json()["host"] == "imap2.example.org"
+
+
 @pytest.mark.parametrize(
     ("over", "code"),
     [
@@ -610,3 +657,29 @@ async def test_the_timeline(api: httpx.AsyncClient) -> None:
     assert (
         await api.get("/api/v1/abuse/outcomes/timeline", params={"bucket": "day"})
     ).status_code == 422
+
+
+async def test_trusting_a_free_mail_sender_stores_the_exact_address(
+    api: httpx.AsyncClient,
+) -> None:
+    await send_report()
+    reply = await add_reply(
+        None, domain="gmail.com", address="Desk.Person@gmail.com", verified=False
+    )
+    r = await api.patch(
+        f"/api/v1/abuse/replies/{reply}", json={"report": str(SENT_ID), "trust_domain": True}
+    )
+    assert r.status_code == 200, r.text
+    assert (await sql("SELECT reply_domains FROM abuse_recipients WHERE id = 1"))[0][0] == [
+        "desk.person@gmail.com"
+    ]
+
+
+async def test_the_recipient_list_flags_a_free_mail_contact(api: httpx.AsyncClient) -> None:
+    await sql("UPDATE abuse_recipients SET mailbox = 'abuse-desk@gmail.com' WHERE id = 1")
+    page = (await api.get("/api/v1/abuse/recipients")).json()
+    row = next(i for i in page["items"] if i["id"] == 1)
+    assert row["shared_mailbox"] is True
+    await sql("UPDATE abuse_recipients SET mailbox = 'abuse@example.net' WHERE id = 1")
+    page = (await api.get("/api/v1/abuse/recipients")).json()
+    assert next(i for i in page["items"] if i["id"] == 1)["shared_mailbox"] is False
