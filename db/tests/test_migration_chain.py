@@ -12,6 +12,7 @@ from suckerpot_db.retention import (
     CAMPAIGN_PRUNE_PROC,
     SCRIPT_PRUNE_PROC,
     RetentionError,
+    abuse_reply_excerpt_days,
     abuse_report_retention_days,
     campaigns_max_rows,
     scripts_max_rows,
@@ -76,12 +77,12 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0022() -> None:
+def test_the_chain_is_linear_up_to_0023() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0022"}
-    for n in range(11, 22):
+    assert heads == {"0023"}
+    for n in range(11, 23):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
 
 
@@ -271,6 +272,7 @@ def test_m25_grants_keep_the_password_away_from_the_api() -> None:
         "error_code",
         "done_at",
         "started_at",
+        "message_id",  # M26: written once, when ingest claims the request
     }
     assert "DELETE" not in _grants(_GRANTS_API)["abuse_send_requests"]
 
@@ -291,3 +293,83 @@ def test_check_request_grants() -> None:
     assert not _update_columns(_GRANTS_API, "egress_check_requests")
     assert "egress_check_requests" not in _grants(_GRANTS_COLLECTOR)
     assert "egress_check_requests" not in _grants(_GRANTS_ANALYZER)
+
+
+M26_TABLES = {
+    "report_imap",
+    "report_imap_state",
+    "report_imap_requests",
+    "abuse_replies",
+    "abuse_reply_imports",
+    "abuse_report_outcomes",
+}
+
+
+def test_models_and_role_scripts_cover_the_m26_tables() -> None:
+    assert M26_TABLES <= set(models.Base.metadata.tables)
+    for script in (_GRANTS_INGEST, _GRANTS_API):
+        for table in M26_TABLES:
+            assert f"'{table}'" in script, table
+    for script in (_GRANTS_COLLECTOR, _GRANTS_ANALYZER):
+        assert not M26_TABLES & set(_grants(script))
+
+
+def _select_columns(script: str, table: str) -> set[str]:
+    joined = re.sub(r"'\s+'", "", script)
+    found = re.findall(rf"'GRANT SELECT \(([a-z0-9_, ]+)\) ON {table} TO %I'", joined)
+    return {c.strip() for cols in found for c in cols.split(",")}
+
+
+def test_m26_the_mailbox_password_never_reaches_the_api() -> None:
+    cols = _select_columns(_GRANTS_API, "report_imap")
+    assert "password_set" in cols
+    assert not cols & {"password_ciphertext", "password_nonce"}
+    assert _grants(_GRANTS_API)["report_imap"] >= {"INSERT", "UPDATE", "DELETE"}
+    assert _grants(_GRANTS_INGEST)["report_imap"] == {"SELECT"}
+    # Pasted mail: the API cannot read the raw bytes back.
+    assert "raw" not in _select_columns(_GRANTS_API, "abuse_reply_imports")
+    assert _grants(_GRANTS_API)["abuse_reply_imports"] == {"INSERT"}
+
+
+def test_m26_outcome_columns_are_split_between_ingest_and_the_api() -> None:
+    manual = {"manual_outcome", "manual_at", "manual_by", "note"}
+    ingest_up = _update_columns(_GRANTS_INGEST, "abuse_report_outcomes")
+    api_up = _update_columns(_GRANTS_API, "abuse_report_outcomes")
+    assert api_up == manual
+    assert not ingest_up & manual
+    assert {"auto_outcome", "needs_review", "resolved_at"} <= ingest_up
+    assert not api_up & ingest_up
+    for table in ("abuse_report_outcomes", "abuse_replies", "report_imap_requests"):
+        assert "DELETE" not in _grants(_GRANTS_API).get(table, set())
+        assert "DELETE" not in _grants(_GRANTS_INGEST).get(table, set())
+
+
+def test_m26_reply_columns() -> None:
+    assert _update_columns(_GRANTS_INGEST, "abuse_replies") == {
+        "report_id",
+        "match_method",
+        "verified",
+        "excerpt",
+        "excerpt_purged_at",
+    }
+    api = _update_columns(_GRANTS_API, "abuse_replies")
+    assert {"report_id", "classification", "verified", "reviewed_by"} <= api
+    assert not api & {"excerpt", "from_address", "message_id_sha256", "received_at"}
+    assert "reply_domains" in _update_columns(_GRANTS_API, "abuse_recipients")
+    assert not _update_columns(_GRANTS_INGEST, "abuse_recipients") - {"name"}
+
+
+def test_m26_reply_excerpt_setting() -> None:
+    assert abuse_reply_excerpt_days({}) == 180
+    assert abuse_reply_excerpt_days({"ABUSE_REPLY_EXCERPT_DAYS": " 30 "}) == 30
+    for bad in ("0", "x", "99999"):
+        with pytest.raises(RetentionError, match="ABUSE_REPLY_EXCERPT_DAYS"):
+            abuse_reply_excerpt_days({"ABUSE_REPLY_EXCERPT_DAYS": bad})
+
+
+def test_m26_migration_text() -> None:
+    src = (VERSIONS / "0023_report_outcomes.py").read_text()
+    assert 'down_revision: str | None = "0022"' in src
+    assert "NEW.reply_token <> OLD.reply_token" in src
+    assert "PROCEDURE suckerpot_abuse_prune" in src
+    assert "excerpt_days" in src
