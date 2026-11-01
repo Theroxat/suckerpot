@@ -1170,3 +1170,204 @@ class AbuseSendRequestRow(Base):
     error_code: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TakedownTargetRow(Base):
+    """A reported target whose fate is tracked (M27). Ingest owns the state, the collector the HTTP
+    re-check columns; ``reported_at`` only moves earlier."""
+
+    __tablename__ = "takedown_targets"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)  # url | ip | domain
+    role: Mapped[str] = mapped_column(Text)  # attack_source | payload_host | payload_url | c2
+    value: Mapped[str] = mapped_column(Text)
+    target_key: Mapped[str] = mapped_column(Text)  # sha256(kind || ':' || value)
+    parent_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("takedown_targets.id", ondelete="CASCADE")
+    )
+    fetch_target_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("fetch_targets.id", ondelete="SET NULL")
+    )
+    network_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_networks.id", ondelete="SET NULL")
+    )
+    asn: Mapped[int | None] = mapped_column(Integer)
+    country: Mapped[str | None] = mapped_column(Text)
+    provider_key: Mapped[str] = mapped_column(Text)
+    provider_name: Mapped[str | None] = mapped_column(Text)
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    channels: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    demo: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    tracking: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
+    track_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    stopped_by: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(Text, server_default=text("'unknown'"), nullable=False)
+    state_source: Mapped[str | None] = mapped_column(Text)
+    state_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    state_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    down_before_report: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false"), nullable=False
+    )
+    last_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_down_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resurrections: Mapped[int] = mapped_column(
+        SmallInteger, server_default=text("0"), nullable=False
+    )
+    listing_step: Mapped[int] = mapped_column(
+        SmallInteger, server_default=text("0"), nullable=False
+    )
+    listing_next_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    http_eligible: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false"), nullable=False
+    )
+    baseline_sha256: Mapped[str | None] = mapped_column(Text)
+    last_sha256: Mapped[str | None] = mapped_column(Text)
+    http_step: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"), nullable=False)
+    http_next_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    http_last_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class TakedownCheckRow(Base):
+    """One check of a target. ``detail`` holds constants and small numbers only."""
+
+    __tablename__ = "takedown_checks"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    target_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("takedown_targets.id", ondelete="CASCADE")
+    )
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    method: Mapped[str] = mapped_column(Text)  # http | urlhaus | threatfox | abuseipdb | ...
+    outcome: Mapped[str] = mapped_column(Text)
+    http_status: Mapped[int | None] = mapped_column(SmallInteger)
+    sha256: Mapped[str | None] = mapped_column(Text)
+    bytes: Mapped[int | None] = mapped_column(BigInteger)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    detail: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )
+
+
+class AbusechSubmissionSettingsRow(Base):
+    """The one abuse.ch submission profile (M27). The Auth-Key is AES-GCM ciphertext (AAD
+    ``abusech_submission``); the API cannot read it back, only ingest decrypts it."""
+
+    __tablename__ = "abusech_submission"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default=text("1"))
+    mode: Mapped[str] = mapped_column(Text, server_default=text("'off'"))  # off | review | auto
+    threatfox_enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    anonymous: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    auto_hold_minutes: Mapped[int] = mapped_column(Integer, server_default=text("60"))
+    daily_cap: Mapped[int] = mapped_column(Integer, server_default=text("20"))
+    key_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
+    key_nonce: Mapped[bytes | None] = mapped_column(LargeBinary)
+    key_set: Mapped[bool] = mapped_column(
+        Boolean, Computed("key_ciphertext IS NOT NULL", persisted=True)
+    )
+    key_last4: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    updated_by: Mapped[str | None] = mapped_column(Text)
+
+
+class AbusechSubmissionRow(Base):
+    """A URL or C2 address submitted (or to be submitted) to URLhaus or ThreatFox; the audit log."""
+
+    __tablename__ = "abusech_submissions"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    platform: Mapped[str] = mapped_column(Text)  # urlhaus | threatfox
+    ioc_type: Mapped[str] = mapped_column(Text)  # url | ip:port
+    value: Mapped[str] = mapped_column(Text)
+    threat: Mapped[str] = mapped_column(Text)  # malware_download | botnet_cc
+    malware: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    sample_sha256: Mapped[str | None] = mapped_column(
+        Text, ForeignKey("samples.sha256", ondelete="SET NULL")
+    )
+    fetch_target_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("fetch_targets.id", ondelete="SET NULL")
+    )
+    demo: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    lookup: Mapped[str] = mapped_column(Text, server_default=text("'pending'"), nullable=False)
+    # candidate | pending | submitting | submitted | duplicate | rejected | failed | cancelled
+    # | skipped_known | skipped_never_list | guard_failed
+    status: Mapped[str] = mapped_column(Text, server_default=text("'candidate'"), nullable=False)
+    result_code: Mapped[str | None] = mapped_column(Text)
+    reference: Mapped[str | None] = mapped_column(Text)
+    auto: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[str | None] = mapped_column(Text)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TakedownTargetLinkRow(Base):
+    """Which report or submission put a target under tracking (the table has no primary key; the
+    mapper identity is the whole row)."""
+
+    __tablename__ = "takedown_target_links"
+
+    target_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("takedown_targets.id", ondelete="CASCADE"), primary_key=True
+    )
+    report_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_reports.id", ondelete="CASCADE"), primary_key=True
+    )
+    submission_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abusech_submissions.id", ondelete="CASCADE"), primary_key=True
+    )
+    linked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class OutcomeRollupRow(Base):
+    """Monthly aggregates per provider, kind and channel: no values, kept forever."""
+
+    __tablename__ = "outcome_rollup_monthly"
+
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    provider_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    channel: Mapped[str] = mapped_column(Text, primary_key=True)
+    asn: Mapped[int | None] = mapped_column(Integer)
+    country: Mapped[str | None] = mapped_column(Text)
+    reports_sent: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    reports_answered: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    auto_ack: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    ticket_opened: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    resolved: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    rejected: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    bounced: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    human_reply: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_eligible_48h: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_down_48h: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_eligible_7d: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_down_7d: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_eligible_30d: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_down_30d: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    ttd_p50_s: Mapped[int | None] = mapped_column(Integer)
+    first_reply_p50_s: Mapped[int | None] = mapped_column(Integer)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
