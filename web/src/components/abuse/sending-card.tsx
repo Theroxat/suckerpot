@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Info, TriangleAlert } from "lucide-react"
-import { useId, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useId, useState, type ReactNode } from "react"
 import { Field } from "@/components/form-parts"
 import { FindingCard } from "@/components/finding-card"
 import { SegmentedControl } from "@/components/segmented-control"
@@ -21,6 +21,7 @@ import {
   PROTON_PRESET,
   sendApi,
   sendKeys,
+  type SendMode,
   type SmtpConfig,
   type SmtpForm,
 } from "@/lib/abuse-send"
@@ -62,7 +63,13 @@ async function reauth(fn: () => Promise<unknown>): Promise<void> {
   }
 }
 
-function SendingForm({ initial }: { initial: SmtpConfig }) {
+function SendingForm({
+  initial,
+  onModeChange,
+}: {
+  initial: SmtpConfig
+  onModeChange: (m: SendMode) => void
+}) {
   const qc = useQueryClient()
   const ids = {
     host: useId(),
@@ -79,6 +86,9 @@ function SendingForm({ initial }: { initial: SmtpConfig }) {
   const [problem, setProblem] = useState<string | null>(null)
   const [preset, setPreset] = useState(false)
   const [saved, setSaved] = useState<string | null>(null)
+  useEffect(() => {
+    onModeChange(f.mode)
+  }, [f.mode, onModeChange])
   const set = <K extends keyof SmtpForm>(k: K, v: SmtpForm[K]) => {
     setSaved(null)
     setF((p) => ({ ...p, [k]: v }))
@@ -111,9 +121,19 @@ function SendingForm({ initial }: { initial: SmtpConfig }) {
           label="Sending mode"
           value={f.mode}
           onChange={(v) => set("mode", v)}
-          options={MODE_OPTIONS}
+          options={MODE_OPTIONS.map((o) => ({
+            ...o,
+            disabled: o.value !== "off" && !initial.configured,
+          }))}
         />
+        {initial.configured ? null : <p className="text-sm text-fg-muted">Set up SMTP first.</p>}
         <p className="text-sm text-fg-muted">{MODE_EXPLANATION[f.mode]}</p>
+        {f.mode !== initial.mode ? (
+          <p role="status" className="text-sm text-fg-muted">
+            Not saved yet. Save to switch to{" "}
+            {MODE_OPTIONS.find((o) => o.value === f.mode)?.label ?? f.mode}.
+          </p>
+        ) : null}
         {f.mode === "auto" ? (
           <p
             role="note"
@@ -148,7 +168,10 @@ function SendingForm({ initial }: { initial: SmtpConfig }) {
           >
             Proton (paid plan, custom domain)
           </Button>
-          <span className="text-xs text-fg-muted">Fills the server, port and security.</span>
+          <span className="text-xs text-fg-muted">
+            Fills the server, port and security. The password is an SMTP token from Proton&apos;s
+            settings.
+          </span>
         </div>
         {preset ? (
           <p role="note" className="flex items-start gap-2 text-sm text-fg-muted">
@@ -391,6 +414,8 @@ function Dialogs({
 
 /** Settings, Reporting tab (administrators only): optional SMTP and the sending mode. */
 export function SendingCard() {
+  const [formMode, setFormMode] = useState<SendMode | null>(null)
+  const onModeChange = useCallback((m: SendMode) => setFormMode(m), [])
   const q = useQuery({
     queryKey: sendKeys.smtp,
     queryFn: sendApi.smtp,
@@ -405,7 +430,9 @@ export function SendingCard() {
           ? "Loading the sending settings…"
           : q.isError
             ? "The sending settings could not be loaded."
-            : finding(q.data)
+            : formMode && formMode !== q.data.mode
+              ? `Saved: ${finding(q.data)}`
+              : finding(q.data)
       }
       detail="Optional. SuckerPot sends a report only if you set up SMTP and choose a sending mode."
     >
@@ -415,6 +442,7 @@ export function SendingCard() {
         <SendingForm
           key={JSON.stringify([q.data.configured, q.data.mode, q.data.host, q.data.password_set])}
           initial={q.data}
+          onModeChange={onModeChange}
         />
       ) : null}
     </FindingCard>

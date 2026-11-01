@@ -3,7 +3,7 @@ import { Check, CircleCheck, ExternalLink, Info, SkipForward } from "lucide-reac
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CopyField } from "@/components/abuse/copy-field"
 import { SendControl } from "@/components/abuse/send-control"
-import { useSendQueue } from "@/components/abuse/send-hooks"
+import { useSendMode, useSendQueue } from "@/components/abuse/send-hooks"
 import { EmptyState } from "@/components/empty-state"
 import { FindingCard } from "@/components/finding-card"
 import { SkeletonList } from "@/components/skeletons"
@@ -65,6 +65,7 @@ export function SendQueue() {
   const [error, setError] = useState<string | null>(null)
   const [copiedNote, setCopiedNote] = useState<{ id: string; full: boolean } | null>(null)
   const openRef = useRef<HTMLAnchorElement>(null)
+  const mode = useSendMode()
 
   const sorted = useMemo<QueueItem[]>(() => {
     const items = q.data?.items ?? []
@@ -161,7 +162,7 @@ export function SendQueue() {
         finding={describeQueue(sorted.length)}
         action={
           <span className="text-sm text-fg-muted tabular-nums" aria-label="Progress">
-            {formatNumber(done + 1)} of {formatNumber(total)}
+            Report {formatNumber(done + 1)} of {formatNumber(total)}
           </span>
         }
       >
@@ -171,29 +172,36 @@ export function SendQueue() {
             <CopyField label="Subject" value={current.subject} />
           </div>
           <CopyField label="Message" value={current.body_text} multiline />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild size="sm">
-              <a
-                ref={openRef}
-                href={mail.href}
-                onClick={() => {
-                  // Not available on a plain-http page: the note below still tells what happened.
-                  void Promise.resolve()
-                    .then(() => navigator.clipboard.writeText(current.body_text))
-                    .catch(() => undefined)
-                  setCopiedNote({ id: current.id, full: mail.bodyIncluded })
-                }}
-              >
-                <ExternalLink aria-hidden /> Open in mail app
-              </a>
-            </Button>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void sentNext()}>
-              <Check aria-hidden /> {busy ? "Saving…" : "Sent, next"}
-            </Button>
-            <Button size="sm" variant="ghost" disabled={sorted.length < 2} onClick={skip}>
-              <SkipForward aria-hidden /> Skip
-            </Button>
-          </div>
+          <SendControl
+            item={current}
+            reportId={current.id}
+            recipient={current.recipient}
+            actions={
+              <>
+                <Button asChild size="sm" variant={mode === "click" ? "outline" : "default"}>
+                  <a
+                    ref={openRef}
+                    href={mail.href}
+                    onClick={() => {
+                      // Not available on a plain-http page: the note below still tells what happened.
+                      void Promise.resolve()
+                        .then(() => navigator.clipboard.writeText(current.body_text))
+                        .catch(() => undefined)
+                      setCopiedNote({ id: current.id, full: mail.bodyIncluded })
+                    }}
+                  >
+                    <ExternalLink aria-hidden /> Open in mail app
+                  </a>
+                </Button>
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => void sentNext()}>
+                  <Check aria-hidden /> {busy ? "Saving…" : "Sent, next"}
+                </Button>
+                <Button size="sm" variant="ghost" disabled={sorted.length < 2} onClick={skip}>
+                  <SkipForward aria-hidden /> Skip
+                </Button>
+              </>
+            }
+          />
           <p role="status" className="text-sm text-fg-muted empty:hidden">
             {copiedNote?.id === current.id
               ? mail.bodyIncluded
@@ -204,9 +212,10 @@ export function SendQueue() {
           <p role="alert" className="text-sm text-fg empty:hidden">
             {error}
           </p>
-          <SendControl item={current} reportId={current.id} recipient={current.recipient} />
-          <p className="text-xs text-fg-muted">
+          <p className="hidden text-xs text-fg-muted md:block">
             Shortcuts: <Kbd>o</Kbd> open in mail app, <Kbd>n</Kbd> sent and next, <Kbd>s</Kbd> skip.
+          </p>
+          <p className="text-xs text-fg-muted">
             Sent, next records the report as sent; nothing is sent by this button.
           </p>
         </div>

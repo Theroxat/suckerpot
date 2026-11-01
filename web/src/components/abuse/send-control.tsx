@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query"
 import { Send } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useAuth } from "@/app/auth"
 import { useSendMode } from "@/components/abuse/send-hooks"
 import { ConfirmDialog } from "@/components/abuse/status-dialogs"
@@ -14,13 +14,15 @@ interface SendControlProps {
   item: QueueItem | undefined
   reportId: string
   recipient: string
+  /** Buttons that sit in the same row as Send now (the queue passes its own). */
+  actions?: ReactNode
 }
 
 /**
  * What SuckerPot's own sending adds to a report: "Send now" in click mode, "Sending at hh:mm" with
  * Cancel in automatic mode, and the state of the last request in plain words.
  */
-export function SendControl({ item, reportId, recipient }: SendControlProps) {
+export function SendControl({ item, reportId, recipient, actions }: SendControlProps) {
   const { canWrite } = useAuth()
   const mode = useSendMode()
   const qc = useQueryClient()
@@ -43,7 +45,7 @@ export function SendControl({ item, reportId, recipient }: SendControlProps) {
   const at = mode === "auto" && !pending ? item?.scheduled_at : null
   const canSend = mode === "click" && item !== undefined && !pending
 
-  if (!sentence && !at && !canSend) return null
+  if (!sentence && !at && !canSend && !actions) return null
 
   async function cancel() {
     setCancelError(null)
@@ -57,31 +59,35 @@ export function SendControl({ item, reportId, recipient }: SendControlProps) {
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {canSend ? (
-          <Button size="sm" onClick={() => setOpen(true)}>
-            <Send aria-hidden /> Send now
-          </Button>
-        ) : null}
-        {at ? (
-          <>
-            <span className="text-sm text-fg">
-              Sending at <span className="tabular-nums">{formatClock(at)}</span>
-            </span>
-            <Button size="sm" variant="outline" onClick={() => void cancel()}>
-              Cancel
+      {canSend || actions ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {canSend ? (
+            <Button size="sm" onClick={() => setOpen(true)}>
+              <Send aria-hidden /> Send now
             </Button>
-          </>
-        ) : null}
-        {sentence ? (
-          <span
-            role="status"
-            className={status === "failed" ? "text-sm text-fg" : "text-sm text-fg-muted"}
-          >
-            {sentence}
+          ) : null}
+          {actions}
+        </div>
+      ) : null}
+      {at ? (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-muted">
+          <span>
+            Sending at <span className="tabular-nums">{formatClock(at)}</span>
           </span>
-        ) : null}
-      </div>
+          <span aria-hidden>·</span>
+          <Button size="xs" variant="outline" onClick={() => void cancel()}>
+            Cancel
+          </Button>
+        </p>
+      ) : null}
+      {sentence ? (
+        <p
+          role="status"
+          className={status === "failed" ? "text-sm text-fg" : "text-sm text-fg-muted"}
+        >
+          {sentence}
+        </p>
+      ) : null}
       <p role="alert" className="text-sm text-fg empty:hidden">
         {cancelError}
       </p>

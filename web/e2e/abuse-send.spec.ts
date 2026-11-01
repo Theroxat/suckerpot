@@ -8,18 +8,18 @@ test("abuse send queue", async ({ page }, info) => {
   await expect(h1(page, "Abuse reports")).toBeVisible()
   await expect(page.getByText("Open your mailbox through your VPN")).toBeVisible()
   await expect(page.getByLabel("Message", { exact: true })).toBeVisible()
-  await expect(page.getByLabel("Progress")).toHaveText("1 of 3")
+  await expect(page.getByLabel("Progress")).toHaveText("Report 1 of 3")
   await settle(page)
   await shoot(page, "abuse-send-queue", info.project.name, true)
 })
 
 test("abuse send queue skip and mark sent", async ({ page }) => {
   await page.goto("/defend/abuse?status=queue")
-  await expect(page.getByLabel("Progress")).toHaveText("1 of 3")
+  await expect(page.getByLabel("Progress")).toHaveText("Report 1 of 3")
   await page.getByRole("button", { name: "Skip" }).click()
-  await expect(page.getByLabel("Progress")).toHaveText("1 of 3")
+  await expect(page.getByLabel("Progress")).toHaveText("Report 1 of 3")
   await page.getByRole("button", { name: "Sent, next" }).click()
-  await expect(page.getByLabel("Progress")).toHaveText("2 of 3")
+  await expect(page.getByLabel("Progress")).toHaveText("Report 2 of 3")
 })
 
 test("abuse send now dialog", async ({ page }, info) => {
@@ -47,4 +47,13 @@ test("settings sending off and automatic", async ({ page }, info) => {
   await mode.scrollIntoViewIfNeeded()
   await settle(page)
   await shoot(page, "settings-sending-auto", info.project.name)
+})
+
+test("settings sending form actions", async ({ page }, info) => {
+  await page.goto("/settings?tab=reporting")
+  await expect(page.getByRole("button", { name: "Send a test" })).toBeVisible()
+  await expect(page.getByText(/sent today/)).toBeVisible()
+  await page.getByRole("button", { name: "Remove SMTP" }).scrollIntoViewIfNeeded()
+  await settle(page)
+  await shoot(page, "settings-sending-actions", info.project.name)
 })
