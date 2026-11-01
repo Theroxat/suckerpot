@@ -132,6 +132,7 @@ export function TrendsPage() {
   return (
     <>
       <PageHeader
+        help="patterns"
         title="Trends"
         description={`What attackers try most in the last ${days} days, how it changes over time, and what is new.`}
         actions={

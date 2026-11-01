@@ -18,6 +18,7 @@ import { FeedsTab } from "@/components/feeds/feeds-tab"
 import { FindingCard } from "@/components/finding-card"
 import { Meter } from "@/components/meter"
 import { PageHeader } from "@/components/page-header"
+import { SetupChecklistCard } from "@/components/setup-checklist"
 import { VpnTab } from "@/components/vpn/vpn-tab"
 import { ProviderKeys } from "@/components/provider-keys"
 import { AuditCard } from "@/components/users/audit-card"
@@ -27,6 +28,7 @@ import { RelativeTime } from "@/components/relative-time"
 import { SensorBadge } from "@/components/sensor-badge"
 import { SkeletonText } from "@/components/skeletons"
 import { api, queryKeys } from "@/lib/api"
+import { settingsHelpId } from "@/lib/help"
 import { formatBytes, formatNumber, plural } from "@/lib/format"
 import {
   enrichmentFinding,
@@ -375,6 +377,7 @@ export function SettingsPage() {
   return (
     <>
       <PageHeader
+        help={settingsHelpId(tab)}
         title="Settings"
         description={
           canWrite
@@ -415,6 +418,7 @@ export function SettingsPage() {
         </TabsList>
 
         <TabsContent value="general" className="grid grid-cols-1 gap-4">
+          <SetupChecklistCard />
           <SensorsCard data={q.data} loading={q.isPending} />
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <StorageCard data={q.data} loading={q.isPending} />

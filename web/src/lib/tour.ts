@@ -1,0 +1,86 @@
+/**
+ * The guided tour (M24, docs/design/m24.md section 2): its seven steps, and the per-account
+ * "already seen" flag. The flag is one harmless key per username in localStorage; nothing else
+ * about the person is stored.
+ */
+
+export interface TourStep {
+  id: "what" | "daily" | "group" | "payloads" | "egress" | "abuse" | "alerts"
+  /** One plain sentence. */
+  title: string
+  /** Two or three short sentences. */
+  body: string
+}
+
+export const TOUR_STEPS: readonly TourStep[] = [
+  {
+    id: "what",
+    title: "SuckerPot is a trap: fake servers that attackers find on the internet.",
+    body: "Twelve sensors pretend to be SSH, a web app, a database and more, with nothing real behind them. Every attempt is recorded, and ingest groups the events of one connection into a session you can read as a story.",
+  },
+  {
+    id: "daily",
+    title: "Read it daily: start with Today, then open Attacks.",
+    body: "Today tells the last 24 hours in plain words. Attacks lists every visit as one line; open a session to read its timeline and, for shell sessions, replay the commands at real speed.",
+  },
+  {
+    id: "group",
+    title: "Related sessions are grouped for you.",
+    body: "Campaigns join sessions that share a script, a payload host or an exploit. Tools lists the scripts, malware and infrastructure behind them, and Trends shows what attackers try most and what is new.",
+  },
+  {
+    id: "payloads",
+    title: "Payloads are fetched safely and never run.",
+    body: "Sensors only record the download URL. When payload fetching is on, the collector fetches it through the VPN into a quarantine, and the analyzer, which has no network, reads the file for its type, hashes, rule matches, hidden scripts and command servers.",
+  },
+  {
+    id: "egress",
+    title: "Only one service can reach the internet: the VPN.",
+    body: "Every lookup and download leaves through the vpn service, so your home address is never used. The gate pauses all outbound work when the tunnel or its exit looks wrong, and a kill switch blocks traffic if the tunnel drops.",
+  },
+  {
+    id: "abuse",
+    title: "Abuse reports are drafts that you send yourself.",
+    body: "Contacts are found over RDAP through the VPN, and a draft is built for each network. You review it and send it from your own mailbox: the stack never sends mail, and an identity check blocks anything that could point to you.",
+  },
+  {
+    id: "alerts",
+    title: "Alerts tell you when something matters.",
+    body: "Rules watch for things like a new campaign or a malware drop, and send a message to Discord, Teams or e-mail, plus a weekly digest. Everything is off until you switch it on, and messages leave through the VPN.",
+  },
+]
+
+export const TOUR_KEY_PREFIX = "suckerpot.tour.seen."
+
+export function tourKey(username: string): string {
+  return `${TOUR_KEY_PREFIX}${username}`
+}
+
+/** Storage can be missing or full (private mode): then the tour simply does not open by itself. */
+export function hasSeenTour(
+  username: string,
+  storage: Storage | undefined = safeStorage(),
+): boolean {
+  if (!storage) return true
+  try {
+    return storage.getItem(tourKey(username)) !== null
+  } catch {
+    return true
+  }
+}
+
+export function markTourSeen(username: string, storage: Storage | undefined = safeStorage()) {
+  try {
+    storage?.setItem(tourKey(username), "1")
+  } catch {
+    // Nothing to do: the tour may open again next time.
+  }
+}
+
+function safeStorage(): Storage | undefined {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage
+  } catch {
+    return undefined
+  }
+}

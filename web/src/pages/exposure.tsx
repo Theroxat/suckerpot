@@ -43,6 +43,7 @@ export function ExposurePage() {
   return (
     <>
       <PageHeader
+        help="exposure"
         title="Your exposure"
         description={exposureSentence(r, days)}
         actions={

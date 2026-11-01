@@ -9,6 +9,10 @@ import { UserError } from "./users"
 /** The server refuses a file bigger than this (413). */
 export const VPN_CONF_MAX_BYTES = 4096
 
+/** After "Check now" the tab looks every 3 seconds, for one minute at most. */
+export const CHECK_POLL_MS = 3_000
+export const CHECK_WATCH_MS = 60_000
+
 /** How long the tab keeps looking after an upload, and how often. */
 export const SWITCH_WATCH_MS = 120_000
 export const SWITCH_POLL_MS = 5_000
@@ -46,6 +50,14 @@ export interface VpnStatus {
   trust_blocked: "exit_is_self" | "exit_asn_denied" | null
   /** False when the vpn-config volume is not mounted or not writable. */
   config_writable: boolean
+  /** The most recent "Check now" request, or null when none was made. */
+  last_check_request?: VpnCheckRequest | null
+}
+
+/** The last "Check now" request (M24), so the tab can tell when ingest has answered it. */
+export interface VpnCheckRequest {
+  requested_at: string
+  done_at: string | null
 }
 
 export const vpnKeys = { status: ["settings", "vpn"] as const }
@@ -103,6 +115,8 @@ export const VPN_MESSAGES = {
   forbidden: "Only an administrator can change the VPN.",
   notFound: "That entry no longer exists. The status has been refreshed.",
   generic: "The change could not be made. Try again in a moment.",
+  checkTooSoon: "Just asked, wait a few seconds.",
+  reconnectTooSoon: "The tunnel was restarted a moment ago. Wait a minute, then try again.",
 } as const
 
 /** The machine-readable reason, wherever the API put it (`code`, `error` or a string `detail`). */
@@ -183,6 +197,39 @@ export const vpnApi = {
     guarded(() => sendJson<TrustedExit>("POST", "/settings/vpn/trusted-exits", { password })),
   untrust: (id: number, password: string) =>
     guarded(() => sendJson("DELETE", `/settings/vpn/trusted-exits/${id}`, { password })),
+  /** Asks ingest to look at the exit now. No password. 429 `too_soon`: asked a moment ago. */
+  check: () =>
+    guarded(async () => {
+      try {
+        return await sendJson<{ requested_at?: string } | undefined>("POST", "/settings/vpn/check")
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 429)
+          throw new UserError("rate-limited", VPN_MESSAGES.checkTooSoon)
+        throw e
+      }
+    }),
+  /** Restarts the tunnel. Password again. 429: restarted less than a minute ago. */
+  reconnect: (password: string) =>
+    guarded(async () => {
+      try {
+        await sendJson("POST", "/settings/vpn/reconnect", { password })
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 429)
+          throw new UserError("rate-limited", VPN_MESSAGES.reconnectTooSoon)
+        throw e
+      }
+    }),
+}
+
+/**
+ * Has ingest answered the check asked at `since` (epoch ms)? Yes when the gate was looked at
+ * after the request, or when the request row itself is marked done.
+ */
+export function checkAnswered(v: VpnStatus, since: number): boolean {
+  const at = v.gate.checked_at ? Date.parse(v.gate.checked_at) : NaN
+  if (!Number.isNaN(at) && at > since) return true
+  const r = v.last_check_request
+  return !!r?.done_at && Date.parse(r.requested_at) >= since
 }
 
 /** "AS64500 Example Networks", or null when the network is not known. */

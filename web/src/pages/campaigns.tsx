@@ -141,7 +141,7 @@ export function CampaignsPage() {
 
   return (
     <>
-      <PageHeader title="Campaigns" description={headline} />
+      <PageHeader help="campaigns" title="Campaigns" description={headline} />
 
       <FilterBar
         className="mb-4"

@@ -165,6 +165,7 @@ export function LivePage() {
   return (
     <>
       <PageHeader
+        help="live"
         title="Live"
         description={masked ? maskIpsInText(headline) : headline}
         className="pb-5"

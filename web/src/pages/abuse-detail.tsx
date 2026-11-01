@@ -592,7 +592,7 @@ export function AbuseDetailPage() {
     const gone = q.error instanceof ApiError && q.error.status === 404
     return (
       <>
-        <PageHeader title="Abuse report" eyebrow={back} />
+        <PageHeader help="abuse-report" title="Abuse report" eyebrow={back} />
         <EmptyState
           icon={FileSearch}
           title={gone ? "This report does not exist" : "Could not load this report"}
@@ -613,7 +613,7 @@ export function AbuseDetailPage() {
   if (!q.data) {
     return (
       <>
-        <PageHeader title="Abuse report" eyebrow={back} />
+        <PageHeader help="abuse-report" title="Abuse report" eyebrow={back} />
         <div className="space-y-4" aria-busy>
           <SkeletonCard />
           <SkeletonCard />
@@ -625,6 +625,7 @@ export function AbuseDetailPage() {
   return (
     <>
       <PageHeader
+        help="abuse-report"
         eyebrow={back}
         title={r.recipient.name}
         description={<span className="normal-nums">{describeReport(r)}</span>}

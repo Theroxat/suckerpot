@@ -274,7 +274,7 @@ export function ReportPage() {
   if (!valid || (q.isError && q.error instanceof ApiError && q.error.status === 404)) {
     return (
       <>
-        <PageHeader title="Weekly report" eyebrow={back} />
+        <PageHeader help="report" title="Weekly report" eyebrow={back} />
         <EmptyState
           icon={FileText}
           title="This report does not exist"
@@ -292,6 +292,7 @@ export function ReportPage() {
   return (
     <>
       <PageHeader
+        help="report"
         title={`Week of ${weekLabel(week, q.data?.summary.week_end ?? null)}`}
         eyebrow={back}
         description={headline ?? (q.isError ? undefined : "Loading the report…")}

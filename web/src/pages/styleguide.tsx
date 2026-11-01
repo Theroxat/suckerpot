@@ -429,6 +429,7 @@ export function StyleguidePage() {
   return (
     <>
       <PageHeader
+        help="styleguide"
         title="Styleguide"
         description="Every token and base component, in every state. This page is what the visual review screenshots."
         actions={<ThemeToggle />}
