@@ -173,3 +173,30 @@ async def test_active_self_networks_are_readable_by_api_and_ingest(owner: AsyncE
         assert found == ["192.0.2.10", "198.51.100.0/25", "203.0.113.5"]
     async with owner.begin() as conn:
         await conn.execute(text("DELETE FROM report_self_terms"))
+
+
+async def test_check_requests_grants_and_trim(owner: AsyncEngine) -> None:
+    """M24: API inserts, ingest stamps done_at only; the table keeps the newest 100 rows."""
+    api = _as(ENV["POSTGRES_API_USER"], ENV["POSTGRES_API_PASSWORD"])
+    ingest = _as(ENV["POSTGRES_INGEST_USER"], ENV["POSTGRES_INGEST_PASSWORD"])
+    collector = _as("suckerpot_collector", ENV["POSTGRES_COLLECTOR_PASSWORD"])
+    ins = "INSERT INTO egress_check_requests (requested_by) VALUES ('tester')"
+    try:
+        async with owner.begin() as conn:
+            await conn.execute(text("TRUNCATE egress_check_requests"))
+        for _ in range(105):
+            assert await _can(api, ins)
+        async with owner.connect() as conn:
+            assert await conn.scalar(text("SELECT count(*) FROM egress_check_requests")) == 100
+        assert await _can(api, "SELECT id FROM egress_check_requests")
+        assert not await _can(api, "UPDATE egress_check_requests SET done_at = now()")
+        assert not await _can(api, "DELETE FROM egress_check_requests")
+        assert await _can(ingest, "SELECT id FROM egress_check_requests WHERE done_at IS NULL")
+        assert await _can(ingest, "UPDATE egress_check_requests SET done_at = now()")
+        assert not await _can(ingest, "UPDATE egress_check_requests SET requested_by = 'x'")
+        assert not await _can(ingest, ins)
+        assert not await _can(ingest, "DELETE FROM egress_check_requests")
+        assert not await _can(collector, "SELECT id FROM egress_check_requests")
+    finally:
+        for engine in (api, ingest, collector):
+            await engine.dispose()

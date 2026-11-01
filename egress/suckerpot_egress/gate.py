@@ -27,6 +27,8 @@ CONTROL_TIMEOUT_S = 5.0
 ECHO_MAX_BYTES = 64
 PROXY_ERRORS_BEFORE_RECHECK = 3
 STALE_FACTOR = 2  # a verdict older than this many intervals no longer counts as open
+FAST_RETRY_S = 20.0  # while closed, re-check this often ...
+FAST_RETRY_MAX = 10  # ... for this many consecutive failures, then back off to the interval
 EXTRA_CIDRS_TTL_S = 60.0  # the extra allowed ranges are read at most this often
 
 type Network = ipaddress.IPv4Network | ipaddress.IPv6Network
@@ -104,6 +106,7 @@ class EgressGate:
         self._proxied: httpx.AsyncClient | None = client
         self._status = GateStatus(False, "not_checked", None, datetime.fromtimestamp(0, UTC))
         self._proxy_errors = 0
+        self._failures = 0  # consecutive closed verdicts
         self._wake = asyncio.Event()
 
     # ---- state --------------------------------------------------------------------------------
@@ -249,6 +252,23 @@ class EgressGate:
             return None
         return _parse_ip(body.decode("ascii", "ignore"))
 
+    def next_delay(self, status: GateStatus) -> float:
+        """Seconds to wait before the next check. A closed gate is re-checked quickly (a tunnel
+        that was restarted comes back within seconds), for ``FAST_RETRY_MAX`` failures in a
+        row; after that, or while open, the normal interval applies. Opening resets the count."""
+        if status.open:
+            self._failures = 0
+            return float(self.settings.check_interval_s)
+        self._failures += 1
+        if self._failures <= FAST_RETRY_MAX:
+            return min(FAST_RETRY_S, float(self.settings.check_interval_s))
+        return float(self.settings.check_interval_s)
+
+    def request_check(self) -> None:
+        """Re-check now (the dashboard's "Check now"); restarts the fast retry window."""
+        self._failures = 0
+        self._wake.set()
+
     async def run(self, on_status: Callable[[GateStatus], Awaitable[None]] | None = None) -> None:
         """Check at start, then every interval, or sooner after repeated proxy errors.
 
@@ -265,7 +285,7 @@ class EgressGate:
                     log.warning("could not publish the egress status (%s)", type(exc).__name__)
             self._wake.clear()
             with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(self._wake.wait(), self.settings.check_interval_s)
+                await asyncio.wait_for(self._wake.wait(), self.next_delay(status))
 
 
 class _Cached:

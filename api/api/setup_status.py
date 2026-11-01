@@ -1,0 +1,255 @@
+"""The setup checklist (M24, ``docs/design/m24.md`` section 3). Admin only, read only.
+
+Every item is computed from real state with the API role: the last event of each sensor, the
+gate rows ingest and the collector publish, the reporting wording, the self addresses, the alert
+channels and the provider keys. ``detail`` is a short English sentence (never a value: no key,
+address or mailbox is ever repeated), ``href`` a dashboard path. The host firewall cannot be seen
+from inside the stack, so it is not an item.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+from suckerpot_db import AlertChannelRow, EnrichmentStatusRow, EventRow
+from suckerpot_db.trusted_exits import ACTIVE_SELF_NETWORKS_SQL
+
+from api.abuse_core import env_flag, load_settings, missing_for
+from api.authz import require_admin
+from api.deps import DbSession
+from api.egress import _checked_at
+from api.provider_keys import _configured
+from api.sensors import SENSOR_LABELS, SENSORS
+
+router = APIRouter(tags=["settings"])
+
+State = Literal["ok", "todo", "warning", "off"]
+SILENT_AFTER = timedelta(hours=24)
+GATE_FRESH = timedelta(minutes=15)  # an "open" verdict older than this is not trusted
+MAX_NAMED = 6
+
+WORDING_LABELS = {
+    "intro": "introduction",
+    "outro": "closing",
+    "note": "note",
+    "subject_template": "subject line",
+}
+
+
+class SetupItem(BaseModel):
+    id: str
+    state: State
+    detail: str
+    href: str
+
+
+class SetupStatus(BaseModel):
+    items: list[SetupItem]
+
+
+def _item(id_: str, state: State, detail: str, href: str) -> SetupItem:
+    return SetupItem(id=id_, state=state, detail=detail, href=href)
+
+
+def _names(names: list[str]) -> str:
+    shown = names[:MAX_NAMED]
+    extra = len(names) - len(shown)
+    text_ = ", ".join(shown)
+    return f"{text_} and {extra} more" if extra > 0 else text_
+
+
+async def _gate_details(db: AsyncSession) -> dict[str, dict[str, Any]]:
+    rows = await db.execute(
+        select(EnrichmentStatusRow.name, EnrichmentStatusRow.detail).where(
+            EnrichmentStatusRow.name.in_(("egress", "egress_collector"))
+        )
+    )
+    return {r.name: r.detail for r in rows}
+
+
+def _gate_open(detail: dict[str, Any] | None, now: datetime) -> bool:
+    if not detail or detail.get("open") is not True:
+        return False
+    checked = _checked_at(detail)
+    return checked is not None and now - checked <= GATE_FRESH
+
+
+def _reason(detail: dict[str, Any] | None) -> str:
+    raw = detail.get("reason") if detail else None
+    return raw[:64] if isinstance(raw, str) else "no_status"
+
+
+async def _sensors(db: AsyncSession, now: datetime) -> SetupItem:
+    rows = (
+        await db.execute(
+            select(EventRow.sensor)
+            .where(EventRow.ts >= now - SILENT_AFTER)
+            .group_by(EventRow.sensor)
+        )
+    ).all()
+    active = {r.sensor for r in rows}
+    silent = [SENSOR_LABELS.get(s, s) for s in SENSORS if s not in active]
+    href = "/settings"
+    if not silent:
+        return _item(
+            "sensors", "ok", f"All {len(SENSORS)} sensors sent events in the last 24 hours.", href
+        )
+    if len(silent) == len(SENSORS):
+        return _item(
+            "sensors", "warning", "No sensor has sent an event in the last 24 hours.", href
+        )
+    return _item("sensors", "warning", f"Silent for 24 hours or more: {_names(silent)}.", href)
+
+
+async def _vpn(db: AsyncSession, now: datetime) -> SetupItem:
+    detail = (await _gate_details(db)).get("egress")
+    href = "/settings?tab=vpn"
+    if _gate_open(detail, now):
+        return _item("vpn", "ok", "The VPN tunnel is up and the egress gate is open.", href)
+    if detail is None:
+        return _item(
+            "vpn", "todo", "The egress gate has not reported yet. Start the VPN service.", href
+        )
+    return _item(
+        "vpn",
+        "warning",
+        f"The egress gate is closed ({_reason(detail)}). Outbound lookups are paused.",
+        href,
+    )
+
+
+async def _collector(db: AsyncSession, now: datetime) -> SetupItem:
+    href = "/settings"
+    if not env_flag("COLLECTOR_ENABLED", False):
+        return _item(
+            "collector",
+            "off",
+            "Payload fetching is off. Enable it to download and analyse the files attackers "
+            "point to.",
+            href,
+        )
+    detail = (await _gate_details(db)).get("egress_collector")
+    if _gate_open(detail, now):
+        return _item("collector", "ok", "Payload fetching is on and its egress gate is open.", href)
+    return _item(
+        "collector",
+        "warning",
+        f"Payload fetching is on but its egress gate is closed ({_reason(detail)}).",
+        href,
+    )
+
+
+async def _reporting_settings(db: AsyncSession, _now: datetime) -> SetupItem:
+    href = "/settings?tab=reporting"
+    missing = missing_for((await load_settings(db)).settings)
+    if not missing:
+        return _item("reporting_settings", "ok", "The report wording is filled in.", href)
+    labels = [WORDING_LABELS.get(m, m) for m in missing]
+    return _item(
+        "reporting_settings",
+        "todo",
+        f"Still to write in the report wording: {_names(labels)}.",
+        href,
+    )
+
+
+async def _self_address(db: AsyncSession, _now: datetime) -> SetupItem:
+    href = "/settings?tab=reporting"
+    found = (await db.scalars(text(ACTIVE_SELF_NETWORKS_SQL + " LIMIT 1"))).first()
+    if found is not None:
+        return _item("self_address", "ok", "The honeypot's own address is known.", href)
+    return _item(
+        "self_address",
+        "todo",
+        "Add the honeypot's public address, so it can never appear in a report or become a VPN "
+        "exit.",
+        href,
+    )
+
+
+async def _abuse_worker(_db: AsyncSession, _now: datetime) -> SetupItem:
+    href = "/settings?tab=reporting"
+    if env_flag("ABUSE_REPORTS_ENABLED", False):
+        return _item("abuse_worker", "ok", "Abuse report drafts are being prepared.", href)
+    return _item(
+        "abuse_worker",
+        "off",
+        "Abuse reports are off. Enable them to get drafts you review and send yourself.",
+        href,
+    )
+
+
+async def _alerts(db: AsyncSession, _now: datetime) -> SetupItem:
+    href = "/settings?tab=alerts"
+    count = await db.scalar(
+        select(func.count()).select_from(AlertChannelRow).where(AlertChannelRow.enabled)
+    )
+    if count:
+        return _item("alerts", "ok", "At least one alert channel is set up.", href)
+    return _item(
+        "alerts", "off", "No alert channel yet. Add one to hear about serious attacks.", href
+    )
+
+
+async def _provider_keys(db: AsyncSession, _now: datetime) -> SetupItem:
+    href = "/settings?tab=keys"
+    have = [p for p in ("abuseipdb", "greynoise") if await _configured(db, p)]
+    if len(have) == 2:
+        return _item("provider_keys", "ok", "AbuseIPDB and GreyNoise keys are set.", href)
+    if have:
+        missing = "GreyNoise" if have == ["abuseipdb"] else "AbuseIPDB"
+        return _item(
+            "provider_keys",
+            "warning",
+            f"The {missing} key is missing. It adds "
+            + (
+                "scanner context to attacker profiles."
+                if missing == "GreyNoise"
+                else "abuse scores to attacker profiles."
+            ),
+            href,
+        )
+    return _item(
+        "provider_keys",
+        "off",
+        "No reputation keys. AbuseIPDB adds abuse scores and GreyNoise tells scanners from "
+        "attackers.",
+        href,
+    )
+
+
+CHECKS: tuple[tuple[str, Callable[[AsyncSession, datetime], Awaitable[SetupItem]], str], ...] = (
+    ("sensors", _sensors, "/settings"),
+    ("vpn", _vpn, "/settings?tab=vpn"),
+    ("collector", _collector, "/settings"),
+    ("reporting_settings", _reporting_settings, "/settings?tab=reporting"),
+    ("self_address", _self_address, "/settings?tab=reporting"),
+    ("abuse_worker", _abuse_worker, "/settings?tab=reporting"),
+    ("alerts", _alerts, "/settings?tab=alerts"),
+    ("provider_keys", _provider_keys, "/settings?tab=keys"),
+)
+
+
+async def compute(db: AsyncSession, now: datetime | None = None) -> list[SetupItem]:
+    """Every item in the documented order. One failing read becomes a warning, not an error."""
+    moment = now or datetime.now(UTC)
+    items: list[SetupItem] = []
+    for id_, check, href in CHECKS:
+        try:
+            async with db.begin_nested():
+                items.append(await check(db, moment))
+        except SQLAlchemyError:
+            items.append(_item(id_, "warning", "This could not be checked right now.", href))
+    return items
+
+
+@router.get("/setup/status", response_model=SetupStatus, dependencies=[Depends(require_admin)])
+async def setup_status(db: DbSession) -> SetupStatus:
+    return SetupStatus(items=await compute(db))

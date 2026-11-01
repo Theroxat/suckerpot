@@ -33,10 +33,10 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from suckerpot_db import EgressTrustedExitRow, EnrichmentStatusRow
+from suckerpot_db import EgressCheckRequestRow, EgressTrustedExitRow, EnrichmentStatusRow
 from suckerpot_db.trusted_exits import load_self_networks
 
 from api import audit as audit_db
@@ -52,6 +52,9 @@ log = logging.getLogger("api.audit")
 CONFIG_DIR_ENV = "VPN_CONFIG_DIR"
 DEFAULT_CONFIG_DIR = "/vpn-config"
 ENV_FILE = "wg.env"
+RESTART_FILE = "restart"  # M24: a timestamp; the vpn entrypoint restarts when it changes
+CHECK_MIN_GAP = timedelta(seconds=10)
+RECONNECT_MIN_GAP = timedelta(seconds=60)
 META_FILE = "meta.json"
 MAX_CONF_BYTES = 4096
 MAX_TRUSTED_EXITS = 8
@@ -60,6 +63,7 @@ FILE_MODE = 0o644  # gluetun's root has no CAP_DAC_OVERRIDE: it must be able to 
 # The candidate comes from the ingest gate only (never the collector's row).
 GATE_ROW = "egress"
 DENY_ASNS_ENV = "EGRESS_DENY_ASNS"
+CHECK_LOCK_KEY = 0x5350_4348  # advisory lock: one "Check now" decision at a time
 BLOCKED_REASONS = ("exit_is_self", "exit_asn_denied")
 
 AdminOnly = Depends(require_admin)
@@ -403,6 +407,15 @@ class TrustedExit(BaseModel):
     created_by: str | None
 
 
+class CheckRequest(BaseModel):
+    requested_at: datetime
+    done_at: datetime | None
+
+
+class Accepted(BaseModel):
+    requested_at: datetime
+
+
 class VpnSettings(BaseModel):
     source: str  # "env" | "upload"
     uploaded_at: datetime | None
@@ -416,6 +429,7 @@ class VpnSettings(BaseModel):
     trust_candidate: str | None
     trust_blocked: str | None  # "exit_is_self" | "exit_asn_denied" | None
     config_writable: bool  # False: the vpn-config volume is missing or read-only (PUT: 503)
+    last_check_request: CheckRequest | None  # M24: the latest "Check now"
 
 
 class PasswordBody(BaseModel):
@@ -582,7 +596,19 @@ async def _settings(db: AsyncSession) -> VpnSettings:
         trust_candidate=candidate,
         trust_blocked=blocked,
         config_writable=await asyncio.to_thread(config_available),
+        last_check_request=await _last_check(db),
     )
+
+
+async def _last_check(db: AsyncSession) -> CheckRequest | None:
+    row = (
+        await db.execute(
+            select(EgressCheckRequestRow.requested_at, EgressCheckRequestRow.done_at)
+            .order_by(EgressCheckRequestRow.id.desc())
+            .limit(1)
+        )
+    ).first()
+    return None if row is None else CheckRequest(requested_at=row.requested_at, done_at=row.done_at)
 
 
 def _ip(request: Request) -> str:
@@ -640,6 +666,85 @@ async def put_vpn(body: UploadBody, request: Request, db: DbSession) -> Response
     await db.commit()
     log.info("vpn configuration uploaded actor=%s endpoint=%s", actor, summary.endpoint_ip)
     return JSONResponse((await _settings(db)).model_dump(mode="json"))
+
+
+def _too_soon(gap: timedelta, since: datetime, now: datetime) -> Response | None:
+    wait = gap - (now - since)
+    if timedelta(0) < wait <= gap:
+        retry = max(1, int(wait.total_seconds()) + 1)
+        return _error(429, "Please wait a moment before trying again.", "too_soon",
+                      {"Retry-After": str(retry)})  # fmt: skip
+    return None
+
+
+@router.post("/settings/vpn/check", status_code=202, response_model=Accepted)
+async def request_check(request: Request, db: DbSession) -> Response:
+    """Ask ingest to re-check the egress gate now. Admin and CSRF only: it changes nothing."""
+    principal, refused = await reauth.guard(request, None, "vpn check")
+    if refused is not None:
+        return refused
+    actor = principal.username if principal else "unknown"
+    # One at a time across all workers: serialise on the table's own newest row.
+    await db.execute(select(func.pg_advisory_xact_lock(CHECK_LOCK_KEY)))
+    now = datetime.now(UTC)
+    last = await db.scalar(select(func.max(EgressCheckRequestRow.requested_at)))
+    if last is not None and (early := _too_soon(CHECK_MIN_GAP, last, now)) is not None:
+        return early
+    row = EgressCheckRequestRow(requested_by=actor[:120])
+    db.add(row)
+    await db.flush()
+    await db.refresh(row)
+    requested_at = row.requested_at
+    await db.commit()
+    return JSONResponse(
+        Accepted(requested_at=requested_at).model_dump(mode="json"), status_code=202
+    )
+
+
+def _read_restart(directory: Path) -> datetime | None:
+    try:
+        value = datetime.fromisoformat(
+            (directory / RESTART_FILE).read_text(encoding="ascii")[:64].strip()
+        )
+    except (OSError, ValueError):
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+def write_restart(now: datetime) -> None:
+    """Drop the restart marker: only a timestamp, atomically, so the vpn entrypoint sees a
+    complete file or none."""
+    directory = config_dir()
+    clean_stale_tmp(directory)
+    _atomic_write(directory, RESTART_FILE, now.isoformat() + "\n")
+
+
+@router.post("/settings/vpn/reconnect", status_code=202, response_model=Accepted)
+async def reconnect_vpn(body: PasswordBody, request: Request, db: DbSession) -> Response:
+    """Restart the tunnel (the vpn entrypoint watches the marker file). Password again, and at
+    most once a minute."""
+    if not await asyncio.to_thread(config_available):
+        return _unavailable()
+    principal, refused = await reauth.guard(request, body.password, "vpn reconnect")
+    if refused is not None:
+        return refused
+    now = datetime.now(UTC)
+    previous = await asyncio.to_thread(_read_restart, config_dir())
+    if previous is not None and (early := _too_soon(RECONNECT_MIN_GAP, previous, now)) is not None:
+        return early
+    actor = principal.username if principal else "unknown"
+    try:
+        await asyncio.to_thread(write_restart, now)
+    except OSError:
+        log.error("vpn restart marker could not be written")
+        return _unavailable()
+    await audit_db.record(
+        db, actor=actor, action="vpn.reconnect", target="vpn", ip=_ip(request),
+        actor_id=audit_db.actor_id_of(principal),
+    )  # fmt: skip
+    await db.commit()
+    log.info("vpn reconnect requested actor=%s", actor)
+    return JSONResponse(Accepted(requested_at=now).model_dump(mode="json"), status_code=202)
 
 
 @router.delete("/settings/vpn", status_code=204)

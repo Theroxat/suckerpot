@@ -76,12 +76,12 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0020() -> None:
+def test_the_chain_is_linear_up_to_0021() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0020"}
-    for n in range(11, 21):
+    assert heads == {"0021"}
+    for n in range(11, 22):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
 
 
@@ -258,3 +258,13 @@ def test_trusted_exit_grants() -> None:
     assert _grants(_GRANTS_INGEST)["egress_trusted_exits"] == {"SELECT"}
     assert _grants(_GRANTS_COLLECTOR)["egress_trusted_exits"] == {"SELECT"}
     assert "egress_trusted_exits" not in _grants(_GRANTS_ANALYZER)
+
+
+def test_check_request_grants() -> None:
+    """M24: the API files "Check now" requests; ingest answers them. Nobody can delete."""
+    assert _grants(_GRANTS_API)["egress_check_requests"] == {"SELECT", "INSERT"}
+    assert _grants(_GRANTS_INGEST)["egress_check_requests"] == {"SELECT"}
+    assert _update_columns(_GRANTS_INGEST, "egress_check_requests") == {"done_at"}
+    assert not _update_columns(_GRANTS_API, "egress_check_requests")
+    assert "egress_check_requests" not in _grants(_GRANTS_COLLECTOR)
+    assert "egress_check_requests" not in _grants(_GRANTS_ANALYZER)

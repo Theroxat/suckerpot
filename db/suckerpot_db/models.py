@@ -1104,3 +1104,17 @@ class EgressTrustedExitRow(Base):
         DateTime(timezone=True), server_default=_now(), nullable=False
     )
     created_by: Mapped[str | None] = mapped_column(Text)
+
+
+class EgressCheckRequestRow(Base):
+    """A "Check now" from the dashboard (M24). Ingest wakes its gate and stamps ``done_at``.
+    The table keeps its last 100 rows (trigger in migration 0021)."""
+
+    __tablename__ = "egress_check_requests"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    requested_by: Mapped[str | None] = mapped_column(Text)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

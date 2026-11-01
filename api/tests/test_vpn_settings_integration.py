@@ -76,7 +76,8 @@ async def app(monkeypatch: pytest.MonkeyPatch, vpn_dir: Path) -> AsyncIterator[A
     async with owner_engine() as owner, owner.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE users, audit_log, egress_trusted_exits, enrichment_status "
+                "TRUNCATE users, audit_log, egress_trusted_exits, enrichment_status, "
+                "egress_check_requests "
                 "RESTART IDENTITY"
             )
         )
@@ -191,6 +192,7 @@ async def test_get_with_nothing_uploaded(admin: httpx.AsyncClient) -> None:
         "trust_candidate": None,
         "trust_blocked": None,
         "config_writable": True,
+        "last_check_request": None,
     }
 
 
@@ -543,3 +545,84 @@ async def test_stale_temp_files_are_removed_on_write(
     os.utime(stale, (1, 1))
     assert (await admin.put(BASE, json=body())).status_code == 200
     assert names(vpn_dir) == ["meta.json", "wg.env"]
+
+
+# ---- M24: check now, reconnect -----------------------------------------------------------------
+
+
+async def test_check_now_files_a_request_and_is_rate_limited(admin: httpx.AsyncClient) -> None:
+    r = await admin.post(f"{BASE}/check")  # no password
+    assert r.status_code == 202, r.text
+    assert set(r.json()) == {"requested_at"}
+    found = await rows("SELECT requested_by, done_at FROM egress_check_requests")
+    assert [(f.requested_by, f.done_at) for f in found] == [("admin", None)]
+    again = await admin.post(f"{BASE}/check")
+    assert again.status_code == 429 and again.json()["code"] == "too_soon"
+    assert int(again.headers["Retry-After"]) >= 1
+    assert len(await rows("SELECT 1 FROM egress_check_requests")) == 1
+    last = (await admin.get(BASE)).json()["last_check_request"]
+    assert last["requested_at"] and last["done_at"] is None
+    async with owner_engine() as owner, owner.begin() as conn:
+        await conn.execute(text("UPDATE egress_check_requests SET done_at = now()"))
+    assert (await admin.get(BASE)).json()["last_check_request"]["done_at"] is not None
+
+
+async def test_check_now_works_again_after_ten_seconds(admin: httpx.AsyncClient) -> None:
+    assert (await admin.post(f"{BASE}/check")).status_code == 202
+    async with owner_engine() as owner, owner.begin() as conn:
+        await conn.execute(
+            text("UPDATE egress_check_requests SET requested_at = now() - interval '11 seconds'")
+        )
+    assert (await admin.post(f"{BASE}/check")).status_code == 202
+    assert len(await rows("SELECT 1 FROM egress_check_requests")) == 2
+
+
+async def test_check_now_is_admin_only(viewer: httpx.AsyncClient) -> None:
+    for path, payload in ((f"{BASE}/check", None), (f"{BASE}/reconnect", {"password": GOOD})):
+        r = await viewer.post(path, json=payload)
+        assert r.status_code == 403 and r.json()["code"] == "admin_required"
+    assert await rows("SELECT 1 FROM egress_check_requests") == []
+
+
+async def test_reconnect_needs_the_password(admin: httpx.AsyncClient, vpn_dir: Path) -> None:
+    r = await admin.post(f"{BASE}/reconnect", json={"password": "nope"})
+    assert r.status_code == 403 and r.json()["code"] == "reauth_failed"
+    assert names(vpn_dir) == []
+    assert await rows("SELECT 1 FROM audit_log WHERE action = 'vpn.reconnect'") == []
+
+
+async def test_reconnect_writes_the_marker_and_audits(
+    admin: httpx.AsyncClient, vpn_dir: Path
+) -> None:
+    r = await admin.post(f"{BASE}/reconnect", json={"password": PASSWORD})
+    assert r.status_code == 202, r.text
+    marker = vpn_dir / "restart"
+    assert names(vpn_dir) == ["restart"]  # no temp file left, nothing else touched
+    assert mode(marker) == 0o644
+    stamp = datetime.fromisoformat(read(marker).strip())
+    assert abs(datetime.now(UTC) - stamp) < timedelta(seconds=30)
+    assert read(marker) == stamp.isoformat() + "\n"  # a timestamp, nothing else
+    assert r.json()["requested_at"]
+    audit = await rows("SELECT action, target FROM audit_log WHERE action = 'vpn.reconnect'")
+    assert [(a.action, a.target) for a in audit] == [("vpn.reconnect", "vpn")]
+
+
+async def test_reconnect_at_most_once_a_minute(admin: httpx.AsyncClient, vpn_dir: Path) -> None:
+    assert (await admin.post(f"{BASE}/reconnect", json={"password": PASSWORD})).status_code == 202
+    first = read(vpn_dir / "restart")
+    again = await admin.post(f"{BASE}/reconnect", json={"password": PASSWORD})
+    assert again.status_code == 429 and again.json()["code"] == "too_soon"
+    assert read(vpn_dir / "restart") == first
+    old = datetime.now(UTC) - timedelta(seconds=61)
+    (vpn_dir / "restart").write_text(old.isoformat() + "\n")
+    assert (await admin.post(f"{BASE}/reconnect", json={"password": PASSWORD})).status_code == 202
+    assert read(vpn_dir / "restart") != first
+    assert len(await rows("SELECT 1 FROM audit_log WHERE action = 'vpn.reconnect'")) == 2
+
+
+async def test_reconnect_without_a_writable_volume(
+    admin: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("VPN_CONFIG_DIR", str(tmp_path / "missing"))
+    r = await admin.post(f"{BASE}/reconnect", json={"password": PASSWORD})
+    assert r.status_code == 503 and r.json()["code"] == "vpn_config_unavailable"
