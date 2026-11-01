@@ -14,7 +14,9 @@
 CONF_DIR=${VPN_CONFIG_DIR:-/vpn-config}
 GLUETUN=${VPN_GLUETUN_BIN:-/gluetun-entrypoint}
 INTERVAL=${VPN_WATCH_INTERVAL:-10}
-WG_ENV="$CONF_DIR/wg.env"
+LIVE_ENV="$CONF_DIR/wg.env"
+SNAPSHOT=${VPN_SNAPSHOT:-/tmp/wg.env.snapshot}
+WG_ENV=$SNAPSHOT # parsed copy of LIVE_ENV
 
 log() { printf 'vpn-entrypoint: %s\n' "$1" >&2; }
 
@@ -39,10 +41,33 @@ value_of() {
   sed -n "s/^$1=//p" "$WG_ENV"
 }
 
+# is_global_v4 A.B.C.D: false for private, loopback, link-local, CGNAT, documentation,
+# benchmarking, multicast and reserved ranges (defence in depth; the API checks it too).
+is_global_v4() {
+  oldifs=$IFS
+  IFS=.
+  set -- $1
+  IFS=$oldifs
+  a=$1 b=$2 c=$3
+  case $a in
+    0 | 10 | 127) return 1 ;;
+  esac
+  [ "$a" -ge 224 ] && return 1
+  [ "$a" = 100 ] && [ "$b" -ge 64 ] && [ "$b" -le 127 ] && return 1
+  [ "$a" = 169 ] && [ "$b" = 254 ] && return 1
+  [ "$a" = 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ] && return 1
+  [ "$a" = 192 ] && [ "$b" = 0 ] && { [ "$c" = 0 ] || [ "$c" = 2 ]; } && return 1
+  [ "$a" = 192 ] && [ "$b" = 168 ] && return 1
+  [ "$a" = 198 ] && { [ "$b" = 18 ] || [ "$b" = 19 ]; } && return 1
+  [ "$a" = 198 ] && [ "$b" = 51 ] && [ "$c" = 100 ] && return 1
+  [ "$a" = 203 ] && [ "$b" = 0 ] && [ "$c" = 113 ] && return 1
+  return 0
+}
+
 load_uploaded() {
   # Any line that is not one of the five expected keys makes the file invalid.
   if grep -Evq '^(WIREGUARD_PRIVATE_KEY|WIREGUARD_PUBLIC_KEY|WIREGUARD_ADDRESSES|WIREGUARD_ENDPOINT_IP|WIREGUARD_ENDPOINT_PORT)=' "$WG_ENV"; then
-    log "invalid $WG_ENV: unexpected line; refusing to start"
+    log "invalid wg.env: unexpected line; refusing to start"
     exit 1
   fi
   for key in WIREGUARD_PRIVATE_KEY WIREGUARD_PUBLIC_KEY WIREGUARD_ADDRESSES WIREGUARD_ENDPOINT_IP WIREGUARD_ENDPOINT_PORT; do
@@ -53,11 +78,15 @@ load_uploaded() {
       *) pattern='[0-9]{1,5}' ;;
     esac
     if ! value=$(value_of "$key" "$pattern") || [ -z "$value" ]; then
-      log "invalid $WG_ENV: $key is missing, duplicated or malformed; refusing to start"
+      log "invalid wg.env: $key is missing, duplicated or malformed; refusing to start"
+      exit 1
+    fi
+    if [ "$key" = WIREGUARD_ENDPOINT_IP ] && ! is_global_v4 "$value"; then
+      log "invalid wg.env: $key is not a global address; refusing to start"
       exit 1
     fi
     if [ "$key" = WIREGUARD_ENDPOINT_PORT ] && { [ "$value" -lt 1 ] || [ "$value" -gt 65535 ]; }; then
-      log "invalid $WG_ENV: $key is out of range; refusing to start"
+      log "invalid wg.env: $key is out of range; refusing to start"
       exit 1
     fi
     export "$key=$value"
@@ -65,12 +94,19 @@ load_uploaded() {
   log "using the VPN configuration uploaded from the dashboard"
 }
 
-if [ -e "$WG_ENV" ]; then
-  if [ ! -f "$WG_ENV" ] || [ ! -r "$WG_ENV" ]; then
-    log "$WG_ENV is not a readable file; refusing to start"
+initial=absent
+if [ -e "$LIVE_ENV" ]; then
+  if [ ! -f "$LIVE_ENV" ] || [ ! -r "$LIVE_ENV" ]; then
+    log "wg.env is not a readable file; refusing to start"
     exit 1
   fi
+  # One copy on tmpfs: it is parsed AND checksummed, so a rewrite of the live file in between
+  # cannot make the running settings differ from the checksum the watcher compares with.
+  trap 'rm -f "$SNAPSHOT"' EXIT
+  (umask 077 && cp "$LIVE_ENV" "$SNAPSHOT") 2>/dev/null || { log "cannot snapshot wg.env; refusing to start"; exit 1; }
+  initial=$(checksum_of "$SNAPSHOT")
   load_uploaded
+  rm -f "$SNAPSHOT"
 else
   log "no uploaded VPN configuration; using the .env values"
 fi
@@ -78,8 +114,6 @@ fi
 # Keep IPv4 entries only.
 WIREGUARD_ADDRESSES=$(printf '%s' "$WIREGUARD_ADDRESSES" | tr ',' '\n' | grep -v ':' | paste -sd, -)
 export WIREGUARD_ADDRESSES
-
-initial=$(checksum_of "$WG_ENV")
 
 "$GLUETUN" &
 child=$!
@@ -103,7 +137,7 @@ while :; do
   tick=$((tick + 1))
   if [ "$tick" -ge "$INTERVAL" ]; then
     tick=0
-    if [ "$(checksum_of "$WG_ENV")" != "$initial" ]; then
+    if [ "$(checksum_of "$LIVE_ENV")" != "$initial" ]; then
       log "VPN configuration changed, restarting"
       kill -TERM "$child" 2>/dev/null
       wait "$child" 2>/dev/null
