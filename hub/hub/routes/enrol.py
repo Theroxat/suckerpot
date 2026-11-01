@@ -31,11 +31,15 @@ async def enrolments_today(ctx: AppContext, session: AsyncSession) -> int:
 
 
 async def current_difficulty(ctx: AppContext, session: AsyncSession) -> int:
-    """Base difficulty, plus one bit while the day's enrolments exceed the soft cap."""
-    base = ctx.settings.pow_difficulty
-    if await enrolments_today(ctx, session) > ctx.settings.enrol_soft_cap:
-        return base + 1
-    return base
+    """Base difficulty; above the soft cap one more bit, then one more per ``enrol_step`` enrolments.
+
+    The rise is capped at 10 extra bits: a flood gets expensive fast, the hub never locks up.
+    """
+    s = ctx.settings
+    over = await enrolments_today(ctx, session) - s.enrol_soft_cap
+    if over <= 0:
+        return s.pow_difficulty
+    return min(s.pow_difficulty + 1 + (over - 1) // s.enrol_step, s.pow_difficulty + 10, 48)
 
 
 @router.post("/enrol/challenge")
@@ -43,7 +47,11 @@ async def challenge(request: Request) -> Response:
     ctx = get_ctx(request)
     body = await read_body(request, MAX_BODY_DEFAULT)
     bind_unsigned(request, body)
-    wait = ctx.address_limiter.blocked(request) or ctx.address_limiter.check_unsigned(request)
+    wait = (
+        ctx.address_limiter.blocked(request)
+        or ctx.address_limiter.check_unsigned(request)
+        or ctx.address_limiter.check_challenge(request)
+    )
     if wait:
         raise ProtoError("rate_limited", str(wait))
     req = models.parse_body(models.ChallengeRequest, body)

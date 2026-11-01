@@ -31,6 +31,11 @@ def _merge(into: dict[str, Any], row: dict[str, Any]) -> None:
         into[key] = max(values) if values else None
 
 
+def c2_value(ip: str, port: int) -> str:
+    """``ip:port``, with an IPv6 address in brackets so that the port is unambiguous."""
+    return f"[{ip}]:{port}" if ":" in ip else f"{ip}:{port}"
+
+
 def build_rows(
     batch: models.ObservationBatch, never: Never
 ) -> tuple[list[dict[str, Any]], dict[str, int], dict[str, int]]:
@@ -118,7 +123,7 @@ def build_rows(
             if never.has_ip(c.ip):
                 reject("never_listed")
                 continue
-            put("c2_ip", f"{c.ip}:{c.port}", families=fam, via=c.via_sha256)
+            put("c2_ip", c2_value(c.ip, c.port), families=fam, via=c.via_sha256)
         elif c.domain_b is not None:
             put("c2_domain", c.domain_b, families=fam, via=c.via_sha256)
         accepted["c2"] += 1
