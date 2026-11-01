@@ -179,9 +179,17 @@ async def test_get_with_nothing_uploaded(admin: httpx.AsyncClient) -> None:
         "endpoint_port": None,
         "addresses": None,
         "peer_key_fingerprint": None,
-        "gate": {"state": "closed", "reason": "no_status", "egress_ip": None, "checked_at": None},
+        "gate": {
+            "state": "closed",
+            "reason": "no_status",
+            "egress_ip": None,
+            "egress_asn": None,
+            "egress_org": None,
+            "checked_at": None,
+        },
         "trusted_exits": [],
         "trust_candidate": None,
+        "trust_blocked": None,
         "config_writable": True,
     }
 
@@ -328,8 +336,15 @@ async def test_trust_stores_the_observed_range_and_audits(admin: httpx.AsyncClie
     assert again.status_code == 409 and again.json()["code"] == "no_candidate"
 
 
-async def test_collector_row_is_used_when_ingest_has_none(admin: httpx.AsyncClient) -> None:
+async def test_the_collector_row_is_never_used(admin: httpx.AsyncClient) -> None:
     await closed_gate("egress_collector", "2606:4700::1111")
+    assert (await admin.get(BASE)).json()["trust_candidate"] is None
+    r = await admin.post(f"{BASE}/trusted-exits", json={"password": PASSWORD})
+    assert r.status_code == 409 and r.json()["code"] == "no_candidate"
+
+
+async def test_an_ipv6_exit_gives_a_slash_48(admin: httpx.AsyncClient) -> None:
+    await closed_gate(ip="2606:4700::1111")
     r = await admin.post(f"{BASE}/trusted-exits", json={"password": PASSWORD})
     assert r.status_code == 201 and r.json()["cidr"] == "2606:4700::/48"
 
@@ -381,7 +396,7 @@ async def test_at_most_eight_ranges(admin: httpx.AsyncClient) -> None:
         for n in range(8):
             await conn.execute(
                 text("INSERT INTO egress_trusted_exits (cidr) VALUES (:c)"),
-                {"c": f"198.51.{n}.0/24"},
+                {"c": f"192.0.2.{n * 32}/27"},
             )
     await closed_gate()
     r = await admin.post(f"{BASE}/trusted-exits", json={"password": PASSWORD})
@@ -415,3 +430,116 @@ async def test_audit_rows_hold_no_key_material(admin: httpx.AsyncClient) -> None
     assert "vpn.upload" in dump and "vpn.revert" in dump
     for secret in (PRIVATE, PUBLIC, PASSWORD):
         assert secret not in dump
+
+
+# ---- the owner's own address and denied networks ----------------------------------------------
+
+
+async def add_self_term(
+    value: str, kind: str = "address", source: str = "manual", confirmed: bool = False
+) -> None:
+    async with owner_engine() as owner, owner.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO report_self_terms (kind, value, source, confirmed) "
+                "VALUES (:k, :v, :s, :c)"
+            ),
+            {"k": kind, "v": value, "s": source, "c": confirmed},
+        )
+
+
+@pytest.fixture(autouse=True)
+async def clean_self_terms(app: Any) -> None:
+    async with owner_engine() as owner, owner.begin() as conn:
+        await conn.execute(text("DELETE FROM report_self_terms"))
+
+
+@pytest.mark.parametrize(
+    ("value", "kind", "source", "confirmed"),
+    [
+        ("9.9.9.200", "address", "manual", False),  # same /24, another host
+        ("9.9.9.0/25", "cidr", "manual", False),
+        ("9.9.9.1", "address", "sensor", False),
+        ("9.9.9.2", "address", "learned", True),
+        (EXIT_IP, "address", "manual", False),
+    ],
+)
+async def test_a_range_holding_a_self_address_is_never_offered(
+    admin: httpx.AsyncClient, value: str, kind: str, source: str, confirmed: bool
+) -> None:
+    await add_self_term(value, kind, source, confirmed)
+    await closed_gate()
+    data = (await admin.get(BASE)).json()
+    assert data["trust_candidate"] is None and data["trust_blocked"] == "exit_is_self"
+    r = await admin.post(f"{BASE}/trusted-exits", json={"password": PASSWORD})
+    assert r.status_code == 409 and r.json()["code"] == "exit_is_self"
+    assert await rows("SELECT 1 FROM egress_trusted_exits") == []
+
+
+async def test_unconfirmed_learned_addresses_do_not_block(admin: httpx.AsyncClient) -> None:
+    await add_self_term("9.9.9.2", "address", "learned", False)
+    await closed_gate()
+    assert (await admin.get(BASE)).json()["trust_candidate"] == "9.9.9.0/24"
+
+
+async def test_an_unrelated_self_address_does_not_block(admin: httpx.AsyncClient) -> None:
+    await add_self_term("198.51.100.7")
+    await closed_gate()
+    data = (await admin.get(BASE)).json()
+    assert data["trust_candidate"] == "9.9.9.0/24" and data["trust_blocked"] is None
+
+
+async def test_the_gate_reason_exit_is_self_is_reported(admin: httpx.AsyncClient) -> None:
+    await closed_gate(reason="exit_is_self")
+    data = (await admin.get(BASE)).json()
+    assert data["trust_candidate"] is None and data["trust_blocked"] == "exit_is_self"
+    r = await admin.post(f"{BASE}/trusted-exits", json={"password": PASSWORD})
+    assert r.status_code == 409 and r.json()["code"] == "exit_is_self"
+
+
+async def test_denied_asn_blocks_the_candidate(
+    admin: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("EGRESS_DENY_ASNS", "AS64496, 64511 ,junk")
+    await put_status(
+        "egress",
+        open=False,
+        reason="ip_not_allowed",
+        egress_ip=EXIT_IP,
+        egress_asn=64511,
+        egress_org="Example Net",
+        checked_at=datetime.now(UTC).isoformat(),
+    )
+    data = (await admin.get(BASE)).json()
+    assert data["trust_candidate"] is None and data["trust_blocked"] == "exit_asn_denied"
+    assert data["gate"]["egress_asn"] == 64511 and data["gate"]["egress_org"] == "Example Net"
+    r = await admin.post(f"{BASE}/trusted-exits", json={"password": PASSWORD})
+    assert r.status_code == 409 and r.json()["code"] == "exit_asn_denied"
+    monkeypatch.setenv("EGRESS_DENY_ASNS", "64500")
+    assert (await admin.get(BASE)).json()["trust_candidate"] == "9.9.9.0/24"
+
+
+async def test_gate_asn_fields_are_null_when_unknown(admin: httpx.AsyncClient) -> None:
+    await closed_gate()
+    gate = (await admin.get(BASE)).json()["gate"]
+    assert gate["egress_asn"] is None and gate["egress_org"] is None
+
+
+# ---- input bounds and leftovers ---------------------------------------------------------------
+
+
+async def test_a_huge_conf_is_refused_before_parsing(admin: httpx.AsyncClient) -> None:
+    r = await admin.put(BASE, json=body(conf="#" * 9000))
+    assert r.status_code in (413, 422)
+    r = await admin.put(BASE, json=body(password="x" * 2000))
+    assert r.status_code == 422
+
+
+async def test_stale_temp_files_are_removed_on_write(
+    admin: httpx.AsyncClient, vpn_dir: Path
+) -> None:
+    stale = vpn_dir / ".wg.env.crashed.tmp"
+    stale.write_text("left over")
+    os.utime(stale, (1, 1))
+    assert (await admin.put(BASE, json=body())).status_code == 200
+    assert names(vpn_dir) == ["meta.json", "wg.env"]

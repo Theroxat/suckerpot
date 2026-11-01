@@ -12,7 +12,7 @@ from redis.asyncio import Redis
 from suckerpot_db import create_engine, create_session_factory
 from suckerpot_db.diskguard import max_db_bytes
 from suckerpot_db.secretbox import SecretBox, SecretError, box_from_env
-from suckerpot_db.trusted_exits import trusted_exit_provider
+from suckerpot_db.trusted_exits import self_networks_provider, trusted_exit_provider
 
 from ingest.abuse import AbuseWorker
 from ingest.alerts import AlertWorker
@@ -70,13 +70,18 @@ async def run() -> None:
     )
     engine = create_engine()
     factory = create_session_factory(engine)
-    install_gate(trusted_exit_provider(factory))
 
     rules = load_rules(enrich.rules_dir)  # fail fast on a broken rule file
     log.info("loaded %d tagging rules", len(rules.rules))
     scanners = load_scanners(enrich.rules_dir)  # fail fast here too
     log.info("loaded %d research scanner definitions", len(scanners.scanners))
     resolver = GeoResolver(enrich.geoip_dir, fake_for_private=enrich.geoip_fake_for_private)
+
+    def exit_asn(ip: str) -> tuple[int | None, str | None]:
+        info = resolver.lookup(ip)
+        return info.asn, info.org
+
+    install_gate(trusted_exit_provider(factory), self_networks_provider(factory), exit_asn)
 
     async def disk_status(detail: dict[str, Any]) -> None:
         await publish_system_status(factory, "ingest_disk", detail)
@@ -207,6 +212,8 @@ async def run() -> None:
                 "open": status.open,
                 "reason": status.reason,
                 "egress_ip": status.egress_ip,
+                "egress_asn": status.asn,
+                "egress_org": status.org,
                 "checked_at": status.checked_at.isoformat(),
             },
         )
