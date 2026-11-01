@@ -127,7 +127,7 @@ const replies: Reply[] = seeds.map(({ rule, ...x }) => ({
   excerpt_purged: false,
   reviewed_at: null,
   reviewed_by: null,
-  rule_id: rule ? rule.toLowerCase().replaceAll(" ", "_").slice(0, 32) : null,
+  rule_id: rule ? rule.toLowerCase().split(" ").slice(0, 3).join("_") : null,
   ...x,
 }))
 

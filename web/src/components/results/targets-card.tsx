@@ -80,12 +80,14 @@ export function TargetsCard({ filters }: { filters: ResultFilters }) {
             value={role}
             onChange={(v) => setRole(v === "all" ? null : v)}
             options={ROLE_OPTIONS}
+            className="max-w-full overflow-x-auto"
           />
           <SegmentedControl
             label="Target state"
             value={state}
             onChange={(v) => setState(v === "all" ? null : v)}
             options={STATE_OPTIONS}
+            className="max-w-full overflow-x-auto"
           />
         </div>
       }
@@ -101,7 +103,7 @@ export function TargetsCard({ filters }: { filters: ResultFilters }) {
           The targets could not be loaded.
         </p>
       ) : items.length === 0 ? null : (
-        <div className="overflow-x-auto border-t">
+        <div className="relative overflow-x-auto border-t">
           <table className="w-full text-left text-sm">
             <caption className="sr-only">Tracked targets</caption>
             <thead className="text-xs text-fg-muted">

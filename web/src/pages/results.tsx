@@ -90,12 +90,12 @@ export function ResultsPage() {
   const providers = useQuery({
     queryKey: resultKeys.providers(filters),
     queryFn: () => resultsApi.providers(filters),
-    enabled: summary.data?.enabled === true,
+    enabled: summary.data !== undefined && summary.data.enabled !== false,
   })
 
   const s = summary.data
   const totals = byAsn.data?.totals
-  const tracking = s?.enabled === true
+  const tracking = s !== undefined && s.enabled !== false
   const nothing = totals?.sent === 0 && (!tracking || s.urls.tracked + s.hosts.tracked === 0)
   const active = [
     ["kind", params.get("kind")],
@@ -123,6 +123,7 @@ export function ResultsPage() {
               setParam("since", v === String(DEFAULT_DAYS) ? null : daysAgo(Number(v)))
             }
             options={PERIODS}
+            className="max-w-full overflow-x-auto"
           />
         }
       />

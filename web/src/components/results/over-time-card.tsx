@@ -135,29 +135,31 @@ export function OverTimeCard() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <table className="sr-only">
-            <caption>Reports sent per {bucket}, by kind</caption>
-            <thead>
-              <tr>
-                <th scope="col">Start</th>
-                {KINDS.map((k) => (
-                  <th key={k.key} scope="col">
-                    {KIND_LABEL[k.key]}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.start}>
-                  <th scope="row">{r.label}</th>
+          <div className="sr-only">
+            <table>
+              <caption>Reports sent per {bucket}, by kind</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Start</th>
                   {KINDS.map((k) => (
-                    <td key={k.key}>{r[k.key]}</td>
+                    <th key={k.key} scope="col">
+                      {KIND_LABEL[k.key]}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.start}>
+                    <th scope="row">{r.label}</th>
+                    {KINDS.map((k) => (
+                      <td key={k.key}>{r[k.key]}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </FindingCard>
