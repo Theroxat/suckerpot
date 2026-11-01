@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 import { useEffect, useRef } from "react"
 import { Link } from "react-router"
+import { ReportingCard } from "@/components/abuse/reporting-card"
 import { ChannelsCard } from "@/components/alerts/channels-card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUrlParam } from "@/hooks/use-url-param"
@@ -344,6 +345,7 @@ const TABS = [
   { id: "audit", label: "Audit", adminOnly: true },
   { id: "alerts", label: "Alert channels", adminOnly: false },
   { id: "feeds", label: "Feeds", adminOnly: true },
+  { id: "reporting", label: "Reporting", adminOnly: true },
 ] as const
 
 export function SettingsPage() {
@@ -437,6 +439,11 @@ export function SettingsPage() {
         {canWrite ? (
           <TabsContent value="feeds">
             <FeedsTab />
+          </TabsContent>
+        ) : null}
+        {canWrite ? (
+          <TabsContent value="reporting" className="grid grid-cols-1 gap-4">
+            <ReportingCard />
           </TabsContent>
         ) : null}
       </Tabs>

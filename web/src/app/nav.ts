@@ -3,6 +3,7 @@ import {
   Crosshair,
   FileCode2,
   Flag,
+  MailWarning,
   Radar,
   Radio,
   Settings,
@@ -123,6 +124,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Alerts",
     icon: Bell,
     also: ["/reports"],
+  },
+  {
+    space: "defend",
+    to: "/defend/abuse",
+    label: "Abuse reports",
+    icon: MailWarning,
   },
 
   { space: "footer", to: "/settings", label: "Settings", icon: Settings },

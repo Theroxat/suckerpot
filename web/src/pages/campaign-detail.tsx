@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft, ArrowRight, FileQuestion, GitMerge, ShieldCheck } from "lucide-react"
 import { Link, useParams } from "react-router"
 import { useIpMask } from "@/app/ip-mask"
+import { ExportMenu } from "@/components/abuse/export-menu"
 import { ExcerptBlock } from "@/components/campaigns/excerpt-block"
 import { IndicatorList } from "@/components/campaigns/indicator-list"
 import { StageTrail } from "@/components/campaigns/stage-trail"
@@ -174,7 +175,10 @@ export function CampaignDetailPage() {
   return (
     <>
       <header className="space-y-4 pb-6">
-        <Back />
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <Back />
+          {c ? <ExportMenu scope={{ campaign: id }} /> : null}
+        </div>
         {c ? (
           <>
             <div className="flex flex-wrap items-center gap-2">

@@ -1,0 +1,52 @@
+import { Check, Copy } from "lucide-react"
+import { useIpMask } from "@/app/ip-mask"
+import { Button } from "@/components/ui/button"
+import { useCopy } from "@/hooks/use-copy"
+import { maskIpsInText } from "@/lib/format"
+import { cn } from "@/lib/utils"
+
+interface CopyFieldProps {
+  label: string
+  value: string
+  /** A scrollable block (the body) instead of a single line. */
+  multiline?: boolean
+  className?: string
+}
+
+/**
+ * A read-only field of the draft with its own copy button. In screenshot mode the text is masked
+ * and the button is hidden, like every other copy button.
+ */
+export function CopyField({ label, value, multiline = false, className }: CopyFieldProps) {
+  const { copied, copy } = useCopy()
+  const { masked } = useIpMask()
+  const shown = masked ? maskIpsInText(value) : value
+  return (
+    <div className={cn("min-w-0 space-y-1.5", className)}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-fg-muted">{label}</span>
+        {masked ? null : (
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => void copy(value)}
+            aria-label={copied ? `${label} copied` : `Copy ${label.toLowerCase()}`}
+          >
+            {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+            <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
+          </Button>
+        )}
+      </div>
+      <pre
+        aria-label={label}
+        tabIndex={multiline ? 0 : undefined}
+        className={cn(
+          "overflow-auto rounded-md border bg-bg px-3 py-2 font-mono text-xs/5 break-words whitespace-pre-wrap text-fg",
+          multiline ? "max-h-96 min-h-32" : "max-h-20",
+        )}
+      >
+        {shown || " "}
+      </pre>
+    </div>
+  )
+}

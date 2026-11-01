@@ -2,10 +2,12 @@ import { useInfiniteQuery } from "@tanstack/react-query"
 import { useWindowVirtualizer } from "@tanstack/react-virtual"
 import { FileSearch, Search, SearchX } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useAuth } from "@/app/auth"
 import { EmptyState } from "@/components/empty-state"
 import { FilterBar } from "@/components/filter-bar"
 import { FindingCard } from "@/components/finding-card"
-import { SampleRow, SAMPLE_GRID } from "@/components/samples/sample-row"
+import { BundleCard, BundleToggle } from "@/components/samples/bundle"
+import { SampleRow, SAMPLE_GRID, SAMPLE_GRID_ACTION } from "@/components/samples/sample-row"
 import { SegmentedControl } from "@/components/segmented-control"
 import { SkeletonList, SkeletonRow } from "@/components/skeletons"
 import { Button } from "@/components/ui/button"
@@ -56,6 +58,7 @@ function HashSearch() {
 
 /** The Samples tab of the Malware page: files the collector fetched and analysed. */
 export function SamplesTab() {
+  const { canWrite } = useAuth()
   const [kind, setKind] = useUrlParam("kind")
   const [q] = useUrlParam("q")
   const [arch] = useUrlParam("arch")
@@ -119,6 +122,8 @@ export function SamplesTab() {
         detail="Files are fetched by the collector, stored under their hash and only ever read, never run."
       />
 
+      {canWrite ? <BundleCard className="mb-4" /> : null}
+
       <FilterBar
         className="mb-4"
         chips={[
@@ -144,7 +149,7 @@ export function SamplesTab() {
         <div
           className={cn(
             "hidden border-b px-5 py-2.5 text-2xs font-medium tracking-wide text-fg-subtle uppercase md:grid",
-            SAMPLE_GRID,
+            canWrite ? SAMPLE_GRID_ACTION : SAMPLE_GRID,
           )}
         >
           <span>Family and kind</span>
@@ -152,6 +157,7 @@ export function SamplesTab() {
           <span className="text-right">URLs</span>
           <span className="text-right">Sessions</span>
           <span className="text-right">Last seen</span>
+          {canWrite ? <span className="sr-only">Bundle</span> : null}
         </div>
         {query.isPending ? (
           <SkeletonList rows={8} />
@@ -200,7 +206,20 @@ export function SamplesTab() {
                     transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)`,
                   }}
                 >
-                  {row ? <SampleRow item={row} /> : <SkeletonRow />}
+                  {row ? (
+                    <SampleRow
+                      item={row}
+                      action={
+                        !canWrite ? undefined : row.stored ? (
+                          <BundleToggle sha256={row.sha256} compact />
+                        ) : (
+                          <span aria-hidden />
+                        )
+                      }
+                    />
+                  ) : (
+                    <SkeletonRow />
+                  )}
                 </div>
               )
             })}

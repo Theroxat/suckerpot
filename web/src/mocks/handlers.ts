@@ -17,6 +17,7 @@ import { defendHandlers } from "./defend"
 import { samplesHandlers } from "./samples"
 import { scriptsHandlers } from "./scripts"
 import { alertsHandlers } from "./alerts"
+import { abuseHandlers } from "./abuse"
 import { searchHandlers } from "./search"
 import { todayHandlers } from "./today"
 import { parseStage, sessionStage } from "@/lib/story"
@@ -89,6 +90,7 @@ export const handlers = [
   ...campaignsHandlers(fixtures),
   ...defendHandlers,
   ...samplesHandlers,
+  ...abuseHandlers,
   ...scriptsHandlers,
   ...alertsHandlers,
   ...searchHandlers,

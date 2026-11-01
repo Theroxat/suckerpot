@@ -5,10 +5,10 @@ import { HubTabs } from "@/components/hub-tabs"
 import { NAV_ITEMS, activeTab, allPages, buildNav, hubForPath, itemForPath } from "./nav"
 
 describe("navigation", () => {
-  it("has ten sidebar entries in production and eleven in development", () => {
+  it("has eleven sidebar entries in production and twelve in development", () => {
     const count = (dev: boolean) => buildNav(dev).reduce((n, g) => n + g.items.length, 0)
-    expect(count(false)).toBe(10)
-    expect(count(true)).toBe(11)
+    expect(count(false)).toBe(11)
+    expect(count(true)).toBe(12)
     expect(buildNav(false).flatMap((g) => g.items.map((i) => i.to))).not.toContain("/styleguide")
   })
 
@@ -32,6 +32,7 @@ describe("navigation", () => {
       "/defend/exposure",
       "/cves",
       "/defend/alerts",
+      "/defend/abuse",
       "/settings",
       "/styleguide",
     ])

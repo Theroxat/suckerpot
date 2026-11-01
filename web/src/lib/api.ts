@@ -317,6 +317,8 @@ export class ApiError extends Error {
     message: string,
     /** Machine-readable reason from the API (`reauth_failed`, `invalid_key`…), when it sends one. */
     readonly code?: string,
+    /** The parsed JSON body of the error answer, when there was one (e.g. guard `reasons`). */
+    readonly body?: Record<string, unknown>,
   ) {
     super(message)
     this.name = "ApiError"
@@ -359,15 +361,17 @@ async function csrfToken(refresh = false): Promise<string> {
 async function failure(res: Response, notify: boolean): Promise<ApiError> {
   let detail = res.statusText
   let code: string | undefined
+  let parsed: Record<string, unknown> | undefined
   try {
-    const body = (await res.json()) as { detail?: unknown; code?: unknown }
+    const body = (await res.json()) as Record<string, unknown>
+    parsed = body
     if (typeof body.detail === "string") detail = body.detail
     if (typeof body.code === "string") code = body.code
   } catch {
     // Not JSON: keep the status text.
   }
   if (res.status === 401 && notify) unauthorizedHandler?.()
-  return new ApiError(res.status, detail, code)
+  return new ApiError(res.status, detail, code, parsed)
 }
 
 export type Param = string | number | readonly string[] | undefined
@@ -422,6 +426,14 @@ export async function getJson<T>(path: string, params?: Record<string, Param>) {
  * Errors are the usual ApiError, so `code` ("reauth_failed", ...) is available.
  */
 export async function sendForBlob(path: string, body: unknown): Promise<Blob> {
+  return (await sendForDownload(path, body)).blob
+}
+
+/** Like `sendForBlob`, with the suggested filename and the response headers (X-Excluded, ...). */
+export async function sendForDownload(
+  path: string,
+  body: unknown,
+): Promise<{ blob: Blob; filename: string | null; headers: Headers }> {
   const attempt = async (refresh: boolean) =>
     fetch(`${API_BASE}${path}`, {
       method: "POST",
@@ -436,7 +448,24 @@ export async function sendForBlob(path: string, body: unknown): Promise<Blob> {
   let res = await attempt(false)
   if (res.status === 403) res = await attempt(true)
   if (!res.ok) throw await failure(res, true)
-  return await res.blob()
+  const m = /filename="?([^";]+)"?/.exec(res.headers.get("Content-Disposition") ?? "")
+  return { blob: await res.blob(), filename: m?.[1] ?? null, headers: res.headers }
+}
+
+/** GET a file (a guarded download) as a Blob, with the filename the server suggests. */
+export async function getBlob(
+  path: string,
+  params?: Record<string, Param>,
+): Promise<{ blob: Blob; filename: string | null }> {
+  const qs = new URLSearchParams()
+  for (const [k, v] of Object.entries(params ?? {}))
+    if (v !== undefined && v !== "") qs.set(k, String(v))
+  const res = await fetch(`${API_BASE}${path}${qs.size ? `?${qs.toString()}` : ""}`, {
+    credentials: "same-origin",
+  })
+  if (!res.ok) throw await failure(res, true)
+  const m = /filename="?([^";]+)"?/.exec(res.headers.get("Content-Disposition") ?? "")
+  return { blob: await res.blob(), filename: m?.[1] ?? null }
 }
 
 export interface SendOptions {

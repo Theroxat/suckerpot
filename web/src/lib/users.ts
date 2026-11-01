@@ -171,6 +171,7 @@ export type UserFailure =
   | "invalid"
   | "network"
   | "unavailable"
+  | "excluded"
 
 export class UserError extends Error {
   constructor(
@@ -192,6 +193,8 @@ export const USER_MESSAGES: Record<UserFailure, string> = {
   invalid: "Some of the details are not valid.",
   network: "The server could not be reached. Try again in a moment.",
   unavailable: "This file is no longer stored, so there is nothing to download.",
+  excluded:
+    "The identity check left out every sample in the bundle, so there is nothing to download.",
 }
 
 export function describeUserError(e: unknown): string {
