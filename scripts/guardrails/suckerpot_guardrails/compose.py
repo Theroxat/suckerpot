@@ -124,6 +124,19 @@ def _mounts(service: Mapping[str, Any], volume: str) -> list[bool]:
     return found
 
 
+def _mount_targets(service: Mapping[str, Any]) -> list[tuple[str, bool]]:
+    """(container path, read-only) for every volume entry of a service."""
+    found: list[tuple[str, bool]] = []
+    for item in service.get("volumes") or []:
+        if isinstance(item, Mapping):
+            found.append((str(item.get("target")), bool(item.get("read_only", False))))
+            continue
+        parts = str(item).split(":")
+        if len(parts) > 1:
+            found.append((parts[1], len(parts) > 2 and "ro" in parts[2].split(",")))
+    return found
+
+
 def check_compose(compose: Compose) -> list[str]:
     """Returns one message per violation (an empty list means the file is acceptable)."""
     problems: list[str] = []
@@ -244,6 +257,52 @@ def check_compose(compose: Compose) -> list[str]:
             problems.append(f"service '{name}' must not mount quarantine")
         elif not all(mounts):
             problems.append(f"service '{name}' must mount quarantine read-only")
+
+    # 8. Uploaded VPN settings (M23): api read-write, vpn read-only, nobody else. The api gets no
+    # privilege and no route out, and the vpn entrypoint script is mounted read-only.
+    for name, svc in services.items():
+        mounts = _mounts(svc, "vpn-config")
+        if name == "api":
+            if not mounts or any(mounts):
+                problems.append("service 'api' must mount vpn-config read-write")
+        elif name == "vpn":
+            if not mounts or not all(mounts):
+                problems.append("service 'vpn' must mount vpn-config read-only")
+        elif mounts:
+            problems.append(f"service '{name}' must not mount vpn-config")
+    api = services.get("api")
+    if api is not None:
+        if _service_networks(api) != {"backend", "dashboard"}:
+            problems.append("service 'api' must be on exactly backend and dashboard")
+        if any("docker.sock" in str(v) for v in api.get("volumes") or []):
+            problems.append("service 'api' must not mount the docker socket")
+        if api.get("read_only") is not True:
+            problems.append("service 'api' must be read_only")
+        if "ALL" not in (api.get("cap_drop") or []):
+            problems.append("service 'api' must set cap_drop: [ALL]")
+        if "NET_ADMIN" in (api.get("cap_add") or []):
+            problems.append("service 'api' must not have NET_ADMIN")
+    if vpn is not None:
+        entry = list(vpn.get("entrypoint") or [])
+        if entry[-1:] != ["/vpn/entrypoint.sh"]:
+            problems.append("service 'vpn' must run /vpn/entrypoint.sh")
+        script_mounts = [
+            read_only for target, read_only in _mount_targets(vpn) if target == "/vpn/entrypoint.sh"
+        ]
+        script_ro = all(script_mounts)
+        if len(script_mounts) != 1 or not script_ro:
+            problems.append("service 'vpn' must mount /vpn/entrypoint.sh read-only")
+    return problems
+
+
+def check_vpn_entrypoint(script: str) -> list[str]:
+    """The vpn entrypoint must read wg.env with fixed patterns, never source or eval it."""
+    problems: list[str] = []
+    code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+    if re.search(r"(^|[;&|(]\s*|\s)(source|eval)\s", code, re.M):
+        problems.append("vpn entrypoint must not use source or eval")
+    if re.search(r"(^|[;&|(]\s*)\.\s+\S", code, re.M):
+        problems.append("vpn entrypoint must not dot-source a file")
     return problems
 
 
