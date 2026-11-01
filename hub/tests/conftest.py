@@ -144,6 +144,7 @@ def make_settings(**over: Any) -> Settings:
         "unsigned_per_min": 1000,
         "unsigned_per_day": 100000,
         "auth_failures_per_min": 1000,
+        "challenges_per_prefix": 1000,
         "signed_per_hour": 1000,
     }
     return Settings(**{**base, **over})

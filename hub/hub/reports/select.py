@@ -138,6 +138,7 @@ async def candidates(
         host = r.value
         if r.kind == "c2_ip":
             value, _, p = r.value.rpartition(":")
+            value = value.strip("[]")
             port, host = int(p), value
         elif r.kind == "url":
             host = blind.url_host(r.value).strip("[]")
@@ -304,7 +305,7 @@ async def _load_targets(
         value, port = r.value, None
         if r.kind == "c2_ip":
             value, _, p = r.value.rpartition(":")
-            port = int(p)
+            value, port = value.strip("[]"), int(p)
         out.append(
             render.ReportTarget(
                 id=r.id,

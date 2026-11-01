@@ -20,7 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings
-from .never import Never
+from .never import Never, split_host_port
 from .support import first_day_supported, k_supported, last_day_supported
 
 log = logging.getLogger("hub.consensus")
@@ -283,7 +283,7 @@ async def run_consensus(
         via_ok = bool(group.via & droppers)
         verdict = evaluate(group, eligible, s, never=never, corroborated=None, via_ok=via_ok)
         if verdict.reason == "need_corroboration":
-            host = value.rpartition(":")[0] if kind == "c2_ip" else value
+            host = split_host_port(value)[0] if kind == "c2_ip" else value
             ok = await corroborate(host) if corroborate is not None else False
             verdict = evaluate(group, eligible, s, never=never, corroborated=ok, via_ok=via_ok)
         if (

@@ -29,6 +29,17 @@ CACHE_TTL_S = 60.0
 IPNet = ipaddress.IPv4Network | ipaddress.IPv6Network
 
 
+def split_host_port(value: str) -> tuple[str, int | None]:
+    """Host and port of ``host``, ``v4:port`` or ``[v6]:port`` (a bare IPv6 address has none)."""
+    if value.startswith("["):
+        host, _, rest = value[1:].partition("]")
+        return host, int(rest[1:]) if rest[1:].isdigit() else None
+    if value.count(":") == 1:
+        host, _, port = value.partition(":")
+        return host, int(port) if port.isdigit() else None
+    return value, None
+
+
 @dataclass
 class Never:
     networks: list[IPNet] = field(default_factory=list)
@@ -52,7 +63,7 @@ class Never:
 
     def has_ip(self, ip: str) -> bool:
         try:
-            addr = ipaddress.ip_address(ip.split(":")[0] if ip.count(":") == 1 else ip)
+            addr = ipaddress.ip_address(split_host_port(ip)[0])
         except ValueError:
             return False
         return any(addr.version == n.version and addr in n for n in self.networks)
