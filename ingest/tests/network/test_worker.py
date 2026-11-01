@@ -352,6 +352,36 @@ async def test_pull_stores_targets_and_answers_only_requested_reveals() -> None:
     assert store.summary is not None and store.m.standing == "good"
 
 
+async def test_a_hash_the_hub_asks_for_without_a_confirmed_target_is_not_revealed() -> None:
+    held = "http://canary.example.org/x.sh"  # an indicator we hold, but never confirmed
+    asked_b = blind.blind_url(held)
+    store = member_store(last_pull_at=None, last_summary_at=None)
+    store.values["url"] = [held]
+    rig = Rig(store)
+    rig.hub.targets = {
+        "cursor": "c_2", "targets": [],
+        "reveal": [{"kind": "url", "value_b": asked_b}], "recheck": [],
+    }  # fmt: skip
+    await rig.cycle()
+    assert [b for b in rig.hub.bodies if b.get("items") and "kind" in b["items"][0]] == []
+    assert [c for c in rig.hub.calls if c[1] == "/v1/reveals"] == []
+
+
+async def test_a_confirmed_hash_outside_the_reveal_pool_is_not_revealed() -> None:
+    other = "http://seen-as-other-role.example.org/x.sh"
+    asked_b = blind.blind_url(other)
+    store = member_store(last_pull_at=None, last_summary_at=None)
+    store.values["url"] = [other]
+    store.reveal_pool["url"] = []  # not a download_host of a real session
+    rig = Rig(store)
+    rig.hub.targets = {
+        "cursor": "c_2", "targets": [target("t_00000000000a", "url", None, asked_b)],
+        "reveal": [{"kind": "url", "value_b": asked_b}], "recheck": [],
+    }  # fmt: skip
+    await rig.cycle()
+    assert [c for c in rig.hub.calls if c[1] == "/v1/reveals"] == []
+
+
 async def test_an_unknown_field_in_a_pulled_target_is_refused() -> None:
     store = member_store(last_pull_at=None)
     rig = Rig(store)
