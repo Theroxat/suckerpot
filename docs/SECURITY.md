@@ -218,7 +218,7 @@ The admin can enter the AbuseIPDB, GreyNoise, MaxMind, NVD and GitHub keys on th
 
 ### Data volumes and backups
 
-All data volumes are `external: true` with fixed `suckerpot_*` names, so `down -v`, a wrong project name or a throwaway checkout cannot delete them (an incident on 2026-11-01 destroyed every volume that way). The test overlays make them project-local and guardrail tests enforce it. The `backup` service has no route out, runs non-root with a read-only root filesystem, and writes daily dumps with mode 0600 into the `backups` volume. Dumps hold captured attack data: treat them as private.
+All data volumes are `external: true`, named from the required variable `SUCKERPOT_VOLUME_PREFIX` (live: `suckerpot_*`), so a checkout without `.env` cannot run compose at all, and `down -v`, a wrong project name or a throwaway checkout cannot delete them (an incident on 2026-11-01 destroyed every volume that way). The test overlays make them project-local and guardrail tests enforce it. The `backup` service has no route out, runs non-root with a read-only root filesystem, and writes daily dumps with mode 0600 into the `backups` volume. Dumps hold captured attack data: treat them as private.
 
 ### Secrets policy
 

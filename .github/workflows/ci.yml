@@ -213,7 +213,11 @@ jobs:
       - name: Prepare .env
         run: |
           cp .env.example .env
+          # Never the live project name on a test stack.
+          sed -i '/^COMPOSE_PROJECT_NAME=/d;/^SUCKERPOT_VOLUME_PREFIX=/d' .env
           {
+            echo "COMPOSE_PROJECT_NAME=sp-ci"
+            echo "SUCKERPOT_VOLUME_PREFIX=sp-ci"
             # CI only: allow the "change-me" placeholder secrets.
             echo "SUCKERPOT_ALLOW_DEFAULT_SECRETS=1"
             # The runner's own sshd already uses port 22.

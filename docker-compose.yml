@@ -1401,67 +1401,70 @@ networks:
       com.docker.network.bridge.name: sp-dashboard
       com.docker.network.bridge.enable_ip_masquerade: "false"
 
-# Every data volume is EXTERNAL with a fixed name, so `docker compose down -v`, a different
+# Every data volume is EXTERNAL, named <SUCKERPOT_VOLUME_PREFIX>_<volume> (live: suckerpot_<volume>), so `docker compose down -v`, a different
 # project name or a throwaway checkout can never delete or silently recreate the live data.
+# SUCKERPOT_VOLUME_PREFIX is REQUIRED (it comes from .env; Compose itself would fill in
+# COMPOSE_PROJECT_NAME from the folder name, so that one cannot fail closed): a checkout without .env cannot run
+# compose at all, so it can never mount the live volumes by accident.
 # `just up` (scripts/ensure-volumes.sh) creates the missing ones first. The test overlays
 # (docker-compose.it.yml, docker-compose.ci.yml) turn every one of them back into a
 # project-local volume. To delete data on purpose, see docs/deployment.md ("Deleting data").
 volumes:
   redis-data:
     external: true
-    name: suckerpot_redis-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_redis-data
   db-data:
     external: true
-    name: suckerpot_db-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_db-data
   ssh-hostkeys:
     external: true
-    name: suckerpot_ssh-hostkeys
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_ssh-hostkeys
   rdp-data:
     external: true
-    name: suckerpot_rdp-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_rdp-data
   telnet-data:
     external: true
-    name: suckerpot_telnet-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_telnet-data
   web-data:
     external: true
-    name: suckerpot_web-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_web-data
   redis-sensor-data:
     external: true
-    name: suckerpot_redis-sensor-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_redis-sensor-data
   docker-sensor-data:
     external: true
-    name: suckerpot_docker-sensor-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_docker-sensor-data
   mysql-sensor-data:
     external: true
-    name: suckerpot_mysql-sensor-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_mysql-sensor-data
   mssql-sensor-data:
     external: true
-    name: suckerpot_mssql-sensor-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_mssql-sensor-data
   adb-sensor-data:
     external: true
-    name: suckerpot_adb-sensor-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_adb-sensor-data
   smb-sensor-data:
     external: true
-    name: suckerpot_smb-sensor-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_smb-sensor-data
   sip-sensor-data:
     external: true
-    name: suckerpot_sip-sensor-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_sip-sensor-data
   synology-sensor-data:
     external: true
-    name: suckerpot_synology-sensor-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_synology-sensor-data
   geoip-data:
     external: true
-    name: suckerpot_geoip-data
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_geoip-data
   # Files fetched by the collector (0400, never executed). Read-only for analyzer and api.
   quarantine:
     external: true
-    name: suckerpot_quarantine
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_quarantine
   # Uploaded WireGuard settings (M23): read-write in api, read-only in vpn only. Its initial owner
   # comes from the /vpn-config directory of the api image (uid 10001).
   vpn-config:
     external: true
-    name: suckerpot_vpn-config
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_vpn-config
   # Daily database dumps written by the backup service (owned by uid 70, see ensure-volumes.sh).
   backups:
     external: true
-    name: suckerpot_backups
+    name: ${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}_backups
