@@ -57,10 +57,15 @@ jobs:
         run: |
           set -eu
           publish=false
-          case "$REF" in
-            refs/tags/v*) version=$REF_NAME; publish=true ;;
-            *) version=$INPUT_TAG ;;
-          esac
+          # Only a pushed version tag publishes: never a manual run, even one started on a tag.
+          if [ "$EVENT" = push ]; then
+            case "$REF" in
+              refs/tags/v*) version=$REF_NAME; publish=true ;;
+              *) echo "A push that is not a version tag does not publish." >&2; exit 1 ;;
+            esac
+          else
+            version=$INPUT_TAG
+          fi
           if ! printf '%s' "$version" | grep -Eq '^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
             echo "The version must look like v1.2.3 (got a different shape)." >&2
             exit 1
@@ -231,13 +236,14 @@ jobs:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACTOR: ${{ github.actor }}
         run: printf '%s' "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-      - name: Create the multi-arch tags (never "latest")
+      - name: Merge the two architectures under a scratch tag
         id: tags
         env:
           NAME: ${{ needs.prepare.outputs.prefix }}-${{ matrix.image }}
           VERSION: ${{ needs.prepare.outputs.version }}
           MINOR: ${{ needs.prepare.outputs.minor }}
           IMAGE: ${{ matrix.image }}
+          COMMIT: ${{ github.sha }}
         run: |
           set -eu
           amd64=$(cat "digest-$IMAGE-amd64/digest")
@@ -245,10 +251,10 @@ jobs:
           for d in "$amd64" "$arm64"; do
             printf '%s' "$d" | grep -Eq '^sha256:[0-9a-f]{64}$'
           done
-          docker buildx imagetools create \
-            --tag "$NAME:$VERSION" --tag "$NAME:${MINOR}" \
-            "$NAME@$amd64" "$NAME@$arm64"
-          digest=$(docker buildx imagetools inspect "$NAME:$VERSION" --format '{{.Manifest.Digest}}')
+          # A scratch tag (named after the commit, never a version) holds the merged manifest until
+          # it is signed: no version tag points at an unsigned image.
+          docker buildx imagetools create --tag "$NAME:build-$COMMIT" "$NAME@$amd64" "$NAME@$arm64"
+          digest=$(docker buildx imagetools inspect "$NAME:build-$COMMIT" --format '{{.Manifest.Digest}}')
           printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Sign the image (keyless, bound to this workflow)
@@ -256,6 +262,17 @@ jobs:
           NAME: ${{ needs.prepare.outputs.prefix }}-${{ matrix.image }}
           DIGEST: ${{ steps.tags.outputs.digest }}
         run: cosign sign --yes "$NAME@$DIGEST"
+      - name: Point the version tags at the signed digest (never "latest")
+        env:
+          NAME: ${{ needs.prepare.outputs.prefix }}-${{ matrix.image }}
+          DIGEST: ${{ steps.tags.outputs.digest }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          MINOR: ${{ needs.prepare.outputs.minor }}
+        run: |
+          set -eu
+          cosign verify --certificate-identity-regexp '^https://github\.com/.+/\.github/workflows/release\.yml@refs/tags/v' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$NAME@$DIGEST" > /dev/null
+          docker buildx imagetools create --tag "$NAME:$VERSION" --tag "$NAME:${MINOR}" "$NAME@$DIGEST"
 
   smoke:
     # Installs the published images exactly as a new owner would, on a throwaway runner.
@@ -292,7 +309,8 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -eu
-          base=http://127.0.0.1:8443
+          # "localhost" so curl accepts the Secure session cookie over plain http
+          base=http://localhost:8443
           curl -fsS "$base/healthz"
           jq -n --arg p "$SMOKE_PASSWORD" '{username: "admin", password: $p}' > login.json
           curl -fsS -c jar -H "Origin: $base" -H 'Content-Type: application/json' \
