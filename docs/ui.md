@@ -91,7 +91,7 @@ The Overview page opens with up to three insights, each one a plain sentence wit
 - **A sentence before a chart.** Every Trends card states what the chart shows ("Most attacks arrive between 02:00 and 05:00") before the chart.
 - **Local time.** The heatmap is stored by UTC hour and shown in the browser's time zone.
 - **Defanged URLs.** On the Malware page a URL is shown as `hxxp://example[.]com/x.sh`, as plain text and never as a link, so it cannot be opened by mistake. The copy button copies the defanged form. Do the same wherever you paste these URLs.
-- **Nothing is fetched.** The page lists URLs that attackers tried to download. SuckerPot does not download them.
+- **Nothing is fetched.** The page lists URLs that attackers tried to download. Selfhostr does not download them.
 
 ## Samples and egress (M21)
 

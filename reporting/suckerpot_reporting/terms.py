@@ -23,6 +23,10 @@ from .normalize import IPAddress, addr_key, collapse
 
 PROJECT_TERMS: Final[tuple[str, ...]] = (
     "suckerpot",
+    "selfhostr",
+    "self hostr",
+    "self-hostr",
+    "self_hostr",
     "sucker pot",
     "sucker-pot",
     "sucker_pot",

@@ -44,6 +44,9 @@ cases:
   - {id: project_spaced, text: "the sucker pot", codes: [project_term], secret: "sucker pot"}
   - {id: project_dash, text: "sucker-pot", codes: [project_term], secret: "sucker-pot"}
   - {id: project_underscore, text: "sucker_pot", codes: [project_term], secret: "sucker_pot"}
+  - {id: selfhostr_plain, text: "Selfhostr admin", codes: [project_term], secret: "selfhostr"}
+  - {id: selfhostr_spaced, text: "the self hostr", codes: [project_term], secret: "self hostr"}
+  - {id: selfhostr_dash, text: "self-hostr.io", codes: [project_term], secret: "self-hostr"}
   - {id: honeypot, text: "grep -q honeypot /etc/hosts || exit 0", codes: [project_term], secret: "honeypot"}
   - {id: honey_pot_words, text: "Honey Pot detected", codes: [project_term], secret: "honey pot"}
   - {id: honey_dash, text: "honey-pot", codes: [project_term], secret: "honey-pot"}

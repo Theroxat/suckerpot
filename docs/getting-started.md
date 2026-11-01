@@ -1,15 +1,15 @@
 # Getting started
 
-This page shows how to run SuckerPot on a single host with Docker Compose. It also covers the warnings you must read first.
+This page shows how to run Selfhostr on a single host with Docker Compose. It also covers the warnings you must read first.
 
 ## Read this first
 
 ```{warning}
-**SuckerPot is designed to be attacked.** Once its ports face the internet, bots will probe it within minutes. Expect constant scans, login attempts and exploit traffic.
+**Selfhostr is designed to be attacked.** Once its ports face the internet, bots will probe it within minutes. Expect constant scans, login attempts and exploit traffic.
 
 - Use a **dedicated machine or VM** that you are ready to lose. Do not reuse a machine that holds other work.
 - **Never keep credentials that matter on the host.** No cloud keys, no SSH keys for other systems, no password manager exports and no personal files.
-- **Do not run SuckerPot on a machine that you also use for development.** Development tools often keep tokens in plain files.
+- **Do not run Selfhostr on a machine that you also use for development.** Development tools often keep tokens in plain files.
 - **Do not expose the dashboard directly to the internet.** Reach it through a reverse tunnel. See [Deployment](deployment.md).
 ```
 

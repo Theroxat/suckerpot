@@ -1,4 +1,4 @@
-# SuckerPot design system
+# Selfhostr design system
 
 The UI is the product. The bar is a calm, precise SaaS dashboard (Linear, Vercel, Stripe). The anti-reference is T-Pot and Kibana: many panels, many colours, no story. Every decision below serves one goal: **someone glancing at the screen understands what attackers did, in plain English, in a few seconds.**
 
@@ -102,7 +102,7 @@ No decorative gradients. The only fills under lines are flat, 8 % opacity.
 
 ## Terminal replay
 
-The replay terminal is always dark, in both themes, with its own muted ANSI palette (`src/components/replay/terminal-theme.ts`). Attacker-controlled colours never reuse a sensor hue or the "severe" red: an attacker printing red text must not look like a SuckerPot alert. Every ANSI colour is AA on the terminal background (tested). Replays keep at least 80 columns; on narrow screens the terminal scrolls sideways instead of re-wrapping the output. In screenshot mode the terminal masks addresses while keeping their length (`198.51.xxx.xx`), so columns stay aligned.
+The replay terminal is always dark, in both themes, with its own muted ANSI palette (`src/components/replay/terminal-theme.ts`). Attacker-controlled colours never reuse a sensor hue or the "severe" red: an attacker printing red text must not look like a Selfhostr alert. Every ANSI colour is AA on the terminal background (tested). Replays keep at least 80 columns; on narrow screens the terminal scrolls sideways instead of re-wrapping the output. In screenshot mode the terminal masks addresses while keeping their length (`198.51.xxx.xx`), so columns stay aligned.
 
 ## KPI tiles
 

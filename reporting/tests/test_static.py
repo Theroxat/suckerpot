@@ -26,7 +26,9 @@ BANNED_IMPORTS = {
 }
 BANNED_PREFIXES = ("email.mime", "email.message")  # building and sending paths
 DENY_MODULE = "terms.py"
-PROJECT = re.compile(r"suckerpot|sucker[\s_-]?pot|honey[\s_-]?pot|honeynet", re.IGNORECASE)
+PROJECT = re.compile(
+    r"suckerpot|self[\s_-]?hostr|sucker[\s_-]?pot|honey[\s_-]?pot|honeynet", re.IGNORECASE
+)
 
 
 def violations(source: str) -> list[str]:
@@ -70,7 +72,11 @@ def test_project_terms_only_in_the_deny_module() -> None:
             assert hits
         else:
             assert hits == [], path.name
-    assert project_terms("the SuckerPot app") and project_terms("a honeypot")
+    assert (
+        project_terms("the SuckerPot app")
+        and project_terms("the Selfhostr app")
+        and project_terms("a honeypot")
+    )
 
 
 def test_typed_package() -> None:
