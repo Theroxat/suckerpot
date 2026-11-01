@@ -125,6 +125,7 @@ export function BlocklistsPage() {
 
   const header = (
     <PageHeader
+      help="blocklists"
       title="Blocklists"
       description={
         off

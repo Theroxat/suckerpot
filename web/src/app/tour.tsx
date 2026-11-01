@@ -1,0 +1,44 @@
+/* eslint-disable react-refresh/only-export-components -- the provider and its hook belong together. */
+import { createContext, use, useCallback, useEffect, useMemo, useState } from "react"
+import { TourDialog } from "@/components/tour/tour-dialog"
+import { hasSeenTour, markTourSeen } from "@/lib/tour"
+import { useAuth } from "./auth"
+
+interface TourState {
+  open: boolean
+  /** Opens the tour from its first step. */
+  start: () => void
+}
+
+const TourContext = createContext<TourState>({ open: false, start: () => undefined })
+
+export function useTour(): TourState {
+  return use(TourContext)
+}
+
+/**
+ * Owns the tour dialog. It opens by itself the first time an account is seen in this browser
+ * (the flag is per username), and again whenever someone presses "Take the tour".
+ */
+export function TourProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  const [open, setOpen] = useState(false)
+  const username = user && !user.must_change_password ? user.username : null
+
+  useEffect(() => {
+    if (!username || hasSeenTour(username)) return
+    markTourSeen(username)
+    // localStorage is the external system here: its answer is only known after mounting.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOpen(true)
+  }, [username])
+
+  const start = useCallback(() => setOpen(true), [])
+  const value = useMemo(() => ({ open, start }), [open, start])
+  return (
+    <TourContext value={value}>
+      {children}
+      <TourDialog open={open} onOpenChange={setOpen} />
+    </TourContext>
+  )
+}

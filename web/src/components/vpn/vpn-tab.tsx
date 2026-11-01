@@ -3,6 +3,8 @@ import {
   CircleCheck,
   FileUp,
   LoaderCircle,
+  RefreshCw,
+  RotateCw,
   ShieldAlert,
   TriangleAlert,
   Undo2,
@@ -15,8 +17,12 @@ import { SkeletonText } from "@/components/skeletons"
 import { Button } from "@/components/ui/button"
 import { AdminActionDialog } from "@/components/users/admin-action-dialog"
 import { formatBytes } from "@/lib/format"
+import { describeUserError, UserError } from "@/lib/users"
 import { egressReason, sampleKeys } from "@/lib/samples"
 import {
+  CHECK_POLL_MS,
+  CHECK_WATCH_MS,
+  checkAnswered,
   describeNetwork,
   describeVpn,
   SWITCH_POLL_MS,
@@ -62,10 +68,17 @@ export function VpnTab() {
   const qc = useQueryClient()
   // After an upload the tab looks again every few seconds, for a couple of minutes.
   const [watching, setWatching] = useState(false)
+  // After "Check now" it looks every 3 seconds, for a minute at most, until ingest has answered.
+  const [check, setCheck] = useState<{ since: number } | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [reconnecting, setReconnecting] = useState(false)
   const q = useQuery({
     queryKey: vpnKeys.status,
     queryFn: vpnApi.status,
-    refetchInterval: watching ? SWITCH_POLL_MS : 30_000,
+    refetchInterval: (query) => {
+      const waiting = check && !(query.state.data && checkAnswered(query.state.data, check.since))
+      return waiting ? CHECK_POLL_MS : watching ? SWITCH_POLL_MS : 30_000
+    },
   })
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: vpnKeys.status })
@@ -81,6 +94,38 @@ export function VpnTab() {
     return () => clearTimeout(t)
   }, [watching])
   const v = q.data
+  useEffect(() => {
+    if (!check) return
+    const t = setTimeout(() => {
+      setCheck(null)
+      setNotice("No answer yet. Ingest checks again by itself; the result shows under Last check.")
+    }, CHECK_WATCH_MS)
+    return () => clearTimeout(t)
+  }, [check])
+  // Over as soon as ingest has looked at the gate after the request (or after one minute, above).
+  const checking = check !== null && !(v && checkAnswered(v, check.since))
+
+  async function checkNow() {
+    setNotice(null)
+    try {
+      const r = await vpnApi.check()
+      const asked = r?.requested_at ? Date.parse(r.requested_at) : NaN
+      setCheck({ since: Number.isNaN(asked) ? Date.now() : asked })
+      void qc.invalidateQueries({ queryKey: vpnKeys.status })
+    } catch (e) {
+      setNotice(e instanceof UserError ? (e.detail ?? describeUserError(e)) : VPN_MESSAGES.generic)
+    }
+  }
+
+  const controls = v ? (
+    <TunnelButtons
+      checking={checking}
+      canReconnect={v.config_writable}
+      onCheck={() => void checkNow()}
+      onReconnect={() => setReconnecting(true)}
+      notice={notice}
+    />
+  ) : null
 
   return (
     <div className="grid grid-cols-1 gap-4">
@@ -105,10 +150,11 @@ export function VpnTab() {
                 className="flex items-center gap-2 rounded-md border bg-bg px-3 py-2 text-sm text-fg-muted"
               >
                 <LoaderCircle aria-hidden className="size-4 shrink-0 animate-spin" />
-                The tunnel is restarting on the new settings. This page checks every 5 seconds.
+                The tunnel is restarting. This page checks every 5 seconds.
               </p>
             ) : null}
             <StatusDetails v={v} />
+            {v.gate.state === "closed" ? controls : null}
           </div>
         )}
       </FindingCard>
@@ -140,12 +186,80 @@ export function VpnTab() {
         />
       ) : null}
 
+      <FindingCard
+        eyebrow="Tunnel controls"
+        finding="Look at the exit again right now, or restart the tunnel."
+        detail="Check now asks ingest to test the gate without waiting. Reconnect restarts the tunnel on the same settings."
+      >
+        {controls ?? <SkeletonText lines={2} className="py-1" />}
+      </FindingCard>
+
+      <AdminActionDialog
+        open={reconnecting}
+        onOpenChange={setReconnecting}
+        title="Reconnect the tunnel?"
+        description="The tunnel restarts; outbound lookups pause for a few seconds."
+        hint="Changing the VPN asks for your own dashboard password again."
+        confirmLabel="Reconnect"
+        pendingLabel="Reconnecting…"
+        run={async (password) => {
+          await vpnApi.reconnect(password)
+        }}
+        onDone={() => {
+          setNotice(null)
+          restarted()
+        }}
+      />
+
       <UploadCard onUploaded={restarted} disabled={v ? !v.config_writable : false} />
 
       <TrustedExitsCard exits={v?.trusted_exits ?? []} loading={q.isPending} onChanged={refresh} />
 
       {v?.source === "upload" && !v.trust_blocked ? (
         <RevertCard onDone={restarted} disabled={!v.config_writable} />
+      ) : null}
+    </div>
+  )
+}
+
+/** "Check now" and "Reconnect", with the progress of a check in words. */
+function TunnelButtons({
+  checking,
+  canReconnect,
+  onCheck,
+  onReconnect,
+  notice,
+}: {
+  checking: boolean
+  canReconnect: boolean
+  onCheck: () => void
+  onReconnect: () => void
+  notice: string | null
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={onCheck} disabled={checking}>
+          {checking ? (
+            <LoaderCircle aria-hidden className="size-4 animate-spin" />
+          ) : (
+            <RefreshCw aria-hidden className="size-4" />
+          )}
+          {checking ? "Checking…" : "Check now"}
+        </Button>
+        <Button variant="outline" size="sm" onClick={onReconnect} disabled={!canReconnect}>
+          <RotateCw aria-hidden className="size-4" />
+          Reconnect
+        </Button>
+      </div>
+      {checking ? (
+        <p role="status" className="text-xs text-fg-muted">
+          Ingest looks at the exit within a few seconds.
+        </p>
+      ) : notice ? (
+        <p role="status" className="text-xs text-fg-muted">
+          {notice}
+        </p>
       ) : null}
     </div>
   )
@@ -219,6 +333,13 @@ function StatusDetails({ v }: { v: VpnStatus }) {
         ) : (
           <span className="text-fg-muted">Not yet</span>
         )}
+        {v.last_check_request && !v.last_check_request.done_at ? (
+          <span className="block text-xs text-fg-muted">
+            A check was asked for{" "}
+            <RelativeTime iso={v.last_check_request.requested_at} className="text-xs" />; waiting
+            for ingest.
+          </span>
+        ) : null}
       </Field>
     </dl>
   )

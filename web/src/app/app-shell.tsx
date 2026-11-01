@@ -7,6 +7,7 @@ import { ReadOnlyBadge } from "@/components/read-only-badge"
 import { ScannerToggle } from "@/components/scanner-toggle"
 import { SearchPaletteProvider, SearchTrigger } from "@/components/search/search-palette"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { TourButton } from "@/components/tour/tour-button"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -20,6 +21,7 @@ import { AccountMenu } from "./account-menu"
 import { Logo } from "./logo"
 import { HubTabs } from "@/components/hub-tabs"
 import { NAV, NAV_ITEMS, hubForPath, itemForPath } from "./nav"
+import { TourProvider } from "./tour"
 import { useLiveStatus } from "./use-live-status"
 
 const MOCK = import.meta.env.VITE_MOCK === "1"
@@ -137,88 +139,97 @@ export function AppShell() {
 
   return (
     <SearchPaletteProvider>
-      <div className="min-h-dvh bg-bg">
-        <a
-          href="#main"
-          className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
-        >
-          Skip to content
-        </a>
-
-        {/* Desktop sidebar */}
-        {/* The whole sidebar scrolls when the window is short, so a group is never cut in half;
-            on tall windows the spacer keeps System and the status footer at the bottom. */}
-        <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col overflow-y-auto overscroll-contain border-r bg-bg py-4 lg:flex">
-          <div className="px-5 pt-1 pb-5">
-            <Logo />
-          </div>
-          {/* One scroll area, System last: on a 900 px laptop screen Defend stays in view. */}
-          <div className="flex-1 px-3 pb-3">
-            <NavList />
-          </div>
-          <StatusFooter />
-        </aside>
-
-        {/* Mobile top bar */}
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-bg/85 px-2 backdrop-blur-md lg:hidden">
-          <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Open navigation" className="size-10">
-                <Menu aria-hidden className="size-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-72 gap-0 border-r bg-bg p-0 py-4">
-              <SheetTitle className="px-5 pt-1 pb-6">
-                <Logo />
-              </SheetTitle>
-              <SheetDescription className="sr-only">Main navigation</SheetDescription>
-              <div className="flex-1 overflow-y-auto px-3">
-                <NavList onNavigate={() => setOpen(false)} />
-              </div>
-              <StatusFooter drawer />
-            </SheetContent>
-          </Sheet>
-          <Logo />
-          <span className="sr-only">{currentLabel(pathname)}</span>
-          <div className="flex-1" />
-          <SearchTrigger compact />
-          <ReadOnlyBadge short />
-          <LiveIndicator status={status} className="mx-1" />
-          <AccountMenu variant="compact" />
-        </header>
-
-        <main id="main" className="lg:pl-60">
-          {/*
-           * Desktop header: search on the left; on the right what applies to every page (the
-           * scanner filter) and whether the feed is live. Phones get these in the top bar and drawer.
-           */}
-          <div className="sticky top-0 z-20 hidden h-14 items-center gap-6 border-b bg-bg/85 px-10 backdrop-blur-md lg:flex">
-            <SearchTrigger className="max-w-md min-w-0 flex-1" />
-            <div className="ml-auto flex shrink-0 items-center gap-5">
-              <ScannerToggle inline />
-              <span aria-hidden className="h-4 w-px bg-border" />
-              <div className="flex items-center gap-2">
-                <LiveIndicator status={status} detail={liveDetail} />
-                <MockBadge />
-              </div>
-            </div>
-          </div>
-          <div
-            className={cn(
-              "mx-auto w-full px-4 pt-6 pb-16 sm:px-6 lg:px-10 lg:pt-8",
-              // Live is the wall screen: its map uses the whole width. Other pages stay readable.
-              pathname.startsWith("/live") ? "max-w-[2400px]" : "max-w-[1200px]",
-            )}
+      <TourProvider>
+        <div className="min-h-dvh bg-bg">
+          <a
+            href="#main"
+            className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
           >
-            {/* A new route fades in softly (off under reduced motion and for screenshots). */}
-            {hub ? <HubTabs hub={hub} pathname={pathname} /> : null}
-            <div key={pathname} className="animate-page-in">
-              <Outlet />
+            Skip to content
+          </a>
+
+          {/* Desktop sidebar */}
+          {/* The whole sidebar scrolls when the window is short, so a group is never cut in half;
+            on tall windows the spacer keeps System and the status footer at the bottom. */}
+          <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col overflow-y-auto overscroll-contain border-r bg-bg py-4 lg:flex">
+            <div className="px-5 pt-1 pb-5">
+              <Logo />
             </div>
-          </div>
-        </main>
-        <ScrollRestoration />
-      </div>
+            {/* One scroll area, System last: on a 900 px laptop screen Defend stays in view. */}
+            <div className="flex-1 px-3 pb-3">
+              <NavList />
+            </div>
+            <StatusFooter />
+          </aside>
+
+          {/* Mobile top bar */}
+          <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-bg/85 px-2 backdrop-blur-md lg:hidden">
+            <Sheet open={open} onOpenChange={setOpen}>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Open navigation"
+                  className="size-10"
+                >
+                  <Menu aria-hidden className="size-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-72 gap-0 border-r bg-bg p-0 py-4">
+                <SheetTitle className="px-5 pt-1 pb-6">
+                  <Logo />
+                </SheetTitle>
+                <SheetDescription className="sr-only">Main navigation</SheetDescription>
+                <div className="flex-1 overflow-y-auto px-3">
+                  <NavList onNavigate={() => setOpen(false)} />
+                </div>
+                <StatusFooter drawer />
+              </SheetContent>
+            </Sheet>
+            <Logo />
+            <span className="sr-only">{currentLabel(pathname)}</span>
+            <div className="flex-1" />
+            <SearchTrigger compact />
+            <TourButton className="size-10" />
+            <ReadOnlyBadge short />
+            <LiveIndicator status={status} className="mx-1" />
+            <AccountMenu variant="compact" />
+          </header>
+
+          <main id="main" className="lg:pl-60">
+            {/*
+             * Desktop header: search on the left; on the right what applies to every page (the
+             * scanner filter) and whether the feed is live. Phones get these in the top bar and drawer.
+             */}
+            <div className="sticky top-0 z-20 hidden h-14 items-center gap-6 border-b bg-bg/85 px-10 backdrop-blur-md lg:flex">
+              <SearchTrigger className="max-w-md min-w-0 flex-1" />
+              <div className="ml-auto flex shrink-0 items-center gap-5">
+                <TourButton />
+                <ScannerToggle inline />
+                <span aria-hidden className="h-4 w-px bg-border" />
+                <div className="flex items-center gap-2">
+                  <LiveIndicator status={status} detail={liveDetail} />
+                  <MockBadge />
+                </div>
+              </div>
+            </div>
+            <div
+              className={cn(
+                "mx-auto w-full px-4 pt-6 pb-16 sm:px-6 lg:px-10 lg:pt-8",
+                // Live is the wall screen: its map uses the whole width. Other pages stay readable.
+                pathname.startsWith("/live") ? "max-w-[2400px]" : "max-w-[1200px]",
+              )}
+            >
+              {/* A new route fades in softly (off under reduced motion and for screenshots). */}
+              {hub ? <HubTabs hub={hub} pathname={pathname} /> : null}
+              <div key={pathname} className="animate-page-in">
+                <Outlet />
+              </div>
+            </div>
+          </main>
+          <ScrollRestoration />
+        </div>
+      </TourProvider>
     </SearchPaletteProvider>
   )
 }

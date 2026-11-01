@@ -1,3 +1,4 @@
+import { PageHelp } from "@/components/page-help"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft, ArrowRight, FileQuestion, GitMerge, ShieldCheck } from "lucide-react"
 import { Link, useParams } from "react-router"
@@ -200,7 +201,10 @@ export function CampaignDetailPage() {
                 <TagBadge key={f} tag={f} href={`/campaigns?family=${encodeURIComponent(f)}`} />
               ))}
             </div>
-            <h1 className="text-xl font-semibold tracking-tight text-pretty text-fg">{c.name}</h1>
+            <div className="flex items-start gap-1.5">
+              <h1 className="text-xl font-semibold tracking-tight text-pretty text-fg">{c.name}</h1>
+              <PageHelp id="campaign" className="mt-0.5" />
+            </div>
             <p className="max-w-2xl text-base text-pretty text-fg-muted">
               {st?.headline ?? `${describeScale(c)}.`}
             </p>

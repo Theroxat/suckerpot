@@ -94,7 +94,7 @@ export function ScriptDetailPage() {
   if (!valid || (query.isError && query.error instanceof ApiError && query.error.status === 404)) {
     return (
       <>
-        <PageHeader title="Script" eyebrow={back} />
+        <PageHeader help="script" title="Script" eyebrow={back} />
         <EmptyState
           icon={FileCode2}
           title="This script is not in the library"
@@ -111,7 +111,7 @@ export function ScriptDetailPage() {
   if (query.isPending) {
     return (
       <>
-        <PageHeader title="Script" eyebrow={back} />
+        <PageHeader help="script" title="Script" eyebrow={back} />
         <div className="space-y-4" aria-busy>
           <SkeletonCard />
           <SkeletonCard />
@@ -122,7 +122,7 @@ export function ScriptDetailPage() {
   if (query.isError) {
     return (
       <>
-        <PageHeader title="Script" eyebrow={back} />
+        <PageHeader help="script" title="Script" eyebrow={back} />
         <EmptyState
           icon={FileCode2}
           title="Could not load this script"
@@ -142,6 +142,7 @@ export function ScriptDetailPage() {
   return (
     <>
       <PageHeader
+        help="script"
         title={`Script ${item.id}`}
         eyebrow={back}
         description={<span className="normal-nums">{describeScript(item, item.summary)}</span>}

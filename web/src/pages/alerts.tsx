@@ -32,6 +32,7 @@ export function AlertsPage() {
   return (
     <>
       <PageHeader
+        help="alerts"
         title="Alerts and reports"
         description={sentence(enabled, used, status.data ? !status.data.alerts.enabled : false)}
         actions={
