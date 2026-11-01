@@ -228,6 +228,11 @@ const ERROR_TEXT: Record<string, string> = {
 
 export function describeError(code: string | null | undefined): string {
   if (!code) return ""
+  // A guard failure carries its codes after a colon: `guard_failed:no_self_address`.
+  if (code.startsWith("guard_failed"))
+    return code.includes("no_self_address")
+      ? "Alerts are paused until you confirm your own address in Settings → Reporting."
+      : "Blocked by the identity check."
   return ERROR_TEXT[code] ?? "Something went wrong."
 }
 

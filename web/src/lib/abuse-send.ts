@@ -9,7 +9,11 @@ import { formatClock } from "./format"
 
 // --- Shapes -----------------------------------------------------------------------
 
-export type SendStatus = "pending" | "sent" | "failed" | "cancelled"
+export type SendStatus = "pending" | "sending" | "sent" | "failed" | "cancelled"
+
+/** On its way: waiting for the worker, or being sent right now (no Cancel in either case). */
+export const inFlight = (s: SendStatus | null | undefined): boolean =>
+  s === "pending" || s === "sending"
 
 export interface SendRequest {
   status: SendStatus
@@ -118,6 +122,8 @@ export const SEND_ERROR: Record<string, string> = {
   mode_changed: "The sending mode changed before this went out.",
   not_ready: "The report was no longer ready to send.",
   internal: "Something went wrong inside SuckerPot. Try again.",
+  unknown_outcome:
+    "The server stopped answering mid-send: the mail may or may not have left. Check your sent folder before sending again.",
 }
 
 /** A guard failure carries its codes after a colon: `guard_failed:no_self_address`. */
@@ -135,6 +141,7 @@ export function describeRequest(r: SendRequest | null): string | null {
   if (!r) return null
   switch (r.status) {
     case "pending":
+    case "sending":
       return r.error_code === "egress_closed" ? describeSendErrorCode("egress_closed") : "Sending…"
     case "sent":
       return r.done_at ? `Sent at ${formatClock(r.done_at)}.` : "Sent."
@@ -299,6 +306,6 @@ export const sendApi = {
 
 /** Refetch interval while something is on its way: a request pending or a send scheduled. */
 export function queueRefetch(items: QueueItem[] | undefined): number | false {
-  const busy = items?.some((i) => i.last_request?.status === "pending" || i.scheduled_at)
+  const busy = items?.some((i) => inFlight(i.last_request?.status) || i.scheduled_at)
   return busy ? 4000 : false
 }

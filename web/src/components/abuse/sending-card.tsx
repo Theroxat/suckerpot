@@ -17,6 +17,7 @@ import {
   describeSendError,
   describeSentToday,
   HOLD_RANGE,
+  inFlight,
   MODE_EXPLANATION,
   MODE_OPTIONS,
   PROTON_PRESET,
@@ -423,7 +424,7 @@ export function SendingCard() {
     queryKey: sendKeys.smtp,
     queryFn: sendApi.smtp,
     // A test result arrives a moment after the request.
-    refetchInterval: (query) => (query.state.data?.last_test?.status === "pending" ? 3000 : false),
+    refetchInterval: (query) => (inFlight(query.state.data?.last_test?.status) ? 3000 : false),
   })
   return (
     <FindingCard
