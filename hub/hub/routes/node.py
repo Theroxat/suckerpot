@@ -25,7 +25,11 @@ async def node_info(ctx: AppContext, session: AsyncSession, node: Node) -> model
         await session.execute(
             select(func.count())
             .select_from(Batch)
-            .where(Batch.node_id == node.id, Batch.day >= today - timedelta(days=14))
+            .where(
+                Batch.node_id == node.id,
+                Batch.items > 0,
+                Batch.day >= today - timedelta(days=14),
+            )
         )
     ).scalar_one()
     eligible_from = node.enrolled_day + timedelta(days=ctx.settings.node_min_age_days)

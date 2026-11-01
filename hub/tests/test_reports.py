@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from datetime import date, timedelta
 from typing import Any
 
@@ -93,6 +94,11 @@ async def _confirmed_ip(env: Env, ip: str = "45.9.9.9", **obs: Any) -> list[Any]
     return nodes
 
 
+async def _eligible(env: Env) -> list[Any]:
+    async with env.worker() as s:
+        return list(await consensus.eligible_nodes(s, env.settings, TODAY))
+
+
 async def _resolver(kind: str, host: str) -> str | None:
     return "abuse@example.net" if host.startswith("45.9.") else None
 
@@ -108,7 +114,7 @@ async def test_severity_rules(env: Env) -> None:
     for ip in ("45.9.9.1", "45.9.9.2", "45.9.9.3"):
         assert (await target(env.worker, "ip", ip))["state"] == "confirmed"
     async with env.worker() as s:
-        ids = await sel.reportable_ids(s, env.settings, TODAY)
+        ids = await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env))
     got = {(await target(env.worker, "ip", ip))["id"] for ip in ("45.9.9.2", "45.9.9.3")}
     assert ids == got
 
@@ -126,12 +132,12 @@ async def test_url_needs_two_fetching_nodes_and_a_revealed_value(env: Env) -> No
     )
     async with env.worker() as s:
         await consensus.run_consensus(s, env.settings, TODAY, never=Never(), corroborate=None)
-        assert await sel.reportable_ids(s, env.settings, TODAY) == set()  # nothing revealed yet
+        assert await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env)) == set()
         await s.execute(
             text("UPDATE targets SET value = 'http://198.51.100.9/' || substr(value_b, 1, 4)")
         )
         await s.commit()
-        ids = await sel.reportable_ids(s, env.settings, TODAY)
+        ids = await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env))
     assert ids == {(await target(env.worker, "url", "ab" * 32))["id"]}
 
 
@@ -311,3 +317,57 @@ def test_build_message_is_neutral() -> None:
     assert "x-mailer" not in names and "user-agent" not in names
     assert msg["Reply-To"] == "desk@example.org" and msg["X-ARF"] == "YES"
     assert msg["Message-ID"].endswith("@example.org>")
+
+
+@pytest.mark.integration
+async def test_fresh_keys_cannot_make_a_quiet_address_reportable(env: Env) -> None:
+    # ten eligible nodes only scanned it; five fresh keys (never eligible) claim an exploit
+    await _confirmed_ip(env, "45.9.9.20", activity=["scan"], attempts=0)
+    fresh = await add_nodes(env.worker, 5, enrolled=[TODAY - timedelta(days=1)] * 5)
+    await observe(env.worker, fresh, "ip", "45.9.9.20", [D1, D2], activity=["exploit"], attempts=4)
+    async with env.worker() as s:
+        await consensus.run_consensus(s, env.settings, TODAY, never=Never(), corroborate=None)
+    t = await target(env.worker, "ip", "45.9.9.20")
+    assert t["state"] == "confirmed" and "exploit" not in t["activity"]  # k-supported fields
+    async with env.worker() as s:
+        assert await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env)) == set()
+
+
+@pytest.mark.integration
+async def test_fresh_keys_cannot_fake_a_fetched_payload(env: Env) -> None:
+    nodes = await add_nodes(
+        env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
+    )
+    await observe(
+        env.worker, nodes, "url", "ab" * 32, [D1, D2], fetched=False, activity=["download"]
+    )
+    fresh = await add_nodes(env.worker, 2, enrolled=[TODAY - timedelta(days=1)] * 2)
+    await observe(env.worker, fresh, "url", "ab" * 32, [D1, D2], fetched=True)
+    async with env.worker() as s:
+        await consensus.run_consensus(s, env.settings, TODAY, never=Never(), corroborate=None)
+        await s.execute(text("UPDATE targets SET value = 'http://198.51.100.9/x'"))
+        await s.commit()
+        assert await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env)) == set()
+
+
+@pytest.mark.integration
+async def test_auto_mode_needs_cohorts_and_never_sends_c2(env: Env) -> None:
+    await _confirmed_ip(env)  # ten cohorts
+    s_auto = replace(env.settings, report_mode="auto", report_hold_hours=0)
+    async with env.worker() as s:
+        await sel.queue_reports(s, s_auto, TODAY, resolver=_resolver, never=Never())
+        await s.execute(
+            text(
+                "INSERT INTO reports (recipient, kind, target_ids, state, body_text, created_day) "
+                "VALUES ('c@example.net', 'c2', ARRAY['t_x'], 'queued', 'Subject: s\n\nb', :d)"
+            ),
+            {"d": TODAY},
+        )
+        await s.commit()
+        few = replace(s_auto, auto_min_cohorts=11)
+        assert await sel.auto_approve(s, few, TODAY) == 0  # not enough independent cohorts
+        assert await sel.auto_approve(s, s_auto, TODAY) == 1  # the attack report only
+        states: dict[Any, Any] = dict(
+            (await s.execute(text("SELECT kind, state FROM reports"))).all()
+        )
+    assert states == {"attack_source": "approved", "c2": "queued"}

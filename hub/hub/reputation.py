@@ -60,8 +60,16 @@ async def apply_day(session: AsyncSession, day: date) -> int:
             """
             UPDATE nodes n SET reputation = LEAST(1.0, n.reputation + CAST(:bonus AS real) * LEAST(CAST(:cap AS integer), c.cnt))
             FROM (SELECT tc.node_id, count(*) AS cnt
-                  FROM target_contributors tc JOIN targets t ON t.id = tc.target_id
-                  WHERE t.confirmed_day = :day GROUP BY tc.node_id) c
+                  FROM target_contributors tc
+                  WHERE tc.target_id IN (
+                      -- only values backed by contributors from at least two enrolment cohorts
+                      SELECT t.id FROM targets t
+                      JOIN target_contributors c ON c.target_id = t.id
+                      JOIN nodes m ON m.id = c.node_id
+                      WHERE t.confirmed_day = :day
+                      GROUP BY t.id
+                      HAVING count(DISTINCT date_trunc('week', m.enrolled_day)) >= 2)
+                  GROUP BY tc.node_id) c
             WHERE c.node_id = n.id AND n.standing = 'active'
             """
         ),
