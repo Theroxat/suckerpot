@@ -25,6 +25,7 @@ from api.abuse_core import env_flag, load_settings, missing_for
 from api.authz import require_admin
 from api.deps import DbSession
 from api.egress import _checked_at
+from api.network import recent_submission
 from api.provider_keys import _configured
 from api.sensors import SENSOR_LABELS, SENSORS
 
@@ -222,6 +223,34 @@ async def _provider_keys(db: AsyncSession, _now: datetime) -> SetupItem:
     )
 
 
+async def _network(db: AsyncSession, now: datetime) -> SetupItem:
+    """The opt-in network (M29): off unless this system joined; then fresh batches or a reason."""
+    href = "/network"
+    row = (
+        await db.execute(
+            text(
+                "SELECT state, last_submit_day, last_error_code FROM network_membership "
+                "WHERE id = 1"
+            )
+        )
+    ).one_or_none()
+    if row is None or row.state != "member":
+        return _item("network", "off", "This system is not part of the Selfhostr network.", href)
+    if recent_submission(row.last_submit_day, now.date()):
+        return _item("network", "ok", "Part of the Selfhostr network; batches are going out.", href)
+    waiting = {
+        "waiting_self_address": "Waiting for the honeypot's own address before sending.",
+        "egress_closed": "The outbound gate is closed, so nothing is sent.",
+        "no_settings_key": "The settings encryption key is missing.",
+    }
+    return _item(
+        "network",
+        "warning",
+        waiting.get(row.last_error_code or "", "No batch sent recently."),
+        href,
+    )
+
+
 CHECKS: tuple[tuple[str, Callable[[AsyncSession, datetime], Awaitable[SetupItem]], str], ...] = (
     ("sensors", _sensors, "/settings"),
     ("vpn", _vpn, "/settings?tab=vpn"),
@@ -231,6 +260,7 @@ CHECKS: tuple[tuple[str, Callable[[AsyncSession, datetime], Awaitable[SetupItem]
     ("abuse_worker", _abuse_worker, "/settings?tab=reporting"),
     ("alerts", _alerts, "/settings?tab=alerts"),
     ("provider_keys", _provider_keys, "/settings?tab=keys"),
+    ("network", _network, "/network"),
 )
 
 

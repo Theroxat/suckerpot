@@ -76,6 +76,7 @@ from api.auth import Principal, current_principal
 from api.authz import require_admin
 from api.cursor import InvalidCursorError, decode_cursor, encode_cursor
 from api.deps import DbSession
+from api.network import network_states
 
 router = APIRouter(tags=["abuse"])
 log = logging.getLogger("api.abuse")
@@ -162,6 +163,8 @@ class SubjectOut(BaseModel):
     first_ts: datetime
     last_ts: datetime
     link: str
+    # confirmed | reported | taken_down when the Selfhostr network handles it (M29), else null
+    network_state: str | None = None
 
 
 class RedactionOut(BaseModel):
@@ -443,6 +446,7 @@ async def _detail(
             .limit(MAX_LIMIT)
         )
     ).all()
+    net_states = await network_states(db, [s.value for s, _n in subs])
     subjects = [
         SubjectOut(
             subject_type=s.subject_type,
@@ -455,6 +459,7 @@ async def _detail(
             first_ts=s.first_ts,
             last_ts=s.last_ts,
             link=_subject_link(s.subject_type, s.value),
+            network_state=net_states.get(s.value),
         )
         for s, n in subs
     ]

@@ -13,7 +13,7 @@ playwright_image := "mcr.microsoft.com/playwright:v1.64.1-noble"
 web_cache := "suckerpot-web-cache"
 web_env := "-e HOME=/tmp -e CI=1 -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e COREPACK_HOME=/cache/corepack -e npm_config_store_dir=/cache/pnpm-store"
 pnpm_setup := "mkdir -p /tmp/bin && corepack enable --install-directory /tmp/bin && export PATH=/tmp/bin:$PATH"
-packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo scripts/guardrails egress analysis reporting collector db ingest api"
+packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo scripts/guardrails egress analysis reporting netproto collector db ingest api hub"
 
 # Fails unless COMPOSE_PROJECT_NAME and SUCKERPOT_VOLUME_PREFIX are set (from .env). Dependency of every recipe that uses the live stack.
 _need-project:
@@ -203,6 +203,20 @@ test:
     {{just_executable()}} web-test || { echo "FAILED: web (tests)"; rc=1; }
     exit $rc
 
+# Hub tests against a throwaway PostgreSQL (project name is always hubtest-<pid>; never the live
+# project). The hub is not part of the node stack.
+hub-integration:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    project="hubtest-$$"
+    trap 'docker compose -f hub/docker-compose.test.yml -p "$project" down -v --remove-orphans >/dev/null 2>&1' EXIT
+    docker compose -f hub/docker-compose.test.yml -p "$project" up -d --wait hub-db
+    docker run --rm --user "$(id -u):$(id -g)" --network "${project}_default" \
+      -v "$PWD:/work" -v "{{uv_cache}}:/cache" -w /work/hub \
+      -e HOME=/tmp -e UV_CACHE_DIR=/cache -e UV_LINK_MODE=copy -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
+      -e HUB_TEST_DATABASE_URL=postgresql+asyncpg://hub:hubtest-owner-password-0001@hub-db:5432/hub \
+      {{uv_image}} sh -c "uv sync --refresh-package suckerpot-netproto && uv run pytest -q -p no:cacheprovider"
+
 # Integration tests against the real database and Redis of the compose stack.
 test-integration:
     #!/usr/bin/env bash
@@ -235,7 +249,7 @@ test-integration:
         -e POSTGRES_INGEST_USER -e POSTGRES_INGEST_PASSWORD -e POSTGRES_API_USER -e POSTGRES_API_PASSWORD \
         -e SUCKERPOT_ALLOW_DEFAULT_SECRETS -e DB_DIR=/work/db \
         -e REDIS_HOST=redis -e REDIS_PORT=6379 -e REDIS_USER=admin -e "REDIS_PASSWORD=$REDIS_PASSWORD" -e REDIS_ADMIN_USER=admin -e "REDIS_ADMIN_PASSWORD=$REDIS_PASSWORD" \
-        {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api && uv run pytest -q -p no:cacheprovider -m integration; rc=\$?; [ \$rc -eq 5 ] && exit 0; exit \$rc")
+        {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api --refresh-package suckerpot-netproto && uv run pytest -q -p no:cacheprovider -m integration; rc=\$?; [ \$rc -eq 5 ] && exit 0; exit \$rc")
       # Default bridge first (to download packages), then the backend network (to reach db/redis).
       docker network connect "${it}_backend" "$cid"
       docker start -a "$cid" || { docker rm -f "$cid" >/dev/null; exit 1; }
@@ -270,7 +284,7 @@ _py cmd: _cache
         -v "$PWD:/work" -v "{{uv_cache}}:/cache" -w "/work/$pkg" \
         -e HOME=/tmp -e UV_CACHE_DIR=/cache -e UV_LINK_MODE=copy -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
         -e RUFF_CACHE_DIR=/tmp/ruff -e MYPY_CACHE_DIR=/tmp/mypy -e USER=x -e LOGNAME=x \
-        {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api && {{cmd}}" || { status=1; failed="$failed $pkg"; }
+        {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api --refresh-package suckerpot-netproto && {{cmd}}" || { status=1; failed="$failed $pkg"; }
     done
     if [ "$status" -ne 0 ]; then echo "FAILED packages:$failed" >&2; fi
     exit $status

@@ -144,7 +144,8 @@ DECLARE
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
                   'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
-                  'abuse_send_requests']
+                  'abuse_send_requests', 'network_membership', 'network_submissions',
+                  'network_targets', 'network_summary']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -264,6 +265,17 @@ BEGIN
             'GRANT UPDATE (sent_at, sent_by, sent_via, reviewed_at, reviewed_by, '
             'reviewed_revision) ON abuse_reports TO %I', r);
     END IF;
+    IF to_regclass('public.network_membership') IS NOT NULL THEN
+        -- M29: ingest runs the network worker: it owns every network table. Only ingest reads
+        -- the private key. The API never writes a submission, a target or the summary.
+        EXECUTE format('GRANT SELECT, UPDATE ON network_membership TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON network_submissions TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON network_targets TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON network_summary TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s TO %I',
+            pg_get_serial_sequence('public.network_submissions', 'id'), r);
+    END IF;
     IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
         -- M23: the gate reads the ranges the owner trusted; only the API changes them.
         EXECUTE format('GRANT SELECT ON egress_trusted_exits TO %I', r);
@@ -322,7 +334,8 @@ DECLARE
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
                   'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
-                  'abuse_send_requests']
+                  'abuse_send_requests', 'network_membership', 'network_submissions',
+                  'network_targets', 'network_summary']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -427,6 +440,21 @@ BEGIN
             'GRANT USAGE ON SEQUENCE %s TO %I',
             pg_get_serial_sequence('public.abuse_send_requests', 'id'), r);
         EXECUTE format('GRANT UPDATE (sent_via) ON abuse_reports TO %I', r);
+    END IF;
+    IF to_regclass('public.network_membership') IS NOT NULL THEN
+        -- M29: the API reads everything but the private key and writes only the owner's wishes
+        -- (a trigger limits ``desired`` to off -> member -> leave).
+        EXECUTE format(
+            'GRANT SELECT (id, desired, state, pseudonym, country, show_country, node_id, '
+            'fingerprint, pubkey, enrolled_day, eligible_from_day, standing, next_submit_at, '
+            'last_submit_day, last_pull_at, last_summary_at, leave_requested_at, '
+            'last_error_code, requested_by, requested_at, updated_at) '
+            'ON network_membership TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (desired, pseudonym, country, show_country, requested_by, '
+            'requested_at) ON network_membership TO %I', r);
+        EXECUTE format(
+            'GRANT SELECT ON network_submissions, network_targets, network_summary TO %I', r);
     END IF;
     IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
         -- M23: the owner trusts or removes a VPN exit range from the dashboard.

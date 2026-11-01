@@ -28,3 +28,9 @@ tags = ["network", "privacy"]
   regexes = [
     '''^(192\.0\.2|198\.51\.100|203\.0\.113)\.''',
   ]
+
+# Fixed test keys of the spn/1 golden vectors (netproto/tests/vectors.json). They are public by
+# design and used nowhere else.
+[[allowlists]]
+description = "spn/1 golden test vectors"
+paths = ['''^netproto/tests/vectors\.json$''']

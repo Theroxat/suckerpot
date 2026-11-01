@@ -7,6 +7,7 @@ dependencies = [
     "suckerpot-common",
     "suckerpot-db",
     "suckerpot-egress",
+    "suckerpot-netproto",
     "suckerpot-reporting",
     "redis>=5.2,<7",
     "maxminddb>=2.6,<3",
@@ -30,6 +31,7 @@ dev = [
 suckerpot-common = { path = "../sensors/common" }
 suckerpot-db = { path = "../db" }
 suckerpot-egress = { path = "../egress" }
+suckerpot-netproto = { path = "../netproto" }
 suckerpot-reporting = { path = "../reporting" }
 suckerpot-api = { path = "../api" }
 

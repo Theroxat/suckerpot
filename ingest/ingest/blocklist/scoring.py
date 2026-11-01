@@ -29,6 +29,7 @@ REASONS = (
     "file-hash",
     "manual-block",
     "probable-c2",
+    "network-confirmed",
 )
 
 MALWARE_TAGS = frozenset({"malware-drop", "mirai", "crypto-miner"})
@@ -50,6 +51,7 @@ EXPLOIT_TAGS = frozenset(
 BRUTE_TAGS = frozenset(
     {"weak-credentials", "credential-stuffing", "wordpress-bruteforce", "phpmyadmin-bruteforce"}
 )
+NETWORK_BONUS = 2  # confirmed by the Selfhostr network (5 or more sensors), M29
 KNOWN_SCANNER_CAP = 35
 MIN_LISTED_SCORE = 10
 UNCONFIRMED_CAP = 45
@@ -200,3 +202,10 @@ def score_contact(high: bool, hashes: int, confirmed: bool) -> Scored:
     if not confirmed:
         score = min(score, UNCONFIRMED_CAP)
     return Scored(score, ["probable-c2"])
+
+
+def network_bonus(scored: Scored) -> Scored:
+    """+2 and the reason ``network-confirmed`` for a target the network confirmed (M29)."""
+    if "network-confirmed" in scored.reasons:
+        return scored
+    return Scored(_clamp(scored.score + NETWORK_BONUS), [*scored.reasons, "network-confirmed"][:16])
