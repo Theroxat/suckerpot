@@ -8,6 +8,8 @@
 # 2. Drops IPv6 interface addresses (the Docker networks have no IPv6 and gluetun refuses them).
 # 3. Runs gluetun as a child and watches wg.env: when it changes, gluetun is stopped and this
 #    script exits 0, so "restart: unless-stopped" restarts the container on the new settings.
+#    It also watches $VPN_CONFIG_DIR/restart (written by the API for "Reconnect"): only its
+#    checksum is used, its content is never read or parsed and never affects the settings.
 #
 # Log lines never contain a value from the file.
 
@@ -15,6 +17,7 @@ CONF_DIR=${VPN_CONFIG_DIR:-/vpn-config}
 GLUETUN=${VPN_GLUETUN_BIN:-/gluetun-entrypoint}
 INTERVAL=${VPN_WATCH_INTERVAL:-10}
 LIVE_ENV="$CONF_DIR/wg.env"
+RESTART_FILE="$CONF_DIR/restart"
 SNAPSHOT=${VPN_SNAPSHOT:-/tmp/wg.env.snapshot}
 WG_ENV=$SNAPSHOT # parsed copy of LIVE_ENV
 
@@ -111,6 +114,8 @@ else
   log "no uploaded VPN configuration; using the .env values"
 fi
 
+restart_initial=$(checksum_of "$RESTART_FILE")
+
 # Keep IPv4 entries only.
 WIREGUARD_ADDRESSES=$(printf '%s' "$WIREGUARD_ADDRESSES" | tr ',' '\n' | grep -v ':' | paste -sd, -)
 export WIREGUARD_ADDRESSES
@@ -139,6 +144,12 @@ while :; do
     tick=0
     if [ "$(checksum_of "$LIVE_ENV")" != "$initial" ]; then
       log "VPN configuration changed, restarting"
+      kill -TERM "$child" 2>/dev/null
+      wait "$child" 2>/dev/null
+      exit 0
+    fi
+    if [ "$(checksum_of "$RESTART_FILE")" != "$restart_initial" ]; then
+      log "VPN reconnect requested, restarting"
       kill -TERM "$child" 2>/dev/null
       wait "$child" 2>/dev/null
       exit 0
