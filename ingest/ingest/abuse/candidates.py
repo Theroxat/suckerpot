@@ -72,10 +72,11 @@ NETWORK_WINDOW_DAYS = 30
 
 
 async def network_covered(session: AsyncSession) -> set[str]:
-    """Hosts the Selfhostr network confirmed or reported in the last 30 days (M29 dedupe).
+    """Hosts the Selfhostr network reported or got taken down in the last 30 days (M29 dedupe).
 
     Empty unless this node is a member: the network sends one strong report per target, so the
-    local workflow must not send a second, weaker one to the same desk. Network kinds ``ip``,
+    local workflow must not send a second, weaker one to the same desk. A merely ``confirmed``
+    target is not covered: the hub may never report it, so the local candidate stays. Network kinds ``ip``,
     ``domain``, ``c2_ip`` and ``c2_domain`` name hosts; a ``c2`` value may carry ``:port``.
     """
     rows = await session.execute(
@@ -83,7 +84,7 @@ async def network_covered(session: AsyncSession) -> set[str]:
             """
             SELECT t.value FROM network_targets t
             JOIN network_membership m ON m.id = 1 AND m.state = 'member'
-            WHERE t.state IN ('confirmed', 'reported', 'taken_down') AND t.value IS NOT NULL
+            WHERE t.state IN ('reported', 'taken_down') AND t.value IS NOT NULL
               AND t.kind IN ('ip', 'domain', 'c2_ip', 'c2_domain')
               AND t.last_day >= (now() AT TIME ZONE 'UTC')::date - :days
             """
