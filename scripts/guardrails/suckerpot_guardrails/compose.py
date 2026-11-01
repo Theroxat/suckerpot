@@ -298,6 +298,50 @@ def check_compose(compose: Compose) -> list[str]:
         script_ro = all(script_mounts)
         if len(script_mounts) != 1 or not script_ro:
             problems.append("service 'vpn' must mount /vpn/entrypoint.sh read-only")
+
+    problems += _check_sensor_switches(services)
+    problems += _check_images(services)
+    if vpn is not None:
+        health = [
+            read_only for target, read_only in _mount_targets(vpn) if target == "/vpn/health.sh"
+        ]
+        if len(health) != 1 or not all(health):
+            problems.append("service 'vpn' must mount /vpn/health.sh read-only")
+        test = list((vpn.get("healthcheck") or {}).get("test") or [])
+        if test != ["CMD", "/bin/sh", "/vpn/health.sh"]:
+            problems.append("service 'vpn' healthcheck must run /vpn/health.sh")
+    return problems
+
+
+def _check_sensor_switches(services: Mapping[str, Any]) -> list[str]:
+    """M28: a sensor is switched on or off by deploy.replicas and nothing else."""
+    problems: list[str] = []
+    for name, svc in services.items():
+        deploy = svc.get("deploy")
+        if not name.startswith("sensor-"):
+            if deploy and "replicas" in deploy:
+                problems.append(f"service '{name}' must not use deploy.replicas")
+            continue
+        want = {"replicas": "${SENSOR_" + name.removeprefix("sensor-").upper() + ":-1}"}
+        if deploy != want:
+            problems.append(f"service '{name}' deploy must be exactly {want}")
+    return problems
+
+
+def _check_images(services: Mapping[str, Any]) -> list[str]:
+    """M28: built services are tagged from the release prefix and version, never ``latest``."""
+    problems: list[str] = []
+    for name, svc in services.items():
+        image = str(svc.get("image", ""))
+        if re.search(r":latest($|[@\s])", image) or (image and ":" not in image.split("/")[-1]):
+            problems.append(f"service '{name}' image must carry an explicit non-latest tag")
+        if svc.get("build") is not None and not (
+            image.startswith("${SUCKERPOT_IMAGE_PREFIX") and ":${SUCKERPOT_VERSION" in image
+        ):
+            problems.append(
+                f"service '{name}' image must use ${{SUCKERPOT_IMAGE_PREFIX...}} and "
+                "${SUCKERPOT_VERSION...}"
+            )
     return problems
 
 

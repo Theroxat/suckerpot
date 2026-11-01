@@ -259,3 +259,50 @@ def test_vpn_entrypoint_sourcing_is_refused(line: str) -> None:
 
 def test_vpn_entrypoint_comments_may_mention_source() -> None:
     assert check_vpn_entrypoint("# never source the file\necho ok\n") == []
+
+
+def test_sensor_without_replicas_switch_is_refused(good: dict[str, Any]) -> None:
+    problems = _with(good, lambda c: c["services"]["sensor-ssh"].pop("deploy"))
+    assert _has(problems, "service 'sensor-ssh' deploy must be exactly")
+
+
+def test_sensor_with_extra_deploy_key_is_refused(good: dict[str, Any]) -> None:
+    problems = _with(
+        good, lambda c: c["services"]["sensor-web"]["deploy"].update({"resources": {}})
+    )
+    assert _has(problems, "service 'sensor-web' deploy must be exactly")
+
+
+def test_replicas_on_a_non_sensor_is_refused(good: dict[str, Any]) -> None:
+    problems = _with(good, lambda c: c["services"]["api"].update({"deploy": {"replicas": 2}}))
+    assert _has(problems, "service 'api' must not use deploy.replicas")
+
+
+def test_latest_tag_is_refused(good: dict[str, Any]) -> None:
+    problems = _with(good, lambda c: c["services"]["db"].update({"image": "postgres:latest"}))
+    assert _has(problems, "service 'db' image must carry an explicit non-latest tag")
+
+
+def test_untagged_image_is_refused(good: dict[str, Any]) -> None:
+    problems = _with(good, lambda c: c["services"]["db"].update({"image": "postgres"}))
+    assert _has(problems, "service 'db' image must carry an explicit non-latest tag")
+
+
+def test_built_service_with_foreign_image_name_is_refused(good: dict[str, Any]) -> None:
+    problems = _with(good, lambda c: c["services"]["api"].update({"image": "example.org/api:1"}))
+    assert _has(problems, "service 'api' image must use")
+
+
+def test_vpn_health_script_must_be_read_only(good: dict[str, Any]) -> None:
+    def mutate(c: dict[str, Any]) -> None:
+        vols = c["services"]["vpn"]["volumes"]
+        vols[:] = [v.removesuffix(":ro") if "health.sh" in v else v for v in vols]
+
+    assert _has(_with(good, mutate), "/vpn/health.sh read-only")
+
+
+def test_vpn_healthcheck_must_use_the_script(good: dict[str, Any]) -> None:
+    def mutate(c: dict[str, Any]) -> None:
+        c["services"]["vpn"]["healthcheck"]["test"] = ["CMD", "true"]
+
+    assert _has(_with(good, mutate), "healthcheck must run /vpn/health.sh")
