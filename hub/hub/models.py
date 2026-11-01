@@ -240,3 +240,11 @@ class HubAudit(Base):
     action: Mapped[str] = mapped_column(Text)
     detail: Mapped[dict[str, object] | None] = mapped_column(JSONB)
 
+
+class WorkerState(Base):
+    """Job markers of the worker (migration h0002). No node data."""
+
+    __tablename__ = "worker_state"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text)

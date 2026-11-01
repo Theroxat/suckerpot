@@ -1,0 +1,193 @@
+"""The hub worker: ``python -m hub.worker [--once | --health]``.
+
+Every cycle (hourly by default): built-in never-list entries, consensus, takedown votes,
+never-list re-check, expiry, daily jobs (reputation, statistics and the network summary),
+retention, then grouped reports (queue, auto-approve in ``auto`` mode, send what is approved).
+A failing step is logged by type only and never stops the others.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import sys
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from . import consensus, reputation, retention, stats
+from . import logging as hub_logging
+from .config import Settings
+from .db import make_engine, make_sessionmaker, utcnow
+from .external import Corroborator
+from .never import load_never
+from .never_seed import ensure_seed
+from .reports import select as report_select
+from .reports import send as report_send
+from .reports.rdap import RdapDirectory, Resolver
+
+log = logging.getLogger("hub.worker")
+
+HEARTBEAT = "heartbeat"
+STATS_MARKER = "stats_day"
+
+
+@dataclass
+class WorkerContext:
+    settings: Settings
+    sessionmaker: async_sessionmaker[AsyncSession]
+    clock: Callable[[], datetime] = utcnow
+    corroborate: consensus.Corroborate | None = None
+    resolver: Resolver | None = None
+    mailer: report_send.Mailer | None = None
+
+
+@dataclass
+class CycleReport:
+    steps: dict[str, object] = field(default_factory=dict)
+    failed: list[str] = field(default_factory=list)
+
+
+async def _set_marker(session: AsyncSession, key: str, value: str) -> None:
+    await session.execute(
+        text(
+            "INSERT INTO worker_state (key, value) VALUES (:k, :v) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
+        ),
+        {"k": key, "v": value},
+    )
+    await session.commit()
+
+
+async def _get_marker(session: AsyncSession, key: str) -> str | None:
+    row = (
+        await session.execute(text("SELECT value FROM worker_state WHERE key = :k"), {"k": key})
+    ).first()
+    return str(row[0]) if row else None
+
+
+async def run_cycle(ctx: WorkerContext) -> CycleReport:
+    s = ctx.settings
+    now = ctx.clock()
+    today = now.date()
+    out = CycleReport()
+
+    async def step(name: str, fn: Callable[[AsyncSession], Awaitable[object]]) -> None:
+        try:
+            async with ctx.sessionmaker() as session:
+                out.steps[name] = await fn(session)
+        except Exception as exc:  # one failing step must not stop the others
+            log.error("step %s failed: %s", name, type(exc).__name__)
+            out.failed.append(name)
+
+    await step("seed", lambda ses: ensure_seed(ses))
+    holder: dict[str, object] = {}
+
+    async def do_consensus(ses: AsyncSession) -> object:
+        never = await load_never(ses)
+        eligible = await consensus.eligible_nodes(ses, s, today)
+        holder["never"], holder["eligible"] = never, eligible
+        res = await consensus.run_consensus(
+            ses, s, today, never=never, corroborate=ctx.corroborate, eligible=eligible
+        )
+        return {"groups": res.groups, "confirmed": res.confirmed, "candidates": res.candidates}
+
+    await step("consensus", do_consensus)
+
+    async def do_takedowns(ses: AsyncSession) -> object:
+        eligible = holder.get("eligible")
+        if not isinstance(eligible, dict):
+            eligible = await consensus.eligible_nodes(ses, s, today)
+        return await consensus.update_takedowns(ses, s, today, eligible)
+
+    await step("takedowns", do_takedowns)
+
+    async def do_never(ses: AsyncSession) -> object:
+        never = await load_never(ses)
+        return await consensus.recheck_never_list(ses, never, s, today)
+
+    await step("never_recheck", do_never)
+    await step("expire", lambda ses: consensus.expire_stale(ses, today))
+    await step("reputation", lambda ses: reputation.run_daily(ses, s, today))
+
+    async def do_stats(ses: AsyncSession) -> object:
+        if await _get_marker(ses, STATS_MARKER) == today.isoformat():
+            return "done_today"
+        await stats.run_daily(ses, today)
+        await _set_marker(ses, STATS_MARKER, today.isoformat())
+        return "ran"
+
+    await step("stats", do_stats)
+    await step("retention", lambda ses: retention.run_retention(ses, s, now, today))
+
+    if s.report_mode != "off" and ctx.resolver is not None:
+        resolver = ctx.resolver
+
+        async def do_queue(ses: AsyncSession) -> object:
+            never = await load_never(ses)
+            res = await report_select.queue_reports(ses, s, today, resolver=resolver, never=never)
+            return {"queued": res.queued, "updated": res.updated, "skipped": res.skipped}
+
+        await step("reports_queue", do_queue)
+        await step("reports_approve", lambda ses: report_select.auto_approve(ses, s, today))
+        if ctx.mailer is not None:
+            mailer = ctx.mailer
+            await step(
+                "reports_send",
+                lambda ses: report_send.send_due(ses, s, now, today, mailer),
+            )
+
+    async def beat(ses: AsyncSession) -> object:
+        await _set_marker(ses, HEARTBEAT, now.isoformat())
+        return None
+
+    await step("heartbeat", beat)
+    log.info("cycle done: failed=%s", ",".join(out.failed) or "none")
+    return out
+
+
+async def healthy(ctx: WorkerContext) -> bool:
+    async with ctx.sessionmaker() as session:
+        raw = await _get_marker(session, HEARTBEAT)
+    if raw is None:
+        return False
+    return ctx.clock() - datetime.fromisoformat(raw) < timedelta(
+        seconds=3 * ctx.settings.worker_interval_s
+    )
+
+
+async def main_async(argv: list[str]) -> int:
+    s = Settings.from_env()
+    engine = make_engine(s.worker_database_url)
+    ctx = WorkerContext(settings=s, sessionmaker=make_sessionmaker(engine))
+    try:
+        if "--health" in argv:
+            return 0 if await healthy(ctx) else 1
+        corroborator = Corroborator(s)
+        directory = RdapDirectory()
+        ctx.corroborate = corroborator if corroborator.enabled else None
+        ctx.resolver = directory.resolve
+        ctx.mailer = report_send.smtp_mailer(s, ctx.clock)
+        try:
+            while True:
+                await run_cycle(ctx)
+                if "--once" in argv:
+                    return 0
+                await asyncio.sleep(s.worker_interval_s)
+        finally:
+            await corroborator.aclose()
+            await directory.aclose()
+    finally:
+        await engine.dispose()
+
+
+def main() -> None:
+    hub_logging.configure()
+    sys.exit(asyncio.run(main_async(sys.argv[1:])))
+
+
+if __name__ == "__main__":
+    main()

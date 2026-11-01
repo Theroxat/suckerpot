@@ -203,6 +203,39 @@ jobs:
             fi
           done
 
+  # The hub is a separate deployable: its API, worker, privacy and end-to-end tests run against a
+  # throwaway PostgreSQL (the schema is rebuilt at the start of the run).
+  hub-integration:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:17.6-bookworm
+        env:
+          POSTGRES_DB: hub_test
+          POSTGRES_USER: hub
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hub -d hub_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      HUB_TEST_DATABASE_URL: postgresql+asyncpg://hub:ci-only-password@127.0.0.1:5432/hub_test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          python-version: "3.13"
+      - name: Hub integration and end-to-end tests
+        working-directory: hub
+        run: |
+          uv sync
+          uv run pytest -m integration
+
   compose:
     runs-on: ubuntu-latest
     timeout-minutes: 20

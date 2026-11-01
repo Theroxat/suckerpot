@@ -88,6 +88,9 @@ class Settings:
     contributor_retention_days: int = 30
     vote_retention_days: int = 30
 
+    # Worker.
+    worker_interval_s: int = 3600
+
     # Reports (worker).
     report_mode: str = "review"
     report_hold_hours: int = 24
@@ -132,6 +135,7 @@ class Settings:
             window_days=_int(e, "HUB_WINDOW_DAYS", 7, 1, 14),
             cohort_max_share=_float(e, "HUB_COHORT_MAX_SHARE", 0.5),
             obs_retention_days=_int(e, "HUB_OBS_RETENTION_DAYS", 14, 1, 60),
+            worker_interval_s=_int(e, "HUB_WORKER_INTERVAL_S", 3600, 5),
             report_mode=mode,
             report_hold_hours=_int(e, "HUB_REPORT_HOLD_HOURS", 24, 0),
             report_daily_cap=_int(e, "HUB_REPORT_DAILY_CAP", 100, 0),

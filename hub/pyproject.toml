@@ -21,6 +21,7 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "types-pyyaml",
+    "aiosmtpd>=1.4.6",
 ]
 
 [tool.uv.sources]
@@ -45,6 +46,11 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 "tests/**" = ["S101", "S105", "S106", "S608", "E501"]
 "migrations/**" = ["S608", "E501"]
 "hub/roles.py" = ["S608"]
+"hub/reputation.py" = ["E501"]
+"hub/stats.py" = ["E501"]
+"hub/consensus.py" = ["E501"]
+"hub/admin.py" = ["E501"]
+"hub/reports/rdap.py" = ["E501"]
 
 [tool.mypy]
 strict = true

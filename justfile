@@ -203,6 +203,20 @@ test:
     {{just_executable()}} web-test || { echo "FAILED: web (tests)"; rc=1; }
     exit $rc
 
+# Hub tests against a throwaway PostgreSQL (project name is always hubtest-<pid>; never the live
+# project). The hub is not part of the node stack.
+hub-integration:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    project="hubtest-$$"
+    trap 'docker compose -f hub/docker-compose.test.yml -p "$project" down -v --remove-orphans >/dev/null 2>&1' EXIT
+    docker compose -f hub/docker-compose.test.yml -p "$project" up -d --wait hub-db
+    docker run --rm --user "$(id -u):$(id -g)" --network "${project}_default" \
+      -v "$PWD:/work" -v "{{uv_cache}}:/cache" -w /work/hub \
+      -e HOME=/tmp -e UV_CACHE_DIR=/cache -e UV_LINK_MODE=copy -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
+      -e HUB_TEST_DATABASE_URL=postgresql+asyncpg://hub:hubtest-owner-password-0001@hub-db:5432/hub \
+      {{uv_image}} sh -c "uv sync && uv run pytest -q -p no:cacheprovider"
+
 # Integration tests against the real database and Redis of the compose stack.
 test-integration:
     #!/usr/bin/env bash
