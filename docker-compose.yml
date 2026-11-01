@@ -355,6 +355,7 @@ services:
       SMB_DOMAIN: ${SMB_DOMAIN:-}
       WEB_HOSTNAME: ${WEB_HOSTNAME:-srv-web01}
       SUCKERPOT_ALLOW_DEFAULT_SECRETS: ${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}
+      VPN_CONFIG_DIR: /vpn-config
     # Docker's embedded DNS still answers for service names (it listens on
     # 127.0.0.11); external names fail, so the API cannot resolve the internet.
     dns: ["127.0.0.1"]
@@ -364,6 +365,8 @@ services:
     volumes:
       # Samples fetched by the collector, read-only (archive download of one sample).
       - quarantine:/quarantine:ro
+      # Uploaded VPN settings (wg.env, meta.json): mounted read-write here and read-only in vpn.
+      - vpn-config:/vpn-config
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
     networks: [backend, dashboard]
@@ -1054,15 +1057,10 @@ services:
     devices: ["/dev/net/tun:/dev/net/tun"]
     security_opt: ["no-new-privileges:true"]
     logging: *default-logging
-    # The Docker networks have no IPv6 and gluetun refuses to start with an IPv6 interface
-    # address, so the /128 entries of VPN_WG_ADDRESSES are dropped before it starts.
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        WIREGUARD_ADDRESSES=$$(printf '%s' "$$WIREGUARD_ADDRESSES" | tr ',' '\n' | grep -v ':' | paste -sd, -)
-        export WIREGUARD_ADDRESSES
-        exec /gluetun-entrypoint
+    # vpn/entrypoint.sh picks the WireGuard settings (the file uploaded from Settings -> VPN wins
+    # over .env), drops the IPv6 addresses (the Docker networks have no IPv6 and gluetun refuses
+    # them) and restarts the container when the uploaded file changes (M23).
+    entrypoint: ["/bin/sh", "/vpn/entrypoint.sh"]
     sysctls:
       net.ipv4.conf.all.src_valid_mark: "1"
     environment:
@@ -1114,6 +1112,9 @@ services:
       # FIREWALL_OUTBOUND_SUBNETS must stay unset: it would open LAN routes outside the tunnel.
     volumes:
       - ./vpn/control-auth.toml:/gluetun/auth/config.toml:ro
+      - ./vpn/entrypoint.sh:/vpn/entrypoint.sh:ro
+      # Uploaded WireGuard settings (wg.env), written by the api; read-only here.
+      - vpn-config:/vpn-config:ro
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=8m,mode=0755
       - /gluetun:rw,noexec,nosuid,nodev,size=8m,mode=0755
@@ -1130,6 +1131,11 @@ services:
     memswap_limit: 256m
     cpus: 0.5
     pids_limit: 64
+    # The api must create its containers first: the first container to mount the empty vpn-config
+    # volume fixes its owner (copied from the api image, uid 10001).
+    depends_on:
+      api:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
@@ -1376,3 +1382,6 @@ volumes:
   geoip-data:
   # Files fetched by the collector (0400, never executed). Read-only for analyzer and api.
   quarantine:
+  # Uploaded WireGuard settings (M23): read-write in api, read-only in vpn, nowhere else.
+  # Its initial owner comes from the /vpn-config directory of the api image (uid 10001).
+  vpn-config:

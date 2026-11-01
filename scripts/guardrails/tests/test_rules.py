@@ -7,7 +7,12 @@ from typing import Any
 
 import pytest
 
-from suckerpot_guardrails import check_compose, find_hash_named_files, load_compose
+from suckerpot_guardrails import (
+    check_compose,
+    check_vpn_entrypoint,
+    find_hash_named_files,
+    load_compose,
+)
 from suckerpot_guardrails.compose import _merge
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -186,3 +191,71 @@ def test_unnamed_proxy_bridge_is_refused(good: dict[str, Any]) -> None:
 def test_unnamed_samples_bridge_is_refused(good: dict[str, Any]) -> None:
     problems = _with(good, lambda c: c["networks"]["samples"].pop("driver_opts"))
     assert _has(problems, "network 'samples' must set the bridge name sp-samples")
+
+
+def _swap_volume(c: dict[str, Any], svc: str, entry: str, prefix: str = "vpn-config") -> None:
+    vols = c["services"][svc]["volumes"]
+    vols[:] = [v for v in vols if not v.startswith(prefix)] + [entry]
+
+
+def test_vpn_config_mounted_by_another_service_is_refused(good: dict[str, Any]) -> None:
+    def mutate(c: dict[str, Any]) -> None:
+        c["services"]["ingest"]["volumes"].append("vpn-config:/vpn-config:ro")
+
+    assert _has(_with(good, mutate), "service 'ingest' must not mount vpn-config")
+
+
+def test_vpn_config_must_be_read_only_in_vpn(good: dict[str, Any]) -> None:
+    problems = _with(good, lambda c: _swap_volume(c, "vpn", "vpn-config:/vpn-config"))
+    assert _has(problems, "service 'vpn' must mount vpn-config read-only")
+
+
+def test_vpn_config_must_be_writable_in_api(good: dict[str, Any]) -> None:
+    problems = _with(good, lambda c: _swap_volume(c, "api", "vpn-config:/vpn-config:ro"))
+    assert _has(problems, "service 'api' must mount vpn-config read-write")
+
+
+def test_api_docker_socket_is_refused(good: dict[str, Any]) -> None:
+    def mutate(c: dict[str, Any]) -> None:
+        c["services"]["api"]["volumes"].append("/var/run/docker.sock:/var/run/docker.sock")
+
+    assert _has(_with(good, mutate), "service 'api' must not mount the docker socket")
+
+
+def test_api_net_admin_is_refused(good: dict[str, Any]) -> None:
+    problems = _with(good, lambda c: c["services"]["api"].update({"cap_add": ["NET_ADMIN"]}))
+    assert _has(problems, "service 'api' must not have NET_ADMIN")
+
+
+def test_api_on_an_extra_network_is_refused(good: dict[str, Any]) -> None:
+    problems = _with(good, lambda c: c["services"]["api"]["networks"].append("vpn-uplink"))
+    assert _has(problems, "service 'api' must be on exactly backend and dashboard")
+
+
+def test_api_must_stay_read_only(good: dict[str, Any]) -> None:
+    problems = _with(good, lambda c: c["services"]["api"].update({"read_only": False}))
+    assert _has(problems, "service 'api' must be read_only")
+
+
+def test_vpn_entrypoint_script_must_be_read_only(good: dict[str, Any]) -> None:
+    problems = _with(
+        good,
+        lambda c: _swap_volume(c, "vpn", "./vpn/entrypoint.sh:/vpn/entrypoint.sh", "./vpn/entry"),
+    )
+    assert _has(problems, "must mount /vpn/entrypoint.sh read-only")
+
+
+def test_real_vpn_entrypoint_is_clean() -> None:
+    assert check_vpn_entrypoint((ROOT / "vpn" / "entrypoint.sh").read_text()) == []
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["source /vpn-config/wg.env", ". /vpn-config/wg.env", 'eval "$(cat x)"', "x=1; . ./f"],
+)
+def test_vpn_entrypoint_sourcing_is_refused(line: str) -> None:
+    assert check_vpn_entrypoint(f"#!/bin/sh\n{line}\n")
+
+
+def test_vpn_entrypoint_comments_may_mention_source() -> None:
+    assert check_vpn_entrypoint("# never source the file\necho ok\n") == []

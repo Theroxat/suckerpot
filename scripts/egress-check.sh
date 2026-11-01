@@ -78,6 +78,12 @@ for svc in ingest collector; do
     selftest "$svc" --refuse "localtest.me:80"
 done
 
+# The uploaded VPN settings (M23) are visible to vpn (read-only) and api only.
+for svc in ingest collector analyzer; do
+  check_not "$svc: /vpn-config is not mounted" dc exec -T "$svc" test -e /vpn-config
+done
+check "vpn: /vpn-config is read-only" dc exec -T vpn sh -c '! touch /vpn-config/.w 2>/dev/null'
+
 # The analyzer has no way out at all.
 check "analyzer: no direct route, no proxy" selftest analyzer --direct --no-connect vpn:8888
 
