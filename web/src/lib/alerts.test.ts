@@ -122,6 +122,10 @@ describe("test status", () => {
   it("never leaks an unknown code", () => {
     expect(describeError("weird_code")).toBe("Something went wrong.")
     expect(describeError(null)).toBe("")
+    expect(describeError("guard_failed:no_self_address")).toBe(
+      "Alerts are paused until you confirm your own address in Settings → Reporting.",
+    )
+    expect(describeError("guard_failed:self_name")).toBe("Blocked by the identity check.")
   })
 })
 

@@ -15,6 +15,7 @@ import { CopyField } from "@/components/abuse/copy-field"
 import { ExportMenu } from "@/components/abuse/export-menu"
 import { StatusStepper } from "@/components/abuse/status-stepper"
 import { SendControl } from "@/components/abuse/send-control"
+import { inFlight } from "@/lib/abuse-send"
 import { ConfirmDialog, MarkSentDialog } from "@/components/abuse/status-dialogs"
 import { EmptyState } from "@/components/empty-state"
 import { FindingCard } from "@/components/finding-card"
@@ -594,7 +595,7 @@ export function AbuseDetailPage() {
     // While a send is waiting or on its way the report changes by itself.
     refetchInterval: (query) => {
       const s = query.state.data?.send_state
-      return s?.scheduled_at || s?.last_request?.status === "pending" ? 4000 : false
+      return s?.scheduled_at || inFlight(s?.last_request?.status) ? 4000 : false
     },
   })
   const [notice, setNotice] = useState<string | null>(null)
