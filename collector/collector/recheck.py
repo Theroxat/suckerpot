@@ -418,7 +418,9 @@ class Rechecker:
                     now,
                 )
             keep_hash = result.sha256 if result.outcome in (CHANGED, CHANGED_NOT_STORED) else None
-            await self._advance(session, target.id, step, at, now, keep_hash, refused)
+            # A hop that turned out private or denied stops the re-checks, as a refused URL does.
+            stop = refused or result.outcome == REFUSED
+            await self._advance(session, target.id, step, at, now, keep_hash, stop)
 
     @staticmethod
     async def _advance(
