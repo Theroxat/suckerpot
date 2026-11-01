@@ -131,3 +131,10 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - **Trusted exits.** A new exit address stays blocked until the owner trusts the /24 the ingest gate observed (table `egress_trusted_exits`, migration 0020, at most 8 rows). An exit inside the honeypot's own addresses (Settings > Reporting) or in an AS listed in `EGRESS_DENY_ASNS` closes the gate and can never be trusted. The exit's AS and organisation (local GeoLite2) are shown next to it.
 - **Reviews.** Security review passed; its findings (home-IP trust, collector-planted candidate, IPv6 scope ids, entrypoint endpoint check, a read/checksum race, body size, stale temp files) are fixed. UI review approved.
 - **Fixed on the way.** The abuse, alerts and intel workers no longer wait up to an hour for their first run on a host that booted recently (this made CI fail on fresh runners).
+
+## 2026-11-01 — M24 Guided tour, setup checklist and tunnel controls
+
+- **Tour and help.** A seven-step tour on first login, replayable from the top bar, and a "?" help on every page and Settings tab. The texts were checked against the design documents: nothing overpromises (the stack never sends a report itself, the sensors still answer attackers on the home address).
+- **Setup checklist.** `GET /api/v1/setup/status` computes eight items from the real state and links each one to the screen that fixes it. The host firewall is outside the stack's view: the card points to `just egress-check`.
+- **Tunnel controls.** "Check now" (no password, one per 10 s, migration 0021) and "Reconnect" (password, one per minute, a marker file the `vpn` entrypoint watches without reading it). A closed gate re-checks every 20 s, so a tunnel restart no longer pauses lookups for five minutes.
+- **Reviews.** UI review approved after two rounds (copy accuracy, duplicated VPN controls, tour layout on phones).
