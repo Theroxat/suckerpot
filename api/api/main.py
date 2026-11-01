@@ -48,11 +48,13 @@ from api.scripts import router as scripts_router
 from api.search import router as search_router
 from api.settings import router as settings_router
 from api.setup_status import router as setup_status_router
+from api.setup_wizard import router as setup_wizard_router
 from api.spa import install_security_headers, install_spa
 from api.story import router as story_router
 from api.today import router as today_router
 from api.trends import router as trends_router
 from api.users import router as users_router
+from api.version import router as version_router
 from api.vpn_settings import router as vpn_settings_router
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -132,6 +134,8 @@ def create_app(
         provider_keys_router,
         vpn_settings_router,
         setup_status_router,
+        setup_wizard_router,
+        version_router,
         users_router,
         audit_router,
         campaigns_router,
