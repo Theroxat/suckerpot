@@ -376,7 +376,9 @@ class Rechecker:
                         target.url,
                         prev_sha=target.prev_sha,
                         prev_kind=target.prev_kind,
-                        budget=budget,
+                        # Without a fetch target nothing can record the file: keep none (no
+                        # orphan in quarantine), only hash it.
+                        budget=budget if target.fetch_target_id is not None else 0,
                     )
                 except (EgressClosed, ProxySideError):
                     await self._refund(day)  # nothing reached the target: no row, no quota

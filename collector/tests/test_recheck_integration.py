@@ -222,6 +222,27 @@ async def test_changed_file_becomes_a_sample(
     assert t.last_sha256 == new
 
 
+async def test_a_changed_file_without_a_fetch_target_is_not_left_in_quarantine(
+    owner: AsyncEngine, factory: Any, tmp_path: Path
+) -> None:
+    tid, _ = await add_target(owner, f"{HOST}/orphan.sh")
+    async with owner.begin() as conn:
+        await conn.execute(
+            text("UPDATE takedown_targets SET fetch_target_id = NULL WHERE id = :t"), {"t": tid}
+        )
+    proxy = FakeProxy(lambda u, h: Reply(body=OTHER))
+    async with proxy.running():
+        gate = await open_gate(proxy.url)
+        svc, _ = service(tmp_path, factory, gate, Clock())
+        await svc.rechecker.run()
+    new = hashlib.sha256(OTHER).hexdigest()
+    assert [r.outcome for r in await rows(owner, "SELECT outcome FROM takedown_checks")] == [
+        "changed_not_stored"
+    ]
+    assert await rows(owner, "SELECT 1 FROM samples WHERE sha256 = :s", s=new) == []
+    assert not [p for p in (tmp_path / "q").rglob("*") if p.is_file() and new in p.name]
+
+
 async def test_only_eligible_tracked_non_demo_urls_are_selected(
     owner: AsyncEngine, factory: Any, tmp_path: Path
 ) -> None:
