@@ -84,6 +84,13 @@ class Counter:
             return 0
         return max(1, self.window_s - (now - slot.start))
 
+    def count(self, key: str) -> int:
+        """Hits counted in the key's current window."""
+        slot = self._data.get(key)
+        if slot is None or self._now() - slot.start >= self.window_s:
+            return 0
+        return slot.count
+
     def forget(self, key: str) -> None:
         self._data.pop(key, None)
 
@@ -130,6 +137,10 @@ class AddressLimiter:
     def check_challenge(self, request: Request) -> int:
         """At most a few pending enrolment challenges per address prefix (memory only)."""
         return self._challenges.hit(self._id(request))
+
+    def challenge_pressure(self, request: Request) -> int:
+        """Challenges this address prefix drew in the current window (memory only)."""
+        return self._challenges.count(self._id(request))
 
     def blocked(self, request: Request) -> int:
         """Seconds to wait when this address failed authentication too often."""

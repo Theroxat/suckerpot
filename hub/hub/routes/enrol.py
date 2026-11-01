@@ -30,13 +30,17 @@ async def enrolments_today(ctx: AppContext, session: AsyncSession) -> int:
     )
 
 
-async def current_difficulty(ctx: AppContext, session: AsyncSession) -> int:
-    """Base difficulty; above the soft cap one more bit, then one per ``enrol_step`` enrolments.
+def current_difficulty(ctx: AppContext, request: Request, *, counted: bool = False) -> int:
+    """Base difficulty plus extra bits driven by how many challenges THIS address prefix drew
+    lately (above ``enrol_soft_cap`` one more bit, then one per ``enrol_step`` more; at most +10).
 
-    The rise is capped at 10 extra bits: a flood gets expensive fast, the hub never locks up.
+    The price rises for a flooding prefix only: a global counter would let one attacker make
+    enrolment unaffordable for everyone. ``counted`` says the current request is already in the
+    count.
     """
     s = ctx.settings
-    over = await enrolments_today(ctx, session) - s.enrol_soft_cap
+    drawn = ctx.address_limiter.challenge_pressure(request) - (1 if counted else 0)
+    over = drawn - s.enrol_soft_cap
     if over <= 0:
         return s.pow_difficulty
     return min(s.pow_difficulty + 1 + (over - 1) // s.enrol_step, s.pow_difficulty + 10, 48)
@@ -66,7 +70,7 @@ async def challenge(request: Request) -> Response:
         ).scalar_one()
         if pending >= ctx.settings.max_pending_challenges:
             raise ProtoError("rate_limited", "60")
-        difficulty = await current_difficulty(ctx, session)
+        difficulty = current_difficulty(ctx, request, counted=True)
         raw = os.urandom(32)
         await session.execute(delete(EnrolChallenge).where(EnrolChallenge.pubkey == pubkey))
         await session.execute(

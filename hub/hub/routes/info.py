@@ -21,8 +21,7 @@ async def info(request: Request) -> Response:
     wait = ctx.address_limiter.check_unsigned(request)
     if wait:
         raise ProtoError("rate_limited", str(wait))
-    async with ctx.sessionmaker() as session:
-        difficulty = await current_difficulty(ctx, session)
+    difficulty = current_difficulty(ctx, request)
     s = ctx.settings
     body = models.InfoResponse(
         protocols=[PROTOCOL],
