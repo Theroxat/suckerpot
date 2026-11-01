@@ -60,9 +60,9 @@ class Settings:
 
     # Proof of work and enrolment caps.
     pow_difficulty: int = 27
-    enrol_soft_cap: int = 50
-    enrol_hard_cap: int = 200
-    enrol_step: int = 10  # one more proof-of-work bit per this many enrolments above the soft cap
+    enrol_soft_cap: int = 3  # challenges one address prefix may draw per window before +1 bit
+    enrol_hard_cap: int = 5000  # a flood stopper far above any honest day
+    enrol_step: int = 3  # one more proof-of-work bit per this many further challenges of one prefix
     challenges_per_prefix: int = 20
     challenge_ttl_s: int = 600
     max_pending_challenges: int = 20000
@@ -124,9 +124,9 @@ class Settings:
             allow_documentation=_bool(e, "HUB_ALLOW_DOCUMENTATION"),
             trust_proxy=_bool(e, "HUB_TRUST_PROXY"),
             pow_difficulty=_int(e, "HUB_POW_DIFFICULTY", 27, 0, 40),
-            enrol_soft_cap=_int(e, "HUB_ENROL_SOFT_CAP", 50, 0),
-            enrol_hard_cap=_int(e, "HUB_ENROL_HARD_CAP", 200, 0),
-            enrol_step=_int(e, "HUB_ENROL_STEP", 10, 1),
+            enrol_soft_cap=_int(e, "HUB_ENROL_SOFT_CAP", 3, 0),
+            enrol_hard_cap=_int(e, "HUB_ENROL_HARD_CAP", 5000, 0),
+            enrol_step=_int(e, "HUB_ENROL_STEP", 3, 1),
             challenges_per_prefix=_int(e, "HUB_CHALLENGES_PER_PREFIX", 20, 1),
             unsigned_per_min=_int(e, "HUB_RATE_UNSIGNED_PER_MIN", 10, 1),
             unsigned_per_day=_int(e, "HUB_RATE_UNSIGNED_PER_DAY", 100, 1),

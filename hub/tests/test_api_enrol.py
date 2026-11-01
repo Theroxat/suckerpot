@@ -185,13 +185,19 @@ async def test_hard_cap_closes_enrolment(env_factory: Any) -> None:
     assert ch.status == 200
 
 
-async def test_soft_cap_raises_difficulty(env_factory: Any) -> None:
-    env: Env = await env_factory(enrol_soft_cap=1)
-    await env.enrolled(2)  # the second one pushes the count over the soft cap
-    info = await env.client.unsigned("GET", "/v1/info")
-    assert info.json["pow"]["difficulty"] == 7
-    ch = await _challenge(env.node())
-    assert ch["difficulty"] == 7
+async def test_a_flooding_prefix_pays_more_proof_of_work(env_factory: Any) -> None:
+    env: Env = await env_factory(enrol_soft_cap=1, enrol_step=2, challenges_per_prefix=50)
+    seen = [(await _challenge(env.node()))["difficulty"] for _ in range(6)]
+    # base 6; above the soft cap (1): +1, then +1 more for every 2 further challenges
+    assert seen == [6, 6, 7, 7, 8, 8]
+
+
+async def test_difficulty_does_not_rise_with_the_days_global_enrolments(env_factory: Any) -> None:
+    env: Env = await env_factory(enrol_soft_cap=1, enrol_hard_cap=100, challenges_per_prefix=50)
+    await env.enrolled(4)  # four enrolments today, from one prefix
+    env.clock.advance(minutes=11)  # that prefix's window is over
+    assert (await env.client.unsigned("GET", "/v1/info")).json["pow"]["difficulty"] == 6
+    assert (await _challenge(env.node()))["difficulty"] == 6
 
 
 async def test_unsigned_rate_limit_and_daily_key_rotation(env_factory: Any) -> None:
@@ -233,17 +239,6 @@ async def test_enrol_counts_per_day(env: Env) -> None:
         )
         assert "timestamp with time zone" not in cols and "timestamp without time zone" not in cols
     assert env.clock().date() + timedelta(days=0) == date(2026, 11, 1)
-
-
-async def test_difficulty_grows_steeply_with_the_days_enrolments(env_factory: Any) -> None:
-    env: Env = await env_factory(enrol_soft_cap=1, enrol_step=2, enrol_hard_cap=100)
-    seen = []
-    for _ in range(6):
-        info = await env.client.unsigned("GET", "/v1/info")
-        seen.append(info.json["pow"]["difficulty"])
-        await env.enrolled()
-    # base 6; above the soft cap (1): +1, then +1 more for every 2 further enrolments
-    assert seen == [6, 6, 7, 7, 8, 8]
 
 
 async def test_challenges_are_capped_per_prefix(env_factory: Any) -> None:
