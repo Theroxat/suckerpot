@@ -25,6 +25,7 @@ def _merge(into: dict[str, Any], row: dict[str, Any]) -> None:
         into[key] = sorted(set(into.get(key) or []) | set(row.get(key) or []))
     into["fetched"] = bool(into.get("fetched")) or bool(row.get("fetched"))
     into["file_type"] = into.get("file_type") or row.get("file_type")
+    into["via"] = into.get("via") or row.get("via")
     for key in ("sessions", "attempts"):
         values = [v for v in (into.get(key), row.get(key)) if v is not None]
         into[key] = max(values) if values else None
@@ -53,6 +54,7 @@ def build_rows(
             "attempts": None,
             "fetched": False,
             "file_type": None,
+            "via": None,
             **fields,
         }
         existing = rows.get((kind, value))
@@ -116,9 +118,9 @@ def build_rows(
             if never.has_ip(c.ip):
                 reject("never_listed")
                 continue
-            put("c2_ip", f"{c.ip}:{c.port}", families=fam)
+            put("c2_ip", f"{c.ip}:{c.port}", families=fam, via=c.via_sha256)
         elif c.domain_b is not None:
-            put("c2_domain", c.domain_b, families=fam)
+            put("c2_domain", c.domain_b, families=fam, via=c.via_sha256)
         accepted["c2"] += 1
     for f in batch.files:
         if never.has_hash(f.sha256):
@@ -169,17 +171,19 @@ async def observations(request: Request) -> Response:
         if len(rows) > cap:
             rejected["cap"] = len(rows) - cap
             rows = rows[:cap]
-        if caller.suspended:
-            # Never told: the answer looks normal, nothing is stored.
-            return reply(
-                request, ctx, 200, {"accepted": accepted, "rejected": rejected, "duplicate": False}
-            )
         try:
-            session.add(Batch(node_id=caller.node_id, day=day, batch_id=batch_id))
+            # The marker is stored for a suspended node too, so suspension cannot be told apart
+            # from the outside (a second batch for the day answers the same way).
+            session.add(Batch(node_id=caller.node_id, day=day, batch_id=batch_id, items=len(rows)))
             await session.flush()
-            for i in range(0, len(rows), CHUNK):
-                chunk = [{**r, "node_id": caller.node_id, "day": day} for r in rows[i : i + CHUNK]]
-                await session.execute(pg_insert(Observation).values(chunk).on_conflict_do_nothing())
+            if not caller.suspended:
+                for i in range(0, len(rows), CHUNK):
+                    chunk = [
+                        {**r, "node_id": caller.node_id, "day": day} for r in rows[i : i + CHUNK]
+                    ]
+                    await session.execute(
+                        pg_insert(Observation).values(chunk).on_conflict_do_nothing()
+                    )
             await session.commit()
         except IntegrityError:
             await session.rollback()

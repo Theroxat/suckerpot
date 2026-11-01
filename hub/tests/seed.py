@@ -49,7 +49,9 @@ async def add_nodes(
             ).scalar_one()
             for d in range(1, active_days + 1):
                 await s.execute(
-                    text("INSERT INTO batches VALUES (:n, :d, :b)"),
+                    text(
+                        "INSERT INTO batches (node_id, day, batch_id, items) VALUES (:n, :d, :b, 1)"
+                    ),
                     {"n": node_id, "d": today - timedelta(days=d), "b": os.urandom(16)},
                 )
             ids.append(node_id)
@@ -75,6 +77,7 @@ async def observe(
         "attempts": 3,
         "fetched": False,
         "file_type": None,
+        "via": None,
         **fields,
     }
     async with sm() as s:
@@ -83,9 +86,9 @@ async def observe(
                 await s.execute(
                     text(
                         "INSERT INTO observations (node_id, day, kind, value, services, activity, "
-                        "tags, families, sessions, attempts, fetched, file_type) VALUES "
+                        "tags, families, sessions, attempts, fetched, file_type, via) VALUES "
                         "(:n, :d, :k, :v, :services, :activity, :tags, :families, :sessions, "
-                        ":attempts, :fetched, :file_type) ON CONFLICT DO NOTHING"
+                        ":attempts, :fetched, :file_type, :via) ON CONFLICT DO NOTHING"
                     ),
                     {"n": n, "d": d, "k": kind, "v": value, **row},
                 )

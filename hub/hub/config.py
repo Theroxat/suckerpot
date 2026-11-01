@@ -81,6 +81,8 @@ class Settings:
     min_reputation: float = 0.3
     window_days: int = 7
     cohort_max_share: float = 0.5
+    # Auto mode (reports sent without review) needs this many independent enrolment cohorts.
+    auto_min_cohorts: int = 5
 
     # Retention.
     obs_retention_days: int = 14
@@ -134,6 +136,7 @@ class Settings:
             min_reputation=_float(e, "HUB_MIN_REPUTATION", 0.3),
             window_days=_int(e, "HUB_WINDOW_DAYS", 7, 1, 14),
             cohort_max_share=_float(e, "HUB_COHORT_MAX_SHARE", 0.5),
+            auto_min_cohorts=_int(e, "HUB_AUTO_MIN_COHORTS", 5, 1),
             obs_retention_days=_int(e, "HUB_OBS_RETENTION_DAYS", 14, 1, 60),
             worker_interval_s=_int(e, "HUB_WORKER_INTERVAL_S", 3600, 5),
             report_mode=mode,
