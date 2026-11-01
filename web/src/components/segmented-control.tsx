@@ -6,6 +6,7 @@ export interface SegmentedOption<T extends string> {
   label: React.ReactNode
   /** Accessible name when the label is an icon or abbreviated. */
   ariaLabel?: string
+  disabled?: boolean
 }
 
 interface SegmentedControlProps<T extends string> {
@@ -52,6 +53,7 @@ export function SegmentedControl<T extends string>({
           key={o.value}
           value={o.value}
           aria-label={o.ariaLabel}
+          disabled={o.disabled}
           title={size === "icon" ? o.ariaLabel : undefined}
           className={cn(
             "rounded-sm border-0 text-fg-muted shadow-none hover:bg-transparent hover:text-fg",

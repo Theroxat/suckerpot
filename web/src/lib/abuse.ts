@@ -74,6 +74,13 @@ export function guardReason(code: string): string {
   return GUARD_REASON[code] ?? "The identity check refused this text."
 }
 
+export interface SendRequestShape {
+  status: "pending" | "sent" | "failed" | "cancelled"
+  error_code: string | null
+  requested_at?: string | null
+  done_at: string | null
+}
+
 // --- Shapes -----------------------------------------------------------------------
 
 export interface Recipient {
@@ -155,6 +162,8 @@ export interface ReportDetail extends ReportItem {
   reviewed_at: string | null
   sent_at: string | null
   closed_at: string | null
+  /** Optional sending (M25): the planned time and the last request, when sending is set up. */
+  send_state?: { scheduled_at: string | null; last_request: SendRequestShape | null }
 }
 
 export interface Attachment {

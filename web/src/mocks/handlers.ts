@@ -18,6 +18,7 @@ import { samplesHandlers } from "./samples"
 import { scriptsHandlers } from "./scripts"
 import { alertsHandlers } from "./alerts"
 import { abuseHandlers } from "./abuse"
+import { abuseSendHandlers } from "./abuse-send"
 import { vpnHandlers } from "./vpn"
 import { setupHandlers } from "./setup"
 import { searchHandlers } from "./search"
@@ -92,6 +93,7 @@ export const handlers = [
   ...campaignsHandlers(fixtures),
   ...defendHandlers,
   ...samplesHandlers,
+  ...abuseSendHandlers,
   ...abuseHandlers,
   ...vpnHandlers,
   ...setupHandlers,

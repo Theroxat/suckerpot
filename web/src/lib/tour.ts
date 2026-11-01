@@ -40,8 +40,8 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     id: "abuse",
-    title: "Abuse reports are drafts that you send yourself.",
-    body: "When abuse reports are on, contacts are found over RDAP through the VPN, and one draft is built per abuse contact. You review it and send it from your own mailbox: SuckerPot never sends a report itself, and an identity check masks or blocks anything that matches your own addresses or the terms you listed.",
+    title: "Abuse reports are drafts for you to send.",
+    body: "When abuse reports are on, contacts are found over RDAP through the VPN, and one draft is built per abuse contact. You review it and send it from your own mailbox: by default SuckerPot never sends a report, and it does so only if you set up SMTP and choose a sending mode. An identity check masks or blocks anything that matches your own addresses or the terms you listed.",
   },
   {
     id: "alerts",
