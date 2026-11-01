@@ -57,6 +57,7 @@ The Styleguide page is routable everywhere but listed in the sidebar only in dev
 | Blocklists | `/defend/blocklists` | Scored blocklists with a reason for every point, overrides, and exports for firewalls. See [Defend](defend.md). |
 | Detections | `/defend/detections` | Sigma and Suricata rules marked "review before deploying". |
 | Your exposure | `/defend/exposure` | Your own service inventory compared with what was recorded. |
+| Abuse reports | `/defend/abuse`, `/defend/abuse/<id>` | Drafts of anonymous abuse reports to review, copy and mark sent. See [Abuse reports](#abuse-reports-m22). |
 | Alerts and reports | `/defend/alerts`, `/reports/<week>` | Alert rules and channels (all off until you switch them on), and the weekly report with a printable view. |
 | **System** | | |
 | Settings | `/settings` | Sensor status, enrichment quotas, retention, the disk guard and the database size. The provider API keys can be set, replaced, removed and tested here: write-only, with a password prompt for every change (see [Provider API keys](api-keys.md)). Administrators also see **Users** and the **Audit log**; viewers see neither, and no control that changes anything (see [Users and roles](#users-and-roles)). |
@@ -98,6 +99,16 @@ The Overview page opens with up to three insights, each one a plain sentence wit
 - **Sample page** (`/malware/samples/<sha256>`). A header with family, kind and architecture, severity and the hashes with copy buttons, plus a VirusTotal link. Then: **Where it came from** (URLs, sessions, address chips, sensors), **The chain** (session, script, binary, C2) as a vertical step list, **What it matched** (YARA hits as tags), the **deobfuscated script** as plain text with a summary of the steps, and the **strings** in a virtualised list. Red is used only for a sample with a malware-family YARA hit or an executable dropped by a session.
 - **Download as archive.** Administrators only. A dialog explains that the zip uses the password `infected`, and asks for the dashboard password again. Viewers do not see the button. The file is never shown or served raw.
 - **Settings, Egress card.** One sentence first: "Outbound traffic leaves through the VPN" or "Outbound traffic is paused: the VPN tunnel is down". Then the time of the last check, the reason when the gate is closed, a meter for the collector quota and a meter for the quarantine against its cap. The VPN exit address is hidden until you click to reveal it.
+
+## Abuse reports (M22)
+
+Nothing here sends mail. You read, copy and send from your own mailbox.
+
+- **Abuse reports page** (`/defend/abuse`). A finding first ("4 reports are ready for review, covering 23 addresses in 3 networks"). When nothing can be built (worker off, egress closed, no confirmed self address) an empty state says why and links to Settings. Tabs by status (Drafts, Reviewed, Sent, Closed, Discarded) with counts, and a "No contact found" list where you can type a mailbox. Rows are grouped by provider: name and mailbox, network chips, the kind (Attack source, Payload host, C2 server), number of subjects, the period and the identity check as an icon plus a word.
+- **Report page** (`/defend/abuse/<id>`). A status stepper (Draft, Reviewed, Sent, Closed). The **Identity check** card comes first: it says what was masked, or why the report is blocked, using reason codes in plain English. Then the **Message** card with Plain text, X-ARF and .eml, read-only To, Subject and Body fields with copy buttons and downloads. Then the subjects (the only place with links back into the dashboard), notes and actions: Mark reviewed, Mark sent (with a date and time), Close, Discard, Regenerate. A stale revision reloads the page. Viewers see everything and no buttons. Demo reports carry a "Demo data, do not send" banner and cannot be marked sent. Red is used only for a blocked identity check.
+- **Export for CERT.** A menu on the report page and on the campaign page: STIX 2.1 or MISP JSON, with a TLP choice (default TLP:GREEN).
+- **Sample bundle.** Administrators select up to 10 stored samples (from the Samples tab or a sample page) and download one password-protected zip. The dialog explains the `infected` password, asks for your dashboard password again and says how many samples were excluded by the identity check.
+- **Settings > Reporting** (administrators). The reply contact, signature, introduction, closing text, note, subject template, X-ARF user agent and default options. A notice shows while required wording is empty. Below it, the **Never in a report** list: learned and manual terms, masked with a reveal button, a button to confirm a learned term, and add and delete for manual ones.
 
 ## Sessions as stories
 

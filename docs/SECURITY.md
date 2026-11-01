@@ -306,6 +306,70 @@ SuckerPot does not:
 
 Fake services must look real to an attacker. Banners and versions are plausible and current. Hostnames are ordinary. The words "honeypot" and "suckerpot" never appear anywhere a client could see. This applies to every sensor.
 
+## Anonymous reporting (M22)
+
+The owner reports hostile networks and shares indicators as an anonymous whistleblower. The stack only prepares the text and files. It never sends mail, never submits to a CERT or a malware repository, and stores no mail credentials. Abuse desks often forward a report to their customer, who is the attacker, so a report must not lead back to the owner. Design: [M22 design](design/m22.md).
+
+### What a report never contains
+
+- the address of the monitored system, any name that resolves to it, and the owner's domains and dashboard URL
+- the VPN exit address and endpoint
+- the project name, the words a search would match to this public repo, and the fake host names of the sensors
+- session, campaign and internal ids, dashboard paths
+- passwords, keys, private ranges and container addresses
+- sensor output, banners, HTTP headers other than `User-Agent`, request bodies, tags and third-party scores
+
+### How leaks are prevented
+
+- **Allow-list evidence.** Evidence is built field by field. There is no path that copies a raw event, so a new field in a sensor can never leak by accident.
+- **Redaction.** Every free-text value (commands, URLs, user agents, usernames) is cleaned (normalised, controls and look-alike characters removed, printable ASCII only), decoded in several views, and capped. A line that contains a self term is removed whole instead of masked. Addresses in every encoding that are not subjects of the report are masked. The review page shows counters only ("2 addresses masked, 1 line removed").
+- **Random identifiers.** Report ids in filenames and exports are random, never derived from internal ids. Zip metadata is neutral.
+- **Defanged bodies.** Links and addresses in message bodies are defanged. Machine formats keep real values.
+
+### The identity guard
+
+Every artefact (text, X-ARF, `.eml`, STIX, MISP, each bundle member) goes through the guard immediately before it is returned, on every render, download and export. A failure returns `409` with reason codes and returns nothing else. The matched value is never in the response, the log or the audit trail.
+
+| Code | Meaning |
+| --- | --- |
+| `self_address` | The monitored system's address (in any encoding) was found |
+| `self_name` | A name that describes the monitored system was found |
+| `owner_domain` | One of the owner's domains or hosts was found |
+| `vpn_address` | The VPN exit address or endpoint was found |
+| `project_term` | The project name or a look-alike was found |
+| `private_address` | A private, loopback, link-local or similar address was found |
+| `documentation_address` | A documentation address in a real (non-demo) report |
+| `dashboard_path` | A dashboard path was found |
+| `internal_id` | A session id or an internal report id was found |
+| `default_wording` | Text still matches wording that was ever published in this repo |
+| `no_self_address` | No confirmed address of the monitored system is known, so nothing can be checked. The guard fails closed |
+| `self_terms_unavailable` | The list of self terms could not be read. Also fails closed |
+
+`settings_incomplete` is not a guard code. It is the answer when a required setting is empty (see below).
+
+`just abuse-guard-check` renders every open report in every format, plus a STIX and a MISP export of the last 7 days, and prints PASS or FAIL counts per format with reason codes. It never prints values, and exits non-zero on any failure or on `no_self_address`.
+
+### Learning the monitored system's own names
+
+No event stores a destination address, and the stack must not ask an outside service for it. Scanners that address a server by IP put that address in the HTTP `Host` header or the SIP request URI. Sensors also declare their own fake names in `data.self_identity` of the `connect` event. The abuse worker reads recent events and counts distinct sources.
+
+- A name or address is stored only when it is seen from at least two distinct source networks (/24 for IPv4, /48 for IPv6). Common report words and `localhost` are never learned.
+- **Learned terms start inactive.** Only the owner confirms them in Settings > Reporting. A learned address counts as the monitored system's address only when it is confirmed and was seen in the last 72 hours.
+- Why confirmation: an attacker controls the `Host` header. Without a confirmation step, one sends a crafted value to steer what is redacted, or to make reports unusable. An unconfirmed term is inactive: it unlocks nothing. Manual terms (typed by the owner) are active at once.
+- Terms are shown masked and revealed on request. Audit records name the fields changed, never values. Learned terms are kept forever, since an old address still identifies the owner.
+
+### The owner writes all the wording
+
+The package ships no introduction, closing text, note or subject template. Any text shipped here would sit in a public repo, and a recipient could search for it and land on the project. The owner writes the introduction, closing text, note and subject template in Settings > Reporting. X-ARF also needs a reply contact and a user agent. While one is empty, rendering answers `settings_incomplete` with the field names. The guard also refuses (`default_wording`) text that matches wording published earlier. A report cannot be marked reviewed until the wording is the owner's own.
+
+### Other limits
+
+- Reports use exact source ports, destination ports and times rounded to the minute (`ABUSE_ROUND_TIMES`, on by default). **Known limit:** a reported network can match those times and ports against its own flow logs and so learn the address that was attacked. The attacker already knew it, and the alias stays anonymous, but the alias is then tied to that address. Coarser times reduce this and do not remove it.
+- Recipient data (names, mailboxes) comes from RDAP and is third-party text. It is validated, length-capped, never rendered as HTML and passes the guard like everything else.
+- A sample whose bytes contain a self term is left out of the sample bundle, and the response lists how many were excluded.
+- Demo reports can never become `sent` (database trigger).
+- RDAP uses the egress gate and a generic client identity. Static tests fail on mail-sending code in `reporting/` and `ingest/ingest/abuse/`.
+
 ## Defend: feeds, exports and generated rules (M16)
 
 The Defend pages turn recorded data into lists and rules (see [Defend](defend.md)). The rules for that code:
@@ -347,6 +411,7 @@ Review outcomes so far:
 | Dashboard authentication | 1 | Passed on the first pass. The medium findings were fixed: argon2 concurrency could exhaust memory (one check at a time now), CSRF bound to the session, `__Host-` cookies, trusted hosts, a per-boot signing key, IPv6 rate limiting per /64, trusted proxy CIDRs, and a stricter redirect target check in the web app. |
 | Synology sensor (M20) | passed | Two passes. Fixed: per-IP and sensor-wide caps on TLS handshakes in flight and per second, a full ClientHello required before a handshake slot is taken, an exact nginx plain-HTTP-on-HTTPS-port page, consistent `text/html`, and per-path asset sizes. PoCs against a hardened container kept legitimate HTTPS working. |
 | Anonymous egress, collector, analyzer and quarantine (M21) | passed | Reviewed for the VPN service and kill switch, the egress gate, the SSRF validator, the quarantine and the parser limits on hostile files. The rules it checked are listed in the section above. |
+| Anonymous reporting (M22) | passed | Reviewed with a leak hunt: the monitored system's address, its names, the project name and session ids tried through attacker-controlled fields (commands, URLs, user agents, usernames, sample contents, RDAP answers, recipient names). The rules it checked are listed in the section above. |
 | Web sensor | in progress | Pass 1 found response amplification that could exhaust memory. Pass 2 found lingering transports under reconnect churn. Pass 3 found the per-connection cost of TLS. Fixes are ongoing, and the sensor is not in Compose until it passes. |
 | Terminal replay (planned) | | The [safety contract](#terminal-replay-safety-contract) is a requirement for it. |
 

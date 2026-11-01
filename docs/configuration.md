@@ -522,6 +522,28 @@ Details in [Architecture](ARCHITECTURE.md#anonymous-egress-m21) and [Deployment]
 
 `FETCH_PAYLOADS`, `PAYLOAD_MAX_BYTES` and `PAYLOAD_TIMEOUT_SECONDS` no longer exist. `COLLECTOR_ENABLED`, `COLLECTOR_MAX_BYTES` and `COLLECTOR_TIMEOUT_S` replace them.
 
+## Anonymous reporting (M22)
+
+Details in [Architecture](ARCHITECTURE.md#anonymous-reporting-m22), [Deployment](deployment.md#anonymous-reporting) and [Security](SECURITY.md#anonymous-reporting-m22). The worker is off by default. It only prepares drafts; it never sends mail. RDAP lookups go through the VPN egress gate, so the `egress` profile must be on.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ABUSE_REPORTS_ENABLED` | `false` | Run the abuse worker in `ingest` |
+| `ABUSE_BUILD_INTERVAL_S` | `3600` | Seconds between two draft builds (60 to 86400) |
+| `ABUSE_MIN_LOGIN_ATTEMPTS` | `50` | Failed logins that select a source. A login followed by commands, a download attempt or a severe tag also selects it. |
+| `ABUSE_SEVERE_TAGS` | built-in list | Tags that select a source: `malware-drop`, `mirai`, `crypto-miner`, `php2shell`, `exploit` and any `cve-*` tag. Empty means the built-in list. |
+| `ABUSE_LOOKBACK_DAYS` | `7` | Days of evidence in a report |
+| `ABUSE_SETTLE_MIN` | `30` | Minutes a source must be quiet before it is drafted |
+| `ABUSE_RESEND_DAYS` | `14` | Days before the same source can be reported again to the same recipient |
+| `ABUSE_MAX_SUBJECTS` | `100` | Subjects per report (maximum 100) |
+| `ABUSE_MAX_OPEN_DRAFTS` | `200` | Drafts open at once |
+| `ABUSE_RDAP_DAILY_QUOTA`, `ABUSE_RDAP_HOURLY_QUOTA` | `1000`, `200` | Hard RDAP request quotas. Each redirect and fallback counts. |
+| `ABUSE_REPORTS_INCLUDE_DEMO` | `false` | Also draft from demo data (documentation addresses). Demo drafts can never be sent. |
+| `ABUSE_ROUND_TIMES` | `true` | Round times in reports to the minute. Set `false` to allow exact times. |
+| `ABUSE_REPORT_RETENTION_DAYS` | `730` | Days to keep reports marked sent or closed (the duplicate check needs the history). Discarded drafts are removed after 90 days. |
+
+The reply contact, signature and all wording are not environment variables. The owner types them in Settings > Reporting. To keep the identity guard accurate, the `api` service also reads the sensor host name variables, `API_ALLOWED_ORIGINS`, `ALERTS_DASHBOARD_URL`, `INDICATORS_IGNORE`, `BLOCKLIST_NEVER`, `AUTH_TRUSTED_PROXIES` and `VPN_WG_ENDPOINT_IP`. These are used only to build the list of terms a report must never contain.
+
 ## In `.env.example` but not used yet
 
 These names are in the template. The code does not read them, so setting them has no effect today.

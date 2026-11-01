@@ -47,13 +47,14 @@ Each sensor records what the attacker does and never runs it. SIP answers are ca
 - **Dashboard.** Pages are grouped in three spaces plus Settings, so you always know where you are:
   - **Observe:** Today, Live (a flat world map of the last 15 minutes), Attacks, Attackers (by IP and by ASN) and Activity.
   - **Understand:** Campaigns, Techniques, Scripts, Malware, Infrastructure, Trends and CVE watch.
-  - **Defend:** Blocklists, Detections, Your exposure, and Alerts and reports.
+  - **Defend:** Blocklists, Detections, Your exposure, Abuse reports, and Alerts and reports.
   - **System:** Settings (sensor health, API keys, quotas, retention, storage, users).
 
   A session page has a terminal replay at real speed. `Ctrl+K` opens a search box that finds an IP, hash, domain, CVE or campaign. Security words have a glossary tooltip. Known research scanners are hidden by default. Dark and light, desktop and mobile. An owner login plus optional administrator and read-only viewer accounts (argon2, CSRF protection, lockout, audit log) guard it, and a screenshot mode (`?mask=1`) masks addresses.
 - **Campaigns.** Sessions that share a script, a payload host, a file hash, a malware family, an exploit or a credential list are grouped into one campaign, with a plain-English story. A campaign needs at least two sources, and research scanners are never grouped.
 - **Techniques.** Each session is labelled with the MITRE ATT&CK techniques it used. The Techniques page shows them as a heatmap per day.
 - **Scripts.** The command sequences that attackers type are fingerprinted into a library. Each script has a plain-English explanation from a rules base. An optional LLM explainer is off by default, and when on it sees only the normalised script text.
+- **Anonymous reporting.** Drafts of abuse reports for the networks that host attackers, found through RDAP behind the VPN, plus STIX 2.1 and MISP exports and password-protected sample bundles. An identity check blocks any report that could point back to you, and you write all the wording. The stack never sends anything: you review each report and send it yourself.
 - **Defend.** Scored blocklists with a reason for every point, exports for OPNsense and pfSense aliases, an opt-in token feed for firewalls, Sigma and Suricata rules marked "review before deploying", and "Your exposure", which compares your own service inventory with what was recorded.
 - **Alerts and reports.** Discord, Microsoft Teams and e-mail alerts for new campaigns, new download hosts, malware drops and watched CVEs. Every rule is off until you switch it on. A weekly report has a one-page printable view.
 - **Today and search.** A Today home page says what changed in the last 24 hours. One search box finds an IP, hash, domain, CVE or campaign. Known research scanners are labelled, and hidden from lists unless you ask for them. A glossary explains the terms.
@@ -170,6 +171,7 @@ SuckerPot runs hostile traffic through containers, so isolation is a feature, no
 | M19 | Today, global search, glossary, research scanners | Done |
 | M20 | Synology NAS sensor (DSM 7.2.1), CVE watch fixes | Done |
 | M21 | Anonymous egress (WireGuard VPN), payload collection and static analysis | Built, not deployed yet |
+| M22 | Anonymous reporting: abuse reports, CERT exports, sample bundles | Built, not deployed yet |
 
 Details in [docs/ROADMAP.md](docs/ROADMAP.md).
 
