@@ -17,6 +17,9 @@ export interface VpnGate {
   state: "open" | "closed"
   reason: string | null
   egress_ip: string | null
+  /** The network the exit address belongs to, when enrichment knows it. */
+  egress_asn: number | null
+  egress_org: string | null
   checked_at: string | null
 }
 
@@ -39,6 +42,10 @@ export interface VpnStatus {
   trusted_exits: TrustedExit[]
   /** The /24 or /48 the gate observed and the owner may trust; null when there is none. */
   trust_candidate: string | null
+  /** Why the exit cannot be trusted at all (then `trust_candidate` is null). */
+  trust_blocked: "exit_is_self" | "exit_asn_denied" | null
+  /** False when the vpn-config volume is not mounted or not writable. */
+  config_writable: boolean
 }
 
 export const vpnKeys = { status: ["settings", "vpn"] as const }
@@ -68,6 +75,7 @@ const PROBLEMS: Record<string, string> = {
   unknown_section: "The file has a section other than [Interface] and [Peer].",
   duplicate_section: "The file has more than one [Interface] or [Peer] section.",
   missing_section: "The file needs one [Interface] and one [Peer] section.",
+  duplicate_key: "A setting appears twice in the same section.",
   syntax: "A line in the file is not in the form key = value.",
 }
 
@@ -90,6 +98,8 @@ export const VPN_MESSAGES = {
   tooMany: "Eight exits are already trusted. Remove one first.",
   unavailable:
     "The VPN configuration store is not available. Check that the vpn-config volume is mounted.",
+  exitIsSelf: "This exit is the address of this system itself, so it cannot be trusted.",
+  exitAsnDenied: "This exit network is on your deny list, so it cannot be trusted.",
   forbidden: "Only an administrator can change the VPN.",
   notFound: "That entry no longer exists. The status has been refreshed.",
   generic: "The change could not be made. Try again in a moment.",
@@ -121,11 +131,17 @@ export function toVpnError(e: unknown): UserError {
   if (e.status === 413 || reason === "too_large")
     return new UserError("invalid", VPN_MESSAGES.tooLarge)
   if (e.status === 422) return new UserError("invalid", describeProblems(problemCodes(e)))
-  if (e.status === 409)
-    return new UserError(
-      "invalid",
-      reason === "too_many" ? VPN_MESSAGES.tooMany : VPN_MESSAGES.noCandidate,
-    )
+  if (e.status === 409) {
+    const text =
+      reason === "too_many"
+        ? VPN_MESSAGES.tooMany
+        : reason === "exit_is_self"
+          ? VPN_MESSAGES.exitIsSelf
+          : reason === "exit_asn_denied"
+            ? VPN_MESSAGES.exitAsnDenied
+            : VPN_MESSAGES.noCandidate
+    return new UserError("invalid", text)
+  }
   if (e.status === 503 || reason === "vpn_config_unavailable")
     return new UserError("invalid", VPN_MESSAGES.unavailable)
   if (e.status === 403) return new UserError("invalid", VPN_MESSAGES.forbidden)
@@ -137,6 +153,10 @@ export function toVpnError(e: unknown): UserError {
 export function describeVpn(v: VpnStatus): string {
   const ip = v.gate.egress_ip
   if (v.gate.state === "closed") {
+    if (v.trust_blocked)
+      return `The gate is closed: the exit ${ip ?? "address"} looks like ${
+        v.trust_blocked === "exit_is_self" ? "your own connection" : "a network you denied"
+      }.`
     if (v.trust_candidate && ip) return `The gate is closed: the new exit ${ip} is not trusted yet.`
     return "The gate is closed: outbound lookups are paused."
   }
@@ -163,4 +183,12 @@ export const vpnApi = {
     guarded(() => sendJson<TrustedExit>("POST", "/settings/vpn/trusted-exits", { password })),
   untrust: (id: number, password: string) =>
     guarded(() => sendJson("DELETE", `/settings/vpn/trusted-exits/${id}`, { password })),
+}
+
+/** "AS64500 Example Networks", or null when the network is not known. */
+export function describeNetwork(g: Pick<VpnGate, "egress_asn" | "egress_org">): string | null {
+  if (g.egress_asn === null && !g.egress_org) return null
+  return [g.egress_asn === null ? null : `AS${g.egress_asn}`, g.egress_org]
+    .filter(Boolean)
+    .join(" ")
 }

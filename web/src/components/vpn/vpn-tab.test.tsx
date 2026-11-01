@@ -28,10 +28,14 @@ const ENV: VpnStatus = {
     state: "open",
     reason: null,
     egress_ip: "203.0.113.7",
+    egress_asn: 64501,
+    egress_org: "Example VPN Provider",
     checked_at: "2026-11-01T10:00:00Z",
   },
   trusted_exits: [],
   trust_candidate: null,
+  trust_blocked: null,
+  config_writable: true,
 }
 const UPLOADED: VpnStatus = {
   ...ENV,
@@ -42,6 +46,8 @@ const UPLOADED: VpnStatus = {
     state: "closed",
     reason: "ip_not_allowed",
     egress_ip: "198.51.100.20",
+    egress_asn: 64500,
+    egress_org: "Example Networks",
     checked_at: "2026-11-01T10:00:00Z",
   },
   trusted_exits: [
@@ -253,5 +259,39 @@ describe("VpnTab", () => {
       url: "/api/v1/settings/vpn",
       body: { password: "pw2" },
     })
+  })
+  it("shows the exit network and asks to check it before trusting", async () => {
+    stub(UPLOADED)
+    const user = userEvent.setup()
+    mount()
+    expect((await screen.findAllByText(/AS64500 Example Networks/)).length).toBeGreaterThan(0)
+    await user.click(screen.getByRole("button", { name: "Trust 198.51.100.0/24" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(/198\.51\.100\.20/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/not your internet provider/)).toBeInTheDocument()
+  })
+
+  it("explains a blocked exit, offers no trust, and offers the .env settings", async () => {
+    stub({
+      ...UPLOADED,
+      trust_candidate: null,
+      trust_blocked: "exit_is_self",
+      gate: { ...UPLOADED.gate, reason: "exit_is_self" },
+    })
+    mount()
+    expect(await screen.findByText("This exit cannot be trusted")).toBeInTheDocument()
+    expect(screen.getByText(/looks like your own internet connection/)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^Trust / })).toBeNull()
+    expect(screen.getAllByRole("button", { name: "Use the .env settings again" })).toHaveLength(1)
+  })
+
+  it("turns upload and revert off when the config volume is not writable", async () => {
+    stub({ ...UPLOADED, config_writable: false })
+    mount()
+    expect(
+      await screen.findByText(/vpn-config volume is not mounted or not writable/),
+    ).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Choose a file" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Use the .env settings again" })).toBeDisabled()
   })
 })

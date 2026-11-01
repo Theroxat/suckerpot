@@ -29,3 +29,11 @@ test("settings vpn upload needs trust", async ({ page }, info) => {
   await page.getByRole("dialog").getByRole("button", { name: "Trust 198.51.100.0/24" }).click()
   await expect(page.getByText(/Traffic leaves through 198\.51\.100\.20/)).toBeVisible()
 })
+
+test("settings vpn blocked exit", async ({ page }, info) => {
+  await page.goto("/settings?tab=vpn&vpn=self")
+  await expect(page.getByText("This exit cannot be trusted")).toBeVisible()
+  await expect(page.getByRole("button", { name: /^Trust / })).toHaveCount(0)
+  await settle(page)
+  await shoot(page, "settings-vpn-blocked", info.project.name, true)
+})
