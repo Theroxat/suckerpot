@@ -38,6 +38,7 @@ configuration
 event-schema
 api
 retention
+network-protocol
 SECURITY
 design/m21
 design/m22

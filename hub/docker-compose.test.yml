@@ -1,0 +1,98 @@
+# Throwaway hub stack for tests. Local volumes only, no Caddy, no TLS, documentation address
+# ranges accepted, a low proof-of-work difficulty and dummy passwords. NEVER deploy this file.
+#
+#   docker compose -f hub/docker-compose.test.yml -p hubtest-$$ up -d --build --wait
+#   ... run the tests on the network hubtest-<n>_default (see `just hub-integration`) ...
+#   docker compose -f hub/docker-compose.test.yml -p hubtest-$$ down -v
+#
+# Always pass a throwaway project name (-p hubtest-<something>); `down -v` then removes only
+# this project's volumes.
+
+name: hubtest
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+x-test-env: &test-env
+  HUB_SIGNING_KEY_FILE: /keys/hub.key
+  HUB_ALLOW_DOCUMENTATION: "1"
+  HUB_ALLOW_DEFAULT_SECRETS: "1"
+  HUB_POW_DIFFICULTY: "8"
+  HUB_NODE_MIN_AGE_DAYS: "14"
+
+services:
+  hub-db:
+    image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+    <<: *hardening
+    user: "999:999"
+    environment:
+      POSTGRES_DB: hub
+      POSTGRES_USER: hub
+      POSTGRES_PASSWORD: ${HUB_DB_PASSWORD:-hubtest-owner-password-0001}
+    command: ["postgres", "-c", "fsync=off", "-c", "log_connections=off", "-c", "log_statement=none"]
+    tmpfs:
+      - /var/lib/postgresql/data:rw,noexec,nosuid,nodev,size=256m,uid=999,gid=999
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=1m,uid=999,gid=999
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=999,gid=999
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hub -d hub"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+
+  hub-keygen:
+    build:
+      context: ..
+      dockerfile: hub/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    entrypoint: ["python", "-m", "hub.admin", "gen-signing-key", "--out", "/keys/hub.key", "--force"]
+    volumes:
+      - keys:/keys
+    restart: "no"
+
+  hub-migrate:
+    build:
+      context: ..
+      dockerfile: hub/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    command: ["python", "-m", "hub.migrate"]
+    environment:
+      <<: *test-env
+      HUB_MIGRATE_DATABASE_URL: postgresql+asyncpg://hub:${HUB_DB_PASSWORD:-hubtest-owner-password-0001}@hub-db:5432/hub
+      HUB_DB_PASSWORD: ${HUB_DB_PASSWORD:-hubtest-owner-password-0001}
+      HUB_API_DB_PASSWORD: ${HUB_API_DB_PASSWORD:-hubtest-api-password-0002}
+      HUB_WORKER_DB_PASSWORD: ${HUB_WORKER_DB_PASSWORD:-hubtest-worker-password-0003}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    restart: "no"
+    depends_on:
+      hub-db:
+        condition: service_healthy
+
+  hub-api:
+    build:
+      context: ..
+      dockerfile: hub/Dockerfile
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      <<: *test-env
+      HUB_DATABASE_URL: postgresql+asyncpg://hub_api:${HUB_API_DB_PASSWORD:-hubtest-api-password-0002}@hub-db:5432/hub
+    volumes:
+      - keys:/keys:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
+    mem_limit: 256m
+    depends_on:
+      hub-migrate:
+        condition: service_completed_successfully
+      hub-keygen:
+        condition: service_completed_successfully
+
+volumes:
+  keys:
