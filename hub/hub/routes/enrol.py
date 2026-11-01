@@ -31,7 +31,7 @@ async def enrolments_today(ctx: AppContext, session: AsyncSession) -> int:
 
 
 async def current_difficulty(ctx: AppContext, session: AsyncSession) -> int:
-    """Base difficulty; above the soft cap one more bit, then one more per ``enrol_step`` enrolments.
+    """Base difficulty; above the soft cap one more bit, then one per ``enrol_step`` enrolments.
 
     The rise is capped at 10 extra bits: a flood gets expensive fast, the hub never locks up.
     """

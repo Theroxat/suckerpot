@@ -29,7 +29,11 @@ async def count(env: Env, table: str, where: str = "true") -> int:
 async def test_observations_expire_after_fourteen_days(env: Env) -> None:
     (n,) = await add_nodes(env.worker, 1)
     await observe(
-        env.worker, [n], "ip", "45.1.1.1", [TODAY - timedelta(days=14), TODAY - timedelta(days=15)]
+        env.worker,
+        [n],
+        "ip",
+        "203.0.113.201",
+        [TODAY - timedelta(days=14), TODAY - timedelta(days=15)],
     )
     async with env.worker() as s:
         res = await retention.run_retention(s, env.settings, env.clock(), TODAY)
@@ -57,7 +61,7 @@ async def test_nonces_challenges_votes_stats_expire(env: Env) -> None:
         )
         await s.execute(
             text(
-                "INSERT INTO targets (id, kind, value, state, confirmed_day, first_day, last_day) VALUES ('t_000000000001','ip','45.1.1.1','confirmed',:d,:d,:d)"
+                "INSERT INTO targets (id, kind, value, state, confirmed_day, first_day, last_day) VALUES ('t_000000000001','ip','203.0.113.201','confirmed',:d,:d,:d)"
             ),
             {"d": TODAY},
         )
@@ -90,7 +94,7 @@ async def test_contributor_links_go_when_resolved_or_after_thirty_days(env: Env)
                 text(
                     "INSERT INTO targets (id, kind, value, state, confirmed_day, first_day, last_day, updated_at) VALUES (:i,'ip',:v,:s,:d,:d,:d,:u)"
                 ),
-                {"i": tid, "v": f"45.1.1.{tid[-1]}", "s": state, "d": day, "u": upd},
+                {"i": tid, "v": f"203.0.113.{tid[-1]}", "s": state, "d": day, "u": upd},
             )
             await s.execute(
                 text("INSERT INTO target_contributors VALUES (:i, :n)"), {"i": tid, "n": n}
@@ -109,7 +113,7 @@ async def test_inactive_nodes_are_deleted_with_their_data(env: Env) -> None:
             {"d": TODAY - timedelta(days=31), "i": gone},
         )
         await s.commit()
-    await observe(env.worker, [gone, keep], "ip", "45.1.1.1", [TODAY - timedelta(days=1)])
+    await observe(env.worker, [gone, keep], "ip", "203.0.113.201", [TODAY - timedelta(days=1)])
     async with env.worker() as s:
         res = await retention.run_retention(s, env.settings, env.clock(), TODAY)
     assert res.deleted["inactive_nodes"] == 1
@@ -136,7 +140,7 @@ async def test_summary_k_rules_and_no_ranking(env: Env) -> None:
     ch = await add_nodes(env.worker, 3, countries=["CH"] * 3, show_country=True)
     await add_nodes(env.worker, 2, countries=["DE", "DE"], show_country=True)  # only two: hidden
     await add_nodes(env.worker, 1, countries=["FR"], show_country=False)
-    await observe(env.worker, ch[:1], "ip", "45.1.1.1", [TODAY - timedelta(days=8)])
+    await observe(env.worker, ch[:1], "ip", "203.0.113.201", [TODAY - timedelta(days=8)])
     async with env.worker() as s:
         summary = await stats.run_daily(s, TODAY)
     assert summary.totals.members == 6 and summary.totals.countries == 1
@@ -183,7 +187,7 @@ async def test_weekly_tier_follows_consensus_not_what_a_node_sent(env: Env) -> N
                 text(
                     "INSERT INTO targets (id, kind, value, state, confirmed_day, first_day, last_day) VALUES (:i, 'ip', :v, 'confirmed', :d, :d, :d)"
                 ),
-                {"i": tid, "v": f"45.{i // 250}.{i % 250}.1", "d": week},
+                {"i": tid, "v": f"2001:db8::{i:x}", "d": week},
             )
             await s.execute(
                 text("INSERT INTO target_contributors VALUES (:i, :n)"), {"i": tid, "n": helper}
@@ -283,10 +287,10 @@ async def test_admin_cli(env: Env, tmp_path: Any) -> None:
     assert await cli("reports", "cancel", "1") == 0
     assert await cli("reports", "show", "99") == 1
     assert await cli("never", "add", "Evil.Example.ORG", "--note", "test") == 0
-    assert await cli("never", "add", "45.0.0.0/8") == 0
+    assert await cli("never", "add", "203.0.113.0/24") == 0
     assert await cli("never", "list") == 0 and any("evil.example.org" in line for line in out.lines)
     assert (
-        await cli("never", "remove", "45.0.0.0/8") == 0
+        await cli("never", "remove", "203.0.113.0/24") == 0
         and await cli("never", "remove", "nope") == 1
     )
     assert await cli("node", "suspend", fp) == 0
@@ -309,7 +313,7 @@ async def test_admin_dispute_and_keys(env: Env, tmp_path: Any) -> None:
     async with env.worker() as s:
         await s.execute(
             text(
-                "INSERT INTO targets (id, kind, value, state, confirmed_day, first_day, last_day) VALUES ('t_000000000001','ip','45.1.1.1','confirmed',:d,:d,:d)"
+                "INSERT INTO targets (id, kind, value, state, confirmed_day, first_day, last_day) VALUES ('t_000000000001','ip','203.0.113.201','confirmed',:d,:d,:d)"
             ),
             {"d": TODAY},
         )

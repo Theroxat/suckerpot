@@ -17,7 +17,7 @@ from .conftest import Env, make_settings
 from .seed import TODAY, add_nodes, observe, target
 
 D1, D2 = TODAY - timedelta(days=2), TODAY - timedelta(days=1)
-IP = "45.9.9.9"
+IP = "192.0.2.109"
 
 
 async def run(
@@ -161,25 +161,25 @@ async def test_uncorroborated_ip_needs_ten_nodes(env: Env) -> None:
     ten = await add_nodes(
         env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
     )
-    await observe(env.worker, ten, "ip", "45.9.9.10", [D1, D2])
+    await observe(env.worker, ten, "ip", "192.0.2.110", [D1, D2])
     await run(env, ok=False)
-    assert (await target(env.worker, "ip", "45.9.9.10"))["state"] == "confirmed"
+    assert (await target(env.worker, "ip", "192.0.2.110"))["state"] == "confirmed"
 
 
 @pytest.mark.integration
 async def test_never_list_value_is_never_confirmed(env: Env) -> None:
     nodes = await add_nodes(env.worker, 5)
-    await observe(env.worker, nodes, "ip", "8.8.8.8", [D1, D2])
-    await run(env, never=Never.from_rows([("8.8.8.0/24", "ip")]))
-    assert await target(env.worker, "ip", "8.8.8.8") is None
+    await observe(env.worker, nodes, "ip", "198.51.100.130", [D1, D2])
+    await run(env, never=Never.from_rows([("198.51.100.128/25", "ip")]))
+    assert await target(env.worker, "ip", "198.51.100.130") is None
 
 
 @pytest.mark.integration
 async def test_single_node_values_get_no_row(env: Env) -> None:
     nodes = await add_nodes(env.worker, 5)
-    await observe(env.worker, nodes[:1], "ip", "45.9.9.77", [D1, D2])
+    await observe(env.worker, nodes[:1], "ip", "192.0.2.177", [D1, D2])
     await run(env)
-    assert await target(env.worker, "ip", "45.9.9.77") is None
+    assert await target(env.worker, "ip", "192.0.2.177") is None
 
 
 @pytest.mark.integration
@@ -355,7 +355,7 @@ async def test_reputation_takedown_bonus_and_cap(env: Env) -> None:
                     "INSERT INTO targets (id, kind, value, state, confirmed_day, first_day, last_day) "
                     "VALUES (:i, 'ip', :v, 'confirmed', :d, :d, :d)"
                 ),
-                {"i": f"t_{i:012x}", "v": f"45.1.1.{i}", "d": TODAY},
+                {"i": f"t_{i:012x}", "v": f"203.0.113.{i + 20}", "d": TODAY},
             )
             for n in nodes:
                 await s.execute(
@@ -381,14 +381,14 @@ async def test_uncorroborated_volume_is_penalised(env: Env) -> None:
         await s.execute(
             text(
                 "INSERT INTO observations (node_id, day, kind, value) "
-                "SELECT :n, :d, 'ip', '45.' || (g / 250) || '.' || (g % 250) || '.1' "
+                "SELECT :n, :d, 'ip', '2001:db8::' || to_hex(g) "
                 "FROM generate_series(1, 600) g"
             ),
             {"n": nodes[0], "d": D2},
         )
         await s.execute(
             text(
-                "INSERT INTO observations (node_id, day, kind, value) VALUES (:n, :d, 'ip', '45.0.0.1')"
+                "INSERT INTO observations (node_id, day, kind, value) VALUES (:n, :d, 'ip', '203.0.113.250')"
             ),
             {"n": nodes[1], "d": D2},
         )
@@ -408,7 +408,7 @@ async def _reported(env: Env, nodes: list[Any]) -> str:
         await s.execute(
             text(
                 "INSERT INTO targets (id, kind, value, state, reported_day, confirmed_day, first_day, last_day) "
-                "VALUES ('t_aaaaaaaaaaaa', 'ip', '45.2.2.2', 'reported', :r, :r, :r, :r)"
+                "VALUES ('t_aaaaaaaaaaaa', 'ip', '203.0.113.202', 'reported', :r, :r, :r, :r)"
             ),
             {"r": TODAY - timedelta(days=8)},
         )
@@ -443,7 +443,7 @@ async def test_takedown_needs_two_nodes_on_three_days_and_no_up_on_the_last(env:
     assert await _takedowns(env) == (0, 0)  # one node only
     await _vote(env, nodes[1], days[0], "down")
     assert await _takedowns(env) == (1, 0)
-    t = await target(env.worker, "ip", "45.2.2.2")
+    t = await target(env.worker, "ip", "203.0.113.202")
     assert t["state"] == "taken_down" and t["taken_down_day"] == days[-1]
 
 
@@ -482,7 +482,7 @@ async def test_up_votes_bring_a_taken_down_target_back(env: Env) -> None:
     await _takedowns(env)
     await _vote(env, nodes[0], TODAY - timedelta(days=1), "up")
     assert await _takedowns(env) == (0, 1)
-    t = await target(env.worker, "ip", "45.2.2.2")
+    t = await target(env.worker, "ip", "203.0.113.202")
     assert (
         t["state"] == "reported" and t["taken_down_day"] is None
     )  # reported 8 days ago: no re-report yet
@@ -501,15 +501,15 @@ def ten(env: Env) -> Any:
 async def test_url_and_c2_and_payload_host_need_twice_the_nodes(env: Env) -> None:
     five = await add_nodes(env.worker, 5)
     await observe(env.worker, five, "url", "ab" * 32, [D1, D2], fetched=True)
-    await observe(env.worker, five, "c2_ip", "45.8.8.8:23", [D1, D2], via="cd" * 32)
+    await observe(env.worker, five, "c2_ip", "203.0.113.108:23", [D1, D2], via="cd" * 32)
     await observe(env.worker, five, "c2_domain", "ef" * 32, [D1, D2], via="cd" * 32)
-    await observe(env.worker, five, "ip", "45.8.8.9", [D1, D2], activity=["download"])
+    await observe(env.worker, five, "ip", "203.0.113.109", [D1, D2], activity=["download"])
     await run(env, ok=False)
     for kind, value in (
         ("url", "ab" * 32),
-        ("c2_ip", "45.8.8.8:23"),
+        ("c2_ip", "203.0.113.108:23"),
         ("c2_domain", "ef" * 32),
-        ("ip", "45.8.8.9"),
+        ("ip", "203.0.113.109"),
     ):
         assert (await target(env.worker, kind, value))["state"] == "candidate", kind
 
@@ -518,28 +518,28 @@ async def test_url_and_c2_and_payload_host_need_twice_the_nodes(env: Env) -> Non
 async def test_c2_address_may_be_corroborated_by_an_external_source(env: Env) -> None:
     five = await add_nodes(env.worker, 5)
     await observe(env.worker, five, "sha256", "cd" * 32, [D1, D2], fetched=True)
-    await observe(env.worker, five, "c2_ip", "45.8.8.8:23", [D1, D2], via="cd" * 32)
+    await observe(env.worker, five, "c2_ip", "203.0.113.108:23", [D1, D2], via="cd" * 32)
     await run(env, ok=True)
-    assert (await target(env.worker, "c2_ip", "45.8.8.8:23"))["state"] == "confirmed"
+    assert (await target(env.worker, "c2_ip", "203.0.113.108:23"))["state"] == "confirmed"
 
 
 @pytest.mark.integration
 async def test_c2_needs_a_confirmed_dropper_fetched_by_two_eligible_nodes(env: Env) -> None:
     nodes = await ten(env)
-    await observe(env.worker, nodes, "c2_ip", "45.8.8.1:23", [D1, D2], via="aa" * 32)
-    await observe(env.worker, nodes, "c2_ip", "45.8.8.2:23", [D1, D2], via="bb" * 32)
-    await observe(env.worker, nodes, "c2_ip", "45.8.8.3:23", [D1, D2])  # no dropper named
+    await observe(env.worker, nodes, "c2_ip", "203.0.113.101:23", [D1, D2], via="aa" * 32)
+    await observe(env.worker, nodes, "c2_ip", "203.0.113.102:23", [D1, D2], via="bb" * 32)
+    await observe(env.worker, nodes, "c2_ip", "203.0.113.103:23", [D1, D2])  # no dropper named
     await observe(env.worker, nodes, "sha256", "aa" * 32, [D1, D2], fetched=True)
     await observe(env.worker, nodes, "sha256", "bb" * 32, [D1, D2], fetched=False)
     await run(env)
     got = {
         v: (await target(env.worker, "c2_ip", v))["state"]
-        for v in ("45.8.8.1:23", "45.8.8.2:23", "45.8.8.3:23")
+        for v in ("203.0.113.101:23", "203.0.113.102:23", "203.0.113.103:23")
     }
     assert got == {
-        "45.8.8.1:23": "confirmed",
-        "45.8.8.2:23": "candidate",
-        "45.8.8.3:23": "candidate",
+        "203.0.113.101:23": "confirmed",
+        "203.0.113.102:23": "candidate",
+        "203.0.113.103:23": "candidate",
     }
 
 
@@ -568,7 +568,7 @@ async def test_reputation_bonus_needs_two_cohorts(env: Env) -> None:
                 text(
                     "INSERT INTO targets (id, kind, value, state, confirmed_day, first_day, last_day) VALUES (:i,'ip',:v,'confirmed',:d,:d,:d)"
                 ),
-                {"i": tid, "v": f"45.1.1.{tid[-1]}", "d": TODAY},
+                {"i": tid, "v": f"203.0.113.{tid[-1]}", "d": TODAY},
             )
             for member in members:
                 await s.execute(

@@ -22,7 +22,7 @@
 		output discard
 	}
 	request_body {
-		max_size 1MB
+		max_size 1MiB
 	}
 	header {
 		Strict-Transport-Security "max-age=31536000"

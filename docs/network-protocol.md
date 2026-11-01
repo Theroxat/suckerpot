@@ -192,6 +192,13 @@ or `domain`.
 - **domain.** Lowercase IDNA, no trailing dot, labels of letters, digits, `-` and `_`. An IP
   address is not a domain.
 
+Limit of blinding: the hash is fast and unsalted. It hides a high-entropy value (a URL with a
+random path or token, which is what a per-target canary looks like) from anyone who reads the hub
+database. It does not hide a guessable value: whoever has a dictionary of likely URLs or domains
+can test candidates against `value_b`. This is accepted in `spn/1`: a slow key derivation (scrypt
+or Argon2 with a fixed public salt) would cost every node one derivation per URL per day and
+would change every `value_b`, so it is a candidate for `spn/2` (see the design, section 12).
+
 The hub counts nodes per `value_b`. When a blinded value is confirmed, the hub lists it in
 `reveal`; a node that has the clear value sends it to `/v1/reveals`. The hub checks that the value
 blinds to `value_b` before it stores it.

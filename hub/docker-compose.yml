@@ -48,6 +48,12 @@ services:
       - caddy-data:/data
     tmpfs:
       - /config:rw,noexec,nosuid,nodev,size=8m,uid=65532,gid=65532
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "443"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks: [hub-edge, hub-public]
     mem_limit: 256m
     cpus: 0.5
@@ -133,8 +139,12 @@ services:
     profiles: [tools]
     environment:
       HUB_WORKER_DATABASE_URL: postgresql+asyncpg://hub_worker:${HUB_WORKER_DB_PASSWORD:?HUB_WORKER_DB_PASSWORD must be set}@hub-db:5432/hub
+    # Writes the signing key into ./secrets (owned by uid 10001, mode 0700) with gen-signing-key.
+    volumes:
+      - ${HUB_SIGNING_KEY_DIR:-./secrets}:/keys
     networks: [hub-internal]
     mem_limit: 256m
+    cpus: 0.5
     pids_limit: 64
 
   hub-migrate:
@@ -181,6 +191,10 @@ services:
       - log_min_duration_statement=-1
       - -c
       - log_hostname=off
+      - -c
+      - log_min_error_statement=panic
+      - -c
+      - log_error_verbosity=terse
     volumes:
       - db-data:/var/lib/postgresql/data
     tmpfs:
@@ -199,7 +213,8 @@ services:
     restart: unless-stopped
 
   # Daily dump with the owner account, 7 kept. Dumps hold node keys and 14 days of
-  # observations: keep the volume private.
+  # observations: keep the volume private. A node that leaves is gone from the live database at
+  # once and from the dumps within 7 days.
   hub-backup:
     image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
     <<: *hardening
@@ -221,8 +236,16 @@ services:
       - backups:/backups
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=8m,uid=999,gid=999
+    # Healthy while a dump younger than 26 hours exists.
+    healthcheck:
+      test: ["CMD-SHELL", "find /backups -name 'hub-*.dump' -mmin -1560 | grep -q ."]
+      interval: 5m
+      timeout: 10s
+      retries: 1
+      start_period: 10m
     networks: [hub-internal]
     mem_limit: 256m
+    cpus: 0.5
     pids_limit: 64
     restart: unless-stopped
     depends_on:

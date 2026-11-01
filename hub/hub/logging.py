@@ -40,6 +40,9 @@ class PrivacyFilter(logging.Filter):
         return True
 
 
+SERVER_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi")
+
+
 def configure(level: int = logging.INFO) -> None:
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
@@ -47,6 +50,15 @@ def configure(level: int = logging.INFO) -> None:
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level)
+    # uvicorn installs its own handlers (and does not propagate): scrub those as well, so a
+    # traceback printed by the server can never carry a client address.
+    for name in SERVER_LOGGERS:
+        server = logging.getLogger(name)
+        if not server.handlers:
+            server.addHandler(handler)
+        for h in server.handlers:
+            if not any(isinstance(f, PrivacyFilter) for f in h.filters):
+                h.addFilter(PrivacyFilter())
     # Access logs are off at the server; make sure nothing re-enables them.
     logging.getLogger("uvicorn.access").disabled = True
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)

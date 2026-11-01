@@ -30,7 +30,7 @@ async def test_batch_is_stored_by_kind(env: Env) -> None:
         DAY,
         sources=[
             source(
-                "8.8.4.4",
+                "192.0.2.4",
                 services=["ssh", "telnet"],
                 activity=["login", "download"],
                 tags=["mirai", "bogus"],
@@ -41,7 +41,7 @@ async def test_batch_is_stored_by_kind(env: Env) -> None:
         payloads=[
             {
                 "url_b": H1,
-                "host_ip": "1.1.1.1",
+                "host_ip": "192.0.2.1",
                 "sha256": H2,
                 "family": "mirai",
                 "file_type": "elf-arm",
@@ -49,7 +49,7 @@ async def test_batch_is_stored_by_kind(env: Env) -> None:
             }
         ],
         c2=[
-            {"ip": "9.9.9.9", "port": 23, "family": "mirai", "via_sha256": H2},
+            {"ip": "192.0.2.9", "port": 23, "family": "mirai", "via_sha256": H2},
             {"domain_b": H3, "port": 80},
         ],
         files=[{"sha256": H2, "family": "mirai", "file_type": "elf-arm"}],
@@ -63,10 +63,10 @@ async def test_batch_is_stored_by_kind(env: Env) -> None:
     }
     got = {(r["kind"], r["value"]): r for r in await rows(env)}
     assert set(got) == {
-        ("ip", "8.8.4.4"), ("ip", "1.1.1.1"), ("url", H1), ("sha256", H2),
-        ("c2_ip", "9.9.9.9:23"), ("c2_domain", H3),
+        ("ip", "192.0.2.4"), ("ip", "192.0.2.1"), ("url", H1), ("sha256", H2),
+        ("c2_ip", "192.0.2.9:23"), ("c2_domain", H3),
     }  # fmt: skip
-    ip = got[("ip", "8.8.4.4")]
+    ip = got[("ip", "192.0.2.4")]
     assert (ip["sessions"], ip["attempts"], ip["tags"], ip["services"]) == (
         3,
         2,
@@ -75,22 +75,24 @@ async def test_batch_is_stored_by_kind(env: Env) -> None:
     )
     assert got[("sha256", H2)]["fetched"] is True and got[("sha256", H2)]["file_type"] == "elf-arm"
     assert got[("url", H1)]["families"] == ["mirai"]
-    assert str(got[("ip", "8.8.4.4")]["day"]) == DAY
+    assert str(got[("ip", "192.0.2.4")]["day"]) == DAY
 
 
 async def test_idempotent_batch_and_one_per_day(env: Env) -> None:
     (node,) = await env.enrolled()
-    body = batch(DAY, sources=[source("8.8.4.4")])
+    body = batch(DAY, sources=[source("192.0.2.4")])
     assert (await node.call("POST", "/v1/observations", body)).status == 200
     dup = await node.call("POST", "/v1/observations", body)
     assert dup.status == 200 and dup.json["duplicate"] is True
     assert dup.json["accepted"] == {"sources": 0, "payloads": 0, "c2": 0, "files": 0}
-    other = await node.call("POST", "/v1/observations", batch(DAY, sources=[source("8.8.8.8")]))
+    other = await node.call(
+        "POST", "/v1/observations", batch(DAY, sources=[source("198.51.100.130")])
+    )
     assert (other.status, other.error) == (400, "invalid_payload")
     assert len(await rows(env)) == 1
     assert (
         await node.call(
-            "POST", "/v1/observations", batch("2026-10-30", sources=[source("8.8.8.8")])
+            "POST", "/v1/observations", batch("2026-10-30", sources=[source("198.51.100.130")])
         )
     ).status == 200
 
@@ -102,11 +104,11 @@ async def test_day_rules(env: Env) -> None:
         ("2026-11-02", "day_not_closed"),
         ("2026-10-28", "day_too_old"),
     ):
-        r = await node.call("POST", "/v1/observations", batch(day, sources=[source("8.8.4.4")]))
+        r = await node.call("POST", "/v1/observations", batch(day, sources=[source("192.0.2.4")]))
         assert (r.status, r.error) == (400, code), day
     assert (
         await node.call(
-            "POST", "/v1/observations", batch("2026-10-29", sources=[source("8.8.4.4")])
+            "POST", "/v1/observations", batch("2026-10-29", sources=[source("192.0.2.4")])
         )
     ).status == 200
     assert await rows(env, "day = '2026-11-01'") == []
@@ -127,7 +129,7 @@ async def test_day_rules(env: Env) -> None:
 )
 async def test_invalid_payloads_store_nothing(env: Env, mutate: Any) -> None:
     (node,) = await env.enrolled()
-    body = batch(DAY, sources=[source("8.8.4.4")])
+    body = batch(DAY, sources=[source("192.0.2.4")])
     mutate(body)
     reply = await node.call("POST", "/v1/observations", body)
     assert reply.status == 400 and reply.error in {"invalid_payload", "unsupported_protocol"}
@@ -138,7 +140,7 @@ async def test_invalid_payloads_store_nothing(env: Env, mutate: Any) -> None:
 
 async def test_caps(env: Env) -> None:
     (node,) = await env.enrolled()
-    many = [source(f"8.{i // 250}.{i % 250}.1") for i in range(5001)]
+    many = [source(f"2001:db8::{i + 1:x}") for i in range(5001)]
     r = await node.call("POST", "/v1/observations", batch(DAY, sources=many))
     assert r.error == "invalid_payload"
     ok = await node.call("POST", "/v1/observations", batch(DAY, sources=many[:5000]))
@@ -150,7 +152,9 @@ async def test_distinct_values_cap_per_day(env_factory: Any) -> None:
     env: Env = await env_factory(new_values_per_day=10)
     (node,) = await env.enrolled()
     r = await node.call(
-        "POST", "/v1/observations", batch(DAY, sources=[source(f"8.8.4.{i}") for i in range(1, 21)])
+        "POST",
+        "/v1/observations",
+        batch(DAY, sources=[source(f"192.0.2.{i + 40}") for i in range(1, 21)]),
     )
     assert r.status == 200 and r.json["rejected"] == {"cap": 10}
     assert len(await rows(env)) == 10
@@ -161,7 +165,7 @@ async def test_never_listed_values_are_dropped(env: Env) -> None:
     async with env.worker() as s:
         await s.execute(
             text(
-                "INSERT INTO never_list VALUES ('8.8.8.0/24','ip','public resolver'), ('cd' || repeat('cd', 31), 'sha256', 'known good')"
+                "INSERT INTO never_list VALUES ('198.51.100.128/25','ip','public resolver'), ('cd' || repeat('cd', 31), 'sha256', 'known good')"
             )
         )
         await s.commit()
@@ -170,12 +174,12 @@ async def test_never_listed_values_are_dropped(env: Env) -> None:
         "/v1/observations",
         batch(
             DAY,
-            sources=[source("8.8.8.8"), source("8.8.4.4")],
+            sources=[source("198.51.100.130"), source("192.0.2.4")],
             files=[{"sha256": H2}, {"sha256": H1}],
         ),
     )
     assert r.status == 200 and r.json["rejected"] == {"never_listed": 2}
-    assert {x["value"] for x in await rows(env)} == {"8.8.4.4", H1}
+    assert {x["value"] for x in await rows(env)} == {"192.0.2.4", H1}
 
 
 async def test_suspended_node_is_not_told_and_nothing_is_stored(env: Env) -> None:
@@ -183,28 +187,30 @@ async def test_suspended_node_is_not_told_and_nothing_is_stored(env: Env) -> Non
     async with env.worker() as s:
         await s.execute(text("UPDATE nodes SET standing = 'soft_suspended'"))
         await s.commit()
-    r = await node.call("POST", "/v1/observations", batch(DAY, sources=[source("8.8.4.4")]))
+    r = await node.call("POST", "/v1/observations", batch(DAY, sources=[source("192.0.2.4")]))
     assert r.status == 200 and r.json["accepted"]["sources"] == 1 and r.json["duplicate"] is False
     assert await rows(env) == []
     assert (await node.call("GET", "/v1/node")).json["standing"] == "low"
     # the day marker exists, so a repeat answers like it does for any other node
     async with env.worker() as s:
         assert (await s.execute(text("SELECT count(*) FROM batches"))).scalar_one() == 1
-    again = await node.call("POST", "/v1/observations", batch(DAY, sources=[source("8.8.8.8")]))
+    again = await node.call(
+        "POST", "/v1/observations", batch(DAY, sources=[source("198.51.100.130")])
+    )
     assert (again.status, again.error) == (400, "invalid_payload")
 
 
 async def test_padded_and_unpadded_bodies_are_both_fine(env: Env) -> None:
     (node,) = await env.enrolled()
     r = await node.call(
-        "POST", "/v1/observations", batch(DAY, sources=[source("8.8.4.4")]), pad=False
+        "POST", "/v1/observations", batch(DAY, sources=[source("192.0.2.4")]), pad=False
     )
     assert r.status == 200
 
 
 async def test_signing_covers_the_body(env: Env) -> None:
     (node,) = await env.enrolled()
-    body = batch(DAY, sources=[source("8.8.4.4")])
+    body = batch(DAY, sources=[source("192.0.2.4")])
     forged = await node.call("POST", "/v1/observations", body, sign_body=b"{}")
     assert forged.error == "bad_signature"
 
@@ -229,7 +235,7 @@ async def test_empty_batch_is_accepted_but_is_not_activity(env: Env) -> None:
         assert (await s.execute(text("SELECT items FROM batches"))).scalar_one() == 0
     assert (await node.call("GET", "/v1/node")).json["active_days_14"] == 0
     full = await node.call(
-        "POST", "/v1/observations", batch("2026-10-30", sources=[source("8.8.4.4")])
+        "POST", "/v1/observations", batch("2026-10-30", sources=[source("192.0.2.4")])
     )
     assert full.status == 200
     assert (await node.call("GET", "/v1/node")).json["active_days_14"] == 1
@@ -238,7 +244,9 @@ async def test_empty_batch_is_accepted_but_is_not_activity(env: Env) -> None:
 async def test_c2_dropper_hash_is_stored(env: Env) -> None:
     (node,) = await env.enrolled()
     r = await node.call(
-        "POST", "/v1/observations", batch(DAY, c2=[{"ip": "9.9.9.9", "port": 23, "via_sha256": H3}])
+        "POST",
+        "/v1/observations",
+        batch(DAY, c2=[{"ip": "192.0.2.9", "port": 23, "via_sha256": H3}]),
     )
     assert r.status == 200
     assert [x["via"] for x in await rows(env, "kind = 'c2_ip'")] == [H3]
