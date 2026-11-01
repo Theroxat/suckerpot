@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import uuid
 
 
@@ -13,6 +14,14 @@ def new_public_id() -> uuid.UUID:
 def new_seed() -> uuid.UUID:
     """Seed for object ids. Stored with the report, never exported."""
     return uuid.uuid4()
+
+
+def new_reply_token() -> str:
+    """12 random hex digits printed in the subject so a reply can be matched (O6).
+
+    Independent of the report's id, public id and seed. The database makes its own at insert
+    time; this is for tests and for any code path that sets the column itself."""
+    return secrets.token_hex(6)
 
 
 def derive_id(seed: uuid.UUID, kind: str, value: str) -> uuid.UUID:
