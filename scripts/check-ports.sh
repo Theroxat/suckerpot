@@ -7,14 +7,20 @@
 #   - a SENSOR_<NAME> switch is neither 0 nor 1.
 # A sensor switched off (SENSOR_<NAME>=0) publishes nothing, so its port takes no part in the
 # clash and admin-port checks; the dashboard port is still refused on any sensor's default port.
-# Values come from the environment, then from .env, then from the compose defaults.
+# Values come from the environment, then from .env, then from the compose defaults. With
+# --dotenv-only the environment is ignored: use it right after a script changed .env, because a
+# stale exported value (just loads .env before the recipe) would otherwise be checked instead.
 set -eu
+
+dotenv_only=0
+[ "${1:-}" = "--dotenv-only" ] && dotenv_only=1
 
 cd "$(dirname "$0")/.."
 
 # Reads VAR from the environment or from .env (last assignment wins; quotes removed).
 get() {
-  eval "val=\${$1:-}"
+  val=""
+  [ "$dotenv_only" = 1 ] || eval "val=\${$1:-}"
   if [ -z "$val" ] && [ -f .env ]; then
     val=$(sed -n "s/^$1=//p" .env | tail -n 1 | tr -d "\"' \r")
   fi
