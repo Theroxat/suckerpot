@@ -1,7 +1,8 @@
 """Signed request checks (spec section 5.2), nonce store and response signing.
 
-Order of checks, before the body is parsed: size, header syntax, timestamp, known key, signature,
-nonce, rate limit. Replies carry ``X-SPN-Hub-Signature`` bound to the request nonce.
+Order of checks, before the body is parsed: size, header syntax, timestamp, signature (with the
+key in the header), known key, nonce, rate limit. Replies carry ``X-SPN-Hub-Signature`` bound
+to the request nonce.
 """
 
 from __future__ import annotations
@@ -95,9 +96,7 @@ async def authenticate(
         node = (
             await session.execute(select(Node).where(Node.pubkey == parsed.public))
         ).scalar_one_or_none()  # 4. key known
-        if node is None:
-            raise ProtoError("unknown_node")
-        if not sign.verify_request(  # 5. signature
+        if not sign.verify_request(  # 5. signature, with the key the header names
             parsed.public,
             parsed.signature,
             request.method,
@@ -108,6 +107,8 @@ async def authenticate(
         ):
             raise ProtoError("bad_signature")
         _bind_signed(request, parsed)
+        if node is None:  # 4. a proven key we do not know: the answer is signed (a node can tell)
+            raise ProtoError("unknown_node")
     except ProtoError as exc:
         if exc.code not in ("too_large", "rate_limited"):
             ctx.address_limiter.record_failure(request)
