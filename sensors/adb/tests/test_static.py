@@ -129,3 +129,8 @@ def test_no_network_clients() -> None:
             ):
                 found.append(f"{path.name} from {node.module}")
     assert found == []
+
+
+def test_product_name_never_appears_in_package() -> None:
+    for path in sorted(PKG.rglob("*.py")):
+        assert "selfhostr" not in path.read_text().lower(), path

@@ -98,7 +98,7 @@ export function AuditCard() {
               >
                 <p className="col-span-2 text-sm text-fg lg:col-span-1 lg:col-start-2 lg:row-start-1">
                   {isSystemActor(e) ? (
-                    <span className="font-medium" title="Done automatically by SuckerPot">
+                    <span className="font-medium" title="Done automatically by Selfhostr">
                       System
                     </span>
                   ) : (

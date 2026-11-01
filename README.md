@@ -1,6 +1,6 @@
 <div align="center">
 
-# SuckerPot
+# Selfhostr
 
 **A self-hosted honeypot with one readable dashboard: twelve realistic sensors for remote shells, web and APIs, databases, and Windows and VoIP services, and a UI that tells each attack as a short story you can click through.**
 
@@ -15,13 +15,15 @@
 
 </div>
 
-<img src="docs/screenshots/demo.webp" alt="The SuckerPot Live page: sensor counters, a live feed of attacks with tags such as recon, php2shell and malware-drop, and the sensor filters" width="100%">
+<img src="docs/screenshots/demo.webp" alt="The Selfhostr Live page: sensor counters, a live feed of attacks with tags such as recon, php2shell and malware-drop, and the sensor filters" width="100%">
 
-> **SuckerPot is meant to be attacked.** Deploy it only on an isolated host or VM that you are ready to lose, and keep nothing that matters on it. It is purely passive: no counter-scans, no hacking back, no automatic reporting. Attacker input is never executed. All screenshots use synthetic demo data and documentation IP addresses.
+> **Selfhostr is meant to be attacked.** Deploy it only on an isolated host or VM that you are ready to lose, and keep nothing that matters on it. It is purely passive: no counter-scans, no hacking back, no automatic reporting. Attacker input is never executed. All screenshots use synthetic demo data and documentation IP addresses.
+
+> Selfhostr was called SuckerPot; technical names (packages, volumes, environment variables) keep the `suckerpot` prefix.
 
 ## Why
 
-Most honeypot stacks are a pile of separate tools and dashboards that are hard to read. SuckerPot goes the other way: few sensors, built well, and ONE dashboard that is the product. Each page opens with a plain-English finding, every IP, country, tag or URL is a link to a filtered view, and every filter lives in the URL so you can share it.
+Most honeypot stacks are a pile of separate tools and dashboards that are hard to read. Selfhostr goes the other way: few sensors, built well, and ONE dashboard that is the product. Each page opens with a plain-English finding, every IP, country, tag or URL is a link to a filtered view, and every filter lives in the URL so you can share it.
 
 ## Status
 
@@ -143,7 +145,7 @@ Install the gitleaks pre-commit hook once with `scripts/install-hooks.sh`. See [
 
 ## Security
 
-SuckerPot runs hostile traffic through containers, so isolation is a feature, not an afterthought. The design and the threat model are in [docs/SECURITY.md](docs/SECURITY.md). To report a vulnerability, read [SECURITY.md](SECURITY.md) and use GitHub's private reporting.
+Selfhostr runs hostile traffic through containers, so isolation is a feature, not an afterthought. The design and the threat model are in [docs/SECURITY.md](docs/SECURITY.md). To report a vulnerability, read [SECURITY.md](SECURITY.md) and use GitHub's private reporting.
 
 ## Roadmap
 
