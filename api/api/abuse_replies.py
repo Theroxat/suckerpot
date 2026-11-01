@@ -18,8 +18,6 @@ import logging
 import re
 import uuid
 from datetime import UTC, datetime
-from email import message_from_bytes
-from email.policy import compat32
 from typing import Annotated, Any, Final, Literal
 
 from fastapi import APIRouter, Path, Query, Request, Response
@@ -251,27 +249,42 @@ async def _report_ids(db: AsyncSession, ids: set[int]) -> dict[int, uuid.UUID]:
 # ---- pasted mail (declared before /abuse/replies/{reply_id}) -------------------------------
 
 
+_BOUNDARY = re.compile(r'boundary=(?:"([^"\r\n]{1,70})"|([^;\s"]{1,70}))', re.IGNORECASE)
+_FIELD = re.compile(r'(?:^|[;\s])name="([^"]{1,64})"', re.IGNORECASE)
+
+
 def _multipart_file(content_type: str, body: bytes) -> tuple[bytes | None, str | None]:
-    """The ``file`` part (bytes) and the ``report`` field of a multipart/form-data body, read
-    with the standard library (the parts are only looked at, never executed or followed)."""
-    message = message_from_bytes(
-        b"Content-Type: " + content_type.encode("latin-1", "replace") + b"\r\n\r\n" + body,
-        policy=compat32,
-    )
-    if not message.is_multipart():
+    """The ``file`` part (bytes) and the ``report`` field of a multipart/form-data body.
+
+    A plain split on the boundary: the parts are only looked at, never decoded, executed or
+    followed (an ``.eml`` is a ``message/rfc822`` part, which a mail parser would unpack)."""
+    found = _BOUNDARY.search(content_type)
+    if found is None:
         return None, None
+    delimiter = b"--" + (found.group(1) or found.group(2)).encode("latin-1", "replace")
     file: bytes | None = None
     report: str | None = None
-    for part in message.walk():
-        if part.is_multipart():
+    for chunk in body.split(delimiter)[1:]:
+        if chunk.startswith(b"--"):
+            break
+        head, sep, data = chunk.partition(b"\r\n\r\n")
+        if not sep:
             continue
-        name = part.get_param("name", header="content-disposition")
-        data = part.get_payload(decode=True)
-        if not isinstance(data, bytes):
+        data = data.removesuffix(b"\r\n")
+        disposition = next(
+            (
+                line.decode("latin-1")
+                for line in head.split(b"\r\n")
+                if line.lower().startswith(b"content-disposition:")
+            ),
+            "",
+        )
+        field = _FIELD.search(disposition)
+        if field is None:
             continue
-        if name == "file":
+        if field.group(1) == "file":
             file = data
-        elif name == "report":
+        elif field.group(1) == "report":
             report = data.decode("utf-8", "replace").strip() or None
     return file, report
 
