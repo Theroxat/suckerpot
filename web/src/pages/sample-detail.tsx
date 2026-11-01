@@ -183,7 +183,7 @@ export function SampleDetailPage() {
   if (!valid || (query.isError && query.error instanceof ApiError && query.error.status === 404)) {
     return (
       <>
-        <PageHeader title="Sample" eyebrow={back} />
+        <PageHeader help="sample" title="Sample" eyebrow={back} />
         <EmptyState
           icon={FileSearch}
           title="This sample is not in the collection"
@@ -200,7 +200,7 @@ export function SampleDetailPage() {
   if (query.isPending) {
     return (
       <>
-        <PageHeader title="Sample" eyebrow={back} />
+        <PageHeader help="sample" title="Sample" eyebrow={back} />
         <div className="space-y-4" aria-busy>
           <SkeletonCard />
           <SkeletonCard />
@@ -211,7 +211,7 @@ export function SampleDetailPage() {
   if (query.isError) {
     return (
       <>
-        <PageHeader title="Sample" eyebrow={back} />
+        <PageHeader help="sample" title="Sample" eyebrow={back} />
         <EmptyState
           icon={FileSearch}
           title="Could not load this sample"
@@ -232,6 +232,7 @@ export function SampleDetailPage() {
   return (
     <>
       <PageHeader
+        help="sample"
         title={familyLabel(item.family)}
         eyebrow={back}
         description={<span className="normal-nums">{describeSample(d)}</span>}

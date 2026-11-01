@@ -160,6 +160,7 @@ export function TodayPage() {
   return (
     <>
       <PageHeader
+        help="today"
         title="Today"
         description="The last 24 hours on your decoy servers, in plain words. Click anything to dig deeper."
       />

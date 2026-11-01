@@ -15,6 +15,10 @@ test("nav spaces and placeholder routes", async ({ page }, info) => {
   }
   await page.goto("/defend/blocklists")
   await settle(page)
+  // The tour can be replayed from the top bar on every width.
+  await expect(
+    page.getByRole("button", { name: "Take the tour" }).locator("visible=true").first(),
+  ).toBeVisible()
   if (info.project.name.startsWith("mobile")) {
     await page.getByRole("button", { name: "Open navigation" }).click()
     await expect(page.getByRole("dialog")).toBeVisible()

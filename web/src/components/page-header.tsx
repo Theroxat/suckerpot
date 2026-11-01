@@ -1,3 +1,5 @@
+import { PageHelp } from "@/components/page-help"
+import type { HelpId } from "@/lib/help"
 import { cn } from "@/lib/utils"
 
 interface PageHeaderProps {
@@ -7,10 +9,19 @@ interface PageHeaderProps {
   actions?: React.ReactNode
   /** Breadcrumb or back link above the title. */
   eyebrow?: React.ReactNode
+  /** Which text the "?" popover shows (src/lib/help.ts). */
+  help?: HelpId
   className?: string
 }
 
-export function PageHeader({ title, description, actions, eyebrow, className }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  description,
+  actions,
+  eyebrow,
+  help,
+  className,
+}: PageHeaderProps) {
   return (
     <header
       className={cn(
@@ -20,7 +31,10 @@ export function PageHeader({ title, description, actions, eyebrow, className }: 
     >
       <div className="min-w-0 space-y-1.5">
         {eyebrow ? <div className="text-xs text-fg-muted">{eyebrow}</div> : null}
-        <h1 className="text-xl font-semibold tracking-tight text-fg">{title}</h1>
+        <div className="flex items-center gap-1.5">
+          <h1 className="text-xl font-semibold tracking-tight text-fg">{title}</h1>
+          {help ? <PageHelp id={help} /> : null}
+        </div>
         {description ? (
           <p className="max-w-2xl text-base text-pretty text-fg-muted">{description}</p>
         ) : null}

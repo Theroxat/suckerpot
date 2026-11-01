@@ -46,6 +46,7 @@ export function TechniquesPage() {
   return (
     <>
       <PageHeader
+        help="techniques"
         title="Techniques"
         description={headline}
         actions={

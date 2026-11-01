@@ -183,7 +183,12 @@ export function InfrastructurePage() {
 
   return (
     <>
-      <PageHeader title="Infrastructure" description={headline} actions={exportButtons} />
+      <PageHeader
+        help="infrastructure"
+        title="Infrastructure"
+        description={headline}
+        actions={exportButtons}
+      />
 
       <FindingCard
         className="mb-6"

@@ -211,7 +211,7 @@ export function CvesPage() {
 
   return (
     <>
-      <PageHeader title="CVE watch" description={finding} />
+      <PageHeader help="cves" title="CVE watch" description={finding} />
 
       <FilterBar
         className="mb-4"

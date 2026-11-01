@@ -126,7 +126,7 @@ export function AttacksPage() {
 
   return (
     <>
-      <PageHeader title="Attacks" description={headline} />
+      <PageHeader help="attacks" title="Attacks" description={headline} />
 
       <FilterBar
         className="mb-4"

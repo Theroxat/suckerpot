@@ -34,6 +34,7 @@ const envStatus = (): VpnStatus => ({
   trust_candidate: null,
   trust_blocked: null,
   config_writable: true,
+  last_check_request: null,
 })
 
 const uploadedClosed = (): VpnStatus => ({
@@ -56,6 +57,7 @@ const uploadedClosed = (): VpnStatus => ({
   trust_candidate: "198.51.100.0/24",
   trust_blocked: null,
   config_writable: true,
+  last_check_request: null,
 })
 
 /** `?vpn=self`: the uploaded file leaves through the home connection, which can never be trusted. */
@@ -97,6 +99,17 @@ function current(): VpnStatus {
   return state
 }
 
+/** Whether the mocked outbound gate is open (the setup checklist mock reads it). */
+export function vpnGateOpen(): boolean {
+  return current().gate.state === "open"
+}
+
+const CHECK_EVERY_MS = 10_000
+const CHECK_ANSWER_MS = 4_000
+const RECONNECT_EVERY_MS = 60_000
+let lastCheckAt = 0
+let lastReconnectAt = 0
+
 const refused = () =>
   HttpResponse.json({ detail: "wrong password", code: "reauth_failed" }, { status: 403 })
 
@@ -104,6 +117,37 @@ export const vpnHandlers: RequestHandler[] = [
   http.get("/api/v1/settings/vpn", async () => {
     await delay(LATENCY_MS)
     return HttpResponse.json(current())
+  }),
+  // M24: "Check now" (no password, one per 10 seconds). Ingest answers a few seconds later.
+  http.post("/api/v1/settings/vpn/check", async () => {
+    await delay(LATENCY_MS)
+    const now = Date.now()
+    if (now - lastCheckAt < CHECK_EVERY_MS)
+      return HttpResponse.json({ detail: "too_soon", code: "too_soon" }, { status: 429 })
+    lastCheckAt = now
+    const requested_at = new Date(now).toISOString()
+    state = { ...current(), last_check_request: { requested_at, done_at: null } }
+    setTimeout(() => {
+      const s = current()
+      const done = new Date().toISOString()
+      state = {
+        ...s,
+        gate: { ...s.gate, checked_at: done },
+        last_check_request: { requested_at, done_at: done },
+      }
+    }, CHECK_ANSWER_MS)
+    return HttpResponse.json({ requested_at }, { status: 202 })
+  }),
+  // M24: "Reconnect" (password again, one per minute).
+  http.post("/api/v1/settings/vpn/reconnect", async ({ request }) => {
+    await delay(LATENCY_MS)
+    const body = (await request.json()) as { password?: string }
+    if (!body.password || body.password === "wrong") return refused()
+    const now = Date.now()
+    if (now - lastReconnectAt < RECONNECT_EVERY_MS)
+      return HttpResponse.json({ detail: "too_soon", code: "too_soon" }, { status: 429 })
+    lastReconnectAt = now
+    return new HttpResponse(null, { status: 204 })
   }),
   http.put("/api/v1/settings/vpn", async ({ request }) => {
     await delay(LATENCY_MS)

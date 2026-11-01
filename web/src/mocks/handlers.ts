@@ -19,6 +19,7 @@ import { scriptsHandlers } from "./scripts"
 import { alertsHandlers } from "./alerts"
 import { abuseHandlers } from "./abuse"
 import { vpnHandlers } from "./vpn"
+import { setupHandlers } from "./setup"
 import { searchHandlers } from "./search"
 import { todayHandlers } from "./today"
 import { parseStage, sessionStage } from "@/lib/story"
@@ -93,6 +94,7 @@ export const handlers = [
   ...samplesHandlers,
   ...abuseHandlers,
   ...vpnHandlers,
+  ...setupHandlers,
   ...scriptsHandlers,
   ...alertsHandlers,
   ...searchHandlers,
