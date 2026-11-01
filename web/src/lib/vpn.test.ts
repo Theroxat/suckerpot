@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest"
 import { ApiError } from "./api"
 import { UserError } from "./users"
-import { describeProblem, describeProblems, describeVpn, toVpnError, type VpnStatus } from "./vpn"
+import {
+  describeNetwork,
+  describeProblem,
+  describeProblems,
+  describeVpn,
+  toVpnError,
+  type VpnStatus,
+} from "./vpn"
 
 const status = (over: Partial<VpnStatus> = {}): VpnStatus => ({
   source: "env",
@@ -11,9 +18,18 @@ const status = (over: Partial<VpnStatus> = {}): VpnStatus => ({
   endpoint_port: null,
   addresses: null,
   peer_key_fingerprint: null,
-  gate: { state: "open", reason: null, egress_ip: "203.0.113.7", checked_at: null },
+  gate: {
+    state: "open",
+    reason: null,
+    egress_ip: "203.0.113.7",
+    egress_asn: 64501,
+    egress_org: "Example VPN Provider",
+    checked_at: null,
+  },
   trusted_exits: [],
   trust_candidate: null,
+  trust_blocked: null,
+  config_writable: true,
   ...over,
 })
 
@@ -42,6 +58,9 @@ describe("toVpnError", () => {
     expect(err(413, "too_large").detail).toContain("4 KiB")
     expect(err(409, "no_candidate").detail).toContain("no new exit")
     expect(err(409, "too_many").detail).toContain("Eight exits")
+    expect(err(409, "exit_is_self").detail).toContain("itself")
+    expect(err(409, "exit_asn_denied").detail).toContain("deny list")
+    expect(describeProblem("duplicate_key")).toContain("twice")
     expect(err(503, "vpn_config_unavailable").detail).toContain("vpn-config")
   })
 
@@ -74,6 +93,8 @@ describe("describeVpn", () => {
             state: "closed",
             reason: "ip_not_allowed",
             egress_ip: "198.51.100.20",
+            egress_asn: 64500,
+            egress_org: "Example Networks",
             checked_at: null,
           },
           trust_candidate: "198.51.100.0/24",
@@ -82,8 +103,27 @@ describe("describeVpn", () => {
     ).toBe("The gate is closed: the new exit 198.51.100.20 is not trusted yet.")
     expect(
       describeVpn(
-        status({ gate: { state: "open", reason: null, egress_ip: null, checked_at: null } }),
+        status({
+          gate: {
+            state: "open",
+            reason: null,
+            egress_ip: null,
+            egress_asn: null,
+            egress_org: null,
+            checked_at: null,
+          },
+        }),
       ),
     ).toBe("Using the settings from .env.")
+  })
+})
+
+describe("describeNetwork", () => {
+  it("joins the AS number and the organisation, and says nothing when unknown", () => {
+    expect(describeNetwork({ egress_asn: 64500, egress_org: "Example Networks" })).toBe(
+      "AS64500 Example Networks",
+    )
+    expect(describeNetwork({ egress_asn: 64500, egress_org: null })).toBe("AS64500")
+    expect(describeNetwork({ egress_asn: null, egress_org: null })).toBeNull()
   })
 })

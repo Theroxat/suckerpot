@@ -17,6 +17,7 @@ import { AdminActionDialog } from "@/components/users/admin-action-dialog"
 import { formatBytes } from "@/lib/format"
 import { egressReason, sampleKeys } from "@/lib/samples"
 import {
+  describeNetwork,
   describeVpn,
   SWITCH_POLL_MS,
   SWITCH_WATCH_MS,
@@ -48,7 +49,10 @@ function Field({
 
 /** This tab's wording for the gate reason; the shared sentences stay as they are. */
 function gateReason(code: string | null): string {
-  return code === "ip_not_allowed" ? "exit not in a trusted range" : egressReason(code)
+  if (code === "ip_not_allowed") return "exit not in a trusted range"
+  if (code === "exit_is_self") return "the exit is this system's own address"
+  if (code === "exit_asn_denied") return "the exit network is on your deny list"
+  return egressReason(code)
 }
 
 const mono = "font-mono text-xs break-all"
@@ -109,15 +113,40 @@ export function VpnTab() {
         )}
       </FindingCard>
 
-      {v?.trust_candidate ? (
-        <TrustCallout cidr={v.trust_candidate} exitIp={v.gate.egress_ip} onDone={refresh} />
+      {v && !v.config_writable ? (
+        <p className="flex items-start gap-2 rounded-lg border border-dashed px-4 py-3 text-sm text-fg-muted sm:px-5">
+          <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-sev-warning" />
+          The vpn-config volume is not mounted or not writable. Uploading and reverting are off
+          until it is.
+        </p>
       ) : null}
 
-      <UploadCard onUploaded={restarted} />
+      {v?.trust_blocked ? (
+        <BlockedCallout
+          reason={v.trust_blocked}
+          exitIp={v.gate.egress_ip}
+          network={describeNetwork(v.gate)}
+          canRevert={v.source === "upload" && v.config_writable}
+          onDone={restarted}
+        />
+      ) : null}
+
+      {v?.trust_candidate ? (
+        <TrustCallout
+          cidr={v.trust_candidate}
+          exitIp={v.gate.egress_ip}
+          network={describeNetwork(v.gate)}
+          onDone={refresh}
+        />
+      ) : null}
+
+      <UploadCard onUploaded={restarted} disabled={v ? !v.config_writable : false} />
 
       <TrustedExitsCard exits={v?.trusted_exits ?? []} loading={q.isPending} onChanged={refresh} />
 
-      {v?.source === "upload" ? <RevertCard onDone={restarted} /> : null}
+      {v?.source === "upload" && !v.trust_blocked ? (
+        <RevertCard onDone={restarted} disabled={!v.config_writable} />
+      ) : null}
     </div>
   )
 }
@@ -154,7 +183,12 @@ function StatusDetails({ v }: { v: VpnStatus }) {
       </Field>
       <Field label="Exit address">
         {v.gate.egress_ip ? (
-          <span className={mono}>{v.gate.egress_ip}</span>
+          <>
+            <span className={mono}>{v.gate.egress_ip}</span>
+            {describeNetwork(v.gate) ? (
+              <span className="block text-xs text-fg-muted">{describeNetwork(v.gate)}</span>
+            ) : null}
+          </>
         ) : (
           <span className="text-fg-muted">Not checked yet</span>
         )}
@@ -192,13 +226,71 @@ function StatusDetails({ v }: { v: VpnStatus }) {
 
 /* --- Trust ---------------------------------------------------------------- */
 
+/** The exit can never be trusted: it looks like the home connection or a denied network. */
+function BlockedCallout({
+  reason,
+  exitIp,
+  network,
+  canRevert,
+  onDone,
+}: {
+  reason: "exit_is_self" | "exit_asn_denied"
+  exitIp: string | null
+  network: string | null
+  canRevert: boolean
+  onDone: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <section
+      aria-labelledby="vpn-blocked-title"
+      className="flex flex-col gap-3 rounded-lg border border-sev-warning/40 bg-card px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <ShieldAlert aria-hidden className="mt-0.5 size-5 shrink-0 text-sev-warning" />
+        <div className="min-w-0 space-y-1">
+          <h3 id="vpn-blocked-title" className="text-sm font-medium text-fg">
+            This exit cannot be trusted
+          </h3>
+          <p className="text-sm text-fg-muted">
+            {exitIp ? (
+              <>
+                The exit <span className="font-mono text-fg">{exitIp}</span>
+                {network ? ` (${network})` : ""}{" "}
+              </>
+            ) : (
+              "The exit "
+            )}
+            {reason === "exit_is_self"
+              ? "looks like your own internet connection, not a VPN."
+              : "belongs to a network on your deny list."}{" "}
+            Outbound lookups stay paused. The uploaded file probably does not come from your VPN
+            provider.
+          </p>
+        </div>
+      </div>
+      {canRevert ? (
+        <>
+          <Button variant="outline" onClick={() => setOpen(true)} className="shrink-0">
+            <Undo2 aria-hidden className="size-4" />
+            Use the .env settings again
+          </Button>
+          <RevertDialog open={open} onOpenChange={setOpen} onDone={onDone} />
+        </>
+      ) : null}
+    </section>
+  )
+}
+
 function TrustCallout({
   cidr,
   exitIp,
+  network,
   onDone,
 }: {
   cidr: string
   exitIp: string | null
+  network: string | null
   onDone: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -214,8 +306,9 @@ function TrustCallout({
             Trust needed
           </h3>
           <p className="text-sm text-fg-muted">
-            The new exit <span className="font-mono text-fg">{exitIp ?? cidr}</span> is outside the
-            trusted ranges. Outbound lookups stay paused until you trust it.
+            The new exit <span className="font-mono text-fg">{exitIp ?? cidr}</span>
+            {network ? ` (${network})` : ""} is outside the trusted ranges. Outbound lookups stay
+            paused until you trust it.
           </p>
         </div>
       </div>
@@ -234,7 +327,18 @@ function TrustCallout({
           await vpnApi.trust(password)
         }}
         onDone={onDone}
-      />
+      >
+        <p className="rounded-md border bg-bg px-3 py-3 text-sm text-fg">
+          {exitIp ? (
+            <>
+              <span className="font-mono">{exitIp}</span>
+              {network ? ` — ${network}` : ""}
+              <br />
+            </>
+          ) : null}
+          Check that this network is your VPN provider, not your internet provider.
+        </p>
+      </AdminActionDialog>
     </section>
   )
 }
@@ -309,7 +413,7 @@ function TrustedExitsCard({
 
 /* --- Upload --------------------------------------------------------------- */
 
-function UploadCard({ onUploaded }: { onUploaded: () => void }) {
+function UploadCard({ onUploaded, disabled }: { onUploaded: () => void; disabled: boolean }) {
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   // The file text lives here only until it is sent (or removed), and is dropped right after.
@@ -381,9 +485,10 @@ function UploadCard({ onUploaded }: { onUploaded: () => void }) {
             className="sr-only"
             tabIndex={-1}
             aria-label="WireGuard configuration file"
+            disabled={disabled}
             onChange={(e) => take(e.target.files?.[0])}
           />
-          <Button variant="outline" onClick={() => inputRef.current?.click()}>
+          <Button variant="outline" disabled={disabled} onClick={() => inputRef.current?.click()}>
             Choose a file
           </Button>
         </div>
@@ -444,7 +549,33 @@ function UploadCard({ onUploaded }: { onUploaded: () => void }) {
 
 /* --- Revert --------------------------------------------------------------- */
 
-function RevertCard({ onDone }: { onDone: () => void }) {
+function RevertDialog({
+  open,
+  onOpenChange,
+  onDone,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onDone: () => void
+}) {
+  return (
+    <AdminActionDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Use the .env settings again?"
+      description="The uploaded file is deleted and the tunnel restarts on the settings in .env. Outbound lookups pause for a few seconds."
+      hint="Changing the VPN asks for your own dashboard password again."
+      confirmLabel="Use .env settings"
+      pendingLabel="Restarting…"
+      run={async (password) => {
+        await vpnApi.revert(password)
+      }}
+      onDone={onDone}
+    />
+  )
+}
+
+function RevertCard({ onDone, disabled }: { onDone: () => void; disabled: boolean }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed px-4 py-3 sm:px-5">
@@ -452,23 +583,11 @@ function RevertCard({ onDone }: { onDone: () => void }) {
         Drop the uploaded file and go back to the VPN settings in{" "}
         <code className="font-mono text-fg">.env</code>.
       </p>
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button variant="outline" disabled={disabled} onClick={() => setOpen(true)}>
         <Undo2 aria-hidden className="size-4" />
         Use the .env settings again
       </Button>
-      <AdminActionDialog
-        open={open}
-        onOpenChange={setOpen}
-        title="Use the .env settings again?"
-        description="The uploaded file is deleted and the tunnel restarts on the settings in .env. Outbound lookups pause for a few seconds."
-        hint="Changing the VPN asks for your own dashboard password again."
-        confirmLabel="Use .env settings"
-        pendingLabel="Restarting…"
-        run={async (password) => {
-          await vpnApi.revert(password)
-        }}
-        onDone={onDone}
-      />
+      <RevertDialog open={open} onOpenChange={setOpen} onDone={onDone} />
     </div>
   )
 }
