@@ -11,6 +11,14 @@
 #    It also watches $VPN_CONFIG_DIR/restart (written by the API for "Reconnect"): only its
 #    checksum is used, its content is never read or parsed and never affects the settings.
 #
+# 4. Idle mode (M28): with no uploaded wg.env AND no WireGuard private key in the environment, the
+#    install simply has no VPN configuration yet. gluetun is NOT started (it would fail in a loop):
+#    the container creates the marker $IDLE_MARKER (read by /vpn/health.sh), logs one line and
+#    waits for wg.env to appear, then exits 0 so the container restarts on it. Idle means no
+#    tunnel, no proxy and no process that opens a connection: no route out at all, so every
+#    consumer sees the gate closed ("no_vpn"). A configuration that is present but incomplete is
+#    NOT idle: it still reaches gluetun, which refuses to start (fail closed).
+#
 # Log lines never contain a value from the file.
 
 CONF_DIR=${VPN_CONFIG_DIR:-/vpn-config}
@@ -20,6 +28,8 @@ LIVE_ENV="$CONF_DIR/wg.env"
 RESTART_FILE="$CONF_DIR/restart"
 SNAPSHOT=${VPN_SNAPSHOT:-/tmp/wg.env.snapshot}
 WG_ENV=$SNAPSHOT # parsed copy of LIVE_ENV
+IDLE_MARKER=${VPN_IDLE_MARKER:-/tmp/vpn-idle}
+IDLE_INTERVAL=${VPN_IDLE_INTERVAL:-5}
 
 log() { printf 'vpn-entrypoint: %s\n' "$1" >&2; }
 
@@ -96,6 +106,20 @@ load_uploaded() {
   done
   log "using the VPN configuration uploaded from the dashboard"
 }
+
+# Idle mode: nothing is configured yet. Only the absence of BOTH sources triggers it.
+if [ ! -e "$LIVE_ENV" ] && [ -z "${WIREGUARD_PRIVATE_KEY:-}" ]; then
+  trap 'rm -f "$IDLE_MARKER"; exit 0' TERM INT
+  trap 'rm -f "$IDLE_MARKER"' EXIT
+  (umask 077 && : >"$IDLE_MARKER") || { log "cannot create the idle marker; refusing to start"; exit 1; }
+  log "no VPN configuration yet; waiting"
+  while [ ! -e "$LIVE_ENV" ]; do
+    sleep "$IDLE_INTERVAL" &
+    wait $!
+  done
+  log "VPN configuration found, restarting"
+  exit 0
+fi
 
 initial=absent
 if [ -e "$LIVE_ENV" ]; then

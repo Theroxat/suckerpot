@@ -289,6 +289,20 @@ jobs:
           done
           echo "No session appeared within 60 seconds." >&2
           exit 1
+      - name: Switch two sensors off (SENSOR_TELNET=0, SENSOR_SIP=0)
+        run: |
+          printf 'SENSOR_TELNET=0\nSENSOR_SIP=0\n' >> .env
+          scripts/check-ports.sh
+          docker compose up -d --no-build --wait --wait-timeout 300
+          # replicas 0: no container at all (not even a stopped one) and nothing listening.
+          test -z "$(docker compose ps -aq sensor-telnet sensor-sip)"
+          if ss -Hltun | grep -Eq ':(23|5060)\s'; then echo "a switched-off sensor still listens" >&2; exit 1; fi
+          for s in ssh rdp web redis docker mysql mssql adb smb synology; do
+            status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q "sensor-$s")")
+            echo "sensor-$s: $status"
+            test "$status" = healthy
+          done
+          curl -fsS http://127.0.0.1:8443/healthz
       - name: Dump logs on failure
         if: failure()
         run: |

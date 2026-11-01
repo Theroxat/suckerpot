@@ -1,7 +1,8 @@
 #!/bin/sh
 # Validates the VPN / anonymous-egress settings when the "egress" compose profile is on
 # (COMPOSE_PROFILES=egress, from the environment or .env). Prints variable NAMES only, never values.
-#   - the WireGuard variables and the endpoint IP/port are all set;
+#   - the WireGuard variables and the endpoint IP/port are all set, or all empty (the VPN is then
+#     uploaded from the dashboard and the vpn container waits idle until then);
 #   - VPN_WG_ENDPOINT, when set, equals VPN_WG_ENDPOINT_IP:VPN_WG_ENDPOINT_PORT;
 #   - the endpoint IP is not private, loopback or link-local;
 #   - EGRESS_PROXY_PASSWORD and the collector/analyzer database passwords are at least 24
@@ -26,9 +27,18 @@ case ",$(get COMPOSE_PROFILES ''), " in
   *) exit 0 ;;
 esac
 
+# All five WireGuard variables empty means "no VPN yet": the vpn container then waits idle (no
+# tunnel, no route out) until a WireGuard file is uploaded in the dashboard. A PARTIAL set is
+# still an error, so a half-filled .env cannot be mistaken for the idle mode.
+wg_set=0
 for name in VPN_WG_PRIVATE_KEY VPN_WG_ADDRESSES VPN_WG_PEER_PUBLIC_KEY VPN_WG_ENDPOINT_IP VPN_WG_ENDPOINT_PORT; do
-  [ -n "$(get "$name" '')" ] || err "$name is not set (required by the egress profile)"
+  [ -z "$(get "$name" '')" ] || wg_set=$((wg_set + 1))
 done
+if [ "$wg_set" -gt 0 ]; then
+  for name in VPN_WG_PRIVATE_KEY VPN_WG_ADDRESSES VPN_WG_PEER_PUBLIC_KEY VPN_WG_ENDPOINT_IP VPN_WG_ENDPOINT_PORT; do
+    [ -n "$(get "$name" '')" ] || err "$name is not set (the VPN_WG_* values are all or nothing)"
+  done
+fi
 
 ip=$(get VPN_WG_ENDPOINT_IP '')
 port=$(get VPN_WG_ENDPOINT_PORT '')
