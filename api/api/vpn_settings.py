@@ -63,6 +63,7 @@ FILE_MODE = 0o644  # gluetun's root has no CAP_DAC_OVERRIDE: it must be able to 
 # The candidate comes from the ingest gate only (never the collector's row).
 GATE_ROW = "egress"
 DENY_ASNS_ENV = "EGRESS_DENY_ASNS"
+RECONNECT_LOCK_KEY = 0x5350_5243  # distinct from CHECK_LOCK_KEY
 CHECK_LOCK_KEY = 0x5350_4348  # advisory lock: one "Check now" decision at a time
 BLOCKED_REASONS = ("exit_is_self", "exit_asn_denied")
 
@@ -728,6 +729,8 @@ async def reconnect_vpn(body: PasswordBody, request: Request, db: DbSession) -> 
     principal, refused = await reauth.guard(request, body.password, "vpn reconnect")
     if refused is not None:
         return refused
+    # One decision at a time across workers: held until the commit (or rollback) below.
+    await db.execute(select(func.pg_advisory_xact_lock(RECONNECT_LOCK_KEY)))
     now = datetime.now(UTC)
     previous = await asyncio.to_thread(_read_restart, config_dir())
     if previous is not None and (early := _too_soon(RECONNECT_MIN_GAP, previous, now)) is not None:
