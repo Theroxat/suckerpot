@@ -174,6 +174,42 @@ restore file: _need-project
 http-test:
     scripts/web-test.sh
 
+# First-time install on this machine (checks, secrets, .env, volumes, start): just install --help
+install *args:
+    bash scripts/install.sh {{args}}
+
+# Safe update: backup, new code and images, restart, health check: just update [vX.Y.Z] [--yes]
+update *args: _need-project
+    bash scripts/update.sh {{args}}
+
+# Undo the last update: previous code and the database dump taken before it (asks to confirm).
+rollback: _need-project
+    bash scripts/rollback.sh
+
+# Choose the sensors: just sensors ssh,telnet,web | recommended | all (no argument: show the selection).
+sensors *list: _need-project
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash scripts/env-set.sh sensors {{list}}
+    if [ -n "{{list}}" ]; then docker compose up -d --wait; fi
+
+# Change allow-listed .env settings (never secrets): just set ABUSE_REPORTS_ENABLED=true COOKIE_SECURE=true
+set *pairs: _need-project
+    bash scripts/env-set.sh set {{pairs}}
+    docker compose up -d --wait
+
+# Show the version in git, in .env and the one running.
+version:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "checkout: $(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
+    echo "mode:     ${SUCKERPOT_INSTALL_MODE:-source}"
+    [ "${SUCKERPOT_INSTALL_MODE:-source}" = images ] && echo "image:    ${SUCKERPOT_VERSION:-unset}"
+    if [ -n "${COMPOSE_PROJECT_NAME:-}" ]; then
+      echo "running:  $(docker compose exec -T api printenv SUCKERPOT_RUNNING_VERSION 2>/dev/null | tr -d '\r' || true)"
+    fi
+    exit 0
+
 # Open a psql shell in the database container.
 psql: _need-project
     docker compose exec db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
