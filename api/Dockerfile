@@ -36,6 +36,9 @@ RUN mkdir -p /app/web
 # Mount point of the quarantine volume (the first container to mount it fixes its owner: keep it
 # the same uid as the collector). The API mounts it read-only.
 RUN mkdir -p /quarantine && chown 10001:10001 /quarantine && chmod 0700 /quarantine
+# Mount point of the vpn-config volume (M23): owned by the API user, 0755 so gluetun's root
+# (no CAP_DAC_OVERRIDE) can still traverse it and read the 0644 files.
+RUN mkdir -p /vpn-config && chown 10001:10001 /vpn-config && chmod 0755 /vpn-config
 COPY --from=web-build /web/dist /app/web
 USER 10001:10001
 EXPOSE 8000
