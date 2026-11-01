@@ -200,7 +200,7 @@ export function RepliesToCheck() {
                         disabled={patch.isPending}
                         onClick={() => patch.mutate({ id: r.id, trust: true })}
                       >
-                        Trust this domain
+                        Trust this sender
                       </Button>
                     </>
                   ) : null}

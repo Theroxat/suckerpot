@@ -173,6 +173,10 @@ export interface ImapConfig {
   poll_minutes: number
   /** Date (YYYY-MM-DD): mail received earlier is ignored. */
   since: string | null
+  /** The name the mail provider writes at the start of Authentication-Results. */
+  trusted_authserv_id: string | null
+  /** The mailbox looks free or shared: replies cannot be trusted by domain. */
+  shared_mailbox: boolean
   state: ImapState
   last_test: ImapRequest | null
 }
@@ -189,6 +193,7 @@ export interface ImapForm {
   move_folder: string
   poll_minutes: number
   since: string
+  trusted_authserv_id: string
 }
 
 export const POLL_RANGE = { min: 5, max: 1440 } as const
@@ -226,6 +231,9 @@ export function describeRepliesError(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.code === "reauth_failed") return "That password is not right."
     if (e.code === "not_sent") return "Only a report that was sent can have an outcome."
+    if (e.code === "password_required") return "Enter the mailbox password again."
+    if (e.code === "no_address")
+      return "This reply has no sender address, so it cannot be trusted by address."
     if (e.code === "replies_disabled")
       return "Reading replies is switched off on this server (ABUSE_REPLIES_ENABLED)."
     if (e.code === "imap_not_configured") return "Save the mailbox settings first."
@@ -271,11 +279,12 @@ export interface ImportState {
 export const repliesApi = {
   imap: () => getJson<ImapConfig>("/abuse/imap"),
   saveImap: (form: ImapForm, currentPassword: string) => {
-    const { password, move_folder, since, ...rest } = form
+    const { password, move_folder, since, trusted_authserv_id, ...rest } = form
     return sendJson<ImapConfig>("PUT", "/abuse/imap", {
       ...rest,
       move_folder: move_folder || null,
       since: since || null,
+      trusted_authserv_id: trusted_authserv_id.trim() || null,
       ...(password ? { password } : {}),
       current_password: currentPassword,
     })

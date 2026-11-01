@@ -91,6 +91,8 @@ export interface Recipient {
   mailbox: string | null
   source: "rdap" | "manual"
   muted: boolean
+  /** A free or shared mailbox: replies are trusted by exact address only. */
+  shared_mailbox?: boolean
 }
 
 export interface AsnRef {

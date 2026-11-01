@@ -45,6 +45,7 @@ function toForm(c: ImapConfig): ImapForm {
     move_folder: c.move_folder ?? "",
     poll_minutes: c.poll_minutes,
     since: c.since ?? "",
+    trusted_authserv_id: c.trusted_authserv_id ?? "",
   }
 }
 
@@ -96,6 +97,7 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
     move: useId(),
     poll: useId(),
     since: useId(),
+    authserv: useId(),
     enabled: useId(),
     folders: useId(),
   }
@@ -136,6 +138,8 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
       return "The port must be a number from 1 to 65535."
     if (!f.username.trim()) return "Enter the mailbox username."
     if (!initial.password_set && !f.password) return "Enter the mailbox password."
+    if (f.trusted_authserv_id && !/^[A-Za-z0-9.-]{1,255}$/.test(f.trusted_authserv_id))
+      return "The provider name can only use letters, digits, dots and hyphens."
     if (!f.folder.trim()) return "Enter the folder to read, usually INBOX."
     if (f.processed_action === "move" && (!f.move_folder.trim() || f.move_folder === f.folder))
       return "Pick a different folder to move processed replies to."
@@ -149,6 +153,15 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
   return (
     <div className="grid gap-5">
       <StatusLine c={initial} />
+      {initial.shared_mailbox ? (
+        <p
+          role="note"
+          className="flex items-start gap-2.5 rounded-md border border-border-strong bg-surface-raised px-3 py-2.5 text-sm text-fg"
+        >
+          <Info aria-hidden className="mt-0.5 size-4 shrink-0 text-fg-muted" />
+          This looks like a free or shared mailbox: use a mailbox dedicated to reports.
+        </p>
+      ) : null}
       {initial.worker_enabled ? null : (
         <p
           role="note"
@@ -312,6 +325,22 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
               </datalist>
             </Field>
           ) : null}
+          <Field
+            id={ids.authserv}
+            label="Mail provider name"
+            hint="The name your mail provider writes at the start of its Authentication-Results header. Without it, no reply is ever treated as authenticated."
+            optional
+          >
+            <Input
+              id={ids.authserv}
+              maxLength={255}
+              autoComplete="off"
+              spellCheck={false}
+              value={f.trusted_authserv_id}
+              placeholder="mx.example.net"
+              onChange={(e) => set("trusted_authserv_id", e.target.value.trim())}
+            />
+          </Field>
           <Field
             id={ids.since}
             label="Ignore mail before"
