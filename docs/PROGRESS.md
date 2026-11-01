@@ -146,3 +146,9 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - **SMTP.** Profile in Settings > Reporting (encrypted password the API cannot read back, re-authentication, Proton preset), modes off / click / automatic with a hold time, Cancel and a daily cap. The API only queues requests; ingest sends through the VPN proxy after re-checking the report and running the identity guard on the complete message, envelope and EHLO name. Closed gate: nothing is sent (tested at the socket level). At-most-once delivery with a `sending` state and an `unknown_outcome` result that is never retried.
 - **Alerts.** Alert emails and webhooks now go through the identity check: own addresses and terms are masked, and alerts pause until the owner's own address is confirmed.
 - **Reviews.** Security review passed; its findings (re-send after a crash, unguarded alerts, an in-thread deadline, request picking, profile locking, a lock timeout, a test address) are fixed. UI review approved.
+
+## 2026-11-01 - Safety: protected volumes and daily backups
+
+- **Incident.** Every live volume of the production project was destroyed, most likely by compose commands in a throwaway checkout whose `.env` copied the live `COMPOSE_PROJECT_NAME`.
+- **Fix.** Data volumes are external with fixed names and are created by `just up` (`scripts/ensure-volumes.sh`), which also refuses to start an empty database when dumps exist. The IT and CI overlays make them local; guardrail tests enforce it. `just test-integration` refuses non-`-it-` projects, `just up-test` never uses the live name, and `.env.example` no longer sets the project name.
+- **Backups.** A `backup` service dumps daily into the external `backups` volume (7 kept); `just backup`, `just backups`, `just restore latest`.

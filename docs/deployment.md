@@ -412,32 +412,47 @@ Keep `COOKIE_SECURE=true` (the default). The browser talks HTTPS to the tunnel, 
 
 Set `AUTH_TRUSTED_PROXIES` to the CIDR range of the machine that runs the tunnel. Then the API takes the client address from the tunnel's `CF-Connecting-IP` header, but only for requests that really come from that range. Without it, every login attempt appears to come from the tunnel, and the per-address login limit becomes one limit for everybody.
 
-## Backups
+## Data volumes and backups
 
-A snapshot protects the whole machine. A database dump is smaller, can be kept off the machine, and can be restored on a fresh install.
+### The volumes are external
+
+Every data volume (`db-data`, `redis-data`, `quarantine`, `ssh-hostkeys`, `vpn-config`, `geoip-data`, `backups` and the sensor data volumes) is declared `external: true` in `docker-compose.yml`, with a fixed name `suckerpot_<volume>`. Compose never creates, owns or deletes an external volume, so `docker compose down -v`, a different project name or a checkout in another folder cannot wipe the live data. (A second stack that mounts the same volumes is still a bad idea: never run two databases on one data directory.)
+
+`just up` runs `scripts/ensure-volumes.sh` first. It creates the missing volumes (`docker volume create` is idempotent) and never touches the data of an existing one. Plain `docker compose up` on a host where they do not exist fails with "external volume not found" instead of starting empty.
+
+The test overlays (`docker-compose.it.yml` for `just test-integration`, `docker-compose.ci.yml` for CI and `just up-test`) turn every volume back into a project-local one. Guardrail tests (`just guardrails`, in CI) assert that no service of either overlay mounts an external or `suckerpot_*` volume, and that the base file's data volumes are external. `just test-integration` also refuses to run unless its project name contains `-it-`, and `just up-test` never uses the live project name. In `.env`, do not set `COMPOSE_PROJECT_NAME` to the live name for a test checkout: `.env.example` leaves it commented out, and the justfile defaults to `suckerpot`.
+
+### Missing database volume
+
+If `suckerpot_db-data` is missing but `suckerpot_backups` holds dumps, `just up` stops with a message instead of silently creating an empty database. Then either restore (create the volumes with `scripts/ensure-volumes.sh --force-empty`, start only the database with `docker compose up -d --wait db`, then `just restore latest`), or start from scratch on purpose with `just up --force-empty` (or `SUCKERPOT_ALLOW_EMPTY_DB=1`).
+
+### Daily backups
+
+The `backup` service (backend network only, no route out, non-root, read-only) runs `pg_dump -Fc` (TimescaleDB data included) with the database owner account, once a day, into the `suckerpot_backups` volume. It also dumps at start when the newest dump is older than 24 hours, keeps the newest 7 (`BACKUP_KEEP`) and refuses to run when the volume is nearly full. Its healthcheck turns unhealthy when no dump younger than 26 hours exists, so `docker compose ps` shows a failing backup.
 
 ```bash
-just backup
+just backup      # dump now into the backups volume
+just backups     # list the dumps
+just backup-host # dump into the host folder ./backups (BACKUP_DIR, BACKUP_KEEP), for copies off the machine
 ```
 
-`scripts/backup-db.sh` writes a custom-format dump (TimescaleDB data included) to `./backups`, with mode 0600 in a 0700 folder. The database credentials come from the container and are never printed.
+The quarantine volume is not backed up: it holds captured malware that can be fetched again.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `BACKUP_DIR` | `./backups` | Where dumps go. The folder is ignored by git. |
-| `BACKUP_KEEP` | `7` | How many dumps to keep. Older ones are deleted. |
-
-The script refuses to run when the free disk space is less than twice the size of the last dump (or 1 GiB when there is no previous dump).
+A volume lives on the same disk as the data it protects. For a real safeguard, copy dumps off the machine to storage you control (for example `just backup-host`, then copy `./backups`), and keep Proxmox snapshots too.
 
 To restore:
 
 ```bash
-just restore backups/suckerpot-20261024T020000Z.dump
+just restore latest                          # newest dump of the backups volume
+just restore volume:suckerpot-20261101T020000Z.dump
+just restore backups/suckerpot-20261024T020000Z.dump   # a dump file on the host
 ```
 
 This **replaces the whole database**. The script asks you to type `restore`, stops ingest and the API, recreates the database, restores the dump, runs the migrations (which re-apply the role grants) and starts ingest and the API again. Sensors keep running during a restore: their events wait in Redis and are ingested afterwards.
 
-For a daily backup, use the systemd timer example in `scripts/host/README.md` ("Daily database backup"): a oneshot service that runs `backup-db.sh` as a user who can run Docker, and a timer that starts it once a day.
+### Deleting data on purpose
+
+Nothing in the stack deletes a live volume. To wipe one deliberately, stop the stack (`just down`), then remove the volume by name, for example `docker volume rm suckerpot_db-data`. Do it only after `just backup-host` and a check that the copy is readable. Never run `docker volume prune` or `docker system prune --volumes` on this host.
 
 ```{warning}
 Dumps contain captured attack data: attacker addresses, credentials and payload fragments. Keep them private. Never commit them, never put them in a public place, and copy them off the machine only to storage that you control.

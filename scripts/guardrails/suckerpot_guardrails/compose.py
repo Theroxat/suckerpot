@@ -41,6 +41,10 @@ class _Override(list[Any]):
     """A sequence tagged ``!override``: replaces the base value instead of extending it."""
 
 
+class _OverrideMap(dict[Any, Any]):
+    """A mapping tagged ``!override``: replaces the base mapping instead of merging into it."""
+
+
 class _Reset:
     """A value tagged ``!reset``: removes the key."""
 
@@ -53,7 +57,7 @@ def _override(loader: yaml.SafeLoader, node: yaml.Node) -> Any:
     if isinstance(node, yaml.SequenceNode):
         return _Override(loader.construct_sequence(node, deep=True))
     if isinstance(node, yaml.MappingNode):
-        return loader.construct_mapping(node, deep=True)
+        return _OverrideMap(loader.construct_mapping(node, deep=True))
     return loader.construct_scalar(node)  # type: ignore[arg-type]
 
 
@@ -68,6 +72,8 @@ _Loader.add_constructor("!reset", _reset)
 def _merge(base: Any, over: Any) -> Any:
     if isinstance(over, _Override):
         return list(over)
+    if isinstance(over, _OverrideMap):
+        return dict(over)
     if isinstance(base, dict) and isinstance(over, dict):
         out = dict(base)
         for key, value in over.items():
