@@ -281,10 +281,10 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M24 — Guided tour, setup checklist and tunnel controls
 
-- [ ] A replayable guided tour on first login that explains each area and how payloads, the VPN, abuse reports and alerts work, plus a "?" help on every page.
-- [ ] A setup checklist computed from the real state (sensors, VPN, collector, reporting, alerts, keys).
-- [ ] VPN tab: "Check now" and "Reconnect", and a gate that re-checks quickly while closed.
-- [ ] UI review and security review (new routes, entrypoint change).
+- [x] A replayable guided tour on first login that explains each area and how payloads, the VPN, abuse reports and alerts work, plus a "?" help on every page.
+- [x] A setup checklist computed from the real state (sensors, VPN, collector, reporting, alerts, keys).
+- [x] VPN tab: "Check now" and "Reconnect", and a gate that re-checks quickly while closed.
+- [x] UI review and security review (new routes, entrypoint change).
 
 **Acceptance:** a new owner can tell from the dashboard what is left to set up; after a tunnel restart the gate reopens within a minute or on demand.
 

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-01
+
+### Added
+
+- Guided tour (M24): a seven-step tour opens on each account's first login and can be replayed from the "Tour" button in the top bar. It explains daily reading, campaigns and tools, how payloads are fetched and analysed without ever being run, the VPN and its kill switch, abuse reports and alerts, each with a small flow diagram.
+- Page help: a "?" next to every page title says what the page shows, where its data comes from and one useful action.
+- Setup checklist: `GET /api/v1/setup/status` and a card in Settings > General (and the tour's last step) show, from the real state, what is done and what is left: sensor traffic, the outbound gate, the payload collector, report wording, your own address, abuse report drafts, alert channels and reputation keys.
+- VPN tab: "Check now" asks the gate to re-check at once (`POST /api/v1/settings/vpn/check`, table `egress_check_requests`, migration `0021`) and "Reconnect" restarts the tunnel after asking for the password again (`POST /api/v1/settings/vpn/reconnect`, a marker file the `vpn` entrypoint watches).
+
+### Changed
+
+- While the egress gate is closed it re-checks every 20 seconds (for ten tries, then at the normal interval) instead of waiting the full interval, so lookups resume within a minute after a tunnel restart.
+
+### Fixed
+
+- Two flaky tests: the auth event-loop check and the collector table reset.
+
 ## [0.3.0] - 2026-11-01
 
 ### Changed
@@ -92,7 +109,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Isolation: four networks with an internal backend, one Redis ACL user per sensor limited to `XADD` on its own stream, least-privilege database roles, no outbound route for the API, non-root read-only containers with all capabilities dropped.
 - The first review of the M1 stack found unbounded stream growth, egress, poison-message and default-credential issues; all were fixed and the second pass passed.
 
-[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Theroxat/suckerpot/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Theroxat/suckerpot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Theroxat/suckerpot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Theroxat/suckerpot/releases/tag/v0.1.0
