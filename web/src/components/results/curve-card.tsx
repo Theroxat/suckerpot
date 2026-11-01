@@ -104,14 +104,14 @@ export function CurveCard({
             className="h-52 w-full"
           >
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: -8 }}>
+              <LineChart data={rows} margin={{ top: 4, right: 28, bottom: 0, left: -8 }}>
                 <CartesianGrid vertical={false} stroke="var(--border)" />
                 <XAxis
                   dataKey="label"
                   tick={{ fill: "var(--fg-subtle)", fontSize: 11 }}
                   tickLine={false}
                   axisLine={{ stroke: "var(--border-strong)" }}
-                  interval={0}
+                  interval="preserveStartEnd"
                   minTickGap={8}
                 />
                 <YAxis
@@ -140,31 +140,33 @@ export function CurveCard({
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <table className="sr-only">
-            <caption>Share of reported targets that went down, by time since the report</caption>
-            <thead>
-              <tr>
-                <th scope="col">Time after the report</th>
-                {SERIES.map((s) => (
-                  <th key={s.key} scope="col">
-                    {s.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.hours}>
-                  <th scope="row">{r.label}</th>
+          <div className="sr-only">
+            <table>
+              <caption>Share of reported targets that went down, by time since the report</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Time after the report</th>
                   {SERIES.map((s) => (
-                    <td key={s.key}>
-                      {r[s.key] == null ? "no data" : formatPercent(r[s.key] ?? 0)}
-                    </td>
+                    <th key={s.key} scope="col">
+                      {s.label}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.hours}>
+                    <th scope="row">{r.label}</th>
+                    {SERIES.map((s) => (
+                      <td key={s.key}>
+                        {r[s.key] == null ? "no data" : formatPercent(r[s.key] ?? 0)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </FindingCard>

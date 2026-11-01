@@ -203,6 +203,7 @@ export function ProvidersCard({ groups, group, takedown }: ProvidersCardProps) {
           value={group}
           onChange={(v) => setGroup(v === "asn" ? null : v)}
           options={GROUP_OPTIONS}
+          className="max-w-full overflow-x-auto"
         />
       }
       bodyClassName="px-0 sm:px-0 pb-0 sm:pb-0"
@@ -217,7 +218,7 @@ export function ProvidersCard({ groups, group, takedown }: ProvidersCardProps) {
           No report sent yet. Results appear here once you send one.
         </p>
       ) : (
-        <div className="overflow-x-auto border-t">
+        <div className="relative overflow-x-auto border-t">
           <table className="w-full text-left text-sm">
             <caption className="sr-only">Providers that received reports</caption>
             <thead className="text-xs text-fg-muted">
