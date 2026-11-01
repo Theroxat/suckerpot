@@ -80,7 +80,8 @@ def test_the_chain_is_linear_up_to_0022() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0022"}
+    assert heads == {"0026"}  # the M29 branch; the merge re-chains it after 0023 to 0025
+    assert revs["0026"][0] == "0022"
     for n in range(11, 22):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
 
@@ -291,3 +292,39 @@ def test_check_request_grants() -> None:
     assert not _update_columns(_GRANTS_API, "egress_check_requests")
     assert "egress_check_requests" not in _grants(_GRANTS_COLLECTOR)
     assert "egress_check_requests" not in _grants(_GRANTS_ANALYZER)
+
+
+NETWORK_TABLES = ("network_membership", "network_submissions", "network_targets", "network_summary")
+
+
+def test_network_tables_are_modelled_and_granted() -> None:
+    assert set(NETWORK_TABLES) <= set(models.Base.metadata.tables)
+    for script in (_GRANTS_INGEST, _GRANTS_API):
+        for table in NETWORK_TABLES:
+            assert f"'{table}'" in script, table
+    for script in (_GRANTS_COLLECTOR, _GRANTS_ANALYZER):
+        assert not any(t in script for t in NETWORK_TABLES)
+
+
+def test_network_grants_keep_the_private_key_away_from_the_api() -> None:
+    api = re.sub(r"'\s+'", "", _GRANTS_API)
+    select = re.search(r"GRANT SELECT \(([a-z_, ]+)\)\s*ON network_membership", api)
+    assert select, "the API reads the membership by column"
+    cols = {c.strip() for c in select.group(1).split(",")}
+    assert {"desired", "state", "fingerprint", "pubkey"} <= cols
+    assert not {"privkey_enc", "privkey_nonce"} & cols
+    assert _update_columns(_GRANTS_API, "network_membership") == {
+        "desired", "pseudonym", "country", "show_country", "requested_by", "requested_at",
+    }  # fmt: skip
+    g = _grants(_GRANTS_API)
+    for table in ("network_submissions", "network_targets", "network_summary"):
+        assert g[table] == {"SELECT"}
+    ingest = _grants(_GRANTS_INGEST)
+    assert ingest["network_membership"] == {"SELECT", "UPDATE"}
+    assert "INSERT" not in ingest["network_membership"]  # the row is seeded by the migration
+
+
+def test_the_network_prune_procedure_is_created_by_its_migration() -> None:
+    from suckerpot_db.retention import NETWORK_PRUNE_PROC
+
+    assert f"PROCEDURE {NETWORK_PRUNE_PROC}(" in (VERSIONS / "0026_network.py").read_text()
