@@ -14,6 +14,7 @@ import { useAuth } from "@/app/auth"
 import { CopyField } from "@/components/abuse/copy-field"
 import { ExportMenu } from "@/components/abuse/export-menu"
 import { StatusStepper } from "@/components/abuse/status-stepper"
+import { SendControl } from "@/components/abuse/send-control"
 import { ConfirmDialog, MarkSentDialog } from "@/components/abuse/status-dialogs"
 import { EmptyState } from "@/components/empty-state"
 import { FindingCard } from "@/components/finding-card"
@@ -510,6 +511,16 @@ function Actions({
           </Button>
         ) : null}
       </div>
+      {r.status === "draft" || r.status === "reviewed" ? (
+        <SendControl
+          reportId={r.public_id}
+          recipient={r.recipient.mailbox ?? r.recipient.name}
+          ready={!r.demo && r.guard.ok && Boolean(r.recipient.mailbox) && r.custom_intro}
+          scheduledAt={r.send_state?.scheduled_at ?? null}
+          lastRequest={r.send_state?.last_request ?? null}
+          revision={r.revision}
+        />
+      ) : null}
       {r.status === "draft" && blocker ? (
         <p className="flex items-start gap-2 text-sm text-fg-muted">
           <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
@@ -580,6 +591,11 @@ export function AbuseDetailPage() {
     queryKey: abuseKeys.report(publicId),
     queryFn: () => abuseApi.report(publicId),
     retry: false,
+    // While a send is waiting or on its way the report changes by itself.
+    refetchInterval: (query) => {
+      const s = query.state.data?.send_state
+      return s?.scheduled_at || s?.last_request?.status === "pending" ? 4000 : false
+    },
   })
   const [notice, setNotice] = useState<string | null>(null)
   const refresh = (d: ReportDetail | null, message?: string) => {

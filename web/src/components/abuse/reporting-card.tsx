@@ -463,7 +463,7 @@ export function ReportingCard() {
                 ? "Your own wording is set. Reports are written with it."
                 : "Reports use the public default wording until you write your own."
         }
-        detail="Nothing is ever sent from here. You copy a draft into your own mailbox."
+        detail="Saving these words sends nothing. By default you copy a draft into your own mailbox; SMTP sending is optional, further down."
       >
         {q.isPending ? (
           <SkeletonText lines={4} />

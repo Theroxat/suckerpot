@@ -199,7 +199,7 @@ const SEEDS: Seed[] = [
   },
 ]
 
-type Row = ReportDetail
+export type Row = ReportDetail
 
 /** A value that the fixtures guarantee; keeps the handlers free of non-null assertions. */
 function must<T>(v: T | undefined): T {
@@ -260,7 +260,7 @@ function build(s: Seed): Row {
   }
 }
 
-const rows: Row[] = SEEDS.map(build)
+export const rows: Row[] = SEEDS.map(build)
 
 const waiting: WaitingRecipient[] = [
   {
@@ -312,7 +312,7 @@ const terms: (SelfTerm & { full: string })[] = [
 ]
 let nextTerm = 5
 
-function missingWording(): string[] {
+export function missingWording(): string[] {
   const fields = {
     intro: settings.intro,
     outro: settings.outro,
@@ -326,18 +326,18 @@ function missingWording(): string[] {
     .map(([k]) => k)
 }
 
-function pub(r: Row): ReportDetail {
+export function pub(r: Row): ReportDetail {
   return { ...r, custom_intro: Boolean(settings.intro) }
 }
 
-function find(id: string): Row | undefined {
+export function find(id: string): Row | undefined {
   return rows.find((r) => r.public_id === id)
 }
 
 const notFound = () =>
   HttpResponse.json({ detail: "Report not found.", code: "not_found" }, { status: 404 })
 
-function renderBody(r: Row, format: string): { subject: string; body: string; to: string } {
+export function renderBody(r: Row, format: string): { subject: string; body: string; to: string } {
   const round = r.options.time_precision === "minute"
   const t = (s: string) => {
     const d = new Date(s)

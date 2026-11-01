@@ -4,6 +4,8 @@ import { useId, useMemo, useState } from "react"
 import { Link } from "react-router"
 import { useAuth } from "@/app/auth"
 import { ReportRow } from "@/components/abuse/report-row"
+import { SendQueue } from "@/components/abuse/send-queue"
+import { useSendQueue } from "@/components/abuse/send-hooks"
 import { EmptyState } from "@/components/empty-state"
 import { FindingCard } from "@/components/finding-card"
 import { PageHeader } from "@/components/page-header"
@@ -177,10 +179,13 @@ function NoContact() {
 export function AbusePage() {
   const { canWrite } = useAuth()
   const [param, setParam] = useUrlParam("status")
+  const queueView = canWrite && param === "queue"
   const status: ListStatus = LIST_STATUSES.find((s) => s === param) ?? "draft"
+  const queue = useSendQueue()
   const st = useQuery({ queryKey: abuseKeys.status, queryFn: abuseApi.status })
   const filters = { status }
   const list = useInfiniteQuery({
+    enabled: !queueView,
     queryKey: abuseKeys.list(filters),
     queryFn: ({ pageParam }) => abuseApi.list(filters, pageParam),
     initialPageParam: null as string | null,
@@ -227,12 +232,25 @@ export function AbusePage() {
         />
       ) : null}
 
-      <Tabs value={status} onValueChange={(v) => setParam(v === "draft" ? null : v)}>
+      <Tabs
+        value={queueView ? "queue" : status}
+        onValueChange={(v) => setParam(v === "draft" ? null : v)}
+      >
         <TabsList
           variant="line"
           aria-label="Report status"
           className="mb-4 max-w-full justify-start overflow-x-auto"
         >
+          {canWrite ? (
+            <TabsTrigger value="queue" className="flex-none px-3">
+              To send
+              {queue.data ? (
+                <span className="ml-1.5 text-xs text-fg-subtle tabular-nums">
+                  {queue.data.items.length}
+                </span>
+              ) : null}
+            </TabsTrigger>
+          ) : null}
           {LIST_STATUSES.map((s) => (
             <TabsTrigger key={s} value={s} className="flex-none px-3">
               {TAB_LABEL[s]}
@@ -244,47 +262,51 @@ export function AbusePage() {
         </TabsList>
       </Tabs>
 
-      <div className="space-y-4 normal-nums">
-        {list.isPending ? (
-          <SkeletonList rows={4} />
-        ) : list.isError ? (
-          <EmptyState
-            icon={MailWarning}
-            title="Could not load the reports"
-            description={describeAbuseError(list.error)}
-            action={
-              <Button variant="outline" size="sm" onClick={() => void list.refetch()}>
-                Try again
-              </Button>
-            }
-          />
-        ) : groups.length === 0 ? (
-          blocked ? null : (
+      {queueView ? (
+        <SendQueue />
+      ) : (
+        <div className="space-y-4 normal-nums">
+          {list.isPending ? (
+            <SkeletonList rows={4} />
+          ) : list.isError ? (
             <EmptyState
               icon={MailWarning}
-              title={`No ${TAB_LABEL[status].toLowerCase()} reports`}
-              description={
-                status === "draft"
-                  ? "A draft appears when a source crosses the thresholds and a mailbox is found."
-                  : "Nothing here yet."
+              title="Could not load the reports"
+              description={describeAbuseError(list.error)}
+              action={
+                <Button variant="outline" size="sm" onClick={() => void list.refetch()}>
+                  Try again
+                </Button>
               }
             />
-          )
-        ) : (
-          groups.map((g) => <ProviderGroup key={g.id} g={g} />)
-        )}
-        {list.hasNextPage ? (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={list.isFetchingNextPage}
-            onClick={() => void list.fetchNextPage()}
-          >
-            {list.isFetchingNextPage ? "Loading…" : "Show more"}
-          </Button>
-        ) : null}
-        {status === "draft" ? <NoContact /> : null}
-      </div>
+          ) : groups.length === 0 ? (
+            blocked ? null : (
+              <EmptyState
+                icon={MailWarning}
+                title={`No ${TAB_LABEL[status].toLowerCase()} reports`}
+                description={
+                  status === "draft"
+                    ? "A draft appears when a source crosses the thresholds and a mailbox is found."
+                    : "Nothing here yet."
+                }
+              />
+            )
+          ) : (
+            groups.map((g) => <ProviderGroup key={g.id} g={g} />)
+          )}
+          {list.hasNextPage ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={list.isFetchingNextPage}
+              onClick={() => void list.fetchNextPage()}
+            >
+              {list.isFetchingNextPage ? "Loading…" : "Show more"}
+            </Button>
+          ) : null}
+          {status === "draft" ? <NoContact /> : null}
+        </div>
+      )}
     </>
   )
 }

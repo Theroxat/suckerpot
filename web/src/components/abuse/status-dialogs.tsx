@@ -73,8 +73,8 @@ function SentForm({ onOpenChange, run, describe }: Omit<DialogProps, "open">) {
       <DialogHeader className="text-left">
         <DialogTitle>Mark this report as sent</DialogTitle>
         <DialogDescription>
-          Nothing is sent from here: you send the message from your own mailbox. This only records
-          that you did, so the same addresses are not reported again for a while.
+          This button sends nothing. It only records that you sent the message yourself, so the same
+          addresses are not reported again for a while.
         </DialogDescription>
       </DialogHeader>
       <Field id={id} label="Sent at" hint="Your local time. Stored in UTC.">
