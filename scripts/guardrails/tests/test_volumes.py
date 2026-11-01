@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[3]
 BASE = ROOT / "docker-compose.yml"
 OVERLAYS = ["docker-compose.ci.yml", "docker-compose.it.yml"]
 
+REQUIRED_PREFIX = "${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set in .env}"
+
 # Every named volume of the base file holds live data.
 DATA_VOLUMES = {
     "redis-data",
@@ -50,7 +52,9 @@ def test_base_declares_exactly_the_data_volumes_as_external() -> None:
     assert set(volumes) == DATA_VOLUMES
     for name, spec in volumes.items():
         assert spec.get("external") is True, name
-        assert spec.get("name") == f"suckerpot_{name}", name
+        # Required variable, no literal live name: without .env, compose cannot even start.
+        assert spec.get("name") == f"{REQUIRED_PREFIX}_{name}", name
+        assert "suckerpot_" not in spec["name"], name
 
 
 def test_base_services_only_mount_declared_volumes() -> None:

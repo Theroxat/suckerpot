@@ -21,14 +21,14 @@ image=$(awk '/^  db:/ {indb=1} indb && /image: / {print $2; exit}' docker-compos
 # Runs a command on the backups volume (read-only, no network).
 in_backups() {
   docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true \
-    --user 70:70 -v suckerpot_backups:/b:ro --entrypoint "$1" "$image" "${@:2}"
+    --user 70:70 -v "${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_backups:/b:ro" --entrypoint "$1" "$image" "${@:2}"
 }
 from_volume=""
 case $file in
   latest)
     from_volume=$(in_backups sh -c 'ls -1t /b/suckerpot-*.dump 2>/dev/null | head -n 1' || true)
     from_volume=${from_volume##*/}
-    [ -n "$from_volume" ] || { echo "restore: no dump in the suckerpot_backups volume" >&2; exit 2; }
+    [ -n "$from_volume" ] || { echo "restore: no dump in the backups volume" >&2; exit 2; }
     file="volume:$from_volume"
     ;;
   volume:*)

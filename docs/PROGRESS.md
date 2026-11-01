@@ -150,5 +150,5 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 ## 2026-11-01 - Safety: protected volumes and daily backups
 
 - **Incident.** Every live volume of the production project was destroyed, most likely by compose commands in a throwaway checkout whose `.env` copied the live `COMPOSE_PROJECT_NAME`.
-- **Fix.** Data volumes are external with fixed names and are created by `just up` (`scripts/ensure-volumes.sh`), which also refuses to start an empty database when dumps exist. The IT and CI overlays make them local; guardrail tests enforce it. `just test-integration` refuses non-`-it-` projects, `just up-test` never uses the live name, and `.env.example` no longer sets the project name.
+- **Fix.** Data volumes are external, named from the required `SUCKERPOT_VOLUME_PREFIX` (no `.env`, no compose), and are created by `just up` (`scripts/ensure-volumes.sh`), which also refuses to start an empty database when dumps exist. The IT and CI overlays make them local; guardrail tests enforce it. `just test-integration` refuses non-`-it-` projects, `just up-test` never uses the live name, and the live recipes need `COMPOSE_PROJECT_NAME` and `SUCKERPOT_VOLUME_PREFIX` from `.env`.
 - **Backups.** A `backup` service dumps daily into the external `backups` volume (7 kept); `just backup`, `just backups`, `just restore latest`.

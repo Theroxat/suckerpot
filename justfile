@@ -6,15 +6,19 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 uv_image := "ghcr.io/astral-sh/uv:0.8.24-python3.13-bookworm-slim"
 uv_cache := "suckerpot-uv-cache"
-project := env_var_or_default("COMPOSE_PROJECT_NAME", "suckerpot")
-# Every recipe uses the same project name (the live one by default), whatever the folder is called.
-export COMPOSE_PROJECT_NAME := project
+# No default project name on purpose: recipes that touch the live stack need COMPOSE_PROJECT_NAME
+# and SUCKERPOT_VOLUME_PREFIX from .env (see _need-project), so a checkout without .env can never act on the live volumes.
 node_image := "node:22.21.1-bookworm-slim"
 playwright_image := "mcr.microsoft.com/playwright:v1.64.1-noble"
 web_cache := "suckerpot-web-cache"
 web_env := "-e HOME=/tmp -e CI=1 -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e COREPACK_HOME=/cache/corepack -e npm_config_store_dir=/cache/pnpm-store"
 pnpm_setup := "mkdir -p /tmp/bin && corepack enable --install-directory /tmp/bin && export PATH=/tmp/bin:$PATH"
 packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo scripts/guardrails egress analysis reporting collector db ingest api"
+
+# Fails unless COMPOSE_PROJECT_NAME and SUCKERPOT_VOLUME_PREFIX are set (from .env). Dependency of every recipe that uses the live stack.
+_need-project:
+    @[ -n "${COMPOSE_PROJECT_NAME:-}" ] && [ -n "${SUCKERPOT_VOLUME_PREFIX:-}" ] || { echo "COMPOSE_PROJECT_NAME and SUCKERPOT_VOLUME_PREFIX must both be set. Create .env from .env.example on the live host only; never in a test checkout." >&2; exit 1; }
+    @case "$COMPOSE_PROJECT_NAME" in sp-it-*|sp-test|sp-ci) echo "COMPOSE_PROJECT_NAME is a throwaway name" >&2; exit 1;; esac
 
 # List recipes.
 default:
@@ -23,7 +27,7 @@ default:
 # Build the images and start the stack, waiting until everything is healthy. The data volumes
 # are external: they are created first, and the start is refused if the database volume is gone
 # while the backups volume still holds dumps (--force-empty accepts an empty database on purpose).
-up *flags: ports
+up *flags: _need-project ports
     scripts/ensure-volumes.sh {{flags}}
     docker compose up -d --build --wait
 
@@ -33,26 +37,23 @@ up *flags: ports
 up-test: ports
     #!/usr/bin/env bash
     set -euo pipefail
-    # The test overlay makes every volume project-local: under the live project name that would
-    # collide with the live volumes. Always a separate project.
-    if [ "{{project}}" = "suckerpot" ] || [ "${COMPOSE_PROJECT_NAME:-}" = "suckerpot" ]; then
-      export COMPOSE_PROJECT_NAME=sp-test
-    fi
+    # The test overlay makes every volume project-local. Always a throwaway project, never the live one.
+    export COMPOSE_PROJECT_NAME=sp-test SUCKERPOT_VOLUME_PREFIX=sp-test
     : "${ADMIN_PASSWORD_HASH:=test-placeholder}"
     : "${SESSION_SECRET:=test-placeholder-session-secret-not-used}"
     export ADMIN_PASSWORD_HASH SESSION_SECRET
     COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml docker compose up -d --build --wait
 
 # Stop the stack (volumes are kept).
-down:
+down: _need-project
     ADMIN_PASSWORD_HASH="${ADMIN_PASSWORD_HASH:-x}" SESSION_SECRET="${SESSION_SECRET:-x}" docker compose down
 
 # Follow logs, optionally for some services: just logs ingest api
-logs *svc:
+logs *svc: _need-project
     docker compose logs -f --tail=100 {{svc}}
 
 # Show service status.
-ps:
+ps: _need-project
     docker compose ps
 
 # Check the port layout (see scripts/check-ports.sh).
@@ -67,19 +68,19 @@ guardrails:
       {{uv_image}} sh -c "uv sync -q && uv run pytest -q -p no:cacheprovider"
 
 # Live check of the anonymous egress (needs the stack up with COMPOSE_PROFILES=egress).
-egress-check:
+egress-check: _need-project
     scripts/egress-check.sh
 
 # Live identity check of every abuse report and CERT export (M22). Prints reason codes and counts only.
-abuse-guard-check:
+abuse-guard-check: _need-project
     docker compose exec -T api python -m api.abuse_selfcheck
 
 # Validate the compose file.
-config: ports
+config: _need-project ports
     docker compose config -q
 
 # Generate demo data once: just demo --sessions 200 --days 3
-demo *args:
+demo *args: _need-project
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -n "${ABUSECH_AUTH_KEY:-}${VIRUSTOTAL_API_KEY:-}" ]; then
@@ -89,7 +90,7 @@ demo *args:
     docker compose --profile tools run --rm demo {{args}}
 
 # Keep generating live demo traffic (stop with Ctrl+C).
-demo-live:
+demo-live: _need-project
     docker compose --profile tools run --rm demo --live
 
 # Everything: lint, type-check, unit tests and the web build.
@@ -138,19 +139,19 @@ telnet-test:
     scripts/telnet-test.sh
 
 # Dump the database now into the suckerpot_backups volume (the backup service also does it daily, 7 kept).
-backup:
+backup: _need-project
     docker compose exec -T backup /bin/sh /backup-service.sh now
 
 # Dump the database into the host folder ./backups (BACKUP_DIR, BACKUP_KEEP): see scripts/backup-db.sh.
-backup-host:
+backup-host: _need-project
     scripts/backup-db.sh
 
 # List the dumps in the suckerpot_backups volume.
-backups:
+backups: _need-project
     docker compose exec -T backup ls -lh /backups
 
 # Restore a dump, replacing the whole database (asks for confirmation): just restore latest | FILE | volume:NAME
-restore file:
+restore file: _need-project
     scripts/restore-db.sh {{file}}
 
 # HTTP requests (WordPress login + PHP upload-progress) against the web sensor, then check the API.
@@ -158,7 +159,7 @@ http-test:
     scripts/web-test.sh
 
 # Open a psql shell in the database container.
-psql:
+psql: _need-project
     docker compose exec db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 
 # Lint every Python package (ruff check + format check).
@@ -197,12 +198,13 @@ test-integration:
     # It always carries a suffix: it can never be the live project name.
     exec 9>/tmp/suckerpot-it.lock
     flock 9
-    it="{{project}}-it-$(printf %s "$PWD" | sha256sum | cut -c1-6)-$$"
+    it="sp-it-$(printf %s "$PWD" | sha256sum | cut -c1-6)-$$"
     # Defence in depth: never run against the live project (its volumes would be mounted by name).
-    if [ "$it" = "suckerpot" ] || [ "$it" = "{{project}}" ] || [[ "$it" != *-it-* ]]; then
+    if [ "$it" = "suckerpot" ] || [[ "$it" != *-it-* ]]; then
       echo "test-integration: refusing to run, project name '$it' is not a throwaway '-it-' project" >&2
       exit 1
     fi
+    export COMPOSE_PROJECT_NAME="$it" SUCKERPOT_VOLUME_PREFIX="$it"
     trap 'docker compose -p "$it" -f docker-compose.yml -f docker-compose.it.yml down -v >/dev/null 2>&1' EXIT
     docker compose -p "$it" -f docker-compose.yml -f docker-compose.it.yml up -d --build --wait db redis
     {{just_executable()}} _cache
