@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,8 @@ NEW_REPORT = (
     "gen_random_uuid(), (SELECT min(id) FROM abuse_recipients), :kind, false, now(), now(), "
     "'{{}}', 'x', true, :status{vals})"
 )
+JAN_2026 = datetime(2026, 1, 1, tzinfo=UTC)  # asyncpg wants a datetime, not a string
+JAN_2020 = datetime(2020, 1, 1, tzinfo=UTC)
 REPLY = (
     "INSERT INTO abuse_replies (source, received_at, match_method, classification, size_bytes, "
     "report_id, excerpt) VALUES ('paste', :at, :m, 'human_reply', 10, :r, 'hello')"
@@ -235,8 +238,8 @@ async def test_reply_columns_per_role(
 ) -> None:
     api, ingest = roles
     sent = await _sent_report(owner)
-    assert await _run(ingest, REPLY, {"at": "2026-01-01T00:00:00Z", "m": "token", "r": sent}) == 1
-    assert await _run(api, REPLY, {"at": "2026-01-01T00:00:00Z", "m": "none", "r": sent}) is None
+    assert await _run(ingest, REPLY, {"at": JAN_2026, "m": "token", "r": sent}) == 1
+    assert await _run(api, REPLY, {"at": JAN_2026, "m": "none", "r": sent}) is None
     assert (
         await _run(api, "UPDATE abuse_replies SET classification = 'resolved', reviewed_by = 'a'")
         == 1
@@ -267,6 +270,8 @@ async def test_prune_keeps_sent_requests_and_clears_excerpts(owner: AsyncEngine)
     async with owner.begin() as conn:
         await conn.execute(text("DELETE FROM abuse_replies"))
         await conn.execute(text("DELETE FROM abuse_send_requests"))
+        # The guard trigger only lets a request start pending; old finished rows need it off.
+        await conn.execute(text("ALTER TABLE abuse_send_requests DISABLE TRIGGER USER"))
         await conn.execute(
             text(
                 "INSERT INTO abuse_send_requests (report_id, kind, requested_by, status, "
@@ -282,7 +287,8 @@ async def test_prune_keeps_sent_requests_and_clears_excerpts(owner: AsyncEngine)
                 "now() - interval '40 days', now() - interval '40 days')"
             )
         )
-        await conn.execute(text(REPLY), {"at": "2020-01-01T00:00:00Z", "m": "token", "r": sent})
+        await conn.execute(text("ALTER TABLE abuse_send_requests ENABLE TRIGGER USER"))
+        await conn.execute(text(REPLY), {"at": JAN_2020, "m": "token", "r": sent})
         await conn.execute(
             text(
                 "INSERT INTO abuse_replies (source, received_at, match_method, classification, "
