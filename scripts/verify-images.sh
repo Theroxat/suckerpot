@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Verifies the cosign signature of every published image of a release (M28), against the identity of
 # this project's release workflow. Nothing is pulled or started: cosign only reads signatures.
 #
@@ -13,7 +13,7 @@
 # transparency log from this machine, like `docker pull` does). It never sees a secret, unless you
 # have a registry login in ~/.docker/config.json: that file is then mounted read-only so private
 # packages can be read. Set VERIFY_IMAGES_NO_AUTH=1 to skip it.
-set -eu
+set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
@@ -46,32 +46,32 @@ repo=${prefix#ghcr.io/}
 escaped=$(printf '%s' "$repo" | sed 's/\./\\./g')
 identity="^https://github\\.com/$escaped/\\.github/workflows/release\\.yml@refs/tags/$(printf '%s' "$version" | sed 's/\./\\./g')\$"
 
-auth=""
+auth=()
 if [ "${VERIFY_IMAGES_NO_AUTH:-0}" != 1 ] && [ -f "$HOME/.docker/config.json" ]; then
-  auth="-v $HOME/.docker/config.json:/home/nonroot/.docker/config.json:ro"
+  auth=(-v "$HOME/.docker/config.json:/home/nonroot/.docker/config.json:ro")
 fi
+errlog=$(mktemp)
+trap 'rm -f "$errlog"' EXIT
 
 echo "verify-images: $version, signer github.com/$repo release workflow"
 fail=0
 for image in $IMAGES; do
   ref="$prefix-$image:$version"
-  # shellcheck disable=SC2086
   if docker run --rm --user 65532:65532 --read-only --cap-drop ALL \
       --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m,uid=65532,gid=65532 \
-      -e HOME=/tmp -e TUF_ROOT=/tmp/tuf $auth \
+      -e HOME=/tmp -e TUF_ROOT=/tmp/tuf ${auth[@]+"${auth[@]}"} \
       -e DOCKER_CONFIG=/home/nonroot/.docker \
       "$COSIGN_IMAGE" verify \
       --certificate-identity-regexp "(?i)$identity" \
       --certificate-oidc-issuer "$ISSUER" \
-      "$ref" >/dev/null 2>"${TMPDIR:-/tmp}/verify-images.$$"; then
+      "$ref" >/dev/null 2>"$errlog"; then
     echo "  ok      $image"
   else
     echo "  FAILED  $image" >&2
-    sed 's/^/          /' "${TMPDIR:-/tmp}/verify-images.$$" | tail -n 3 >&2
+    sed 's/^/          /' "$errlog" | tail -n 3 >&2
     fail=1
   fi
 done
-rm -f "${TMPDIR:-/tmp}/verify-images.$$"
 
 if [ "$fail" -ne 0 ]; then
   die "at least one image did not verify: do not run this version"

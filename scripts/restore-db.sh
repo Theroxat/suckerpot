@@ -5,7 +5,10 @@
 #   scripts/restore-db.sh [--yes] FILE|latest|volume:NAME
 #
 # FILE is a dump on the host (made by scripts/backup-db.sh). "latest" and "volume:NAME" read
-# a dump of the daily `backup` service from the external suckerpot_backups volume.
+# a dump of the daily `backup` service from the external suckerpot_backups volume. "latest" is
+# the newest dump by modification time, of either kind: a regular one or a pre-update one
+# (suckerpot-preupdate-*.dump, taken by `just update`). Both are complete database dumps, and the
+# newest one loses the least data. Name a file with volume:NAME to pick a particular one.
 #
 # Steps: check the dump with pg_restore -l, stop ingest, api and backup, recreate the database, restore the dump with the
 # TimescaleDB pre/post-restore hooks, run migrations (which re-apply the role

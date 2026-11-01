@@ -46,7 +46,7 @@ def test_update_images_mode_full_flow(sandbox: Sandbox) -> None:
     assert "Adds the setup wizard." in out
     # Backup first, then code, then images, then start.
     order = [
-        joined.index("backup-service.sh now"),
+        joined.index("backup-service.sh now preupdate"),
         joined.index("git checkout --quiet v0.9.0"),
         joined.index("docker compose pull"),
         joined.index("docker compose up -d --wait --wait-timeout 600"),
@@ -60,7 +60,7 @@ def test_update_images_mode_full_flow(sandbox: Sandbox) -> None:
     text = state.read_text()
     assert f'"from_ref": "{OLD}"' in text
     assert '"from_version": "v0.8.0"' in text
-    assert '"dump": "suckerpot-20261101T020000Z.dump"' in text
+    assert '"dump": "suckerpot-preupdate-20261101T020000Z.dump"' in text
     assert '"mode": "images"' in text
     assert '"api": "sha256:0123456789abcdef"' in text
     assert "just rollback" in out
@@ -144,7 +144,7 @@ def test_failed_start_prints_the_rollback_and_never_rolls_back(sandbox: Sandbox)
     rc, out = run_update(sandbox, "--yes")
     assert rc != 0
     assert "just rollback" in out
-    assert "suckerpot-20261101T020000Z.dump" in out
+    assert "suckerpot-preupdate-20261101T020000Z.dump" in out
     calls = "\n".join(sandbox.calls())
     assert "restore" not in calls
     assert calls.count("git checkout") == 1
@@ -177,7 +177,7 @@ def calls_of(sb: Sandbox) -> list[str]:
     return sb.calls()
 
 
-def write_state(sb: Sandbox, dump: str = "suckerpot-20261101T020000Z.dump") -> None:
+def write_state(sb: Sandbox, dump: str = "suckerpot-preupdate-20261101T020000Z.dump") -> None:
     state = sb.root / ".suckerpot-state"
     state.mkdir(exist_ok=True)
     (state / "last-update.json").write_text(
@@ -201,7 +201,7 @@ def test_rollback_restores_code_images_and_dump(sandbox: Sandbox) -> None:
     (sandbox.root / "scripts" / "restore-db.sh").write_text('echo "restore-db $*" >> "$SHIM_LOG"\n')
     proc = sandbox.run("scripts/rollback.sh", stdin="rollback\n")
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "restore-db volume:suckerpot-20261101T020000Z.dump" in calls_of(sandbox)
+    assert "restore-db volume:suckerpot-preupdate-20261101T020000Z.dump" in calls_of(sandbox)
     calls = sandbox.calls()
     joined = "\n".join(calls)
     assert f"git checkout --quiet {OLD}" in calls
@@ -257,3 +257,56 @@ def test_update_and_rollback_use_only_the_documented_commands(
         assert "volume rm" not in code and "volume prune" not in code
         assert "system prune" not in code
         assert not re.search(r"compose\s+(-p|--project-name)\b", code)
+
+
+def test_update_ignores_stale_exported_values(sandbox: Sandbox) -> None:
+    """`just` exports the OLD .env; the update must start the stack with the NEW file."""
+    prepare(sandbox)
+    sandbox.env["SUCKERPOT_VERSION"] = "v0.8.0"
+    sandbox.env["DASHBOARD_PORT"] = "8443"
+    rc, out = run_update(sandbox, "--yes")
+    assert rc == 0, out
+    up = [c for c in sandbox.calls() if c.startswith("ENV_AT_UP")]
+    assert up and all("SUCKERPOT_VERSION=unset" in c and "DASHBOARD_PORT=unset" in c for c in up)
+    assert "SUCKERPOT_VERSION=v0.9.0" in (sandbox.root / ".env").read_text()
+
+
+def test_update_checks_signatures_after_the_pull_and_fails_closed(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    (sandbox.root / "scripts/verify-images.sh").write_text("#!/bin/sh\nexit 1\n")
+    rc, out = run_update(sandbox, "--yes")
+    assert rc != 0
+    assert "signatures could not be verified" in out
+    assert not any(c.startswith("docker compose up") for c in sandbox.docker_calls())
+    rc, out = run_update(sandbox, "--yes", "--skip-verify")
+    assert rc == 0, out
+    assert "NOT checked" in out
+
+
+def test_rollback_checks_the_dump_before_changing_anything(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    write_state(sandbox)
+    sandbox.env["SHIM_DUMP_MISSING"] = "1"
+    proc = sandbox.run("scripts/rollback.sh", stdin="rollback\n")
+    assert proc.returncode != 0
+    assert "no longer in the backups volume" in proc.stderr
+    assert not any(c.startswith("git checkout") for c in sandbox.calls())
+    assert not any(c.startswith("docker compose") for c in sandbox.docker_calls())
+    assert "SUCKERPOT_VERSION=v0.8.0" in (sandbox.root / ".env").read_text()
+
+
+def test_rollback_checks_ports_and_ignores_stale_values(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    sandbox.write_env(ENV.replace("v0.8.0", "v0.9.0"))
+    write_state(sandbox)
+    (sandbox.root / "scripts" / "restore-db.sh").write_text("true\n")
+    sandbox.env["SUCKERPOT_VERSION"] = "v0.9.0"
+    proc = sandbox.run("scripts/rollback.sh", stdin="rollback\n")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "check-ports: ok" in proc.stdout
+    up = [c for c in sandbox.calls() if c.startswith("ENV_AT_UP")]
+    assert up and all("SUCKERPOT_VERSION=unset" in c for c in up)
+    # A bad port layout in .env stops the rollback before the stack is started.
+    sandbox.write_env(ENV.replace("v0.8.0", "v0.9.0") + "SSH_HOST_PORT=8443\n")
+    proc = sandbox.run("scripts/rollback.sh", stdin="rollback\n")
+    assert proc.returncode != 0
