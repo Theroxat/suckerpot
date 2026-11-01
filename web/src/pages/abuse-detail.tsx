@@ -14,6 +14,8 @@ import { useAuth } from "@/app/auth"
 import { CopyField } from "@/components/abuse/copy-field"
 import { ExportMenu } from "@/components/abuse/export-menu"
 import { StatusStepper } from "@/components/abuse/status-stepper"
+import { SendControl } from "@/components/abuse/send-control"
+import { useSendQueue } from "@/components/abuse/send-hooks"
 import { ConfirmDialog, MarkSentDialog } from "@/components/abuse/status-dialogs"
 import { EmptyState } from "@/components/empty-state"
 import { FindingCard } from "@/components/finding-card"
@@ -453,6 +455,7 @@ function Actions({
   const [sentOpen, setSentOpen] = useState(false)
   const [confirm, setConfirm] = useState<"discarded" | "draft" | "regenerate" | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const queue = useSendQueue()
   if (!canWrite) return null
   const next = nextActions(r.status)
   const blocker = reviewBlocker(r)
@@ -510,6 +513,13 @@ function Actions({
           </Button>
         ) : null}
       </div>
+      {r.status === "draft" || r.status === "reviewed" ? (
+        <SendControl
+          item={queue.data?.items.find((i) => i.id === r.public_id)}
+          reportId={r.public_id}
+          recipient={r.recipient.mailbox ?? r.recipient.name}
+        />
+      ) : null}
       {r.status === "draft" && blocker ? (
         <p className="flex items-start gap-2 text-sm text-fg-muted">
           <Info aria-hidden className="mt-0.5 size-4 shrink-0" />

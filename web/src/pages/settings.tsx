@@ -10,6 +10,7 @@ import {
 import { useEffect, useRef } from "react"
 import { Link } from "react-router"
 import { ReportingCard } from "@/components/abuse/reporting-card"
+import { SendingCard } from "@/components/abuse/sending-card"
 import { ChannelsCard } from "@/components/alerts/channels-card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUrlParam } from "@/hooks/use-url-param"
@@ -450,6 +451,7 @@ export function SettingsPage() {
         {canWrite ? (
           <TabsContent value="reporting" className="grid grid-cols-1 gap-4">
             <ReportingCard />
+            <SendingCard />
           </TabsContent>
         ) : null}
         {canWrite ? (
