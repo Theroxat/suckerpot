@@ -46,6 +46,7 @@ from api.samples import router as samples_router
 from api.scripts import router as scripts_router
 from api.search import router as search_router
 from api.settings import router as settings_router
+from api.setup_status import router as setup_status_router
 from api.spa import install_security_headers, install_spa
 from api.story import router as story_router
 from api.today import router as today_router
@@ -129,6 +130,7 @@ def create_app(
         settings_router,
         provider_keys_router,
         vpn_settings_router,
+        setup_status_router,
         users_router,
         audit_router,
         campaigns_router,

@@ -143,7 +143,7 @@ DECLARE
                   'sample_links', 'rdap_bootstrap', 'abuse_networks', 'abuse_lookups',
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
-                  'egress_trusted_exits']
+                  'egress_trusted_exits', 'egress_check_requests']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -252,6 +252,11 @@ BEGIN
         -- M23: the gate reads the ranges the owner trusted; only the API changes them.
         EXECUTE format('GRANT SELECT ON egress_trusted_exits TO %I', r);
     END IF;
+    IF to_regclass('public.egress_check_requests') IS NOT NULL THEN
+        -- M24: ingest answers "Check now" by waking its gate and stamping done_at.
+        EXECUTE format('GRANT SELECT ON egress_check_requests TO %I', r);
+        EXECUTE format('GRANT UPDATE (done_at) ON egress_check_requests TO %I', r);
+    END IF;
     -- @RLS
     EXECUTE format(
         'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.events', 'id'), r);
@@ -300,7 +305,7 @@ DECLARE
                   'sample_links', 'rdap_bootstrap', 'abuse_networks', 'abuse_lookups',
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
-                  'egress_trusted_exits']
+                  'egress_trusted_exits', 'egress_check_requests']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -396,6 +401,13 @@ BEGIN
         EXECUTE format(
             'GRANT USAGE ON SEQUENCE %s TO %I',
             pg_get_serial_sequence('public.egress_trusted_exits', 'id'), r);
+    END IF;
+    IF to_regclass('public.egress_check_requests') IS NOT NULL THEN
+        -- M24: "Check now" inserts a request; the table trims itself (SECURITY DEFINER trigger).
+        EXECUTE format('GRANT SELECT, INSERT ON egress_check_requests TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s TO %I',
+            pg_get_serial_sequence('public.egress_check_requests', 'id'), r);
     END IF;
     -- @RLS
 END

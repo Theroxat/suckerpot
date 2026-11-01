@@ -20,6 +20,7 @@ from ingest.alerts.config import AlertSettings
 from ingest.attack import AttackCatalogWorker, load_attack
 from ingest.blocklist import BlocklistWorker
 from ingest.campaigns import CampaignWorker
+from ingest.check_requests import run as run_check_requests
 from ingest.config import Settings, missing_default_streams
 from ingest.consumer import Consumer
 from ingest.cve import CveWatch
@@ -220,6 +221,7 @@ async def run() -> None:
 
     background = [
         asyncio.create_task(gate.run(egress_status), name="egress-gate"),
+        asyncio.create_task(run_check_requests(factory, gate.request_check), name="egress-checks"),
         asyncio.create_task(geo.run(), name="geoip"),
         asyncio.create_task(reputation.run(rep_status), name="reputation"),
         asyncio.create_task(cve_watch.run(cve_status), name="cve-watch"),
