@@ -179,3 +179,27 @@ async def test_key_change_retries_after_a_failed_download(tmp_path: Path) -> Non
     mgr.apply_settings(s, credentials_changed=True)
     assert await mgr.refresh_if_needed() is True and seen  # retried although files are fresh
     assert mgr.last_error is None
+
+
+async def test_a_missing_database_stays_pending_until_it_is_downloaded(tmp_path: Path) -> None:
+    city = gz_bytes(city_db(tmp_path / "c.mmdb"))
+    asn = gz_bytes(asn_db(tmp_path / "a.mmdb"))
+    up = False
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if not up:
+            return httpx.Response(503)
+        name = req.url.path.rsplit("/", 1)[-1]
+        return httpx.Response(200, content=city if "city" in name else asn)
+
+    s = settings(tmp_path)
+    mgr, _, _ = manager(s, handler)
+    assert await mgr.refresh_if_needed() is False
+    assert mgr.pending  # retried after RETRY_S, not after a day
+    up = True
+    assert await mgr.refresh_if_needed() is True
+    assert not mgr.pending
+
+
+def test_the_retry_delay_is_short() -> None:
+    assert dl.RETRY_S <= 120 < dl.CHECK_INTERVAL_S
