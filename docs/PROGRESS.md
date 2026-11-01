@@ -123,3 +123,11 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - **Known limit.** A reported network can match times and ports against its flow logs. See [Security](SECURITY.md#anonymous-reporting-m22).
 - **Reviews.** Security review passed.
 - **Not deployed.** The owner still has to turn the worker on, fill Settings > Reporting, confirm the self terms and run `just abuse-guard-check`. See [Deployment](deployment.md#anonymous-reporting).
+
+## 2026-11-01 — M23 Upload the VPN configuration from the dashboard
+
+- **Upload.** Settings > VPN takes the WireGuard `.conf` from the VPN provider after asking for the password again. The API parses it strictly (no `PostUp` and the like, IP endpoint only, global address, full tunnel, canonical keys) and writes a rebuilt `wg.env` into the new `vpn-config` volume, mounted read-write in `api` and read-only in `vpn` only. The private key is never shown again; audit rows hold the endpoint and a key fingerprint only.
+- **Switch.** The `vpn` entrypoint reads the file with fixed patterns (never sourced), refuses a non-global endpoint, and restarts the container when the file changes. During the restart nothing leaves: the other services have no route of their own. The API gets no Docker socket and no new network.
+- **Trusted exits.** A new exit address stays blocked until the owner trusts the /24 the ingest gate observed (table `egress_trusted_exits`, migration 0020, at most 8 rows). An exit inside the honeypot's own addresses (Settings > Reporting) or in an AS listed in `EGRESS_DENY_ASNS` closes the gate and can never be trusted. The exit's AS and organisation (local GeoLite2) are shown next to it.
+- **Reviews.** Security review passed; its findings (home-IP trust, collector-planted candidate, IPv6 scope ids, entrypoint endpoint check, a read/checksum race, body size, stale temp files) are fixed. UI review approved.
+- **Fixed on the way.** The abuse, alerts and intel workers no longer wait up to an hour for their first run on a host that booted recently (this made CI fail on fresh runners).
