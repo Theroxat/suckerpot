@@ -73,7 +73,7 @@ export function TourDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden bg-popover p-0 sm:top-[12vh] sm:max-w-xl sm:translate-y-0"
+        className="max-h-[calc(100dvh-2rem)] grid-rows-[minmax(0,1fr)] gap-0 overflow-hidden bg-popover p-0 sm:top-[12vh] sm:max-w-xl sm:translate-y-0"
       >
         {/* Remounted on every open, so the tour always starts at step one. */}
         <TourSteps onClose={() => onOpenChange(false)} />
@@ -89,13 +89,13 @@ function TourSteps({ onClose }: { onClose: () => void }) {
   const last = index === LAST
   return (
     <div
-      className="flex min-h-0 flex-col"
+      className="flex min-h-0 min-w-0 flex-col"
       onKeyDown={(e) => {
         if (e.key === "ArrowRight" && !last) setIndex(index + 1)
         if (e.key === "ArrowLeft" && index > 0) setIndex(index - 1)
       }}
     >
-      <div className="grid min-h-0 gap-4 overflow-y-auto p-5 sm:p-6">
+      <div className="grid min-h-0 min-w-0 gap-4 overflow-y-auto p-5 sm:p-6">
         <DialogHeader className="gap-1.5 text-left" aria-live="polite">
           <p className="text-xs font-medium text-fg-muted">
             Step {index + 1} of {TOUR_STEPS.length}

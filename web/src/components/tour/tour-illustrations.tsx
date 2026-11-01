@@ -20,7 +20,6 @@ import {
   Waypoints,
   type LucideIcon,
 } from "lucide-react"
-import { Fragment } from "react"
 import { FAMILY_META, type SensorFamily } from "@/lib/sensors"
 import type { TourStep } from "@/lib/tour"
 import { cn } from "@/lib/utils"
@@ -41,7 +40,7 @@ function Node({ node }: { node: FlowNode }) {
   return (
     <span
       className={cn(
-        "inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium sm:whitespace-nowrap",
+        "inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium",
         fam ? [fam.text, fam.tint] : "bg-bg text-fg",
       )}
     >
@@ -57,12 +56,12 @@ function Flow({ stages, label, className }: { stages: Stages; label: string; cla
       role="img"
       aria-label={label}
       className={cn(
-        "flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed bg-surface px-3 py-4 sm:flex-row sm:gap-2",
+        "flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed bg-surface px-3 py-4 sm:flex-row sm:flex-wrap sm:gap-2",
         className,
       )}
     >
       {stages.map((stage, i) => (
-        <Fragment key={i}>
+        <span key={i} className="flex flex-col items-center gap-1.5 sm:flex-row sm:gap-2">
           {i > 0 ? (
             <ChevronRight
               aria-hidden
@@ -74,7 +73,7 @@ function Flow({ stages, label, className }: { stages: Stages; label: string; cla
               <Node key={n.label} node={n} />
             ))}
           </span>
-        </Fragment>
+        </span>
       ))}
     </div>
   )
@@ -120,15 +119,15 @@ const FLOWS: Record<TourStep["id"], { label: string; stages: Stages }> = {
       "A recorded URL is fetched by the collector through the VPN into quarantine, then read by the analyzer with no network.",
     stages: [
       [{ icon: Waypoints, label: "Recorded URL" }],
-      [{ icon: Shield, label: "Collector via VPN" }],
+      [{ icon: Shield, label: "Collector (VPN)" }],
       [{ icon: Archive, label: "Quarantine" }],
-      [{ icon: ScanSearch, label: "Analyzer, no network" }],
+      [{ icon: ScanSearch, label: "Analyzer (offline)" }],
     ],
   },
   egress: {
     label: "The stack has no route out except the vpn service, behind a gate and a kill switch.",
     stages: [
-      [{ icon: Database, label: "Ingest and collector" }],
+      [{ icon: Database, label: "Ingest + collector" }],
       [{ icon: Shield, label: "Gate" }],
       [{ icon: Waypoints, label: "VPN + kill switch" }],
       [{ icon: Globe, label: "Internet" }],
@@ -137,7 +136,7 @@ const FLOWS: Record<TourStep["id"], { label: string; stages: Stages }> = {
   abuse: {
     label: "A contact is found, a draft is built, you review it and send it from your own mailbox.",
     stages: [
-      [{ icon: ScanSearch, label: "Contact via RDAP" }],
+      [{ icon: ScanSearch, label: "RDAP lookup" }],
       [{ icon: MailWarning, label: "Draft" }],
       [{ icon: UserCheck, label: "You review" }],
       [{ icon: Mail, label: "Your mailbox" }],
