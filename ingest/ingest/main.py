@@ -41,6 +41,7 @@ from ingest.reports import ReportWorker
 from ingest.scanners import load_scanners
 from ingest.scripts import ScriptWorker, load_annotations
 from ingest.tagging import load_rules
+from ingest.updatecheck import UpdateChecker
 
 log = logging.getLogger(__name__)
 
@@ -219,6 +220,7 @@ async def run() -> None:
             },
         )
 
+    update_checker = UpdateChecker(factory, gate=gate)
     background = [
         asyncio.create_task(gate.run(egress_status), name="egress-gate"),
         asyncio.create_task(run_check_requests(factory, gate.request_check), name="egress-checks"),
@@ -227,6 +229,7 @@ async def run() -> None:
         asyncio.create_task(cve_watch.run(cve_status), name="cve-watch"),
         asyncio.create_task(intel.run(rep_status), name="intel"),
         asyncio.create_task(sync.run(), name="credentials"),
+        asyncio.create_task(update_checker.run(), name="update-check"),
         *(
             asyncio.create_task(w.run(feature_status), name=f"feature-{w.name}")
             for w in feature_workers
