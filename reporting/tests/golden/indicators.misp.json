@@ -1,0 +1,100 @@
+{
+  "Event": {
+    "uuid": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    "info": "Test indicators",
+    "date": "2026-10-31",
+    "threat_level_id": "2",
+    "analysis": "2",
+    "distribution": "0",
+    "published": false,
+    "timestamp": "1793469600",
+    "Tag": [
+      {
+        "name": "tlp:green"
+      },
+      {
+        "name": "misp-galaxy:malware=\"Mirai\""
+      },
+      {
+        "name": "misp-galaxy:mitre-attack-pattern=\"Brute Force - T1110\""
+      },
+      {
+        "name": "misp-galaxy:mitre-attack-pattern=\"Ingress Tool Transfer - T1105\""
+      }
+    ],
+    "Attribute": [
+      {
+        "uuid": "6a5bcfd1-f04b-54e5-9ad1-1fe4d7d16695",
+        "type": "domain",
+        "category": "Network activity",
+        "value": "c2.example.org",
+        "to_ids": true,
+        "distribution": "0",
+        "comment": "",
+        "first_seen": "2026-10-30T15:41:00.000000+00:00",
+        "last_seen": "2026-10-30T15:41:00.000000+00:00",
+        "timestamp": "1793469600"
+      },
+      {
+        "uuid": "303b054f-b6d0-5199-b2ae-84a8ae37d948",
+        "type": "sha256",
+        "category": "Payload delivery",
+        "value": "abababababababababababababababababababababababababababababababab",
+        "to_ids": true,
+        "distribution": "0",
+        "comment": "family: Mirai",
+        "first_seen": "2026-10-30T15:39:58.000000+00:00",
+        "last_seen": "2026-10-30T15:39:58.000000+00:00",
+        "timestamp": "1793469600"
+      },
+      {
+        "uuid": "795d95f2-b45e-50cd-819b-d2a2ebe87f6f",
+        "type": "sha1",
+        "category": "Payload delivery",
+        "value": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "to_ids": true,
+        "distribution": "0",
+        "comment": "family: Mirai",
+        "first_seen": "2026-10-30T15:39:58.000000+00:00",
+        "last_seen": "2026-10-30T15:39:58.000000+00:00",
+        "timestamp": "1793469600"
+      },
+      {
+        "uuid": "188f59ff-9596-557d-a04d-f66229c1efb5",
+        "type": "md5",
+        "category": "Payload delivery",
+        "value": "efefefefefefefefefefefefefefefef",
+        "to_ids": true,
+        "distribution": "0",
+        "comment": "family: Mirai",
+        "first_seen": "2026-10-30T15:39:58.000000+00:00",
+        "last_seen": "2026-10-30T15:39:58.000000+00:00",
+        "timestamp": "1793469600"
+      },
+      {
+        "uuid": "01128e91-cc2a-539e-864b-af972dd995f1",
+        "type": "ip-src",
+        "category": "Network activity",
+        "value": "198.51.100.23",
+        "to_ids": true,
+        "distribution": "0",
+        "comment": "Activity cluster 4e6f7a0c",
+        "first_seen": "2026-10-30T14:02:11.000000+00:00",
+        "last_seen": "2026-10-30T15:40:02.000000+00:00",
+        "timestamp": "1793469600"
+      },
+      {
+        "uuid": "ccb46318-4d7d-5488-952b-18b4354cc4c8",
+        "type": "url",
+        "category": "Payload delivery",
+        "value": "http://203.0.113.9/bins/x86",
+        "to_ids": true,
+        "distribution": "0",
+        "comment": "family: Mirai",
+        "first_seen": "2026-10-30T15:39:58.000000+00:00",
+        "last_seen": "2026-10-30T15:39:58.000000+00:00",
+        "timestamp": "1793469600"
+      }
+    ]
+  }
+}

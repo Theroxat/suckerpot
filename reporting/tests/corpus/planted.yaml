@@ -1,0 +1,85 @@
+# Planted leaks. Every value is invented. Self values used by the tests:
+#   self address 203.0.113.77, owner domain dashboard.example.net,
+#   dynamic name host-203-0-113-77.dyn.example.com, VPN exit 198.51.100.200,
+#   fake host name srv-web01, session id 9f3c2a71-5b0e-4d3a-8c21-77aa10bd2e55.
+# `codes`: reason codes the guard must report (all of them).
+# `secret`: lower-case text that must not survive redaction nor appear in a guard result.
+# `doc: true`: the case is about documentation addresses (guard runs with allow_documentation off).
+cases:
+  - {id: dotted, text: "ssh admin@203.0.113.77", codes: [self_address], secret: "203.0.113.77"}
+  - {id: leading_zeros, text: "ping 203.000.113.077", codes: [self_address], secret: "113.077"}
+  - {id: dashed, text: "host 203-0-113-77", codes: [self_address], secret: "203-0-113-77"}
+  - {id: underscored, text: "x_203_0_113_77_y", codes: [self_address], secret: "203_0_113_77"}
+  - {id: reversed, text: "dig 77.113.0.203.in-addr.arpa", codes: [self_address], secret: "77.113.0.203"}
+  - {id: reversed_dashed_not_needed, text: "ptr 77.113.0.203", codes: [self_address], secret: "77.113.0.203"}
+  - {id: integer, text: "curl http://3405803853/x", codes: [self_address], secret: "3405803853"}
+  - {id: hex, text: "curl http://0xCB00714D/x", codes: [self_address], secret: "0xcb00714d"}
+  - {id: percent_dots, text: "GET /r?u=203%2e0%2e113%2e77", codes: [self_address], secret: "203%2e0"}
+  - {id: percent_double, text: "GET /r?u=203%252e0%252e113%252e77", codes: [self_address], secret: "203%252e0"}
+  - {id: mapped_dotted, text: "nc ::ffff:203.0.113.77 80", codes: [self_address], secret: "203.0.113.77"}
+  - {id: mapped_hex, text: "nc ::ffff:cb00:714d 80", codes: [self_address], secret: "cb00:714d"}
+  - {id: nat64, text: "nc 64:ff9b::cb00:714d 80", codes: [self_address], secret: "cb00:714d"}
+  - {id: sixtofour, text: "nc 2002:cb00:714d::1 80", codes: [self_address], secret: "cb00:714d"}
+  - {id: defanged, text: "wget hxxp://203.0.113[.]77/a", codes: [self_address], secret: "203.0.113[.]77"}
+  - {id: escaped_hex, text: "printf '\\x32\\x30\\x33\\x2e\\x30\\x2e\\x31\\x31\\x33\\x2e\\x37\\x37'", codes: [self_address], secret: "x37"}
+  - {id: escaped_octal, text: "printf '\\062\\060\\063\\056\\060\\056\\061\\061\\063\\056\\067\\067'", codes: [self_address], secret: "062"}
+  - {id: url_query, text: "GET /redirect?to=http://203.0.113.77/ HTTP/1.1", codes: [self_address], secret: "203.0.113.77"}
+  - {id: host_header, text: "Host: 203.0.113.77:8080", codes: [self_address], secret: "203.0.113.77"}
+  - {id: user_agent_name, text: "Mozilla/5.0 (compatible; host-203-0-113-77.dyn.example.com)", codes: [self_address, self_name], secret: "host-203-0-113-77"}
+  - {id: dynamic_name, text: "curl https://host-203-0-113-77.dyn.example.com/x", codes: [self_address, self_name], secret: "dyn.example.com"}
+  - {id: owner_domain, text: "GET https://dashboard.example.net/login", codes: [owner_domain], secret: "dashboard.example.net"}
+  - {id: owner_domain_defanged, text: "dashboard[.]example[.]net", codes: [owner_domain], secret: "dashboard[.]example"}
+  - {id: owner_domain_hyphen, text: "dashboard-example-net", codes: [owner_domain], secret: "dashboard-example"}
+  - {id: owner_domain_dot_word, text: "dashboard dot example dot net", codes: [owner_domain], secret: "dashboard dot"}
+  - {id: owner_subdomain, text: "api.dashboard.example.net", codes: [owner_domain], secret: "dashboard.example"}
+  - {id: vpn, text: "ssh root@198.51.100.200", codes: [vpn_address], secret: "198.51.100.200"}
+  - {id: fake_host, text: "hostname srv-web01", codes: [self_name], secret: "srv-web01"}
+  - {id: fake_host_upper, text: "SRV-WEB01 login:", codes: [self_name], secret: "srv-web01"}
+  - {id: zero_width_address, text: "20​3.0.113.‍77", codes: [self_address], secret: "113."}
+  - {id: zero_width_domain, text: "dash​board.example.net", codes: [owner_domain], secret: "board.example"}
+  - {id: zero_width_project, text: "Suck​er​Pot", codes: [project_term], secret: "pot"}
+  - {id: bidi_hidden_reverse, text: "‮77.113.0.203‬", codes: [self_address], secret: "77.113.0.203"}
+  - {id: bidi_inside, text: "203.0.113.‭77", codes: [self_address], secret: "203.0.113."}
+  - {id: project_plain, text: "SuckerPot admin", codes: [project_term], secret: "suckerpot"}
+  - {id: project_spaced, text: "the sucker pot", codes: [project_term], secret: "sucker pot"}
+  - {id: project_dash, text: "sucker-pot", codes: [project_term], secret: "sucker-pot"}
+  - {id: project_underscore, text: "sucker_pot", codes: [project_term], secret: "sucker_pot"}
+  - {id: honeypot, text: "grep -q honeypot /etc/hosts || exit 0", codes: [project_term], secret: "honeypot"}
+  - {id: honey_pot_words, text: "Honey Pot detected", codes: [project_term], secret: "honey pot"}
+  - {id: honey_dash, text: "honey-pot", codes: [project_term], secret: "honey-pot"}
+  - {id: honeynet, text: "if [ -d /opt/honeynet ]; then exit; fi", codes: [project_term], secret: "honeynet"}
+  - {id: fullwidth, text: "ＳｕｃｋｅｒＰｏｔ", codes: [project_term], secret: "suckerpot"}
+  - {id: cyrillic, text: "Ѕuckеrрοt", codes: [project_term], secret: "uck"}
+  - {id: cyrillic_honeypot, text: "hоneypоt", codes: [project_term], secret: "eyp"}
+  - {id: dashboard_path, text: "GET /api/v1/abuse/reports", codes: [dashboard_path], secret: "/api/v1/"}
+  - {id: dashboard_path_attacks, text: "see /attacks/12345", codes: [dashboard_path], secret: "/attacks/"}
+  - {id: session_id, text: "ref 9F3C2A71-5B0E-4D3A-8C21-77AA10BD2E55", codes: [internal_id], secret: "9f3c2a71"}
+  - {id: private_10, text: "wget http://10.1.2.3/x", codes: [private_address], secret: "10.1.2.3"}  # gitleaks:allow (private range must be caught)
+  - {id: private_192, text: "nc 192.168.77.20 80", codes: [private_address], secret: "192.168.77.20"}  # gitleaks:allow (private range must be caught)
+  - {id: container, text: "curl 172.18.0.2:8000", codes: [private_address], secret: "172.18.0.2"}  # gitleaks:allow (private range must be caught)
+  - {id: loopback, text: "curl 127.0.0.1", codes: [private_address], secret: "127.0.0.1"}
+  - {id: link_local, text: "curl 169.254.169.254", codes: [private_address], secret: "169.254.169.254"}
+  - {id: cgnat, text: "ping 100.64.3.4", codes: [private_address], secret: "100.64.3.4"}
+  - {id: ula, text: "ping fd00::1234", codes: [private_address], secret: "fd00::1234"}
+  - {id: private_int, text: "curl http://167838211/x", codes: [private_address], secret: "167838211"}
+  - {id: doc_v4, text: "wget http://198.51.100.99/x", codes: [documentation_address], secret: "198.51.100.99", doc: true}
+  - {id: doc_v6, text: "ping 2001:db8::99", codes: [documentation_address], secret: "2001:db8::99", doc: true}
+  # inet_aton forms: 1 to 4 parts, each decimal, octal or hex
+  - {id: inet_three_parts, text: "curl http://203.0.29005/x", codes: [self_address], secret: "203.0.29005"}
+  - {id: inet_two_parts, text: "curl http://203.29005/x", codes: [self_address], secret: "203.29005"}
+  - {id: inet_octal_parts, text: "curl http://0313.0.0161.0115/x", codes: [self_address], secret: "0313.0.0161"}
+  - {id: inet_hex_parts, text: "curl http://0xcb.0x0.0x71.0x4d/x", codes: [self_address], secret: "0xcb.0x0"}
+  - {id: inet_bare_hex8, text: "host cb00714d", codes: [self_address], secret: "cb00714d"}
+  - {id: inet_single_octal, text: "curl http://031300070515/x", codes: [self_address], secret: "031300070515"}
+  - {id: inet_hex_short, text: "curl http://0xcb00714d/x", codes: [self_address], secret: "0xcb00714d"}
+  - {id: inet_private_octal, text: "curl http://012.0.0.01/x", codes: [private_address], secret: "012.0.0.01"}
+  - {id: inet_private_hex, text: "curl http://0x7f.1/x", codes: [private_address], secret: "0x7f.1"}
+  # look-alike full stops
+  - {id: dot_ideographic, text: "ssh 203\u30020\u3002113\u300277", codes: [self_address], secret: "113"}
+  - {id: dot_halfwidth, text: "ssh 203\uff610\uff61113\uff6177", codes: [self_address], secret: "113"}
+  - {id: dot_small, text: "ssh 203\ufe520\ufe52113\ufe5277", codes: [self_address], secret: "113"}
+  - {id: dot_name, text: "dashboard\u3002example\u3002net", codes: [owner_domain], secret: "dashboard"}
+  # IPv6 self address 2001:db8:1234::77
+  - {id: v6_compressed, text: "nc 2001:db8:1234::77 80", codes: [self_address], secret: "1234::77"}
+  - {id: v6_exploded, text: "nc 2001:0db8:1234:0000:0000:0000:0000:0077 80", codes: [self_address], secret: "1234:0000"}
+  - {id: v6_bracketed_url, text: "curl http://[2001:db8:1234::77]:8080/", codes: [self_address], secret: "1234::77"}

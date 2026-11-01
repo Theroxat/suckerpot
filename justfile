@@ -12,7 +12,7 @@ playwright_image := "mcr.microsoft.com/playwright:v1.64.1-noble"
 web_cache := "suckerpot-web-cache"
 web_env := "-e HOME=/tmp -e CI=1 -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e COREPACK_HOME=/cache/corepack -e npm_config_store_dir=/cache/pnpm-store"
 pnpm_setup := "mkdir -p /tmp/bin && corepack enable --install-directory /tmp/bin && export PATH=/tmp/bin:$PATH"
-packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo scripts/guardrails egress analysis collector db ingest api"
+packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo scripts/guardrails egress analysis reporting collector db ingest api"
 
 # List recipes.
 default:
@@ -59,6 +59,10 @@ guardrails:
 # Live check of the anonymous egress (needs the stack up with COMPOSE_PROFILES=egress).
 egress-check:
     scripts/egress-check.sh
+
+# Live identity check of every abuse report and CERT export (M22). Prints reason codes and counts only.
+abuse-guard-check:
+    docker compose exec -T api python -m api.abuse_selfcheck
 
 # Validate the compose file.
 config: ports

