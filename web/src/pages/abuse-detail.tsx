@@ -670,6 +670,9 @@ export function AbuseDetailPage() {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-fg-muted">
           <TagBadge tag={KIND_LABEL[r.kind]} href={null} />
           <span className="font-mono">{r.recipient.mailbox ?? "no mailbox yet"}</span>
+          {r.recipient.shared_mailbox ? (
+            <span>Replies from this contact are trusted by exact address only.</span>
+          ) : null}
           {r.previously_reported ? (
             <span>Previously reported on {formatAbsolute(r.previously_reported)}</span>
           ) : null}

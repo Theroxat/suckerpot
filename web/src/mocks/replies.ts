@@ -224,6 +224,8 @@ const imap: ImapConfig = {
   move_folder: null,
   poll_minutes: 15,
   since: "2026-10-01",
+  trusted_authserv_id: "mx.example.net",
+  shared_mailbox: false,
   state: {
     last_poll_at: iso(7 * 60_000),
     last_ok_at: iso(7 * 60_000),
@@ -283,6 +285,7 @@ export const repliesHandlers: RequestHandler[] = [
       move_folder: typeof b.move_folder === "string" ? b.move_folder : null,
       poll_minutes: num(b.poll_minutes, 15),
       since: typeof b.since === "string" ? b.since : null,
+      trusted_authserv_id: typeof b.trusted_authserv_id === "string" ? b.trusted_authserv_id : null,
     })
     return HttpResponse.json(imap)
   }),
