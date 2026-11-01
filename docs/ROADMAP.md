@@ -288,6 +288,15 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 **Acceptance:** a new owner can tell from the dashboard what is left to set up; after a tunnel restart the gate reopens within a minute or on demand.
 
+## M25 — Sending abuse reports: send queue and optional SMTP
+
+- [ ] A "To send" queue that opens each ready report in the mail app, copies the full text and moves on to the next one.
+- [ ] Optional SMTP configured in Settings > Reporting (password encrypted, re-authentication, Proton preset), with three modes: off (default), send on click, automatic after a hold time with a daily cap.
+- [ ] Mail leaves only through the VPN, after a last identity check on the complete message; neutral headers and EHLO name.
+- [ ] Security review and UI review.
+
+**Acceptance:** with SMTP off nothing is ever sent; with SMTP on, a report is sent through the tunnel only after the guard passes, and the owner can cancel an automatic send during the hold time.
+
 ## Later (not part of the loop)
 
 - Per-/24 or per-ASN daily cap on new campaigns, so one network cannot create many campaigns in a day.
