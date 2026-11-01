@@ -76,11 +76,11 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0022() -> None:
+def test_the_chain_is_linear_up_to_0025() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0022"}
+    assert heads == {"0025"}
     for n in range(11, 22):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
 
@@ -291,3 +291,9 @@ def test_check_request_grants() -> None:
     assert not _update_columns(_GRANTS_API, "egress_check_requests")
     assert "egress_check_requests" not in _grants(_GRANTS_COLLECTOR)
     assert "egress_check_requests" not in _grants(_GRANTS_ANALYZER)
+
+
+def test_m28_setup_progress_grants() -> None:
+    assert _grants(_GRANTS_API)["setup_progress"] == {"SELECT", "INSERT", "UPDATE"}
+    assert "setup_progress" not in _grants(_GRANTS_INGEST)
+    assert "setup_progress" not in _grants(_GRANTS_COLLECTOR)
