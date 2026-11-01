@@ -5,7 +5,7 @@
  */
 import { delay, http, HttpResponse, type RequestHandler } from "msw"
 import type { QueueItem, SendRequest, SmtpConfig, SmtpForm, SmtpTest } from "@/lib/abuse-send"
-import { find, missingWording, renderBody, rows, type Row } from "./abuse"
+import { find, missingWording, pub, renderBody, rows, type Row } from "./abuse"
 
 const LATENCY_MS = 140
 const MINUTE = 60_000
@@ -26,6 +26,7 @@ const smtp: SmtpConfig = {
   last_test: {
     status: "sent",
     error_code: null,
+    requested_at: new Date(Date.now() - 91 * MINUTE).toISOString(),
     done_at: new Date(Date.now() - 90 * MINUTE).toISOString(),
   },
 }
@@ -97,30 +98,54 @@ function settle(id: string) {
 export const abuseSendHandlers: RequestHandler[] = [
   http.get("/api/v1/abuse/send-queue", async () => {
     await delay(LATENCY_MS)
-    return HttpResponse.json({ items: items() })
+    return HttpResponse.json({ items: items(), next_cursor: null, mode: smtp.mode, missing: [] })
   }),
-  http.post("/api/v1/abuse/reports/:id/send", async ({ params }) => {
+  http.get("/api/v1/abuse/reports/:id", async ({ params }) => {
     await delay(LATENCY_MS)
+    const id = String(params.id)
+    const r = find(id)
+    if (!r)
+      return HttpResponse.json({ detail: "Report not found.", code: "not_found" }, { status: 404 })
+    return HttpResponse.json({
+      ...pub(r),
+      send_state: {
+        scheduled_at:
+          smtp.mode === "auto" && scheduled.has(id)
+            ? new Date(scheduled.get(id) ?? 0).toISOString()
+            : null,
+        last_request: requests.get(id) ?? null,
+      },
+    })
+  }),
+  http.post("/api/v1/abuse/reports/:id/send", async ({ params, request }) => {
+    await delay(LATENCY_MS)
+    const sent = (await request.json().catch(() => ({}))) as { revision?: number } | null
     const id = String(params.id)
     const r = find(id)
     const conflict = (code: string) => HttpResponse.json({ detail: code, code }, { status: 409 })
     if (!r)
       return HttpResponse.json({ detail: "Report not found.", code: "not_found" }, { status: 404 })
-    if (smtp.mode === "off" || !smtp.configured) return conflict("smtp_off")
-    if (!ready(r)) return conflict("not_ready")
-    if (requests.get(id)?.status === "pending") return conflict("already_pending")
-    if (smtp.sent_today >= smtp.daily_cap) return conflict("cap_reached")
+    if (!smtp.configured) return conflict("smtp_not_configured")
+    if (smtp.mode === "off") return conflict("smtp_off")
+    if (sent?.revision !== undefined && sent.revision !== r.revision)
+      return conflict("revision_mismatch")
+    if (r.demo) return conflict("demo_report")
+    if (!ready(r)) return conflict("report_not_ready")
+    if (requests.get(id)?.status === "pending") return conflict("already_queued")
     requests.set(id, { status: "pending", error_code: null, done_at: null })
     scheduled.delete(id)
     settle(id)
-    return HttpResponse.json({ request_id: ++requestId }, { status: 202 })
+    return HttpResponse.json(
+      { id: ++requestId, status: "pending", scheduled_at: null },
+      { status: 202 },
+    )
   }),
   http.post("/api/v1/abuse/reports/:id/send/cancel", async ({ params }) => {
     await delay(LATENCY_MS)
     const id = String(params.id)
     scheduled.delete(id)
     requests.set(id, { status: "cancelled", error_code: null, done_at: new Date().toISOString() })
-    return new HttpResponse(null, { status: 204 })
+    return HttpResponse.json({ cancelled: 1 })
   }),
   http.get("/api/v1/abuse/smtp", async () => {
     await delay(LATENCY_MS)
@@ -132,17 +157,17 @@ export const abuseSendHandlers: RequestHandler[] = [
     if (!ok) return reauthFailed()
     const b = body as unknown as Partial<SmtpForm>
     const problems: string[] = []
-    if (!b.host || /^[\d.]+$/.test(b.host) || !b.host.includes(".")) problems.push("bad_host")
-    if (!Number.isInteger(b.port) || (b.port ?? 0) < 1 || (b.port ?? 0) > 65535)
-      problems.push("bad_port")
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.from_address ?? "")) problems.push("bad_from")
-    if ((b.from_address ?? "").endsWith("@owner.example")) problems.push("owner_domain")
-    if (!smtp.password_set && !b.password) problems.push("password_required")
-    if (problems.length > 0)
+    if ((b.from_address ?? "").endsWith("@owner.example"))
       return HttpResponse.json(
-        { detail: "invalid", code: "invalid_smtp", problems },
+        { detail: "blocked", code: "identity_guard_failed", reasons: ["owner_domain"] },
         { status: 422 },
       )
+    if (!b.host || /^[\d.]+$/.test(b.host) || !b.host.includes(".")) problems.push("invalid_host")
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.from_address ?? ""))
+      problems.push("invalid_from_address")
+    if (!smtp.password_set && !b.password) problems.push("password_required")
+    if (problems.length > 0)
+      return HttpResponse.json({ detail: "invalid", code: problems[0], problems }, { status: 422 })
     Object.assign(smtp, {
       configured: true,
       password_set: true,
@@ -183,12 +208,13 @@ export const abuseSendHandlers: RequestHandler[] = [
     const { ok } = await password(request)
     if (!ok) return reauthFailed()
     if (!smtp.configured)
-      return HttpResponse.json(
-        { detail: "x", code: "not_configured", problems: ["not_configured"] },
-        { status: 422 },
-      )
-    const test: SmtpTest = { status: "sent", error_code: null, done_at: new Date().toISOString() }
+      return HttpResponse.json({ detail: "x", code: "smtp_not_configured" }, { status: 409 })
+    const now = new Date().toISOString()
+    const test: SmtpTest = { status: "sent", error_code: null, requested_at: now, done_at: now }
     smtp.last_test = test
-    return HttpResponse.json({ request_id: ++requestId }, { status: 202 })
+    return HttpResponse.json(
+      { id: ++requestId, status: "pending", scheduled_at: null },
+      { status: 202 },
+    )
   }),
 ]

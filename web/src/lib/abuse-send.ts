@@ -5,7 +5,6 @@
  * the `mailto:` builder are pure and tested.
  */
 import { ApiError, getJson, sendJson } from "./api"
-import { guardReason } from "./abuse"
 import { formatClock } from "./format"
 
 // --- Shapes -----------------------------------------------------------------------
@@ -15,7 +14,14 @@ export type SendStatus = "pending" | "sent" | "failed" | "cancelled"
 export interface SendRequest {
   status: SendStatus
   error_code: string | null
+  requested_at?: string | null
   done_at: string | null
+}
+
+/** What the report page knows about sending (`send_state` of the report). */
+export interface SendState {
+  scheduled_at: string | null
+  last_request: SendRequest | null
 }
 
 export interface QueueItem {
@@ -35,6 +41,7 @@ export type SmtpSecurity = "starttls" | "ssl"
 export interface SmtpTest {
   status: SendStatus
   error_code: string | null
+  requested_at: string | null
   done_at: string | null
 }
 
@@ -104,13 +111,22 @@ export const SEND_ERROR: Record<string, string> = {
     "The secure connection to the mail server could not be set up. Check the host, the port and the security setting.",
   refused: "The mail server refused the message or the recipient.",
   timeout: "The mail server did not answer in time.",
-  egress_closed:
-    "Outbound traffic through the VPN is closed, so nothing can leave. It retries when the VPN is back.",
-  guard_failed:
-    "The identity check blocked the complete message, so nothing was sent. Open the report to see why.",
+  egress_closed: "Waiting for the VPN: it is sent when the tunnel is back.",
+  network: "The mail server could not be reached.",
+  not_configured: "SMTP is not set up.",
+  mode_off: "Sending was switched off before this went out.",
+  mode_changed: "The sending mode changed before this went out.",
+  not_ready: "The report was no longer ready to send.",
+  internal: "Something went wrong inside SuckerPot. Try again.",
 }
 
+/** A guard failure carries its codes after a colon: `guard_failed:no_self_address`. */
 export function describeSendErrorCode(code: string | null | undefined): string {
+  if (code?.startsWith("guard_failed")) {
+    return code.includes("no_self_address")
+      ? "Blocked by the identity check: confirm your own address in Settings → Reporting."
+      : "Blocked by the identity check."
+  }
   return (code ? SEND_ERROR[code] : undefined) ?? "The message could not be sent."
 }
 
@@ -119,7 +135,7 @@ export function describeRequest(r: SendRequest | null): string | null {
   if (!r) return null
   switch (r.status) {
     case "pending":
-      return "Sending…"
+      return r.error_code === "egress_closed" ? describeSendErrorCode("egress_closed") : "Sending…"
     case "sent":
       return r.done_at ? `Sent at ${formatClock(r.done_at)}.` : "Sent."
     case "failed":
@@ -129,46 +145,56 @@ export function describeRequest(r: SendRequest | null): string | null {
   }
 }
 
-/** Constant words for the 409 answers of the send route. */
+/** Constant words for the 409 answers of the send, cancel and test routes. */
 export const SEND_CONFLICT: Record<string, string> = {
+  smtp_not_configured:
+    "SMTP is not set up yet. Add the server details in Settings, under Reporting.",
   smtp_off: "Sending is switched off. Choose a sending mode in Settings, under Reporting.",
-  not_ready: "This report is not ready: the identity check, the settings or the status block it.",
-  already_pending: "This report is already being sent.",
-  cap_reached: "The daily limit of sent reports is reached. Try again tomorrow (UTC).",
+  revision_mismatch:
+    "The report changed while you were reading it. It was reloaded: read it again, then retry.",
+  demo_report: "This is a demo report. It can be reviewed but never sent.",
+  report_not_ready:
+    "This report is not ready: the identity check, the settings or the status block it.",
+  already_queued: "This is already queued to be sent.",
+  settings_incomplete: "Finish the Reporting settings first.",
+  identity_guard_failed: "The identity check blocked this report.",
+  evidence_invalid: "The stored evidence for this report is not valid.",
+  nothing_to_cancel: "There is nothing to cancel: it was already sent or cancelled.",
+  already_sending: "It is already being sent, so it cannot be cancelled.",
 }
 
-/** Field and guard codes of a 422 answer on the SMTP profile. */
+/** Codes of a 422 answer on the SMTP profile. */
 export const SMTP_PROBLEM: Record<string, string> = {
-  bad_host: "The host must be a name such as smtp.example.net, not an address.",
-  bad_port: "The port must be a number from 1 to 65535.",
-  bad_from: "The from address is not a valid mailbox.",
-  bad_username: "The username is missing or too long.",
-  bad_hold: `The waiting time must be between ${HOLD_RANGE.min} and ${HOLD_RANGE.max} minutes.`,
-  bad_cap: `The daily limit must be between ${CAP_RANGE.min} and ${CAP_RANGE.max}.`,
   password_required: "Enter the SMTP password or token.",
-  not_configured: "Set up the SMTP profile first.",
+  invalid_host: "The host must be a name such as smtp.example.net, not an address.",
+  invalid_from_address: "The from address is not a valid mailbox.",
+  invalid_from_name: "The from name is not valid.",
+  invalid_credentials: "The username or password is not valid.",
+  identity_guard_failed: "The sender name or address matches one of your own terms.",
 }
 
-export function describeProblem(code: string): string {
-  return SMTP_PROBLEM[code] ?? guardReason(code)
-}
-
-/** Problem codes of a 422 answer, or []. */
+/** The codes a 422 names: its own code plus any listed problems. */
 export function problemsOf(e: unknown): string[] {
   if (!(e instanceof ApiError) || e.status !== 422) return []
   const p = e.body?.problems
-  return Array.isArray(p) ? p.filter((x): x is string => typeof x === "string") : []
+  const listed = Array.isArray(p) ? p.filter((x): x is string => typeof x === "string") : []
+  return [...new Set([...(e.code ? [e.code] : []), ...listed])]
 }
 
-/** A readable message for a failed send, SMTP save or test. */
+/** A readable message for a failed send, cancel, SMTP save or test. */
 export function describeSendError(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.code === "reauth_failed") return "That password is not right."
+    if (e.status === 503 && e.code === "editing_disabled")
+      return "Encryption key missing on the server: set it in .env."
     const conflict = e.status === 409 && e.code ? SEND_CONFLICT[e.code] : undefined
     if (conflict) return conflict
     const problems = problemsOf(e)
-    if (problems.length > 0) return problems.map(describeProblem).join(" ")
+      .map((c) => SMTP_PROBLEM[c])
+      .filter((s): s is string => s !== undefined)
+    if (problems.length > 0) return problems.join(" ")
     if (e.status === 422) return "Some of these settings are not valid."
+    if (e.status === 404) return "That report no longer exists."
     if (e.status === 429) return "Too many requests. Wait a moment and try again."
     if (e.status === 403) return "Only an administrator can do this."
   }
@@ -182,6 +208,10 @@ export function describeQueue(n: number): string {
 }
 
 /** Daily counter shown next to the cap. */
+/** The hint under the waiting time and the daily limit. */
+export const CAP_HINT =
+  "The daily limit counts automatic sends only. A report over the limit waits until the next UTC day."
+
 export function describeSentToday(
   c: Pick<SmtpConfig, "sent_today" | "daily_cap" | "mode">,
 ): string {
@@ -212,15 +242,46 @@ export function buildMailto(
 
 // --- Calls -------------------------------------------------------------------------
 
+export interface QueuePage {
+  items: QueueItem[]
+  next_cursor: string | null
+  mode: SendMode
+  /** Reporting settings still missing, when the queue is empty because of them. */
+  missing: string[]
+}
+
+export type QueueData = Pick<QueuePage, "items" | "mode" | "missing">
+
 export const sendKeys = {
   queue: ["abuse", "send-queue"] as const,
   smtp: ["abuse", "smtp"] as const,
 }
 
 export const sendApi = {
-  queue: () => getJson<{ items: QueueItem[] }>("/abuse/send-queue"),
-  send: (id: string) => sendJson<{ request_id: number }>("POST", `/abuse/reports/${id}/send`),
-  cancel: (id: string) => sendJson("POST", `/abuse/reports/${id}/send/cancel`),
+  /** Every page of the queue: a page can hold fewer items than asked, so follow the cursor. */
+  queue: async (): Promise<QueueData> => {
+    const items: QueueItem[] = []
+    let cursor: string | undefined
+    let mode: SendMode = "off"
+    let missing: string[] = []
+    for (let page = 0; page < 40; page++) {
+      const r = await getJson<QueuePage>("/abuse/send-queue", { limit: 25, cursor })
+      items.push(...r.items)
+      mode = r.mode
+      missing = r.missing
+      if (!r.next_cursor) break
+      cursor = r.next_cursor
+    }
+    return { items, mode, missing }
+  },
+  send: (id: string, revision?: number) =>
+    sendJson<{ id: number; status: SendStatus; scheduled_at: string | null }>(
+      "POST",
+      `/abuse/reports/${id}/send`,
+      revision === undefined ? undefined : { revision },
+    ),
+  cancel: (id: string) =>
+    sendJson<{ cancelled: number }>("POST", `/abuse/reports/${id}/send/cancel`),
   smtp: () => getJson<SmtpConfig>("/abuse/smtp"),
   saveSmtp: (form: SmtpForm, currentPassword: string) => {
     const { password, ...rest } = form

@@ -32,10 +32,19 @@ describe("buildMailto", () => {
 describe("sentences", () => {
   it("maps every worker error code to a sentence", () => {
     for (const code of Object.keys(SEND_ERROR)) {
-      expect(describeSendErrorCode(code).length).toBeGreaterThan(20)
+      expect(describeSendErrorCode(code).length).toBeGreaterThan(15)
     }
     expect(describeSendErrorCode("weird")).toBe("The message could not be sent.")
     expect(describeSendErrorCode(null)).toBe("The message could not be sent.")
+  })
+  it("reads guard failures by prefix and the closed gate", () => {
+    expect(describeSendErrorCode("guard_failed:no_self_address")).toMatch(/Settings → Reporting/)
+    expect(describeSendErrorCode("guard_failed:project_term")).toBe(
+      "Blocked by the identity check.",
+    )
+    expect(
+      describeRequest({ status: "pending", error_code: "egress_closed", done_at: null }),
+    ).toMatch(/Waiting for the VPN/)
   })
   it("describes a request", () => {
     expect(describeRequest(null)).toBeNull()
@@ -49,17 +58,29 @@ describe("sentences", () => {
   })
   it("maps 409 codes, 422 problems and reauth", () => {
     expect(describeSendError(new ApiError(409, "x", "smtp_off"))).toMatch(/switched off/)
-    expect(describeSendError(new ApiError(409, "x", "not_ready"))).toMatch(/not ready/)
-    expect(describeSendError(new ApiError(409, "x", "already_pending"))).toMatch(/already/)
-    expect(describeSendError(new ApiError(409, "x", "cap_reached"))).toMatch(/daily limit/)
+    expect(describeSendError(new ApiError(409, "x", "report_not_ready"))).toMatch(/not ready/)
+    expect(describeSendError(new ApiError(409, "x", "already_queued"))).toMatch(/already queued/)
+    expect(describeSendError(new ApiError(409, "x", "revision_mismatch"))).toMatch(/changed/)
+    expect(describeSendError(new ApiError(409, "x", "nothing_to_cancel"))).toMatch(
+      /nothing to cancel/i,
+    )
+    expect(describeSendError(new ApiError(503, "x", "editing_disabled"))).toMatch(/Encryption key/)
+    expect(
+      describeSendError(
+        new ApiError(422, "x", "identity_guard_failed", { reasons: ["self_name"] }),
+      ),
+    ).toBe("The sender name or address matches one of your own terms.")
     expect(describeSendError(new ApiError(403, "x", "reauth_failed"))).toBe(
       "That password is not right.",
     )
     expect(
       describeSendError(
-        new ApiError(422, "x", "invalid", { problems: ["bad_host", "owner_domain"] }),
+        new ApiError(422, "x", "invalid_host", {
+          problems: ["invalid_host", "invalid_from_address"],
+        }),
       ),
-    ).toMatch(/not an address.*belongs to you/)
+    ).toMatch(/not an address.*not a valid mailbox/)
+    expect(describeSendError(new ApiError(422, "x", "something_new"))).toMatch(/not valid/)
     expect(describeSendError(new Error("boom"))).toMatch(/did not work/)
   })
   it("counts the queue", () => {

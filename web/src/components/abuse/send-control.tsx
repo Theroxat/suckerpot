@@ -6,14 +6,19 @@ import { useSendMode } from "@/components/abuse/send-hooks"
 import { ConfirmDialog } from "@/components/abuse/status-dialogs"
 import { Button } from "@/components/ui/button"
 import { abuseKeys } from "@/lib/abuse"
-import { describeRequest, describeSendError, sendApi, type QueueItem } from "@/lib/abuse-send"
+import { describeRequest, describeSendError, sendApi, type SendRequest } from "@/lib/abuse-send"
 import { formatClock } from "@/lib/format"
 
 interface SendControlProps {
-  /** The queue entry of the report; undefined when it is not ready to send. */
-  item: QueueItem | undefined
   reportId: string
   recipient: string
+  /** True when the report can be sent: it is in the queue, or passes the same checks. */
+  ready: boolean
+  /** When the automatic mode will send it, or null. */
+  scheduledAt: string | null
+  lastRequest: SendRequest | null
+  /** The revision the owner has read; the server refuses the send if it moved on. */
+  revision?: number
   /** Buttons that sit in the same row as Send now (the queue passes its own). */
   actions?: ReactNode
 }
@@ -22,16 +27,24 @@ interface SendControlProps {
  * What SuckerPot's own sending adds to a report: "Send now" in click mode, "Sending at hh:mm" with
  * Cancel in automatic mode, and the state of the last request in plain words.
  */
-export function SendControl({ item, reportId, recipient, actions }: SendControlProps) {
+export function SendControl({
+  reportId,
+  recipient,
+  ready,
+  scheduledAt,
+  lastRequest,
+  revision,
+  actions,
+}: SendControlProps) {
   const { canWrite } = useAuth()
   const mode = useSendMode()
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
-  const status = item?.last_request?.status
+  const status = lastRequest?.status
   const was = useRef(status)
 
-  // A request that finished (the report left the queue) changes the report itself: reload it.
+  // A request that finished changes the report itself: reload it.
   useEffect(() => {
     if (was.current === "pending" && status !== "pending") {
       void qc.invalidateQueries({ queryKey: abuseKeys.all })
@@ -41,9 +54,9 @@ export function SendControl({ item, reportId, recipient, actions }: SendControlP
 
   if (!canWrite) return null
   const pending = status === "pending"
-  const sentence = describeRequest(item?.last_request ?? null)
-  const at = mode === "auto" && !pending ? item?.scheduled_at : null
-  const canSend = mode === "click" && item !== undefined && !pending
+  const sentence = describeRequest(lastRequest)
+  const at = mode === "auto" && !pending ? scheduledAt : null
+  const canSend = mode === "click" && ready && !pending
 
   if (!sentence && !at && !canSend && !actions) return null
 
@@ -99,7 +112,7 @@ export function SendControl({ item, reportId, recipient, actions }: SendControlP
         confirmLabel="Send now"
         describe={describeSendError}
         run={async () => {
-          await sendApi.send(reportId)
+          await sendApi.send(reportId, revision)
           await qc.invalidateQueries({ queryKey: abuseKeys.all })
         }}
       />

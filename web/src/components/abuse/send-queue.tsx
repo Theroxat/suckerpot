@@ -141,7 +141,10 @@ export function SendQueue() {
         description={
           done > 0
             ? `You sent ${formatNumber(done)} ${done === 1 ? "report" : "reports"} in this session.`
-            : "A report appears here once it passes the identity check, your Reporting settings are complete and it is still a draft or reviewed."
+            : (q.data.missing.length > 0
+                ? "Finish the Reporting settings first: the wording fields must all be filled. "
+                : "") +
+              "A report appears here once it passes the identity check, your Reporting settings are complete and it is still a draft or reviewed."
         }
       />
     )
@@ -173,8 +176,10 @@ export function SendQueue() {
           </div>
           <CopyField label="Message" value={current.body_text} multiline />
           <SendControl
-            item={current}
             reportId={current.id}
+            ready
+            scheduledAt={current.scheduled_at}
+            lastRequest={current.last_request}
             recipient={current.recipient}
             actions={
               <>
