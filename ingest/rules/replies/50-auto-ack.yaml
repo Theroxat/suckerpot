@@ -1,0 +1,20 @@
+# Replies: an automatic answer with nothing in it. Runs last.
+rules:
+  - id: auto-ack
+    outcome: auto_ack
+    priority: 50
+    description: An automatic acknowledgement.
+    when:
+      any:
+        - {field: auto_submitted, in: [auto-replied, auto-generated]}
+        - {field: x_autoreply, exists: true}
+        - {field: x_autorespond, exists: true}
+        - {field: precedence, in: [auto_reply, bulk, junk]}
+        - {field: subject, contains_any: ["automatic reply", "auto-reply", "autoreply",
+                                          "out of office", "automatische antwort",
+                                          "réponse automatique", "respuesta automática",
+                                          "automatisch antwoord", "resposta automática"]}
+        - {field: body, contains_any: ["this is an automated", "do not reply to this",
+                                       "automatische antwort", "réponse automatique",
+                                       "respuesta automática", "automatisch antwoord",
+                                       "resposta automática"]}
