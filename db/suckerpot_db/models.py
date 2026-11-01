@@ -1170,3 +1170,96 @@ class AbuseSendRequestRow(Base):
     error_code: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class NetworkMembershipRow(Base):
+    """Membership of the opt-in Selfhostr network (M29): one row. ``desired`` is written by the
+    API, everything else by ingest. ``privkey_enc`` is readable by ingest only."""
+
+    __tablename__ = "network_membership"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default=text("1"))
+    desired: Mapped[str] = mapped_column(Text, server_default=text("'off'"), nullable=False)
+    state: Mapped[str] = mapped_column(Text, server_default=text("'off'"), nullable=False)
+    pseudonym: Mapped[str | None] = mapped_column(Text)
+    country: Mapped[str | None] = mapped_column(Text)
+    show_country: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false"), nullable=False
+    )
+    node_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    fingerprint: Mapped[str | None] = mapped_column(Text)
+    pubkey: Mapped[bytes | None] = mapped_column(LargeBinary)
+    privkey_enc: Mapped[bytes | None] = mapped_column(LargeBinary)
+    privkey_nonce: Mapped[bytes | None] = mapped_column(LargeBinary)
+    enrolled_day: Mapped[date | None] = mapped_column(Date)
+    eligible_from_day: Mapped[date | None] = mapped_column(Date)
+    standing: Mapped[str | None] = mapped_column(Text)
+    next_submit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_submit_day: Mapped[date | None] = mapped_column(Date)
+    last_pull_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_summary_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pull_cursor: Mapped[str | None] = mapped_column(Text)
+    synced_pseudonym: Mapped[str | None] = mapped_column(Text)
+    synced_country: Mapped[str | None] = mapped_column(Text)
+    synced_show_country: Mapped[bool | None] = mapped_column(Boolean)
+    leave_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_code: Mapped[str | None] = mapped_column(Text)
+    requested_by: Mapped[str | None] = mapped_column(Text)
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class NetworkSubmissionRow(Base):
+    """One daily batch sent to the hub, with the exact JSON for a week (M29)."""
+
+    __tablename__ = "network_submissions"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, unique=True)
+    batch_id: Mapped[str] = mapped_column(Text)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(Text)  # sent | failed | skipped
+    counts: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    dropped: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    error_code: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
+class NetworkTargetRow(Base):
+    """A target the network confirmed, as the hub published it (M29)."""
+
+    __tablename__ = "network_targets"
+
+    hub_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)
+    value: Mapped[str | None] = mapped_column(Text)
+    value_b: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(Text)
+    nodes: Mapped[int] = mapped_column(SmallInteger)
+    countries: Mapped[int | None] = mapped_column(SmallInteger)
+    first_day: Mapped[date] = mapped_column(Date)
+    last_day: Mapped[date] = mapped_column(Date)
+    services: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    activity: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    tags: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    families: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    reported_day: Mapped[date | None] = mapped_column(Date)
+    taken_down_day: Mapped[date | None] = mapped_column(Date)
+    mine: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class NetworkSummaryRow(Base):
+    """The hub's daily summary of the network, one row (M29)."""
+
+    __tablename__ = "network_summary"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default=text("1"))
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
