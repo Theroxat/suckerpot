@@ -45,7 +45,17 @@ describe("page help texts", () => {
     }
     // Ids set from code rather than from a literal.
     for (const id of ["networks", "attackers", "campaign", "session"]) used.add(id)
-    for (const tab of ["general", "keys", "users", "audit", "alerts", "feeds", "reporting", "vpn"])
+    for (const tab of [
+      "general",
+      "keys",
+      "users",
+      "audit",
+      "ports",
+      "alerts",
+      "feeds",
+      "reporting",
+      "vpn",
+    ])
       used.add(settingsHelpId(tab))
     expect([...used].sort()).toEqual([...HELP_IDS].sort())
   })

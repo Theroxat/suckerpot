@@ -21,6 +21,7 @@ import { abuseHandlers } from "./abuse"
 import { abuseSendHandlers } from "./abuse-send"
 import { vpnHandlers } from "./vpn"
 import { setupHandlers } from "./setup"
+import { setupWizardHandlers } from "./setup-wizard"
 import { searchHandlers } from "./search"
 import { todayHandlers } from "./today"
 import { parseStage, sessionStage } from "@/lib/story"
@@ -97,6 +98,7 @@ export const handlers = [
   ...abuseHandlers,
   ...vpnHandlers,
   ...setupHandlers,
+  ...setupWizardHandlers,
   ...scriptsHandlers,
   ...alertsHandlers,
   ...searchHandlers,

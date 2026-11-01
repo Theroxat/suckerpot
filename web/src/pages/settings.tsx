@@ -19,6 +19,9 @@ import { FeedsTab } from "@/components/feeds/feeds-tab"
 import { FindingCard } from "@/components/finding-card"
 import { Meter } from "@/components/meter"
 import { PageHeader } from "@/components/page-header"
+import { PortsCard } from "@/components/setup/ports-table"
+import { SetupResumeCard } from "@/components/setup/resume-card"
+import { UpdatesCard } from "@/components/setup/updates-card"
 import { SetupChecklistCard } from "@/components/setup-checklist"
 import { VpnTab } from "@/components/vpn/vpn-tab"
 import { ProviderKeys } from "@/components/provider-keys"
@@ -347,6 +350,7 @@ const TABS = [
   { id: "keys", label: "Keys", adminOnly: false },
   { id: "users", label: "Users", adminOnly: true },
   { id: "audit", label: "Audit", adminOnly: true },
+  { id: "ports", label: "Sensors & ports", adminOnly: true },
   { id: "alerts", label: "Alert channels", adminOnly: false },
   { id: "feeds", label: "Feeds", adminOnly: true },
   { id: "reporting", label: "Reporting", adminOnly: true },
@@ -419,7 +423,9 @@ export function SettingsPage() {
         </TabsList>
 
         <TabsContent value="general" className="grid grid-cols-1 gap-4">
+          <SetupResumeCard />
           <SetupChecklistCard />
+          <UpdatesCard />
           <SensorsCard data={q.data} loading={q.isPending} />
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <StorageCard data={q.data} loading={q.isPending} />
@@ -439,6 +445,11 @@ export function SettingsPage() {
               <AuditCard />
             </TabsContent>
           </>
+        ) : null}
+        {canWrite ? (
+          <TabsContent value="ports" className="grid grid-cols-1 gap-4">
+            <PortsCard />
+          </TabsContent>
         ) : null}
         <TabsContent value="alerts" className="grid grid-cols-1 gap-4">
           <ChannelsCard />
