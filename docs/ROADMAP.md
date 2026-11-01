@@ -270,6 +270,15 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 **Acceptance:** a report can be produced, reviewed and marked sent for a real campaign, and an automated check proves no export contains the honeypot's address or the project name.
 
+## M23 — Upload the VPN configuration from the dashboard
+
+- [ ] Settings → VPN: upload a WireGuard `.conf` (strict parsing, re-authentication, the private key never shown again), and go back to the `.env` settings.
+- [ ] The `vpn` service picks up an uploaded file by itself and restarts on it; nothing leaves outside the tunnel during the switch, and the API gets no Docker socket.
+- [ ] A new exit address stays blocked until the owner trusts the range the gate observed.
+- [ ] Guardrail tests for the new volume, security review and UI review.
+
+**Acceptance:** uploading a valid file switches the tunnel with no shell on the VM; an invalid or hostile file is refused; a new exit is unused until trusted; security review PASS.
+
 ## Later (not part of the loop)
 
 - Per-/24 or per-ASN daily cap on new campaigns, so one network cannot create many campaigns in a day.
