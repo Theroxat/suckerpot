@@ -64,6 +64,7 @@ class FeatureSettings:
     alerts_enabled: bool = False
     reports_enabled: bool = False
     abuse_enabled: bool = False
+    replies_enabled: bool = False
     site_timezone: str = "UTC"
 
     @classmethod
@@ -85,6 +86,7 @@ class FeatureSettings:
             alerts_enabled=_flag(e, "ALERTS_ENABLED"),
             reports_enabled=_flag(e, "REPORTS_ENABLED"),
             abuse_enabled=_flag(e, "ABUSE_REPORTS_ENABLED"),
+            replies_enabled=_flag(e, "ABUSE_REPLIES_ENABLED"),
             site_timezone=(e.get("SITE_TIMEZONE", "").strip() or "UTC"),
         )
 
