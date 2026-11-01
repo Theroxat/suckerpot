@@ -60,6 +60,27 @@ async def test_five_aged_nodes_on_two_days_are_confirmed(env: Env) -> None:
 
 
 @pytest.mark.integration
+async def test_five_eligible_nodes_with_start_reputation_confirm_a_target(env: Env) -> None:
+    from hub.reputation import START
+
+    nodes = await add_nodes(env.worker, 5, reputation=START)
+    await observe(env.worker, nodes, "sha256", "ab" * 32, [D1, D2])
+    await run(env)
+    assert (await target(env.worker, "sha256", "ab" * 32))["state"] == "confirmed"
+
+
+@pytest.mark.integration
+async def test_default_reputation_of_a_new_row_is_the_start_value(env: Env) -> None:
+    from hub.reputation import START
+
+    (n,) = await add_nodes(env.worker, 1)
+    async with env.worker() as s:
+        await s.execute(text("UPDATE nodes SET reputation = DEFAULT WHERE id = :i"), {"i": n})
+        rep = (await s.execute(text("SELECT reputation FROM nodes"))).scalar_one()
+    assert rep == pytest.approx(START)
+
+
+@pytest.mark.integration
 async def test_four_nodes_stay_candidate(env: Env) -> None:
     nodes = await add_nodes(env.worker, 4)
     await observe(env.worker, nodes, "ip", IP, [D1, D2])
@@ -111,7 +132,7 @@ async def test_nodes_need_seven_active_days(env: Env) -> None:
 
 @pytest.mark.integration
 async def test_low_weight_blocks(env: Env) -> None:
-    nodes = await add_nodes(env.worker, 5, reputation=0.5)  # 5 x 0.5 = 2.5 < 3.0
+    nodes = await add_nodes(env.worker, 5, reputation=0.5)  # 5 x 0.5 = 2.5 < 3.0 (below start)
     await observe(env.worker, nodes, "sha256", "ab" * 32, [D1, D2])
     await run(env)
     assert (await target(env.worker, "sha256", "ab" * 32))["state"] == "candidate"

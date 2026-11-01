@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings
 
-START = 0.5
+START = 0.6  # five fresh eligible nodes weigh exactly HUB_MIN_WEIGHT (3.0)
 CONFIRMED_BONUS = 0.01
 CONFIRMED_BONUS_MAX_PER_DAY = 0.05
 TAKEDOWN_BONUS = 0.02
