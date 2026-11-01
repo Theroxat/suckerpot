@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime
 from typing import Any
 
@@ -10,6 +11,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    ForeignKey,
     Identity,
     Index,
     Integer,
@@ -19,7 +21,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, CIDR, INET, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -902,3 +904,190 @@ class SampleLinkRow(Base):
     confidence: Mapped[str] = mapped_column(Text)
     target_id: Mapped[int | None] = mapped_column(BigInteger)
     indicator_id: Mapped[int | None] = mapped_column(BigInteger)
+
+
+class RdapBootstrapRow(Base):
+    """A cached IANA RDAP bootstrap file (ipv4, ipv6, asn or dns)."""
+
+    __tablename__ = "rdap_bootstrap"
+
+    # The attribute cannot be called ``registry`` (taken by DeclarativeBase).
+    registry_name: Mapped[str] = mapped_column("registry", Text, primary_key=True)
+    body: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AbuseNetworkRow(Base):
+    """The abuse contact of a network block or a registrar, from RDAP (cached until expiry)."""
+
+    __tablename__ = "abuse_networks"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)  # ip | domain
+    cidr: Mapped[str | None] = mapped_column(CIDR, unique=True)
+    domain: Mapped[str | None] = mapped_column(Text, unique=True)
+    handle: Mapped[str | None] = mapped_column(Text)
+    name: Mapped[str | None] = mapped_column(Text)
+    country: Mapped[str | None] = mapped_column(Text)
+    rir: Mapped[str | None] = mapped_column(Text)
+    asn: Mapped[int | None] = mapped_column(Integer)
+    mailboxes: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    # rdap | rdap_remarks | ripestat | rdap_autnum | manual
+    source: Mapped[str] = mapped_column(Text)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # The waiting recipient of a network with no contact.
+    recipient_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_recipients.id", ondelete="SET NULL")
+    )
+
+
+class AbuseLookupRow(Base):
+    """Outcome of the contact lookup of one subject (also the negative cache)."""
+
+    __tablename__ = "abuse_lookups"
+
+    subject: Mapped[str] = mapped_column(Text, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)  # ip | domain
+    network_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_networks.id", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(Text)  # found | no_contact | error | pending
+    attempts: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"), nullable=False)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AbuseRecipientRow(Base):
+    """A mailbox that receives reports (from RDAP or typed by the owner)."""
+
+    __tablename__ = "abuse_recipients"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    # NULL while the network has no known contact (a "waiting" recipient).
+    mailbox: Mapped[str | None] = mapped_column(Text, unique=True)
+    name: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text)  # rdap | manual
+    override_mailbox: Mapped[str | None] = mapped_column(Text)
+    muted: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class AbuseReportRow(Base):
+    """One report to one recipient. Drafts are built by ingest; the owner reviews and sends."""
+
+    __tablename__ = "abuse_reports"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), unique=True)
+    id_seed: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    recipient_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("abuse_recipients.id"))
+    kind: Mapped[str] = mapped_column(Text)  # attack_source | payload_host | c2
+    # draft | reviewed | sent | closed | discarded | superseded
+    status: Mapped[str] = mapped_column(Text, server_default=text("'draft'"), nullable=False)
+    demo: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    subject_count: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    revision: Mapped[int] = mapped_column(Integer, server_default=text("1"), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(Text)
+    guard_ok: Mapped[bool] = mapped_column(Boolean)
+    guard_codes: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    redaction: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    options: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[str | None] = mapped_column(Text)
+    reviewed_revision: Mapped[int | None] = mapped_column(Integer)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_by: Mapped[str | None] = mapped_column(Text)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_by: Mapped[str | None] = mapped_column(Text)
+
+
+class AbuseReportSubjectRow(Base):
+    """An address, URL or domain reported in one report."""
+
+    __tablename__ = "abuse_report_subjects"
+
+    report_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("abuse_reports.id", ondelete="CASCADE"), primary_key=True
+    )
+    subject_type: Mapped[str] = mapped_column(Text, primary_key=True)  # ip | url | domain
+    value: Mapped[str] = mapped_column(Text, primary_key=True)
+    network_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_networks.id", ondelete="SET NULL")
+    )
+    first_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sessions: Mapped[int] = mapped_column(Integer)
+    events: Mapped[int] = mapped_column(Integer)
+
+
+class AbuseReportRequestRow(Base):
+    """A request from the API that ingest answers (regenerate a report, look a contact up again)."""
+
+    __tablename__ = "abuse_report_requests"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    report_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_reports.id", ondelete="CASCADE")
+    )
+    action: Mapped[str] = mapped_column(Text)  # regenerate | lookup_again
+    requested_by: Mapped[str] = mapped_column(Text)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[str | None] = mapped_column(Text)
+
+
+class ReportSettingsRow(Base):
+    """The single row of report wording and defaults. Typed in Settings, never in ``.env``."""
+
+    __tablename__ = "report_settings"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default=text("1"))
+    reply_contact: Mapped[str | None] = mapped_column(Text)
+    signature: Mapped[str | None] = mapped_column(Text)
+    intro: Mapped[str | None] = mapped_column(Text)
+    outro: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    subject_template: Mapped[str | None] = mapped_column(Text)
+    xarf_user_agent: Mapped[str | None] = mapped_column(Text)
+    defaults: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    revision: Mapped[int] = mapped_column(Integer, server_default=text("1"), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str | None] = mapped_column(Text)
+
+
+class ReportSelfTermRow(Base):
+    """Something that must never appear in a report (the monitored system's address, names)."""
+
+    __tablename__ = "report_self_terms"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)  # address | cidr | name | text
+    value: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text)  # learned | manual
+    distinct_sources: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    confirmed: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)

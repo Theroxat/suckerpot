@@ -36,10 +36,13 @@ AUDIT_RETENTION_DAYS = 365
 CAMPAIGN_PRUNE_PROC = "suckerpot_campaign_prune"  # created by migration 0011
 SCRIPT_PRUNE_PROC = "suckerpot_script_prune"  # created by migration 0013
 ALERT_PRUNE_PROC = "suckerpot_alert_prune"  # created by migration 0014
+ABUSE_PRUNE_PROC = "suckerpot_abuse_prune"  # created by migration 0019
 DEFAULT_CAMPAIGNS_MAX_ROWS = 50_000
 DEFAULT_SCRIPTS_MAX_ROWS = 100_000
 ALERT_OUTBOX_DAYS = 30
 WEEKLY_REPORT_DAYS = 730
+DEFAULT_ABUSE_REPORT_DAYS = 730
+ABUSE_UNSENT_DAYS = 90
 
 # Name of each continuous aggregate with its bucket width.
 AGGREGATES: dict[str, str] = {
@@ -110,6 +113,21 @@ def scripts_max_rows(env: Mapping[str, str] | None = None) -> int:
     return _max_rows("SCRIPTS_MAX_ROWS", DEFAULT_SCRIPTS_MAX_ROWS, env)
 
 
+def abuse_report_retention_days(env: Mapping[str, str] | None = None) -> int:
+    """Parse ``ABUSE_REPORT_RETENTION_DAYS`` (default 730, range 30 to 3650)."""
+    e = os.environ if env is None else env
+    raw = (e.get("ABUSE_REPORT_RETENTION_DAYS") or "").strip()
+    if not raw:
+        return DEFAULT_ABUSE_REPORT_DAYS
+    try:
+        days = int(raw)
+    except ValueError:
+        raise RetentionError("ABUSE_REPORT_RETENTION_DAYS must be an integer") from None
+    if not 30 <= days <= 3650:
+        raise RetentionError("ABUSE_REPORT_RETENTION_DAYS must be between 30 and 3650")
+    return days
+
+
 def _schedule_prune(conn: Connection, proc: str, every: str, config: dict[str, int]) -> None:
     """Replace the job of a prune procedure; a no-op while the migration that adds it is pending."""
     conn.execute(
@@ -136,6 +154,7 @@ def apply_policies(
     indicator_rows: int | None = None,
     campaign_rows: int | None = None,
     script_rows: int | None = None,
+    abuse_days: int | None = None,
 ) -> None:
     """(Re)create every background job with the configured retention. Idempotent."""
     # The compression window is fixed; retention is validated to be at least as long.
@@ -231,6 +250,15 @@ def apply_policies(
         "1 day",
         {"outbox_days": ALERT_OUTBOX_DAYS, "report_days": WEEKLY_REPORT_DAYS},
     )
+    _schedule_prune(
+        conn,
+        ABUSE_PRUNE_PROC,
+        "1 day",
+        {
+            "unsent_days": ABUSE_UNSENT_DAYS,
+            "sent_days": abuse_days or DEFAULT_ABUSE_REPORT_DAYS,
+        },
+    )
 
 
 def backfill(conn: Connection, days: int) -> None:
@@ -261,7 +289,12 @@ def apply_retention(conn: Connection, env: Mapping[str, str] | None = None) -> i
     days = retention_days(env)
     try:
         apply_policies(
-            conn, days, indicator_max_rows(env), campaigns_max_rows(env), scripts_max_rows(env)
+            conn,
+            days,
+            indicator_max_rows(env),
+            campaigns_max_rows(env),
+            scripts_max_rows(env),
+            abuse_report_retention_days(env),
         )
         backfill(conn, days)
     except DBAPIError as exc:

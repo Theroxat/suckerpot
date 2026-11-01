@@ -7,10 +7,12 @@ import pytest
 
 from suckerpot_db import models
 from suckerpot_db.retention import (
+    ABUSE_PRUNE_PROC,
     ALERT_PRUNE_PROC,
     CAMPAIGN_PRUNE_PROC,
     SCRIPT_PRUNE_PROC,
     RetentionError,
+    abuse_report_retention_days,
     campaigns_max_rows,
     scripts_max_rows,
 )
@@ -74,12 +76,12 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0018() -> None:
+def test_the_chain_is_linear_up_to_0019() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0018"}
-    for n in range(11, 19):
+    assert heads == {"0019"}
+    for n in range(11, 20):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
 
 
@@ -120,6 +122,7 @@ def test_prune_procedures_are_created_by_their_migrations() -> None:
         (CAMPAIGN_PRUNE_PROC, "0011_campaigns.py"),
         (SCRIPT_PRUNE_PROC, "0013_scripts.py"),
         (ALERT_PRUNE_PROC, "0014_alerts.py"),
+        (ABUSE_PRUNE_PROC, "0019_abuse_reports.py"),
     ):
         assert f"PROCEDURE {proc}(" in (VERSIONS / name).read_text()
 
@@ -149,10 +152,17 @@ def test_the_api_only_reads_the_collector_tables() -> None:
         assert granted[table] == {"SELECT"}, table
 
 
-def test_ingest_has_no_access_to_the_collector_tables() -> None:
-    flat = _GRANTS_INGEST.replace("\n", " ")
-    granted = " ".join(g for g in re.findall(r"GRANT [A-Z, ]+ ON ([^']*?) TO", flat))
-    assert not any(t in granted for t in M21_TABLES)
+READ_ONLY_FOR_INGEST = ("fetch_targets", "samples", "sample_links", "sample_sources")
+
+
+def test_ingest_only_reads_the_payload_tables() -> None:
+    """M22 drafts name fetched payloads and C2 addresses: SELECT on four tables, nothing else."""
+    granted = _grants(_GRANTS_INGEST)
+    for table in M21_TABLES:
+        if table in READ_ONLY_FOR_INGEST:
+            assert granted[table] == {"SELECT"}, table
+        else:
+            assert table not in granted, table
 
 
 def test_collector_grants() -> None:
@@ -195,3 +205,48 @@ def test_collector_is_confined_to_its_own_shared_rows() -> None:
     assert "CREATE POLICY sp_collector_quota" in _GRANTS_COLLECTOR
     for script in (_GRANTS_INGEST, _GRANTS_API):
         assert "USING (true) WITH CHECK (true)" in script
+
+
+M22_TABLES = {
+    "rdap_bootstrap",
+    "abuse_networks",
+    "abuse_lookups",
+    "abuse_recipients",
+    "abuse_reports",
+    "abuse_report_subjects",
+    "abuse_report_requests",
+    "report_settings",
+    "report_self_terms",
+}
+
+
+def test_models_cover_the_m22_tables() -> None:
+    assert M22_TABLES <= set(models.Base.metadata.tables)
+    for script in (_GRANTS_INGEST, _GRANTS_API):
+        for table in M22_TABLES:
+            assert f"'{table}'" in script, table
+
+
+def test_abuse_report_retention_setting() -> None:
+    assert abuse_report_retention_days({}) == 730
+    assert abuse_report_retention_days({"ABUSE_REPORT_RETENTION_DAYS": "90"}) == 90
+    for bad in ("1", "x", "99999"):
+        with pytest.raises(RetentionError, match="ABUSE_REPORT_RETENTION_DAYS"):
+            abuse_report_retention_days({"ABUSE_REPORT_RETENTION_DAYS": bad})
+
+
+def _update_columns(script: str, table: str) -> set[str]:
+    joined = re.sub(r"'\s+'", "", script)
+    found = re.findall(rf"'GRANT UPDATE \(([a-z0-9_, ]+)\) ON {table} TO %I'", joined)
+    return {c.strip() for cols in found for c in cols.split(",")}
+
+
+def test_m22_column_grants() -> None:
+    api = _update_columns(_GRANTS_API, "abuse_reports")
+    ingest = _update_columns(_GRANTS_INGEST, "abuse_reports")
+    assert {"status", "notes", "options", "sent_at", "reviewed_by", "closed_at"} <= api
+    assert not api & {"evidence", "content_sha256", "guard_ok", "recipient_id", "demo"}
+    assert {"evidence", "status", "guard_ok"} <= ingest
+    assert not ingest & {"notes", "reviewed_at", "reviewed_by", "sent_at", "sent_by", "closed_at"}
+    for script in (_GRANTS_API, _GRANTS_INGEST):
+        assert not re.search(r"GRANT [A-Z, ]*UPDATE[A-Z, ]* ON abuse_reports", script)

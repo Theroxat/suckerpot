@@ -227,10 +227,12 @@ async def test_collector_and_analyzer_grants(owner: AsyncEngine) -> None:
         assert not await _can(analyzer, "SELECT count(*) FROM events")
         assert not await _can(analyzer, "SELECT count(*) FROM provider_secrets")
 
-        # API: read-only on every new table. Ingest: no access at all.
+        # API: read-only on every new table. Ingest (M22 drafts): reads the four payload tables
+        # and nothing else.
         for table in TABLES:
             assert await _can(api, f"SELECT count(*) FROM {table}")
-            assert not await _can(ingest, f"SELECT count(*) FROM {table}")
+            readable = table in ("fetch_targets", "samples", "sample_links", "sample_sources")
+            assert await _can(ingest, f"SELECT count(*) FROM {table}") == readable, table
         assert not await _can(api, ins, {"u": "http://203.0.113.9/c.sh"})
         assert not await _can(api, "UPDATE samples SET family = 'x'")
         assert not await _can(api, "DELETE FROM samples")

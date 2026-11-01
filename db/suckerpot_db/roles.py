@@ -75,6 +75,27 @@ def _rls(tag: str, status: str, quota: str) -> str:
     return "\n    ".join(lines)
 
 
+def _policies(tag: str, rules: tuple[tuple[str, str, str], ...]) -> str:
+    """Policies of one role on ``report_self_terms`` (RLS is enabled by migration 0019).
+    Each rule is (command, USING condition, WITH CHECK condition), either condition may be
+    empty. Policies are named sp_<tag>_terms_<command>."""
+    lines = ["IF to_regclass('public.report_self_terms') IS NOT NULL THEN"]
+    for cmd, using, check in rules:
+        name = f"sp_{tag}_terms_{cmd.lower()}"
+        clauses = ""
+        if using:
+            clauses += f" USING ({using})"
+        if check:
+            clauses += f" WITH CHECK ({check})"
+        lines += [
+            f"EXECUTE format('DROP POLICY IF EXISTS {name} ON report_self_terms');",
+            f"EXECUTE format('CREATE POLICY {name} ON report_self_terms FOR {cmd} '",
+            f"    'TO %I{clauses}', r);",
+        ]
+    lines.append("END IF;")
+    return "\n    ".join(lines)
+
+
 _UPSERT_ROLE = """
 DO $$
 DECLARE
@@ -119,7 +140,9 @@ DECLARE
                   'alert_outbox', 'alert_cursors', 'weekly_reports', 'alert_test_requests',
                   'indicator_contacts', 'indicator_contact_checks', 'fetch_targets',
                   'fetch_attempts', 'samples', 'sample_analysis', 'sample_sources',
-                  'sample_links']
+                  'sample_links', 'rdap_bootstrap', 'abuse_networks', 'abuse_lookups',
+                  'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
+                  'abuse_report_requests', 'report_settings', 'report_self_terms']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -193,12 +216,63 @@ BEGIN
             r);
         EXECUTE format('GRANT SELECT, UPDATE ON alert_test_requests TO %I', r);
     END IF;
+    IF to_regclass('public.samples') IS NOT NULL THEN
+        -- M22: draft reports name fetched payloads (hashes) and C2 addresses found in samples.
+        EXECUTE format(
+            'GRANT SELECT ON fetch_targets, samples, sample_links, sample_sources TO %I', r);
+    END IF;
+    IF to_regclass('public.abuse_reports') IS NOT NULL THEN
+        -- M22: ingest looks contacts up and builds drafts. It cannot review, send or close a
+        -- report (column grants and the transition trigger), nor write the owner's notes.
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE, DELETE ON rdap_bootstrap, abuse_networks, '
+            'abuse_lookups TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT ON abuse_recipients, abuse_reports TO %I', r);
+        EXECUTE format('GRANT UPDATE (name) ON abuse_recipients TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (status, window_start, window_end, subject_count, evidence, '
+            'content_sha256, guard_ok, guard_codes, redaction, options) '
+            'ON abuse_reports TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT, DELETE ON abuse_report_subjects TO %I', r);
+        EXECUTE format('GRANT SELECT ON abuse_report_requests TO %I', r);
+        EXECUTE format('GRANT UPDATE (done_at, outcome) ON abuse_report_requests TO %I', r);
+        EXECUTE format('GRANT SELECT ON report_settings TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT ON report_self_terms TO %I', r);
+        EXECUTE format('GRANT UPDATE (distinct_sources, last_seen) ON report_self_terms TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s, %s, %s, %s TO %I',
+            pg_get_serial_sequence('public.abuse_networks', 'id'),
+            pg_get_serial_sequence('public.abuse_recipients', 'id'),
+            pg_get_serial_sequence('public.abuse_reports', 'id'),
+            pg_get_serial_sequence('public.report_self_terms', 'id'), r);
+        -- @TERMS
+    END IF;
     -- @RLS
     EXECUTE format(
         'GRANT USAGE ON SEQUENCE %s TO %I', pg_get_serial_sequence('public.events', 'id'), r);
 END
 $$
-""".replace("-- @RLS", _rls("ingest", "true", "true"))
+""".replace("-- @RLS", _rls("ingest", "true", "true")).replace(
+    "-- @TERMS",
+    _policies(
+        "ingest",
+        (
+            ("SELECT", "true", ""),
+            # Learned rows are never confirmed here (only the owner confirms); sensor rows
+            # are trusted and always confirmed.
+            (
+                "INSERT",
+                "",
+                "(source = ''learned'' AND NOT confirmed) OR (source = ''sensor'' AND confirmed)",
+            ),
+            (
+                "UPDATE",
+                "source IN (''learned'', ''sensor'')",
+                "source IN (''learned'', ''sensor'')",
+            ),
+        ),
+    ),
+)
 
 _GRANTS_API = """
 DO $$
@@ -218,7 +292,9 @@ DECLARE
                   'alert_outbox', 'alert_cursors', 'weekly_reports', 'alert_test_requests',
                   'indicator_contacts', 'indicator_contact_checks', 'fetch_targets',
                   'fetch_attempts', 'samples', 'sample_analysis', 'sample_sources',
-                  'sample_links']
+                  'sample_links', 'rdap_bootstrap', 'abuse_networks', 'abuse_lookups',
+                  'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
+                  'abuse_report_requests', 'report_settings', 'report_self_terms']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -287,10 +363,42 @@ BEGIN
             'GRANT SELECT ON fetch_targets, fetch_attempts, samples, sample_analysis, '
             'sample_sources, sample_links TO %I', r);
     END IF;
+    IF to_regclass('public.abuse_reports') IS NOT NULL THEN
+        -- M22: the owner reviews and marks reports by hand; the API cannot change evidence.
+        EXECUTE format(
+            'GRANT SELECT ON rdap_bootstrap, abuse_networks, abuse_lookups, '
+            'abuse_report_subjects, abuse_reports TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT ON abuse_recipients TO %I', r);
+        EXECUTE format('GRANT UPDATE (override_mailbox, muted) ON abuse_recipients TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (status, notes, options, reviewed_at, reviewed_by, reviewed_revision, '
+            'sent_at, sent_by, closed_at, closed_by) ON abuse_reports TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT ON abuse_report_requests TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE ON report_settings TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT, DELETE ON report_self_terms TO %I', r);
+        EXECUTE format('GRANT UPDATE (confirmed) ON report_self_terms TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s, %s, %s TO %I',
+            pg_get_serial_sequence('public.abuse_recipients', 'id'),
+            pg_get_serial_sequence('public.abuse_report_requests', 'id'),
+            pg_get_serial_sequence('public.report_self_terms', 'id'), r);
+        -- @TERMS
+    END IF;
     -- @RLS
 END
 $$
-""".replace("-- @RLS", _rls("api", "true", "true"))
+""".replace("-- @RLS", _rls("api", "true", "true")).replace(
+    "-- @TERMS",
+    _policies(
+        "api",
+        (
+            ("SELECT", "true", ""),
+            ("INSERT", "", "source = ''manual''"),
+            ("UPDATE", "true", "true"),
+            ("DELETE", "source IN (''manual'', ''learned'')", ""),
+        ),
+    ),
+)
 
 _GRANTS_COLLECTOR = """
 DO $$
