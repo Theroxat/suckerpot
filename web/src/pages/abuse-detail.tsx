@@ -13,6 +13,7 @@ import { Link, useParams } from "react-router"
 import { useAuth } from "@/app/auth"
 import { CopyField } from "@/components/abuse/copy-field"
 import { ExportMenu } from "@/components/abuse/export-menu"
+import { OutcomeCard } from "@/components/abuse/outcome-card"
 import { StatusStepper } from "@/components/abuse/status-stepper"
 import { SendControl } from "@/components/abuse/send-control"
 import { inFlight } from "@/lib/abuse-send"
@@ -680,6 +681,7 @@ export function AbuseDetailPage() {
           </p>
         )}
         <Actions r={r} onChanged={refresh} />
+        {r.status === "sent" || r.status === "closed" ? <OutcomeCard r={r} /> : null}
         <IdentityCard r={r} />
         <MessageCard r={r} />
         <SubjectsCard r={r} />

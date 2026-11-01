@@ -1,5 +1,6 @@
 import { ArrowRight, CircleCheck, FlaskConical, OctagonAlert } from "lucide-react"
 import { Link } from "react-router"
+import { OutcomeBadge } from "@/components/results/badges"
 import { RelativeTime } from "@/components/relative-time"
 import { TagBadge } from "@/components/tag-badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -56,6 +57,7 @@ export function ReportRow({ r }: { r: ReportItem }) {
               <FlaskConical aria-hidden className="size-3" /> Demo
             </span>
           ) : null}
+          {r.outcome ? <OutcomeBadge outcome={r.outcome.effective} className="-ml-1" /> : null}
         </span>
         <GuardState ok={r.guard.ok} />
         <RelativeTime iso={r.updated_at} className="hidden text-xs sm:inline" />
