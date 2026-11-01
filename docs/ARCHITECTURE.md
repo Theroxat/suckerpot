@@ -337,6 +337,7 @@ Ingest runs one background worker per feature. Each one is off until its `*_ENAB
 | Script explainer | `LLM_ENABLED` | every 15 seconds (cheap when the queue is empty) | Takes at most one queued request per cycle. Without the switch, nothing is sent to Anthropic. |
 | Alerts | `ALERTS_ENABLED` | every 10 seconds for test messages, every minute for rules, then delivery | Reads new rows for each enabled rule, queues one message per channel, and delivers within the rate limits. |
 | Weekly report | `REPORTS_ENABLED` | every hour | Builds the report for the last finished week once, on the first check after Monday 06:00 in `SITE_TIMEZONE`. |
+| Abuse reports (M22) | `ABUSE_REPORTS_ENABLED` | every `ABUSE_BUILD_INTERVAL_S` (1 hour) | Learns the monitored system's own names, looks up abuse contacts over RDAP and builds draft reports. Sends nothing. See [Anonymous reporting](#anonymous-reporting-m22). |
 
 Two parts run inside the normal write path rather than on a timer. While writing a batch, ingest labels research scanners (`ingest/rules/scanners.yaml`, matched on the network owner) and sets the `benign` flag only when a session did nothing but probe. The tagging engine also adds the ATT&CK technique ids from `ingest/rules/attack/`. Indicator extraction (M13) runs there too.
 
@@ -348,6 +349,26 @@ Two parts run inside the normal write path rather than on a timer. While writing
 - **Scripts** normalise the command text first (`ingest/ingest/normalize.py`: addresses, URLs, numbers and long blobs become placeholders). Annotations come from `ingest/rules/annotations/*.yaml`. The LLM only ever sees the normalised text, under a daily call quota and a monthly token cap.
 - **Alerts** read each rule's own cursor, so enabling a rule never replays old events. Channel targets are decrypted in memory only, right before a send. Failed sends are retried up to three times, only when the error can pass.
 - **Weekly report** is stored as escaped HTML plus a summary. It is built once per week.
+
+### Anonymous reporting (M22)
+
+The stack prepares abuse reports for the networks that host hostile sources, payload hosts and C2 servers, and indicator exports for CERTs. It never sends anything: the owner reads each draft and sends it from his own mailbox. Design: [M22 design](design/m22.md).
+
+Two pieces share one set of rules.
+
+| Piece | Where | Job |
+| --- | --- | --- |
+| `reporting/` (`suckerpot_reporting`) | A pure Python package, no I/O, installed in the `ingest` and `api` images | The evidence model (an allow-list of fields), redaction, the identity guard, the renderers (plain text, X-ARF v0.2, `.eml`, STIX 2.1, MISP JSON) and the encrypted sample bundle. It ships no report wording. |
+| `ingest/ingest/abuse/` | A background worker in `ingest`, off until `ABUSE_REPORTS_ENABLED=true` | Selects subjects, finds the abuse contact over RDAP, learns the monitored system's own names and builds drafts. |
+
+How a draft is made:
+
+1. **Select.** Sources with enough failed logins, a login followed by commands, a download attempt or a severe tag; payload hosts; high-confidence C2 addresses. Research scanners, benign sessions, private and reserved ranges, the never-block list and anything already reported are skipped.
+2. **Find the contact.** RDAP, through the same egress gate as every other lookup (a closed gate means wait, no quota spent). Answers are cached per network and capped in size, time and quota. A domain goes to the registrar only.
+3. **Build.** One open draft per recipient and kind. Evidence is copied field by field, passed through redaction, then checked by the identity guard. The result is stored in `abuse_reports` (migration 0019) with the guard outcome.
+4. **Render on demand.** The API renders text, X-ARF, `.eml`, STIX, MISP and bundles when asked, and runs the guard again on every artefact right before returning it. Nothing rendered is stored, so a settings change needs no rebuild.
+
+The database roles split the work: `suckerpot_ingest` can write drafts only, `suckerpot_api` can change status, notes and options but cannot rewrite evidence. A trigger allows only the legal status changes and refuses `sent` for demo reports. Learned self terms (`report_self_terms`) are never deleted by retention. See [Security](SECURITY.md#anonymous-reporting-m22).
 
 ## API
 

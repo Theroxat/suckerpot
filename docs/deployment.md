@@ -290,6 +290,34 @@ Set `COLLECTOR_ENABLED=true` and restart. The collector then fetches captured do
 
 Nothing leaves. Lookups wait with a reason in Settings, events are still stored, and ingest stays healthy. The tunnel restarts itself. Check `docker compose logs vpn`.
 
+## Anonymous reporting
+
+The stack prepares abuse reports and CERT exports. It never sends anything: you read each report and send it yourself, from your own anonymous mailbox, behind your VPN. It needs the [anonymous egress](#anonymous-egress-vpn) (RDAP lookups go through the tunnel).
+
+### 1. Turn the worker on
+
+Set `ABUSE_REPORTS_ENABLED=true` in `.env` and restart `ingest`. Tuning variables are in [Configuration](configuration.md#anonymous-reporting-m22). Reports stay locked (`no_self_address`) until the stack knows which address it is guarding.
+
+### 2. Fill Settings > Reporting (admin)
+
+Write all the wording yourself: the introduction, the closing text, the note and the subject template. The project ships none, because shipped text lives in a public repo and could be searched. Add a reply contact (an alias that is not on one of your own domains) and an X-ARF user agent if you want X-ARF. Until these are filled, rendering answers `settings_incomplete`, and a report cannot be marked reviewed.
+
+### 3. Confirm the self terms
+
+The worker learns the address and names of the monitored system from traffic (an address is stored only when two or more distinct /24 or /48 networks used it, and counts only while seen in the last 72 hours). Learned terms start inactive. Open the "Never in a report" list in Settings > Reporting, check each one and confirm it. If your address just changed, add it by hand: manual terms are active at once.
+
+### 4. Check it
+
+```bash
+just abuse-guard-check
+```
+
+It renders every open report in every format and the last 7 days of STIX and MISP, and prints PASS or FAIL per format with reason codes only. A non-zero exit means something would leak, or no address is confirmed yet. Run it after changing settings or self terms, and before the first real report.
+
+### 5. Send by hand
+
+Open a report at Defend > Abuse reports, check the identity card, copy To, Subject and Body (or download `report.txt` and `evidence.csv` to attach), send it from your alias, then use "Mark sent". The dashboard cannot send and has no mail settings. Sample bundles are uploaded by hand to the repository you choose.
+
 ## Host safeguards
 
 Two optional or recommended host settings protect the host from floods. The repository never applies them for you. Run them yourself, as the host owner.

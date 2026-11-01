@@ -263,10 +263,10 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M22 — Anonymous reporting
 
-- [ ] Abuse reports per hosting provider (contact found through RDAP): standard X-ARF and plain-text bodies with UTC times, source addresses, commands, URLs and hashes. They never contain the honeypot's own address, host names or the project name.
-- [ ] Indicator export for national CERTs (STIX 2.1 and MISP JSON) and sample bundles ready for public malware repositories.
-- [ ] A Reports page where the owner reviews each report, copies it and marks it sent. The stack never sends mail and stores no mail credentials.
-- [ ] Security review (nothing identifying in any export) and UI review.
+- [x] Abuse reports per hosting provider (contact found through RDAP): standard X-ARF and plain-text bodies with UTC times, source addresses, commands, URLs and hashes. They never contain the honeypot's own address, host names or the project name.
+- [x] Indicator export for national CERTs (STIX 2.1 and MISP JSON) and sample bundles ready for public malware repositories.
+- [x] A Reports page where the owner reviews each report, copies it and marks it sent. The stack never sends mail and stores no mail credentials.
+- [x] Security review (nothing identifying in any export) and UI review.
 
 **Acceptance:** a report can be produced, reviewed and marked sent for a real campaign, and an automated check proves no export contains the honeypot's address or the project name.
 

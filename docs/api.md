@@ -136,6 +136,7 @@ These pages are generated from the code, so they match the running version. Use 
 | `GET` | `/api/v1/samples/{sha256}/chain` | The chain session, URL, sample and C2 of one sample |
 | `POST` | `/api/v1/samples/{sha256}/archive` | Download a sample as a password-protected zip (administrators only) |
 | `GET` | `/api/v1/egress` | State of the egress gate, collector quota and quarantine use |
+| `GET` | `/api/v1/abuse/...` | Abuse reports, recipients, settings, self terms and exports (M22). See [Abuse reports](#abuse-reports-m22). |
 | `GET` | `/api/v1/settings/enrichment` | GeoIP database status and reputation quotas. See [Enrichment status](#get-apiv1settingsenrichment). |
 | `PUT` | `/api/v1/settings/providers/{provider}` | Set or replace an enrichment API key. See [Provider keys](#provider-keys). |
 | `DELETE` | `/api/v1/settings/providers/{provider}` | Remove a key set in Settings. See [Provider keys](#provider-keys). |
@@ -694,6 +695,30 @@ The state of the anonymous egress, for the Settings card.
 ### Malware
 
 `GET /api/v1/malware` and `/api/v1/malware/detail` now fill `sha256`, `size` and `virustotal_url` from the fetched samples, and add `fetch_status` (for example `fetched`, `pending`, `failed`, `refused`, `unsupported`).
+
+## Abuse reports (M22)
+
+The API prepares reports and never sends them. Every `GET` is open to both roles, except settings and self terms (administrators only). Every write needs an administrator, the CSRF header and an allowed origin. Lists use cursor pagination (`limit` up to 100).
+
+Every render, download and export runs the identity guard before it returns. A failure answers `409` with `{"detail", "code": "identity_guard_failed", "reasons": [...]}`. Reasons are constant codes, never the matched value (see [Security](SECURITY.md#the-identity-guard)). When a required wording setting is empty the answer is `409` with `code: "settings_incomplete"` and the missing field names.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/abuse/status` | Worker on or off, gate state, RDAP quota, whether a self address is known (never the value), counts per status |
+| `GET` | `/api/v1/abuse/reports` | Reports, newest change first. Filters: `status`, `kind`, `recipient`, `demo`. |
+| `GET` | `/api/v1/abuse/reports/{public_id}` | One report: subjects, guard result, redaction counters, revision, history |
+| `GET` | `/api/v1/abuse/reports/{public_id}/render` | `format=text`, `xarf` or `eml`, optional `subject`. Returns To, Subject, body, attachments and revision. |
+| `GET` | `/api/v1/abuse/reports/{public_id}/download` | A file: `format=txt`, `eml`, `evidence_csv` or `xarf_yaml`. Attachment, `no-store`, `nosniff`. Audited. |
+| `POST` | `/api/v1/abuse/reports/{public_id}/status` | Body `{to, revision, sent_at?}`. `409` on a stale revision or an invalid change. Audited. |
+| `PATCH` | `/api/v1/abuse/reports/{public_id}` | Notes and options of an open report |
+| `POST` | `/api/v1/abuse/reports/{public_id}/regenerate` | Ask ingest to rebuild the draft. A reviewed report goes back to draft. |
+| `GET`, `PATCH` | `/api/v1/abuse/recipients`, `/{id}` | List recipients. Mute one or set an override mailbox. |
+| `GET`, `PUT` | `/api/v1/abuse/settings` | Reply contact, signature, wording, X-ARF user agent, default options. Administrators only. Every text field is checked by the guard. The audit log records field names, never values. |
+| `GET`, `POST`, `PATCH`, `DELETE` | `/api/v1/abuse/self-terms`, `/{id}` | The "never in a report" list. Administrators only. Values are masked unless `reveal=true`. Confirm a learned term with `PATCH`. |
+| `GET` | `/api/v1/abuse/exports/stix`, `/misp` | Indicators of one `report`, one `campaign` or a `since`/`until` window, with a `tlp` (default `TLP:GREEN`). Audited. |
+| `POST` | `/api/v1/abuse/exports/samples` | Up to 10 stored samples in one AES-256 zip (password `infected`) with a hash table. Administrators only, password asked again, 5 per hour. A sample that contains a self term is excluded and counted in `X-Excluded`. |
+
+Statuses: `draft`, `reviewed`, `sent`, `closed`, `discarded`, `superseded`. Kinds: `attack_source`, `payload_host`, `c2`.
 
 ## Campaigns and MITRE ATT&CK (M15)
 

@@ -112,3 +112,14 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - **API and UI.** `/api/v1/samples`, the chain, an admin-only password-protected archive download, and `/api/v1/egress`. A Samples tab on Malware, a sample page and an Egress card in Settings.
 - **Reviews.** Security review passed (egress, quarantine, parser safety on hostile files). UI review passed.
 - **Not deployed.** The owner still has to add the VPN settings, apply the new host firewall rules and run `just egress-check`. See [Deployment](deployment.md#anonymous-egress-vpn). TFTP and FTP URLs are recorded but not fetched.
+
+## 2026-10-31 — M22 Anonymous reporting
+
+- **Reports.** A new `reporting/` package (evidence allow-list, redaction, identity guard, renderers for plain text, X-ARF v0.2, `.eml`, STIX 2.1 and MISP, encrypted sample bundle) and an ingest worker (`ABUSE_REPORTS_ENABLED`, off by default) that finds abuse contacts over RDAP through the egress gate and builds drafts per recipient and kind. Migration 0019 and the API under `/api/v1/abuse`. The stack never sends anything and stores no mail settings.
+- **Identity guard.** Every artefact is checked right before it is returned and refused with reason codes only. It fails closed when no confirmed address of the monitored system is known. Learned self terms (seen from at least two distinct /24 or /48 networks, or declared by sensors in `data.self_identity`) stay inactive until the owner confirms them, and count only while fresh (72 h). `just abuse-guard-check` proves it on the live data.
+- **Wording.** The package ships none. The owner writes the introduction, closing text, note and subject template in Settings > Reporting, because shipped text in a public repo could be searched. Times are rounded to the minute by default.
+- **UI.** The Abuse reports page and report page, Export for CERT, the sample bundle dialog and the Settings > Reporting tab.
+- **Decisions.** X-ARF v0.2 by mail only, domains go to the registrar only, CERT exports default to TLP:GREEN with both STIX and MISP.
+- **Known limit.** A reported network can match times and ports against its flow logs. See [Security](SECURITY.md#anonymous-reporting-m22).
+- **Reviews.** Security review passed.
+- **Not deployed.** The owner still has to turn the worker on, fill Settings > Reporting, confirm the self terms and run `just abuse-guard-check`. See [Deployment](deployment.md#anonymous-reporting).

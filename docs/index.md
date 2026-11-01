@@ -40,6 +40,7 @@ api
 retention
 SECURITY
 design/m21
+design/m22
 ```
 
 ```{toctree}
