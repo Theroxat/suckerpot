@@ -1,0 +1,20 @@
+# Replies: the mail system could not deliver the report. Runs first.
+rules:
+  - id: bounce-dsn
+    outcome: bounce
+    priority: 10
+    description: The mail system says the report could not be delivered.
+    when:
+      all:
+        - {field: report_type, equals: delivery-status}
+        - {field: dsn_action, equals: failed}
+  - id: bounce-daemon
+    outcome: bounce
+    priority: 11
+    description: A mail daemon sent back an undeliverable notice.
+    when:
+      all:
+        - {field: from_local, in: [mailer-daemon, postmaster]}
+        - {field: subject, contains_any: ["undeliver", "delivery status notification",
+                                          "returned mail", "mail delivery failed"]}
+        - not: {field: dsn_action, equals: delayed}

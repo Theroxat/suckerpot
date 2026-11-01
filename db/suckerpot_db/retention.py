@@ -43,6 +43,7 @@ ALERT_OUTBOX_DAYS = 30
 WEEKLY_REPORT_DAYS = 730
 DEFAULT_ABUSE_REPORT_DAYS = 730
 ABUSE_UNSENT_DAYS = 90
+DEFAULT_ABUSE_REPLY_EXCERPT_DAYS = 180
 
 # Name of each continuous aggregate with its bucket width.
 AGGREGATES: dict[str, str] = {
@@ -128,6 +129,21 @@ def abuse_report_retention_days(env: Mapping[str, str] | None = None) -> int:
     return days
 
 
+def abuse_reply_excerpt_days(env: Mapping[str, str] | None = None) -> int:
+    """Parse ``ABUSE_REPLY_EXCERPT_DAYS`` (default 180, range 1 to 3650)."""
+    e = os.environ if env is None else env
+    raw = (e.get("ABUSE_REPLY_EXCERPT_DAYS") or "").strip()
+    if not raw:
+        return DEFAULT_ABUSE_REPLY_EXCERPT_DAYS
+    try:
+        days = int(raw)
+    except ValueError:
+        raise RetentionError("ABUSE_REPLY_EXCERPT_DAYS must be an integer") from None
+    if not 1 <= days <= 3650:
+        raise RetentionError("ABUSE_REPLY_EXCERPT_DAYS must be between 1 and 3650")
+    return days
+
+
 def _schedule_prune(conn: Connection, proc: str, every: str, config: dict[str, int]) -> None:
     """Replace the job of a prune procedure; a no-op while the migration that adds it is pending."""
     conn.execute(
@@ -155,6 +171,7 @@ def apply_policies(
     campaign_rows: int | None = None,
     script_rows: int | None = None,
     abuse_days: int | None = None,
+    excerpt_days: int | None = None,
 ) -> None:
     """(Re)create every background job with the configured retention. Idempotent."""
     # The compression window is fixed; retention is validated to be at least as long.
@@ -257,6 +274,7 @@ def apply_policies(
         {
             "unsent_days": ABUSE_UNSENT_DAYS,
             "sent_days": abuse_days or DEFAULT_ABUSE_REPORT_DAYS,
+            "excerpt_days": excerpt_days or DEFAULT_ABUSE_REPLY_EXCERPT_DAYS,
         },
     )
 
@@ -295,6 +313,7 @@ def apply_retention(conn: Connection, env: Mapping[str, str] | None = None) -> i
             campaigns_max_rows(env),
             scripts_max_rows(env),
             abuse_report_retention_days(env),
+            abuse_reply_excerpt_days(env),
         )
         backfill(conn, days)
     except DBAPIError as exc:

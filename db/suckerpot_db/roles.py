@@ -144,7 +144,9 @@ DECLARE
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
                   'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
-                  'abuse_send_requests']
+                  'abuse_send_requests', 'report_imap', 'report_imap_state',
+                  'report_imap_requests', 'abuse_replies', 'abuse_reply_imports',
+                  'abuse_report_outcomes']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -264,6 +266,36 @@ BEGIN
             'GRANT UPDATE (sent_at, sent_by, sent_via, reviewed_at, reviewed_by, '
             'reviewed_revision) ON abuse_reports TO %I', r);
     END IF;
+    IF to_regclass('public.report_imap') IS NOT NULL THEN
+        -- M26: ingest is the only role that reads the mailbox password and the only one that
+        -- reads mail. It writes the automatic outcome columns; the owner's override (manual
+        -- columns) is the API's. The Message-ID of an SMTP send is written by ingest, once.
+        EXECUTE format('GRANT SELECT ON report_imap, abuse_report_outcomes TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE ON report_imap_state TO %I', r);
+        EXECUTE format('GRANT SELECT ON report_imap_requests TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (status, error_code, result, done_at) ON report_imap_requests TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT ON abuse_replies TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (report_id, match_method, verified, excerpt, excerpt_purged_at) '
+            'ON abuse_replies TO %I', r);
+        EXECUTE format('GRANT SELECT ON abuse_reply_imports TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (raw, status, reply_id, error_code, done_at) '
+            'ON abuse_reply_imports TO %I', r);
+        EXECUTE format(
+            'GRANT INSERT (report_id, auto_outcome, reply_count, first_reply_at, '
+            'first_human_at, ticket_at, resolved_at, rejected_at, bounced_at, ticket_id, '
+            'needs_review, auto_updated_at) ON abuse_report_outcomes TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (auto_outcome, reply_count, first_reply_at, first_human_at, '
+            'ticket_at, resolved_at, rejected_at, bounced_at, ticket_id, needs_review, '
+            'auto_updated_at) ON abuse_report_outcomes TO %I', r);
+        EXECUTE format('GRANT UPDATE (message_id) ON abuse_send_requests TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s TO %I',
+            pg_get_serial_sequence('public.abuse_replies', 'id'), r);
+    END IF;
     IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
         -- M23: the gate reads the ranges the owner trusted; only the API changes them.
         EXECUTE format('GRANT SELECT ON egress_trusted_exits TO %I', r);
@@ -322,7 +354,9 @@ DECLARE
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
                   'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
-                  'abuse_send_requests']
+                  'abuse_send_requests', 'report_imap', 'report_imap_state',
+                  'report_imap_requests', 'abuse_replies', 'abuse_reply_imports',
+                  'abuse_report_outcomes']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -397,7 +431,8 @@ BEGIN
             'GRANT SELECT ON rdap_bootstrap, abuse_networks, abuse_lookups, '
             'abuse_report_subjects, abuse_reports TO %I', r);
         EXECUTE format('GRANT SELECT, INSERT ON abuse_recipients TO %I', r);
-        EXECUTE format('GRANT UPDATE (override_mailbox, muted) ON abuse_recipients TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (override_mailbox, muted, reply_domains) ON abuse_recipients TO %I', r);
         EXECUTE format(
             'GRANT UPDATE (status, notes, options, reviewed_at, reviewed_by, reviewed_revision, '
             'sent_at, sent_by, closed_at, closed_by) ON abuse_reports TO %I', r);
@@ -427,6 +462,38 @@ BEGIN
             'GRANT USAGE ON SEQUENCE %s TO %I',
             pg_get_serial_sequence('public.abuse_send_requests', 'id'), r);
         EXECUTE format('GRANT UPDATE (sent_via) ON abuse_reports TO %I', r);
+    END IF;
+    IF to_regclass('public.report_imap') IS NOT NULL THEN
+        -- M26: the owner edits the mailbox profile (the password is write-only: column grants
+        -- leave it out of SELECT), reads replies, fixes a match by hand and overrides an
+        -- outcome. The automatic outcome columns and the reply content are ingest's.
+        EXECUTE format(
+            'GRANT SELECT (id, enabled, host, port, security, username, password_set, folder, '
+            'processed_action, move_folder, poll_minutes, since, updated_at, updated_by) '
+            'ON report_imap TO %I', r);
+        EXECUTE format('GRANT INSERT, UPDATE, DELETE ON report_imap TO %I', r);
+        EXECUTE format('GRANT SELECT ON report_imap_state TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT ON report_imap_requests TO %I', r);
+        EXECUTE format('GRANT SELECT ON abuse_replies TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (report_id, match_method, verified, classification, '
+            'classification_source, ticket_id, reviewed_at, reviewed_by) '
+            'ON abuse_replies TO %I', r);
+        EXECUTE format('GRANT INSERT ON abuse_reply_imports TO %I', r);
+        EXECUTE format(
+            'GRANT SELECT (id, report_id, requested_by, requested_at, status, reply_id, '
+            'error_code, done_at) ON abuse_reply_imports TO %I', r);
+        EXECUTE format('GRANT SELECT ON abuse_report_outcomes TO %I', r);
+        EXECUTE format(
+            'GRANT INSERT (report_id, manual_outcome, manual_at, manual_by, note) '
+            'ON abuse_report_outcomes TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (manual_outcome, manual_at, manual_by, note) '
+            'ON abuse_report_outcomes TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s, %s TO %I',
+            pg_get_serial_sequence('public.report_imap_requests', 'id'),
+            pg_get_serial_sequence('public.abuse_reply_imports', 'id'), r);
     END IF;
     IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
         -- M23: the owner trusts or removes a VPN exit range from the dashboard.
