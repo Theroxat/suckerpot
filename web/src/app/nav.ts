@@ -7,6 +7,7 @@ import {
   Radar,
   Radio,
   Settings,
+  Share2,
   ShieldCheck,
   Sun,
   SwatchBook,
@@ -130,6 +131,16 @@ export const NAV_ITEMS: NavItem[] = [
     to: "/defend/abuse",
     label: "Abuse reports",
     icon: MailWarning,
+  },
+  {
+    space: "defend",
+    to: "/network",
+    label: "Network",
+    icon: Share2,
+    tabs: [
+      { to: "/network", label: "Overview" },
+      { to: "/network/members", label: "Members" },
+    ],
   },
 
   { space: "footer", to: "/settings", label: "Settings", icon: Settings },

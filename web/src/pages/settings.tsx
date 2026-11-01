@@ -20,6 +20,7 @@ import { FindingCard } from "@/components/finding-card"
 import { Meter } from "@/components/meter"
 import { PageHeader } from "@/components/page-header"
 import { SetupChecklistCard } from "@/components/setup-checklist"
+import { NetworkTab } from "@/components/network/network-tab"
 import { VpnTab } from "@/components/vpn/vpn-tab"
 import { ProviderKeys } from "@/components/provider-keys"
 import { AuditCard } from "@/components/users/audit-card"
@@ -351,6 +352,7 @@ const TABS = [
   { id: "feeds", label: "Feeds", adminOnly: true },
   { id: "reporting", label: "Reporting", adminOnly: true },
   { id: "vpn", label: "VPN", adminOnly: true },
+  { id: "network", label: "Network", adminOnly: false },
 ] as const
 
 export function SettingsPage() {
@@ -459,6 +461,9 @@ export function SettingsPage() {
             <VpnTab />
           </TabsContent>
         ) : null}
+        <TabsContent value="network" className="grid grid-cols-1 gap-4">
+          <NetworkTab />
+        </TabsContent>
       </Tabs>
     </>
   )
