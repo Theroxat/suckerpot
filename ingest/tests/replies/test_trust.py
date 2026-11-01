@@ -3,6 +3,8 @@ and what each kind of match is allowed to verify."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from suckerpot_db.shared_mail import is_shared_domain
 
 from ingest.replies.match import Match, Trust, from_known_recipient, is_verified, trust_of
@@ -52,6 +54,15 @@ def test_what_each_match_may_verify() -> None:
     assert is_verified(ours, reply("a@example.net"), trust)
     assert not is_verified(ours, reply("a@evil.example.org", "pass"), trust)  # passes, not theirs
     dsn = Match(1, "dsn", True)
+    bounce = ParsedReply(
+        from_address="mailer-daemon@mx.example.org",
+        from_domain="mx.example.org",
+        content_type="multipart/report",
+        dsn_action="failed",
+        auth="pass",
+    )
+    assert is_verified(ours, bounce, trust)  # a bounce that answers our Message-ID, authenticated
+    assert not is_verified(ours, replace(bounce, auth="none"), trust)
     assert is_verified(dsn, reply("mailer-daemon@mx.example.org", "pass"), trust)
     assert is_verified(dsn, reply("mailer-daemon@example.net"), trust)
     assert not is_verified(dsn, reply("mailer-daemon@mx.example.org"), trust)
