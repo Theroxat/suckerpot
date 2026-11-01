@@ -12,8 +12,17 @@ from collections.abc import Mapping
 
 import httpx
 from suckerpot_egress import EgressClosed, EgressGate, EgressSettings, egress_client
+from suckerpot_egress.gate import ExtraCidrs
 
-__all__ = ["EgressClosed", "EgressGate", "gate_open", "get_gate", "make_client", "set_gate"]
+__all__ = [
+    "EgressClosed",
+    "EgressGate",
+    "gate_open",
+    "get_gate",
+    "install_gate",
+    "make_client",
+    "set_gate",
+]
 
 _gate: EgressGate | None = None
 
@@ -23,6 +32,14 @@ def get_gate() -> EgressGate:
     if _gate is None:
         _gate = EgressGate(EgressSettings.from_env())
     return _gate
+
+
+def install_gate(extra_cidrs: ExtraCidrs) -> EgressGate:
+    """Build the process gate with the owner-trusted exit ranges (M23). Call it before any
+    worker is created, so that every worker shares this gate."""
+    gate = EgressGate(EgressSettings.from_env(), extra_cidrs=extra_cidrs)
+    set_gate(gate)
+    return gate
 
 
 def set_gate(gate: EgressGate | None) -> None:

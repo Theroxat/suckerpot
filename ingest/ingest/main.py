@@ -12,6 +12,7 @@ from redis.asyncio import Redis
 from suckerpot_db import create_engine, create_session_factory
 from suckerpot_db.diskguard import max_db_bytes
 from suckerpot_db.secretbox import SecretBox, SecretError, box_from_env
+from suckerpot_db.trusted_exits import trusted_exit_provider
 
 from ingest.abuse import AbuseWorker
 from ingest.alerts import AlertWorker
@@ -24,7 +25,7 @@ from ingest.consumer import Consumer
 from ingest.cve import CveWatch
 from ingest.cve.relevance import load_relevance
 from ingest.diskguard import DiskGuard, publish_system_status
-from ingest.egress import get_gate
+from ingest.egress import get_gate, install_gate
 from ingest.enrichment import EnrichmentSettings, GeoResolver
 from ingest.enrichment.credentials import CredentialSync
 from ingest.enrichment.downloader import GeoManager
@@ -69,6 +70,7 @@ async def run() -> None:
     )
     engine = create_engine()
     factory = create_session_factory(engine)
+    install_gate(trusted_exit_provider(factory))
 
     rules = load_rules(enrich.rules_dir)  # fail fast on a broken rule file
     log.info("loaded %d tagging rules", len(rules.rules))
