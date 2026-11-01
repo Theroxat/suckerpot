@@ -187,8 +187,8 @@ def test_password_policy_and_scram() -> None:
 def test_never_list_matching() -> None:
     never = Never.from_rows(
         [
-            ("8.8.8.0/24", "ip"),
-            ("2001:4860::/32", "ip"),
+            ("198.51.100.128/25", "ip"),
+            ("2001:db8:1::/48", "ip"),
             ("Example.NET.", "domain"),
             (H1, "sha256"),
             ("bad", "ip"),
@@ -196,17 +196,17 @@ def test_never_list_matching() -> None:
         ]
     )
     assert (
-        never.has_ip("8.8.8.8")
-        and never.has_ip("2001:4860:4860::8888")
-        and not never.has_ip("8.8.4.4")
+        never.has_ip("198.51.100.130")
+        and never.has_ip("2001:db8:1::8888")
+        and not never.has_ip("192.0.2.4")
     )
-    assert never.has_ip("8.8.8.8:23")  # c2 values carry a port
+    assert never.has_ip("198.51.100.130:23")  # c2 values carry a port
     assert never.has_domain("a.b.example.net") and never.has_domain("example.net")
     assert not never.has_domain("notexample.net") and not never.has_domain("example.org")
-    assert never.has_url("http://cdn.example.net/x") and never.has_url("http://8.8.8.8/x")
-    assert never.has_url("http://[2001:4860::1]/x") and not never.has_url("http://example.org/x")
+    assert never.has_url("http://cdn.example.net/x") and never.has_url("http://198.51.100.130/x")
+    assert never.has_url("http://[2001:db8:1::1]/x") and not never.has_url("http://example.org/x")
     assert never.has_hash(H1.upper()) and not never.has_hash(H2)
-    assert never.matches("c2_ip", "8.8.8.8:23") and never.matches("sha256", H1)
+    assert never.matches("c2_ip", "198.51.100.130:23") and never.matches("sha256", H1)
     assert not never.matches("url", "http://example.org/")
 
 
@@ -215,7 +215,7 @@ def test_never_list_matching() -> None:
 
 def _batch(**parts: object) -> models.ObservationBatch:
     data = {"protocol": "spn/1", "batch_id": sign.new_nonce(), "day": "2026-10-31", **parts}
-    return models.ObservationBatch.model_validate(data)
+    return models.ObservationBatch.model_validate(data, context={"allow_documentation": True})
 
 
 def _src(ip: str, **kw: object) -> dict[str, object]:
@@ -232,16 +232,16 @@ def _src(ip: str, **kw: object) -> dict[str, object]:
 
 def test_build_rows_merges_a_source_and_a_payload_host() -> None:
     parsed = _batch(
-        sources=[_src("8.8.4.4", tags=["mirai"], sessions=2, attempts=0)],
-        payloads=[{"url_b": H1, "host_ip": "8.8.4.4", "sha256": H2, "fetched": True}],
+        sources=[_src("192.0.2.4", tags=["mirai"], sessions=2, attempts=0)],
+        payloads=[{"url_b": H1, "host_ip": "192.0.2.4", "sha256": H2, "fetched": True}],
         files=[{"sha256": H2, "family": "mirai"}],
     )
     out, accepted, rejected = build_rows(parsed, Never())
     by_key = {(r["kind"], r["value"]): r for r in out}
     assert len(out) == 3 and not rejected
-    assert by_key[("ip", "8.8.4.4")]["activity"] == ["download", "login"]
-    assert by_key[("ip", "8.8.4.4")]["tags"] == ["malware-drop", "mirai"]
-    assert by_key[("ip", "8.8.4.4")]["sessions"] == 2
+    assert by_key[("ip", "192.0.2.4")]["activity"] == ["download", "login"]
+    assert by_key[("ip", "192.0.2.4")]["tags"] == ["malware-drop", "mirai"]
+    assert by_key[("ip", "192.0.2.4")]["sessions"] == 2
     assert (
         by_key[("sha256", H2)]["families"] == ["mirai"]
         and by_key[("sha256", H2)]["fetched"] is True
@@ -253,21 +253,23 @@ def test_build_rows_blinded_hosts_and_c2() -> None:
     parsed = _batch(
         payloads=[{"url_b": H1, "host_b": H2}],
         c2=[
-            {"ip": "9.9.9.9", "port": 23},
-            {"ip": "9.9.9.9", "port": 24},
+            {"ip": "192.0.2.9", "port": 23},
+            {"ip": "192.0.2.9", "port": 24},
             {"domain_b": H2, "port": 80},
         ],
     )
     out, accepted, _ = build_rows(parsed, Never())
     assert {(r["kind"], r["value"]) for r in out} == {
-        ("url", H1), ("domain", H2), ("c2_ip", "9.9.9.9:23"), ("c2_ip", "9.9.9.9:24"), ("c2_domain", H2),
+        ("url", H1), ("domain", H2), ("c2_ip", "192.0.2.9:23"), ("c2_ip", "192.0.2.9:24"), ("c2_domain", H2),
     }  # fmt: skip
     assert accepted["c2"] == 3
 
 
 def test_build_rows_payload_host_on_never_list_is_not_stored() -> None:
-    never = Never.from_rows([("8.8.8.0/24", "ip")])
-    out, _, rejected = build_rows(_batch(payloads=[{"url_b": H1, "host_ip": "8.8.8.8"}]), never)
+    never = Never.from_rows([("198.51.100.128/25", "ip")])
+    out, _, rejected = build_rows(
+        _batch(payloads=[{"url_b": H1, "host_ip": "198.51.100.130"}]), never
+    )
     assert {(r["kind"]) for r in out} == {"url"} and not rejected
 
 
@@ -316,11 +318,13 @@ def test_never_list_parses_bracketed_ipv6_c2_values() -> None:
     from hub.never import split_host_port
     from hub.routes.observations import c2_value
 
-    never = Never.from_rows([("2001:4860:4860::8888", "ip"), ("8.8.8.0/24", "ip")])
-    assert c2_value("2001:4860:4860::8888", 53) == "[2001:4860:4860::8888]:53"
-    assert c2_value("8.8.8.8", 53) == "8.8.8.8:53"
-    assert never.matches("c2_ip", c2_value("2001:4860:4860::8888", 53))
-    assert never.matches("c2_ip", "8.8.8.8:53") and not never.matches("c2_ip", "[2606:4700::1]:53")
+    never = Never.from_rows([("2001:db8:1::8888", "ip"), ("198.51.100.128/25", "ip")])
+    assert c2_value("2001:db8:1::8888", 53) == "[2001:db8:1::8888]:53"
+    assert c2_value("198.51.100.130", 53) == "198.51.100.130:53"
+    assert never.matches("c2_ip", c2_value("2001:db8:1::8888", 53))
+    assert never.matches("c2_ip", "198.51.100.130:53") and not never.matches(
+        "c2_ip", "[2001:db8:2::1]:53"
+    )
     assert split_host_port("[2001:db8::1]:53") == ("2001:db8::1", 53)
     assert split_host_port("2001:db8::1") == ("2001:db8::1", None)
     assert split_host_port("198.51.100.1:23") == ("198.51.100.1", 23)

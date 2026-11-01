@@ -60,23 +60,23 @@ async def _node(env: Env) -> NodeClient:
 
 async def test_pull_excludes_candidates_and_has_buckets_only(env: Env) -> None:
     node = await _node(env)
-    await seed(env, value="8.8.4.4", node_count=7, country_count=4)
+    await seed(env, value="192.0.2.4", node_count=7, country_count=4)
     await seed(
         env,
-        value="8.8.8.8",
+        value="198.51.100.130",
         node_count=12,
         country_count=2,
         state="reported",
         reported_day=_d("2026-10-31"),
     )
-    await seed(env, value="1.1.1.1", state="candidate")
+    await seed(env, value="192.0.2.1", state="candidate")
     reply = await node.call("GET", "/v1/targets")
     assert reply.status == 200 and reply.signature_ok
     targets = {t["value"]: t for t in reply.json["targets"]}
-    assert set(targets) == {"8.8.4.4", "8.8.8.8"}
-    assert (targets["8.8.4.4"]["nodes"], targets["8.8.4.4"]["countries"]) == (0, 4)
-    assert (targets["8.8.8.8"]["nodes"], targets["8.8.8.8"]["countries"]) == (1, None)
-    assert targets["8.8.8.8"]["reported_day"] == "2026-10-31"
+    assert set(targets) == {"192.0.2.4", "198.51.100.130"}
+    assert (targets["192.0.2.4"]["nodes"], targets["192.0.2.4"]["countries"]) == (0, 4)
+    assert (targets["198.51.100.130"]["nodes"], targets["198.51.100.130"]["countries"]) == (1, None)
+    assert targets["198.51.100.130"]["reported_day"] == "2026-10-31"
     assert reply.json["cursor"].startswith("c_")
     # no per-node data anywhere in the view (H5)
     me = (await node.call("GET", "/v1/node")).json
@@ -87,7 +87,7 @@ async def test_pull_excludes_candidates_and_has_buckets_only(env: Env) -> None:
 async def test_cursor_pagination(env: Env) -> None:
     node = await _node(env)
     for i in range(1, 6):
-        await seed(env, value=f"8.8.4.{i}")
+        await seed(env, value=f"192.0.2.{i + 40}")
     seen: list[str] = []
     cursor = ""
     for _ in range(10):
@@ -99,17 +99,17 @@ async def test_cursor_pagination(env: Env) -> None:
         assert len(page["targets"]) <= 2
         seen += [t["value"] for t in page["targets"]]
         cursor = page["cursor"]
-    assert sorted(seen) == [f"8.8.4.{i}" for i in range(1, 6)]
+    assert sorted(seen) == [f"192.0.2.{i + 40}" for i in range(1, 6)]
     # an update moves the target past the cursor
     async with env.worker() as s:
         await s.execute(
             text(
-                "UPDATE targets SET state = 'taken_down', taken_down_day = '2026-11-01' WHERE value = '8.8.4.1'"
+                "UPDATE targets SET state = 'taken_down', taken_down_day = '2026-11-01' WHERE value = '192.0.2.41'"
             )
         )
         await s.commit()
     changed = (await node.call("GET", f"/v1/targets?since={cursor}")).json["targets"]
-    assert [(t["value"], t["state"]) for t in changed] == [("8.8.4.1", "taken_down")]
+    assert [(t["value"], t["state"]) for t in changed] == [("192.0.2.41", "taken_down")]
 
 
 @pytest.mark.parametrize(
@@ -188,12 +188,12 @@ async def test_reveal_daily_cap(env_factory: Any) -> None:
 async def test_recheck_listing_and_votes(env: Env) -> None:
     a = await _node(env)
     (b,) = await env.enrolled()
-    t_ip = await seed(env, value="8.8.4.4", state="reported", reported_day=_d("2026-10-31"))
+    t_ip = await seed(env, value="192.0.2.4", state="reported", reported_day=_d("2026-10-31"))
     await seed(env, kind="sha256", value="ab" * 32)
     await seed(env, kind="url", value_b=URL_B)  # blinded and unrevealed: nothing to check yet
     pull = (await a.call("GET", "/v1/targets")).json
     assert [r["id"] for r in pull["recheck"]] == [t_ip]
-    assert pull["recheck"][0]["value"] == "8.8.4.4"
+    assert pull["recheck"][0]["value"] == "192.0.2.4"
 
     vote = {
         "protocol": "spn/1",
@@ -214,7 +214,7 @@ async def test_recheck_listing_and_votes(env: Env) -> None:
 
 async def test_recheck_day_rules(env: Env) -> None:
     a = await _node(env)
-    t = await seed(env, value="8.8.4.4")
+    t = await seed(env, value="192.0.2.4")
     for day, code in (("2026-11-02", "invalid_payload"), ("2026-10-29", "day_too_old")):
         r = await a.call(
             "POST",
@@ -239,7 +239,7 @@ async def test_recheck_day_rules(env: Env) -> None:
 
 async def test_suspended_votes_are_ignored(env: Env) -> None:
     a = await _node(env)
-    t = await seed(env, value="8.8.4.4")
+    t = await seed(env, value="192.0.2.4")
     async with env.worker() as s:
         await s.execute(text("UPDATE nodes SET standing = 'soft_suspended'"))
         await s.commit()
@@ -274,7 +274,7 @@ async def test_network_summary(env: Env) -> None:
         "countries": [{"cc": "CH", "members": 3}],
         "members": [
             {
-                "fingerprint": "3f9a1c07",
+                "fingerprint": node.fingerprint,
                 "pseudonym": "night-owl",
                 "country": "CH",
                 "member_since": "2026-09",

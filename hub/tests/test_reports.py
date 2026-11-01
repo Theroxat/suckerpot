@@ -21,7 +21,7 @@ from .seed import TODAY, add_nodes, observe, target
 D1, D2 = TODAY - timedelta(days=2), TODAY - timedelta(days=1)
 
 
-def rt(kind: str = "ip", value: str = "45.9.9.9", **kw: Any) -> render.ReportTarget:
+def rt(kind: str = "ip", value: str = "192.0.2.109", **kw: Any) -> render.ReportTarget:
     base: dict[str, Any] = {
         "id": "t_000000000001",
         "kind": kind,
@@ -42,14 +42,14 @@ def test_render_facts_only_without_template() -> None:
     r = render.render("attack_source", [rt()], reply_to="abuse-desk@example.org")
     assert "5 to 9 independent sensors in 4 or more countries" in r.body
     assert (
-        "45.9.9.9" in r.body
+        "192.0.2.109" in r.body
         and "2026-10-26" in r.body
         and "Reply to: abuse-desk@example.org" in r.body
     )
     assert r.subject.startswith("Abuse report: 1 address")
     assert (
         r.xarf
-        and "Source: 45.9.9.9" in r.xarf
+        and "Source: 192.0.2.109" in r.xarf
         and "Reported-From: abuse-desk@example.org" in r.xarf
     )
 
@@ -64,7 +64,7 @@ def test_render_template_and_no_node_identity() -> None:
     tpl = "Hello,\n\n$facts\n\n$count item(s) from $first_day to $last_day.\nWrite to $reply_to"
     r = render.render(
         "attack_source",
-        [rt(), rt(value="45.9.9.10", id="t_000000000002")],
+        [rt(), rt(value="192.0.2.110", id="t_000000000002")],
         template=tpl,
         reply_to="a@example.org",
     )
@@ -84,7 +84,7 @@ def test_sensors_bucket_uses_the_smallest_count() -> None:
     assert render.sensors_label([30, 12]) == "10 to 24"
 
 
-async def _confirmed_ip(env: Env, ip: str = "45.9.9.9", **obs: Any) -> list[Any]:
+async def _confirmed_ip(env: Env, ip: str = "192.0.2.109", **obs: Any) -> list[Any]:
     nodes = await add_nodes(
         env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
     )
@@ -100,22 +100,22 @@ async def _eligible(env: Env) -> list[Any]:
 
 
 async def _resolver(kind: str, host: str) -> str | None:
-    return "abuse@example.net" if host.startswith("45.9.") else None
+    return "abuse@example.net" if host.startswith("192.0.2.") else None
 
 
 @pytest.mark.integration
 async def test_severity_rules(env: Env) -> None:
     # scans and connects alone are never reportable, even confirmed by many nodes
-    await _confirmed_ip(env, "45.9.9.1", activity=["scan", "connect"], attempts=0)
+    await _confirmed_ip(env, "192.0.2.101", activity=["scan", "connect"], attempts=0)
     # severe activity is
-    await _confirmed_ip(env, "45.9.9.2", activity=["command"], attempts=0)
+    await _confirmed_ip(env, "192.0.2.102", activity=["command"], attempts=0)
     # many login attempts (bucket 3) is
-    await _confirmed_ip(env, "45.9.9.3", activity=["login"], attempts=3)
-    for ip in ("45.9.9.1", "45.9.9.2", "45.9.9.3"):
+    await _confirmed_ip(env, "192.0.2.103", activity=["login"], attempts=3)
+    for ip in ("192.0.2.101", "192.0.2.102", "192.0.2.103"):
         assert (await target(env.worker, "ip", ip))["state"] == "confirmed"
     async with env.worker() as s:
         ids = await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env))
-    got = {(await target(env.worker, "ip", ip))["id"] for ip in ("45.9.9.2", "45.9.9.3")}
+    got = {(await target(env.worker, "ip", ip))["id"] for ip in ("192.0.2.102", "192.0.2.103")}
     assert ids == got
 
 
@@ -165,13 +165,13 @@ async def test_review_mode_queues_but_never_sends_unapproved(env: Env) -> None:
     # nothing about nodes in the stored text
     async with env.worker() as s:
         body = (await s.execute(text("SELECT body_text FROM reports"))).scalar_one()
-    assert "45.9.9.9" in body
+    assert "192.0.2.109" in body
 
 
 @pytest.mark.integration
 async def test_approve_send_marks_targets_and_respects_caps(env: Env) -> None:
-    await _confirmed_ip(env, "45.9.9.9")
-    await _confirmed_ip(env, "45.9.9.10")
+    await _confirmed_ip(env, "192.0.2.109")
+    await _confirmed_ip(env, "192.0.2.110")
     sent: list[str] = []
 
     async def mailer(to: str, subject: str, body: str, xarf: str | None) -> None:
@@ -185,7 +185,7 @@ async def test_approve_send_marks_targets_and_respects_caps(env: Env) -> None:
         out = await send.send_due(s, env.settings, env.clock(), TODAY, mailer)
         again = await send.send_due(s, env.settings, env.clock(), TODAY, mailer)
     assert out.sent == 1 and again.sent == 0 and len(sent) == 1 and "2 addresses" in sent[0]
-    for ip in ("45.9.9.9", "45.9.9.10"):
+    for ip in ("192.0.2.109", "192.0.2.110"):
         t = await target(env.worker, "ip", ip)
         assert t["state"] == "reported" and t["reported_day"] == TODAY
     # a reported target is not queued again, and the recipient is covered for a week
@@ -198,8 +198,8 @@ async def test_approve_send_marks_targets_and_respects_caps(env: Env) -> None:
 
 @pytest.mark.integration
 async def test_recipient_and_global_daily_caps(env: Env) -> None:
-    await _confirmed_ip(env, "45.9.9.9")
-    await _confirmed_ip(env, "45.9.9.10")
+    await _confirmed_ip(env, "192.0.2.109")
+    await _confirmed_ip(env, "192.0.2.110")
     async with env.worker() as s:
         for i, (rcpt, kind) in enumerate(
             [
@@ -253,18 +253,18 @@ async def test_failed_send_releases_the_targets(env: Env) -> None:
         out = await send.send_due(s, env.settings, env.clock(), TODAY, broken)
         row = (await s.execute(text("SELECT state, error_code FROM reports"))).one()
     assert out.failed == 1 and (row.state, row.error_code) == ("failed", "SMTPException")
-    assert (await target(env.worker, "ip", "45.9.9.9"))["state"] == "confirmed"
+    assert (await target(env.worker, "ip", "192.0.2.109"))["state"] == "confirmed"
 
 
 @pytest.mark.integration
 async def test_regrouping_while_queued_and_auto_hold(env: Env) -> None:
-    await _confirmed_ip(env, "45.9.9.9")
+    await _confirmed_ip(env, "192.0.2.109")
     s_auto = env.settings.__class__(
         **{**env.settings.__dict__, "report_mode": "auto", "report_hold_hours": 24}
     )
     async with env.worker() as s:
         await sel.queue_reports(s, s_auto, TODAY, resolver=_resolver, never=Never())
-    await _confirmed_ip(env, "45.9.9.10")
+    await _confirmed_ip(env, "192.0.2.110")
     async with env.worker() as s:
         res = await sel.queue_reports(s, s_auto, TODAY, resolver=_resolver, never=Never())
         assert (res.queued, res.updated) == (0, 1)
@@ -276,7 +276,7 @@ async def test_regrouping_while_queued_and_auto_hold(env: Env) -> None:
 
 @pytest.mark.integration
 async def test_no_contact_and_off_mode(env: Env) -> None:
-    await _confirmed_ip(env, "45.7.7.7")
+    await _confirmed_ip(env, "203.0.113.207")
     async with env.worker() as s:
         res = await sel.queue_reports(s, env.settings, TODAY, resolver=_resolver, never=Never())
         assert res.queued == 0 and res.skipped == {"no_contact": 1}
@@ -322,12 +322,14 @@ def test_build_message_is_neutral() -> None:
 @pytest.mark.integration
 async def test_fresh_keys_cannot_make_a_quiet_address_reportable(env: Env) -> None:
     # ten eligible nodes only scanned it; five fresh keys (never eligible) claim an exploit
-    await _confirmed_ip(env, "45.9.9.20", activity=["scan"], attempts=0)
+    await _confirmed_ip(env, "192.0.2.120", activity=["scan"], attempts=0)
     fresh = await add_nodes(env.worker, 5, enrolled=[TODAY - timedelta(days=1)] * 5)
-    await observe(env.worker, fresh, "ip", "45.9.9.20", [D1, D2], activity=["exploit"], attempts=4)
+    await observe(
+        env.worker, fresh, "ip", "192.0.2.120", [D1, D2], activity=["exploit"], attempts=4
+    )
     async with env.worker() as s:
         await consensus.run_consensus(s, env.settings, TODAY, never=Never(), corroborate=None)
-    t = await target(env.worker, "ip", "45.9.9.20")
+    t = await target(env.worker, "ip", "192.0.2.120")
     assert t["state"] == "confirmed" and "exploit" not in t["activity"]  # k-supported fields
     async with env.worker() as s:
         assert await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env)) == set()
