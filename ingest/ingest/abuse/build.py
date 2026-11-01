@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -378,7 +379,8 @@ class DraftBuilder:
                 await session.execute(
                     text(
                         "SELECT id, status, window_start, options, content_sha256, guard_ok, "
-                        "guard_codes FROM abuse_reports WHERE recipient_id = :r AND kind = :k "
+                        "guard_codes, id_seed FROM abuse_reports "
+                        "WHERE recipient_id = :r AND kind = :k "
                         "AND status IN ('draft', 'reviewed')"
                     ),
                     {"r": recipient.id, "k": kind},
@@ -464,7 +466,10 @@ class DraftBuilder:
                 options=options,
             )
         )
-        gctx = GuardContext(internal_ids=frozenset(col.session_ids), allow_documentation=demo)
+        report_seed = existing.id_seed if existing is not None else new_seed()
+        gctx = GuardContext(
+            internal_ids=frozenset(col.session_ids) | {report_seed.hex}, allow_documentation=demo
+        )
         try:
             result = guard_message(_message(evidence, report_settings), terms, ctx=gctx)
         except RenderUnavailable as exc:
@@ -506,6 +511,7 @@ class DraftBuilder:
                     result.ok,
                     result.codes,
                     redaction,
+                    report_seed,
                 )
                 if report_id is None:
                     stats.skipped += 1
@@ -551,6 +557,7 @@ class DraftBuilder:
         ok: bool,
         codes: tuple[str, ...],
         redaction: dict[str, int],
+        seed: uuid.UUID,
     ) -> int | None:
         row = (
             await session.execute(
@@ -568,7 +575,7 @@ class DraftBuilder:
                 ),
                 {
                     "pid": new_public_id(),
-                    "seed": new_seed(),
+                    "seed": seed,
                     "r": rid,
                     "k": kind,
                     "d": demo,

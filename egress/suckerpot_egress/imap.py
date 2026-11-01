@@ -20,6 +20,8 @@ from suckerpot_egress.gate import EgressGate
 from suckerpot_egress.tunnel import open_tunnel_sync
 
 MAX_LINE = 65_536
+# Every protocol-level failure of an imaplib client (abort and readonly are subclasses).
+ImapError = imaplib.IMAP4.error
 DEFAULT_TIMEOUT = 15.0
 
 setattr(imaplib, "_MAXLINE", MAX_LINE)  # noqa: B010 - private, absent from the type stubs

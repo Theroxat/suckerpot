@@ -123,6 +123,11 @@ def _wrap(value: str) -> str:
     return "\r\n".join(out)
 
 
+def new_message_id(profile: Profile) -> str:
+    """A fresh ``<random@sender-domain>`` id. Random and unrelated to the reply token (O6)."""
+    return f"<{secrets.token_urlsafe(18)}@{profile.domain}>"
+
+
 def _display(profile: Profile) -> str:
     name = to_ascii(profile.from_name).strip()
     return formataddr((name, profile.from_address)) if name else profile.from_address
@@ -134,6 +139,7 @@ def build_message(
     *,
     now: datetime | None = None,
     to: str | None = None,
+    message_id: str | None = None,
 ) -> bytes:
     """The serialized message (CRLF, 7bit ASCII). ``to`` defaults to the rendered recipient."""
     recipient = (to or rendered.to).strip()
@@ -144,7 +150,7 @@ def build_message(
     mail["To"] = recipient
     mail["Subject"] = re.sub(r"[\r\n]+", " ", to_ascii(rendered.subject))
     mail["Date"] = format_datetime((now or datetime.now(UTC)).astimezone(UTC))
-    mail["Message-ID"] = f"<{secrets.token_urlsafe(18)}@{profile.domain}>"
+    mail["Message-ID"] = message_id or new_message_id(profile)
     if rendered.xarf:
         mail["X-ARF"] = "YES"
     mail.set_content(_wrap(rendered.body), subtype="plain", charset="us-ascii", cte="7bit")
