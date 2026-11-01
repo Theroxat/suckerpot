@@ -218,6 +218,10 @@ export function VpnStep() {
             </Link>
             .
           </p>
+        ) : v && open ? (
+          <p className="text-sm text-fg-muted">
+            Nothing to do here. You can still replace the tunnel with another WireGuard file below.
+          </p>
         ) : v ? (
           <p className="text-sm text-fg-muted">
             Upload the WireGuard file your VPN provider gave you (a <code>.conf</code> file). The

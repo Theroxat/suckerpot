@@ -114,6 +114,13 @@ function Stepper() {
     heading.current?.focus({ preventScroll: true })
   }, [index])
 
+  // On phones the step list scrolls sideways: keep the current step in view.
+  useEffect(() => {
+    document
+      .querySelector<HTMLElement>('[aria-label="Setup steps"] [aria-current="step"]')
+      ?.scrollIntoView?.({ inline: "center", block: "nearest" })
+  }, [index, progress])
+
   if (!progress || !step)
     return progressQ.isError ? (
       <PageHeader title="Set up Selfhostr" description="The setup is not available right now." />
@@ -181,14 +188,14 @@ function Stepper() {
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
         <nav aria-label="Setup steps" className="min-w-0">
           <ol className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0">
             {steps.map((s, i) => {
               const current = i === index
               const status = progress.steps[s.id]
               return (
-                <li key={s.id} className="shrink-0">
+                <li key={s.id} className="relative shrink-0">
                   <button
                     type="button"
                     onClick={() => go(i)}
