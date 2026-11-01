@@ -48,7 +48,9 @@ def test_built_images_use_the_release_prefix_and_version() -> None:
     built = {n: s for n, s in services.items() if "build" in s}
     assert len(built) == 19  # redis, migrate, ingest, api, collector, analyzer, demo, 12 sensors
     for name, svc in built.items():
-        assert svc["image"].startswith("${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/"), name
+        assert svc["image"].startswith(
+            "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-"
+        ), name
         assert svc["image"].endswith(":${SUCKERPOT_VERSION:-dev}"), name
         assert svc["build"]["args"] == {
             "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}",
@@ -67,3 +69,38 @@ def test_every_dockerfile_carries_the_build_metadata() -> None:
         assert "ARG VERSION=dev BUILD_KIND=source COMMIT=unknown" in text, name
         assert "SUCKERPOT_RUNNING_VERSION=$VERSION" in text, name
         assert "org.opencontainers.image.version=$VERSION" in text, name
+
+
+def _render(image: str, project: str, prefix: str = "") -> str:
+    """Interpolates the few variables an image name uses, the way compose does."""
+    image = image.replace("${SUCKERPOT_VERSION:-dev}", "dev")
+    image = image.replace("${COMPOSE_PROJECT_NAME:?}", project)
+    image = image.replace("${COMPOSE_PROJECT_NAME:-unset}", project)
+    default = "${SUCKERPOT_IMAGE_PREFIX:-local/" + project + "}"
+    return image.replace(default, prefix or "local/" + project)
+
+
+@pytest.mark.parametrize("overlay", ["docker-compose.ci.yml", "docker-compose.it.yml"])
+def test_test_overlays_never_resolve_to_the_live_image_names(overlay: str) -> None:
+    live = {
+        n: _render(s["image"], "suckerpot")
+        for n, s in load_compose([BASE])["services"].items()
+        if "build" in s
+    }
+    # Even when the shell exports the release prefix, the overlay must not follow it.
+    live_release = {
+        n: _render(s["image"], "suckerpot", "ghcr.io/example/suckerpot")
+        for n, s in load_compose([BASE])["services"].items()
+        if "build" in s
+    }
+    merged = load_compose([BASE, ROOT / overlay])["services"]
+    built = [n for n, s in merged.items() if "build" in s]
+    assert len(built) == 19
+    for project in ("sp-it-x", "sp-test"):
+        for name in built:
+            image = merged[name]["image"]
+            assert "SUCKERPOT_IMAGE_PREFIX" not in image, name
+            rendered = _render(image, project)
+            assert rendered not in live.values(), (project, name)
+            assert rendered not in live_release.values(), (project, name)
+            assert rendered.startswith(f"local/{project}-"), (project, name)

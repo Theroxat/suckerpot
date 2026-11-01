@@ -24,7 +24,7 @@ x-db-env: &db-env
 
 services:
   redis:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-redis:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-redis:${SUCKERPOT_VERSION:-dev}
     build:
       context: ./redis
       args:
@@ -128,7 +128,7 @@ services:
       start_period: 30s
 
   migrate:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-migrate:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-migrate:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: db/Dockerfile
@@ -208,7 +208,7 @@ services:
         condition: service_healthy
 
   ingest:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-ingest:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-ingest:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: ingest/Dockerfile
@@ -259,7 +259,7 @@ services:
       AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
       INDICATORS_KEEP_DOCUMENTATION: ${INDICATORS_KEEP_DOCUMENTATION:-false}
       # Daily check for a newer release (M28): one anonymous GET through the egress proxy.
-      UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-true}
+      UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-false}
       UPDATE_CHECK_REPO: ${UPDATE_CHECK_REPO:-Theroxat/suckerpot}
       # This deployment's own names: never recorded as attack infrastructure.
       API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
@@ -364,7 +364,7 @@ services:
       start_period: 20s
 
   api:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-api:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-api:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: api/Dockerfile
@@ -427,7 +427,7 @@ services:
       SYNOLOGY_HTTPS_HOST_PORT: ${SYNOLOGY_HTTPS_HOST_PORT:-5001}
       DASHBOARD_PORT: ${DASHBOARD_PORT:-8443}
       # Update check (M28): the version shown in Settings; ingest does the daily lookup.
-      UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-true}
+      UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-false}
       UPDATE_CHECK_REPO: ${UPDATE_CHECK_REPO:-Theroxat/suckerpot}
       # Machine-readable blocklist feeds (M16), outside /api/v1 and off by default.
       FEEDS_ENABLED: ${FEEDS_ENABLED:-false}
@@ -485,7 +485,7 @@ services:
 
   # SSH sensor: pure emulation, never executes attacker input.
   sensor-ssh:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-ssh:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-ssh:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/ssh/Dockerfile
@@ -551,7 +551,7 @@ services:
 
   # RDP sensor: answers the connection handshake only, never authenticates anyone.
   sensor-rdp:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-rdp:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-rdp:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/rdp/Dockerfile
@@ -613,7 +613,7 @@ services:
 
   # Telnet sensor: emulates a cheap BusyBox device, never executes attacker input.
   sensor-telnet:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-telnet:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-telnet:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/telnet/Dockerfile
@@ -667,7 +667,7 @@ services:
 
   # Web sensor: a fake Apache + PHP 8.3 stack, pure emulation, never executes attacker input.
   sensor-web:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-web:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-web:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/web/Dockerfile
@@ -733,7 +733,7 @@ services:
 
   # Redis sensor: a fake unauthenticated Redis server, pure emulation, never executes attacker input.
   sensor-redis:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-redis:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-redis:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/redis/Dockerfile
@@ -794,7 +794,7 @@ services:
 
   # Docker API sensor: a fake exposed Docker Engine API, never creates a container or pulls an image.
   sensor-docker:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-docker:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-docker:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/docker/Dockerfile
@@ -855,7 +855,7 @@ services:
 
   # MySQL sensor: a fake MySQL 8.0 server, records logins and queries, never runs any SQL.
   sensor-mysql:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-mysql:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-mysql:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/mysql/Dockerfile
@@ -917,7 +917,7 @@ services:
 
   # MSSQL sensor: a fake SQL Server (TDS), records logins and queries, never runs any SQL.
   sensor-mssql:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-mssql:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-mssql:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/mssql/Dockerfile
@@ -978,7 +978,7 @@ services:
 
   # ADB sensor: a fake Android debug bridge, records shell commands, never runs or installs anything.
   sensor-adb:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-adb:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-adb:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/adb/Dockerfile
@@ -1037,7 +1037,7 @@ services:
 
   # SMB sensor: answers the SMB negotiation and NTLM handshake only, never serves a file.
   sensor-smb:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-smb:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-smb:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/smb/Dockerfile
@@ -1101,7 +1101,7 @@ services:
 
   # SIP sensor: a fake PBX (UDP and TCP), rate-limited so it can never be used as a reflector.
   sensor-sip:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-sip:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-sip:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/sip/Dockerfile
@@ -1167,7 +1167,7 @@ services:
   # Synology sensor: a fake unpatched Synology DSM NAS (HTTP and HTTPS). Records requests and logins,
   # never runs or stores anything an attacker sends.
   sensor-synology:
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-sensor-synology:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-synology:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: sensors/synology/Dockerfile
@@ -1344,7 +1344,7 @@ services:
   # stores them in quarantine; never parses or executes them.
   collector:
     profiles: [egress]
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-collector:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-collector:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: collector/Dockerfile
@@ -1412,7 +1412,7 @@ services:
   # internet, Redis or ingest: it shares only the "samples" network (with db and collector).
   analyzer:
     profiles: [egress]
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-collector:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-collector:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: collector/Dockerfile
@@ -1460,7 +1460,7 @@ services:
   # Run with: docker compose --profile tools run --rm demo [args]
   demo:
     profiles: [tools]
-    image: ${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}-demo:${SUCKERPOT_VERSION:-dev}
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-demo:${SUCKERPOT_VERSION:-dev}
     build:
       context: .
       dockerfile: scripts/demo/Dockerfile
