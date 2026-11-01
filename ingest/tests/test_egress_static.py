@@ -27,11 +27,23 @@ FORBIDDEN_CALLS = {
     "socket.gethostbyname",
     "smtplib.SMTP",
     "smtplib.SMTP_SSL",
+    "imaplib.IMAP4",
+    "imaplib.IMAP4_SSL",
+    "poplib.POP3",
+    "poplib.POP3_SSL",
     "urllib.request.urlopen",
     "asyncio.open_connection",
 }
 FORBIDDEN_ATTRS = {"getaddrinfo", "create_connection", "open_connection", "sock_connect"}
-FORBIDDEN_MODULES = {"urllib.request", "aiohttp", "requests", "urllib3", "http.client"}
+FORBIDDEN_MODULES = {
+    "urllib.request",
+    "aiohttp",
+    "requests",
+    "urllib3",
+    "http.client",
+    "imaplib",  # mail is read through suckerpot_egress.TunnelIMAP4* only (M26)
+    "poplib",
+}
 
 # (relative path, dotted call) pairs that are allowed. Empty: even the SMTP adapter in
 # alerts/send.py only uses suckerpot_egress.TunnelSMTP.
@@ -111,6 +123,9 @@ def test_package_opens_no_connection_of_its_own() -> None:
         "import urllib.request\n",
         "import aiohttp\n",
         "import requests\n",
+        "import imaplib\nc = imaplib.IMAP4_SSL('h')\n",
+        "from imaplib import IMAP4\n",
+        "import poplib\nc = poplib.POP3('h')\n",
         "from httpx import AsyncClient\nc = AsyncClient()\n",
         "import httpx as h\nc = h.AsyncClient()\n",
         "from httpx import AsyncClient as C\nc = C()\n",
