@@ -35,6 +35,7 @@ MAX_DOWNLOAD_BYTES = 256 * 1024 * 1024
 MAX_DB_BYTES = 768 * 1024 * 1024
 TOTAL_TIMEOUT_S = 1800
 CHECK_INTERVAL_S = 24 * 3600
+RETRY_S = 60  # while a needed download is still pending (gate closed, or it failed)
 MAXMIND_URL = "https://download.maxmind.com/geoip/databases/{edition}/download?suffix={suffix}"
 DBIP_URL = "https://download.db-ip.com/free/{edition}-{year}-{month:02d}.mmdb.gz"
 
@@ -139,6 +140,7 @@ class GeoManager:
         self.on_status = on_status
         self.last_error: str | None = None
         self._force = False
+        self.pending = False  # a needed database is missing or out of date
         self._wake = asyncio.Event()
 
     def apply_settings(self, settings: EnrichmentSettings, *, credentials_changed: bool) -> None:
@@ -187,6 +189,7 @@ class GeoManager:
             return False
         force, self._force = self._force, False
         todo = [p for p in _plan(self.s) if force or self._stale(p[2])]
+        self.pending = bool(todo)
         if not todo:
             return False
         try:
@@ -209,6 +212,7 @@ class GeoManager:
             if changed:
                 self.last_error = None
                 self.resolver.reload()
+            self.pending = any(self._stale(p[2]) for p in _plan(self.s))
         except EgressClosed:
             self._force = self._force or force  # closed mid-way: nothing is recorded as an error
         except (OSError, TimeoutError) as exc:
@@ -262,8 +266,11 @@ class GeoManager:
                     await self.on_status(self.status())
                 except Exception:
                     log.warning("could not publish GeoIP status", exc_info=True)
+            # A missing or failed database is retried soon (after a start with the egress gate not
+            # yet open, the map would otherwise stay empty for a day); fresh ones once a day.
+            wait = RETRY_S if self.pending else CHECK_INTERVAL_S
             with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(self._wake.wait(), CHECK_INTERVAL_S)
+                await asyncio.wait_for(self._wake.wait(), wait)
 
 
 def _verify_and_install_into(candidate: Path, target: Path) -> None:
