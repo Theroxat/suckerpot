@@ -147,7 +147,9 @@ async def test_below_ninety_percent_nothing_is_dropped(auto: AsyncConnection) ->
 async def test_above_ninety_percent_drops_oldest_chunks_until_below_eighty(
     auto: AsyncConnection,
 ) -> None:
-    await _fill(auto, range(5, 13), rows=OLD_ROWS)  # eight chunks, all older than the protected 4 days
+    await _fill(
+        auto, range(5, 13), rows=OLD_ROWS
+    )  # eight chunks, all older than the protected 4 days
     await _fill(auto, range(0, 2), rows=10)  # recent chunks: never dropped
     refresh = "CALL refresh_continuous_aggregate('{v}', now() - INTERVAL '30 days', now() + INTERVAL '2 days')"
     for view in VIEWS:
