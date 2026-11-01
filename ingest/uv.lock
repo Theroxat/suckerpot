@@ -1178,6 +1178,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyzipper" },
     { name = "suckerpot-db" },
+    { name = "suckerpot-reporting" },
     { name = "uvicorn" },
     { name = "websockets" },
 ]
@@ -1189,6 +1190,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.9,<3" },
     { name = "pyzipper", specifier = ">=0.3.6" },
     { name = "suckerpot-db", directory = "../db" },
+    { name = "suckerpot-reporting", directory = "../reporting" },
     { name = "uvicorn", specifier = ">=0.32,<1" },
     { name = "websockets", specifier = ">=13" },
 ]
@@ -1283,6 +1285,7 @@ dependencies = [
     { name = "suckerpot-common" },
     { name = "suckerpot-db" },
     { name = "suckerpot-egress" },
+    { name = "suckerpot-reporting" },
 ]
 
 [package.dev-dependencies]
@@ -1306,6 +1309,7 @@ requires-dist = [
     { name = "suckerpot-common", directory = "../sensors/common" },
     { name = "suckerpot-db", directory = "../db" },
     { name = "suckerpot-egress", directory = "../egress" },
+    { name = "suckerpot-reporting", directory = "../reporting" },
 ]
 
 [package.metadata.requires-dev]
@@ -1317,6 +1321,32 @@ dev = [
     { name = "ruff", specifier = ">=0.8" },
     { name = "suckerpot-api", directory = "../api" },
     { name = "types-netaddr" },
+    { name = "types-pyyaml" },
+]
+
+[[package]]
+name = "suckerpot-reporting"
+version = "0.1.0"
+source = { directory = "../reporting" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "pyzipper" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.9,<3" },
+    { name = "pyyaml", specifier = ">=6,<7" },
+    { name = "pyzipper", specifier = ">=0.3.6,<1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.13" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "ruff", specifier = ">=0.8" },
+    { name = "stix2", specifier = ">=3.0,<4" },
     { name = "types-pyyaml" },
 ]
 
