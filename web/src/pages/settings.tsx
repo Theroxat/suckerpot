@@ -18,6 +18,7 @@ import { FeedsTab } from "@/components/feeds/feeds-tab"
 import { FindingCard } from "@/components/finding-card"
 import { Meter } from "@/components/meter"
 import { PageHeader } from "@/components/page-header"
+import { VpnTab } from "@/components/vpn/vpn-tab"
 import { ProviderKeys } from "@/components/provider-keys"
 import { AuditCard } from "@/components/users/audit-card"
 import { UsersCard } from "@/components/users/users-card"
@@ -346,6 +347,7 @@ const TABS = [
   { id: "alerts", label: "Alert channels", adminOnly: false },
   { id: "feeds", label: "Feeds", adminOnly: true },
   { id: "reporting", label: "Reporting", adminOnly: true },
+  { id: "vpn", label: "VPN", adminOnly: true },
 ] as const
 
 export function SettingsPage() {
@@ -444,6 +446,11 @@ export function SettingsPage() {
         {canWrite ? (
           <TabsContent value="reporting" className="grid grid-cols-1 gap-4">
             <ReportingCard />
+          </TabsContent>
+        ) : null}
+        {canWrite ? (
+          <TabsContent value="vpn">
+            <VpnTab />
           </TabsContent>
         ) : null}
       </Tabs>
