@@ -283,3 +283,13 @@ def test_vocabularies() -> None:
     for word in ("suckerpot", "selfhostr", "honeypot"):
         for vocab in (enums.TAGS_V1, enums.FAMILIES_V1, enums.FILE_TYPES_V1):
             assert not any(word in v for v in vocab)
+
+
+@pytest.mark.parametrize(
+    "ip",
+    ["64:ff9b::808:808", "64:ff9b:1::1", "2001:0:4136:e378:8000:63bf:3fff:fdd2", "2002:808:808::1"],
+)
+def test_addresses_that_embed_an_ipv4_address_are_refused(ip: str) -> None:
+    bad(mutated("sources.0.ip", ip))
+    bad(mutated("c2.0.ip", ip), allow_documentation=True)
+    assert models.parse_global_ip("2606:4700:4700::1111") == "2606:4700:4700::1111"

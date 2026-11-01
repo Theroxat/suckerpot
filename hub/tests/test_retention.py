@@ -163,21 +163,45 @@ async def test_summary_member_order_changes_daily_and_ignores_activity(env: Env)
     assert sorted(a) == sorted(b) and a != b
 
 
-async def test_weekly_stats_tiers(env: Env) -> None:
-    (n,) = await add_nodes(env.worker, 1, active_days=7)
+async def test_weekly_tier_follows_consensus_not_what_a_node_sent(env: Env) -> None:
+    flooder, helper = await add_nodes(env.worker, 2, active_days=7)
     week = stats.last_full_week(TODAY)
     assert week.weekday() == 0 and TODAY - week < timedelta(days=14)
     async with env.worker() as s:
+        # one node floods 20,000 unique values that nobody else saw
         await s.execute(
             text(
-                "INSERT INTO observations (node_id, day, kind, value) SELECT :n, :d, 'ip', '45.' || g || '.1.1' FROM generate_series(1, 120) g"
+                "INSERT INTO observations (node_id, day, kind, value) SELECT :n, :d, 'url', "
+                "md5(g::text) || md5(g::text) FROM generate_series(1, 20000) g"
             ),
-            {"n": n, "d": week},
+            {"n": flooder, "d": week},
         )
+        # the other contributed to 150 values that reached consensus that week
+        for i in range(150):
+            tid = f"t_{i:012x}"
+            await s.execute(
+                text(
+                    "INSERT INTO targets (id, kind, value, state, confirmed_day, first_day, last_day) VALUES (:i, 'ip', :v, 'confirmed', :d, :d, :d)"
+                ),
+                {"i": tid, "v": f"45.{i // 250}.{i % 250}.1", "d": week},
+            )
+            await s.execute(
+                text("INSERT INTO target_contributors VALUES (:i, :n)"), {"i": tid, "n": helper}
+            )
         await s.commit()
-        assert await stats.weekly_stats(s, TODAY) == 1
-        row = (await s.execute(text("SELECT active_days, tier FROM node_stats_weekly"))).one()
-    assert row.tier == 2 and 0 <= row.active_days <= 7
+        assert await stats.weekly_stats(s, TODAY) == 2
+        rows: dict[Any, Any] = dict(
+            (await s.execute(text("SELECT node_id, tier FROM node_stats_weekly"))).all()
+        )
+    assert rows[flooder] == 0  # flooding moved nothing
+    assert rows[helper] in (2, 3)  # about 150, with jitter
+
+
+def test_tier_jitter_is_stable_and_bounded() -> None:
+    week = stats.last_full_week(TODAY)
+    values = {stats.noisy(1000, week, f"node{i}") for i in range(50)}
+    assert min(values) >= 750 and max(values) <= 1250 and len(values) > 10
+    assert stats.noisy(1000, week, "node1") == stats.noisy(1000, week, "node1")
 
 
 # --- worker cycle and admin ---

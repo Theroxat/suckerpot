@@ -7,7 +7,7 @@ from starlette.responses import Response
 from suckerpot_netproto import ProtoError, models
 from suckerpot_netproto.enums import PROTOCOL
 
-from ..auth import MAX_BODY_DEFAULT, MAX_BODY_OBSERVATIONS, reply
+from ..auth import MAX_BODY_DEFAULT, MAX_BODY_OBSERVATIONS, bind_unsigned, reply
 from ..context import get_ctx
 from .enrol import current_difficulty
 
@@ -17,6 +17,7 @@ router = APIRouter()
 @router.get("/info")
 async def info(request: Request) -> Response:
     ctx = get_ctx(request)
+    bind_unsigned(request)
     wait = ctx.address_limiter.check_unsigned(request)
     if wait:
         raise ProtoError("rate_limited", str(wait))

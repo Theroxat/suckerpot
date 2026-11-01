@@ -36,22 +36,47 @@ def test_verify_never_raises_on_garbage() -> None:
         assert not sign.verify_request(pub, bad, "GET", "/v1/info", "1", "n", b"")
 
 
-def test_response_bound_to_request_nonce() -> None:
+def _binding(
+    nonce: str = "n" * 22,
+    sig: str = "s" * 86,
+    method: str = "GET",
+    target: str = "/v1/node",
+    key: str = "k" * 43,
+) -> sign.RequestBinding:
+    return sign.RequestBinding.signed(method, target, key, nonce, sig)
+
+
+def test_response_is_bound_to_the_whole_request() -> None:
     hub = sign.generate_private_key()
     key = sign.node_key(sign.public_key_of(hub))
-    nonce = sign.new_nonce()
-    sig = sign.sign_response(hub, nonce, 200, b"{}")
-    assert sign.verify_response(key, sig, nonce, 200, b"{}")
-    assert not sign.verify_response(key, sig, sign.new_nonce(), 200, b"{}")  # replayed answer
-    assert not sign.verify_response(key, sig, nonce, 201, b"{}")
-    assert not sign.verify_response(key, sig, nonce, 200, b"{ }")
-    assert not sign.verify_response(key, None, nonce, 200, b"{}")
-    assert not sign.verify_response("bad", sig, nonce, 200, b"{}")
+    b = _binding()
+    sig = sign.sign_response(hub, b, 200, b"{}")
+    assert sign.verify_response(key, sig, b, 200, b"{}")
+    # an answer collected for another request (a man in the middle's own) never verifies
+    for other in (
+        _binding(nonce="m" * 22),
+        _binding(target="/v1/node?x=1"),
+        _binding(method="DELETE"),
+        _binding(key="j" * 43),
+        _binding(sig="t" * 86),
+        sign.RequestBinding.unsigned("GET", "/v1/node", "n" * 22),
+    ):
+        assert not sign.verify_response(key, sig, other, 200, b"{}")
+    assert not sign.verify_response(key, sig, b, 201, b"{}")
+    assert not sign.verify_response(key, sig, b, 200, b"{ }")
+    assert not sign.verify_response(key, None, b, 200, b"{}")
+    assert not sign.verify_response("bad", sig, b, 200, b"{}")
     wrong = sign.node_key(sign.public_key_of(sign.generate_private_key()))
-    assert not sign.verify_response(wrong, sig, nonce, 200, b"{}")
+    assert not sign.verify_response(wrong, sig, b, 200, b"{}")
     with pytest.raises(ProtoError) as err:
-        sign.require_response(wrong, sig, nonce, 200, b"{}")
+        sign.require_response(wrong, sig, b, 200, b"{}")
     assert err.value.code == "hub_signature"
+
+
+def test_unsigned_binding_covers_the_body() -> None:
+    a = sign.RequestBinding.unsigned("post", "/v1/enrol/challenge", "n", b"one")
+    b = sign.RequestBinding.unsigned("POST", "/v1/enrol/challenge", "n", b"two")
+    assert a.node == "-" and a.method == "POST" and a != b
 
 
 def test_b64u_strict() -> None:

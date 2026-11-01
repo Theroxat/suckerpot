@@ -40,16 +40,26 @@
   ],
   "responses": [
     {
+      "name": "signed",
+      "method": "GET",
+      "target": "/v1/info",
+      "node": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+      "digest": "5192f07d3c54a1bbc411373a191bde77ed07c5bd9edc0b2ccae5f333ea312060",
       "status": 200,
       "body": "{\"deleted\":true}",
-      "canonical": "SPN1-RESP\nAAECAwQFBgcICQoLDA0ODw\n200\n1b70b1c98c544d975c39049311ab1d24ed1d87aedc2874bdc946d39bd421b4b8",
-      "signature": "G7quoC9DixsDySNLR54A0yTmD3qQ_5HuH7GmOmItEuDMJ7fVi8tu8gyURnK6ZMx7GwJi759db1S1ICg5fHq0Cg"
+      "canonical": "SPN1-RESP\nGET\n/v1/info\nA6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg\nAAECAwQFBgcICQoLDA0ODw\n5192f07d3c54a1bbc411373a191bde77ed07c5bd9edc0b2ccae5f333ea312060\n200\n1b70b1c98c544d975c39049311ab1d24ed1d87aedc2874bdc946d39bd421b4b8",
+      "signature": "dqYMJ9yk6N8qpc-CsuPJnq-xAAKF3B4vfwuzXwxC9kHafEMHGakhnRjei9dWrgHz6cv9bDaZ0dfh_hrWDvRyDA"
     },
     {
+      "name": "unsigned",
+      "method": "POST",
+      "target": "/v1/enrol/challenge",
+      "node": "-",
+      "digest": "5041bf1f713df204784353e82f6a4a535931cb64f1f4b4a5aeaffcb720918b22",
       "status": 429,
       "body": "{\"error\":\"rate_limited\"}",
-      "canonical": "SPN1-RESP\nAAECAwQFBgcICQoLDA0ODw\n429\n341f8de90fd5b720c742d233ec1bda3ba38a1fbe61d858dfbd45d721328f1d71",
-      "signature": "-1qBm_BHpWMG3NBp-KVowpg0-A7AgwlnwstyOFAq4omUYpKRxOtNz2VNMhbdzNGxlfiunZEOGY82RspwW1KPBg"
+      "canonical": "SPN1-RESP\nPOST\n/v1/enrol/challenge\n-\nAAECAwQFBgcICQoLDA0ODw\n5041bf1f713df204784353e82f6a4a535931cb64f1f4b4a5aeaffcb720918b22\n429\n341f8de90fd5b720c742d233ec1bda3ba38a1fbe61d858dfbd45d721328f1d71",
+      "signature": "C3H07Uv4crDBPCui6YRwoG13FLyCGp6MAQ_OQqbvJXqNTj7i9Vwonfh6H5eXGLnOPYmZirLXcxYsvZFcUO1MCw"
     }
   ],
   "blind_urls": [

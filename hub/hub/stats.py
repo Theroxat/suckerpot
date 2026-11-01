@@ -26,8 +26,23 @@ def last_full_week(today: date) -> date:
     return this_monday - timedelta(days=7)
 
 
+TIER_KIND_CAP = 1000  # contributions counted per kind
+TIER_NOISE = 0.25  # +- share of random-looking, stable noise
+
+
+def noisy(count: int, week: date, node_id: object) -> int:
+    """Count with a stable per-node-and-week jitter, so a tier edge is not a precise gauge."""
+    h = hashlib.sha256(f"{week.isoformat()}|{node_id}".encode()).digest()
+    unit = int.from_bytes(h[:4], "big") / 0xFFFFFFFF  # 0..1
+    return round(count * (1 + (unit * 2 - 1) * TIER_NOISE))
+
+
 async def weekly_stats(session: AsyncSession, today: date) -> int:
-    """Upsert ``node_stats_weekly`` for the last full week. Returns the rows written."""
+    """Upsert ``node_stats_weekly`` for the last full week. Returns the rows written.
+
+    The tier counts only contributions to values that reached consensus in that week (never what
+    a node merely sent, which an attacker can flood), capped per kind and with a stable jitter.
+    """
     week = last_full_week(today)
     end = week + timedelta(days=7)
     rows = (
@@ -36,21 +51,36 @@ async def weekly_stats(session: AsyncSession, today: date) -> int:
                 """
                 SELECT n.id,
                        (SELECT count(*) FROM batches b
-                        WHERE b.node_id = n.id AND b.day >= :week AND b.day < :end) AS active_days,
-                       (SELECT count(*) FROM observations o
-                        WHERE o.node_id = n.id AND o.day >= :week AND o.day < :end) AS values_n
+                        WHERE b.node_id = n.id AND b.items > 0
+                          AND b.day >= :week AND b.day < :end) AS active_days
                 FROM nodes n WHERE n.enrolled_day < :end
                 """
             ),
             {"week": week, "end": end},
         )
     ).all()
+    contributions: dict[object, int] = {}
+    for r in (
+        await session.execute(
+            text(
+                """
+                SELECT tc.node_id, t.kind, count(*) AS n
+                FROM target_contributors tc JOIN targets t ON t.id = tc.target_id
+                WHERE t.confirmed_day >= :week AND t.confirmed_day < :end
+                  AND t.state <> 'candidate'
+                GROUP BY tc.node_id, t.kind
+                """
+            ),
+            {"week": week, "end": end},
+        )
+    ).all():
+        contributions[r.node_id] = contributions.get(r.node_id, 0) + min(int(r.n), TIER_KIND_CAP)
     payload = [
         {
             "n": r.id,
             "w": week,
             "a": min(int(r.active_days), 7),
-            "t": buckets.tier(int(r.values_n)),
+            "t": buckets.tier(noisy(contributions.get(r.id, 0), week, r.id)),
         }
         for r in rows
     ]

@@ -62,6 +62,8 @@ class Settings:
     pow_difficulty: int = 27
     enrol_soft_cap: int = 50
     enrol_hard_cap: int = 200
+    enrol_step: int = 10  # one more proof-of-work bit per this many enrolments above the soft cap
+    challenges_per_prefix: int = 20
     challenge_ttl_s: int = 600
     max_pending_challenges: int = 20000
 
@@ -81,6 +83,8 @@ class Settings:
     min_reputation: float = 0.3
     window_days: int = 7
     cohort_max_share: float = 0.5
+    # Auto mode (reports sent without review) needs this many independent enrolment cohorts.
+    auto_min_cohorts: int = 5
 
     # Retention.
     obs_retention_days: int = 14
@@ -122,6 +126,8 @@ class Settings:
             pow_difficulty=_int(e, "HUB_POW_DIFFICULTY", 27, 0, 40),
             enrol_soft_cap=_int(e, "HUB_ENROL_SOFT_CAP", 50, 0),
             enrol_hard_cap=_int(e, "HUB_ENROL_HARD_CAP", 200, 0),
+            enrol_step=_int(e, "HUB_ENROL_STEP", 10, 1),
+            challenges_per_prefix=_int(e, "HUB_CHALLENGES_PER_PREFIX", 20, 1),
             unsigned_per_min=_int(e, "HUB_RATE_UNSIGNED_PER_MIN", 10, 1),
             unsigned_per_day=_int(e, "HUB_RATE_UNSIGNED_PER_DAY", 100, 1),
             signed_per_hour=_int(e, "HUB_RATE_SIGNED_PER_HOUR", 60, 1),
@@ -134,6 +140,7 @@ class Settings:
             min_reputation=_float(e, "HUB_MIN_REPUTATION", 0.3),
             window_days=_int(e, "HUB_WINDOW_DAYS", 7, 1, 14),
             cohort_max_share=_float(e, "HUB_COHORT_MAX_SHARE", 0.5),
+            auto_min_cohorts=_int(e, "HUB_AUTO_MIN_COHORTS", 5, 1),
             obs_retention_days=_int(e, "HUB_OBS_RETENTION_DAYS", 14, 1, 60),
             worker_interval_s=_int(e, "HUB_WORKER_INTERVAL_S", 3600, 5),
             report_mode=mode,

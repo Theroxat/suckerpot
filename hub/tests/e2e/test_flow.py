@@ -30,7 +30,7 @@ from ..helpers import batch, source
 
 pytestmark = pytest.mark.integration
 IP = "198.51.100.23"
-URL = "http://198.51.100.9/bins/x.sh"
+URL = "http://dl.example.org/bins/x.sh"
 URL_B = blind.blind_url(URL)
 SHA = "ab" * 32
 
@@ -48,7 +48,7 @@ async def test_full_flow(env_factory: Any) -> None:
     env: Env = await env_factory(
         smtp_host="127.0.0.1", smtp_from="reports@example.org", smtp_starttls=False
     )
-    nodes = await env.enrolled(7)
+    nodes = await env.enrolled(10)
     # age the nodes (different enrolment weeks) and give them a week of activity
     async with env.worker() as s:
         for i, n in enumerate(nodes):
@@ -60,7 +60,9 @@ async def test_full_flow(env_factory: Any) -> None:
             )
             for d in range(3, 9):
                 await s.execute(
-                    text("INSERT INTO batches VALUES (CAST(:i AS uuid), :d, :b)"),
+                    text(
+                        "INSERT INTO batches (node_id, day, batch_id, items) VALUES (CAST(:i AS uuid), :d, :b, 1)"
+                    ),
                     {
                         "i": n.node_id,
                         "d": env.clock().date() - timedelta(days=d),
@@ -80,15 +82,15 @@ async def test_full_flow(env_factory: Any) -> None:
                         source(
                             IP,
                             services=["ssh", "telnet"],
-                            activity=["login", "command", "download"],
-                            tags=["mirai"],
-                            attempts=3,
+                            activity=["scan"],
+                            tags=[],
+                            attempts=0,
                         )
                     ],
                     payloads=[
                         {
                             "url_b": URL_B,
-                            "host_ip": "198.51.100.9",
+                            "host_b": blind.blind_domain("dl.example.org"),
                             "sha256": SHA,
                             "family": "mirai",
                             "fetched": True,
@@ -121,13 +123,13 @@ async def test_full_flow(env_factory: Any) -> None:
         first = await run_cycle(ctx)
         assert first.failed == [], first.steps
 
-        # consensus: 7 nodes on 2 days confirm the sha256 and the URL; the IP needs 10 nodes
+        # consensus: 10 nodes on 2 days confirm the sha256, the URL and the quiet address
         probe = nodes[0]
         pull = (await probe.call("GET", "/v1/targets")).json
         kinds = {(t["kind"], t["state"]) for t in pull["targets"]}
         assert ("sha256", "confirmed") in kinds and ("url", "confirmed") in kinds
-        assert not any(t["value"] == IP for t in pull["targets"])
-        assert pull["reveal"] == [{"kind": "url", "value_b": URL_B}]
+        assert any(t["value"] == IP for t in pull["targets"])  # confirmed, but only a scan
+        assert {"kind": "url", "value_b": URL_B} in pull["reveal"]
 
         # reveal flow
         r = await probe.call(
@@ -136,7 +138,9 @@ async def test_full_flow(env_factory: Any) -> None:
             {"protocol": "spn/1", "items": [{"kind": "url", "value_b": URL_B, "value": URL}]},
         )
         assert r.json == {"accepted": 1, "rejected": 0}
-        assert (await probe.call("GET", "/v1/targets")).json["reveal"] == []
+        assert {"kind": "url", "value_b": URL_B} not in (
+            await probe.call("GET", "/v1/targets")
+        ).json["reveal"]
 
         # review mode: the report is queued and nothing is mailed
         await run_cycle(ctx)
@@ -157,8 +161,8 @@ async def test_full_flow(env_factory: Any) -> None:
         mail = sink.messages[0]
         part = mail.get_payload(0) if mail.is_multipart() else mail
         text_body = part.get_payload(decode=True).decode()  # type: ignore[union-attr]
-        assert "hxxp://198[.]51[.]100[.]9/bins/x[.]sh" in text_body
-        assert "5 to 9 independent sensors" in text_body
+        assert "hxxp://dl[.]example[.]org/bins/x[.]sh" in text_body
+        assert "10 to 24 independent sensors" in text_body
         everything = mail.as_string()
         for n in nodes:
             assert str(n.node_id) not in everything and n.fingerprint not in everything
