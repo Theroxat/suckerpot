@@ -15,7 +15,6 @@ import { CopyField } from "@/components/abuse/copy-field"
 import { ExportMenu } from "@/components/abuse/export-menu"
 import { StatusStepper } from "@/components/abuse/status-stepper"
 import { SendControl } from "@/components/abuse/send-control"
-import { useSendQueue } from "@/components/abuse/send-hooks"
 import { ConfirmDialog, MarkSentDialog } from "@/components/abuse/status-dialogs"
 import { EmptyState } from "@/components/empty-state"
 import { FindingCard } from "@/components/finding-card"
@@ -455,7 +454,6 @@ function Actions({
   const [sentOpen, setSentOpen] = useState(false)
   const [confirm, setConfirm] = useState<"discarded" | "draft" | "regenerate" | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const queue = useSendQueue()
   if (!canWrite) return null
   const next = nextActions(r.status)
   const blocker = reviewBlocker(r)
@@ -515,9 +513,12 @@ function Actions({
       </div>
       {r.status === "draft" || r.status === "reviewed" ? (
         <SendControl
-          item={queue.data?.items.find((i) => i.id === r.public_id)}
           reportId={r.public_id}
           recipient={r.recipient.mailbox ?? r.recipient.name}
+          ready={!r.demo && r.guard.ok && Boolean(r.recipient.mailbox) && r.custom_intro}
+          scheduledAt={r.send_state?.scheduled_at ?? null}
+          lastRequest={r.send_state?.last_request ?? null}
+          revision={r.revision}
         />
       ) : null}
       {r.status === "draft" && blocker ? (
@@ -590,6 +591,11 @@ export function AbuseDetailPage() {
     queryKey: abuseKeys.report(publicId),
     queryFn: () => abuseApi.report(publicId),
     retry: false,
+    // While a send is waiting or on its way the report changes by itself.
+    refetchInterval: (query) => {
+      const s = query.state.data?.send_state
+      return s?.scheduled_at || s?.last_request?.status === "pending" ? 4000 : false
+    },
   })
   const [notice, setNotice] = useState<string | null>(null)
   const refresh = (d: ReportDetail | null, message?: string) => {

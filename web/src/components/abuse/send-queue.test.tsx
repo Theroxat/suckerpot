@@ -59,7 +59,10 @@ function stub(items: QueueItem[], config: SmtpConfig = smtp()) {
       if (url.endsWith("/auth/me")) return Promise.resolve(json(200, ADMIN))
       if (url.endsWith("/auth/csrf")) return Promise.resolve(json(200, { token: "t" }))
       if (method !== "GET") calls.push({ method, url, body })
-      if (url.endsWith("/abuse/send-queue")) return Promise.resolve(json(200, { items }))
+      if (url.includes("/abuse/send-queue"))
+        return Promise.resolve(
+          json(200, { items, next_cursor: null, mode: config.mode, missing: [] }),
+        )
       if (url.endsWith("/abuse/smtp")) return Promise.resolve(json(200, config))
       if (url.endsWith("/status") && method === "POST")
         return Promise.resolve(json(200, { status: "sent", revision: 8 }))

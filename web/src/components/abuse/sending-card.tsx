@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { abuseKeys } from "@/lib/abuse"
 import {
   AUTO_WARNING,
+  CAP_HINT,
   CAP_RANGE,
   describeRequest,
   describeSendError,
@@ -37,6 +38,8 @@ function finding(c: SmtpConfig): string {
   if (c.mode === "click") return "Reports are sent only when you click Send now."
   return `Ready reports are sent automatically after ${c.auto_hold_minutes} minutes.`
 }
+
+const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
 
 function toForm(c: SmtpConfig): SmtpForm {
   return {
@@ -277,7 +280,7 @@ function SendingForm({
               <Field
                 id={ids.hold}
                 label="Waiting time (minutes)"
-                hint={`${HOLD_RANGE.min} to ${HOLD_RANGE.max}. Time to cancel before a report leaves.`}
+                hint={`${HOLD_RANGE.min} to ${HOLD_RANGE.max}. Time to cancel before a report leaves. ${CAP_HINT}`}
               >
                 <Input
                   id={ids.hold}
@@ -291,7 +294,7 @@ function SendingForm({
               <Field
                 id={ids.cap}
                 label="Daily limit"
-                hint={`${CAP_RANGE.min} to ${CAP_RANGE.max} reports per UTC day.`}
+                hint={`${CAP_RANGE.min} to ${CAP_RANGE.max} automatic sends per UTC day. ${CAP_HINT}`}
               >
                 <Input
                   id={ids.cap}
@@ -328,7 +331,7 @@ function SendingForm({
         {initial.configured ? (
           <p className="text-sm text-fg-muted">
             {initial.last_test
-              ? `Last test, sent to the from address: ${describeRequest(initial.last_test) ?? ""}`
+              ? `Last test to the from address: ${lowerFirst(describeRequest(initial.last_test) ?? "")}`
               : "No test sent yet. A test is a short neutral message to the from address."}
           </p>
         ) : null}

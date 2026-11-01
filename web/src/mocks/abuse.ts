@@ -326,7 +326,7 @@ export function missingWording(): string[] {
     .map(([k]) => k)
 }
 
-function pub(r: Row): ReportDetail {
+export function pub(r: Row): ReportDetail {
   return { ...r, custom_intro: Boolean(settings.intro) }
 }
 
