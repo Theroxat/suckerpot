@@ -42,7 +42,7 @@ WORKER_PASSWORD = "hubtest-worker-password-0003"
 TABLES = (
     "hub_audit, never_list, network_summary, network_daily, node_stats_weekly, recipient_log, "
     "reports, takedown_votes, target_contributors, targets, observations, batches, nonces, "
-    "enrol_challenges, nodes"
+    "enrol_challenges, nodes, worker_state"
 )
 
 

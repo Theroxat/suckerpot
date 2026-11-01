@@ -87,9 +87,16 @@ def build_rows(
         )
         if p.host_ip is not None:
             if not never.has_ip(p.host_ip):
-                put("ip", p.host_ip, activity=["download"], tags=["malware-drop"], families=fam)
+                put(
+                    "ip",
+                    p.host_ip,
+                    activity=["download"],
+                    tags=["malware-drop"],
+                    families=fam,
+                    fetched=p.fetched,
+                )
         elif p.host_b is not None:
-            put("domain", p.host_b, activity=["download"], families=fam)
+            put("domain", p.host_b, activity=["download"], families=fam, fetched=p.fetched)
         if p.sha256 is not None:
             if never.has_hash(p.sha256):
                 reject("never_listed")
