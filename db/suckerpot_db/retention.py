@@ -37,6 +37,10 @@ CAMPAIGN_PRUNE_PROC = "suckerpot_campaign_prune"  # created by migration 0011
 SCRIPT_PRUNE_PROC = "suckerpot_script_prune"  # created by migration 0013
 ALERT_PRUNE_PROC = "suckerpot_alert_prune"  # created by migration 0014
 ABUSE_PRUNE_PROC = "suckerpot_abuse_prune"  # created by migration 0019
+NETWORK_PRUNE_PROC = "suckerpot_network_prune"  # created by migration 0026
+NETWORK_PAYLOAD_DAYS = 7
+NETWORK_SUBMISSION_DAYS = 90
+NETWORK_TARGET_DAYS = 180
 DEFAULT_CAMPAIGNS_MAX_ROWS = 50_000
 DEFAULT_SCRIPTS_MAX_ROWS = 100_000
 ALERT_OUTBOX_DAYS = 30
@@ -257,6 +261,16 @@ def apply_policies(
         {
             "unsent_days": ABUSE_UNSENT_DAYS,
             "sent_days": abuse_days or DEFAULT_ABUSE_REPORT_DAYS,
+        },
+    )
+    _schedule_prune(
+        conn,
+        NETWORK_PRUNE_PROC,
+        "1 day",
+        {
+            "payload_days": NETWORK_PAYLOAD_DAYS,
+            "submission_days": NETWORK_SUBMISSION_DAYS,
+            "target_days": NETWORK_TARGET_DAYS,
         },
     )
 
