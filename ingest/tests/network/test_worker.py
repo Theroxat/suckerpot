@@ -368,3 +368,15 @@ async def test_a_private_target_value_is_not_stored_as_a_list_entry(ip: str) -> 
     from suckerpot_db.blocklist_values import normalize_value
 
     assert normalize_value("ip", ip) is None
+
+
+async def test_an_unverified_deleted_answer_is_not_a_confirmed_leave() -> None:
+    store = member_store(desired="leave")
+    rig = Rig(store)
+    rig.hub.bad_signature = True
+    await rig.cycle()
+    assert store.wiped == 0 and store.m.state == "leaving"
+    assert store.m.last_error_code == "hub_signature"
+    rig.hub.bad_signature = False
+    await rig.cycle()
+    assert store.wiped == 1 and rig.hub.deleted
