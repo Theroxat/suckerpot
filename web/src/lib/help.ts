@@ -143,6 +143,18 @@ export const HELP = {
     title: "VPN",
     body: "Where outbound traffic leaves. Only the vpn service has a route to the internet, and the gate pauses every lookup when the tunnel or its exit looks wrong. You can check now, reconnect, upload a new WireGuard file and trust a new exit.",
   },
+  network: {
+    title: "Network",
+    body: "The Selfhostr network pools what many installations see, so an attacker seen by five or more sensors gets one strong report instead of many weak ones. It is off until an administrator joins, and members share only the items listed on this page. Open a target to see how it ended, or leave from Your node.",
+  },
+  "network-members": {
+    title: "Members",
+    body: "Who takes part in the network, by pseudonym only. A country shows when the member chose to show it and at least three members share it, and activity is the number of days last week. There is no ranking and never an address.",
+  },
+  "settings-network": {
+    title: "Network",
+    body: "Join or leave the Selfhostr network, and change your pseudonym and country. Joining is optional, asks for your password and starts with nothing ticked. You can read every batch that was sent, and leaving deletes your data here and at the hub.",
+  },
   styleguide: {
     title: "Styleguide",
     body: "Every colour token and base component in every state. It is the page the visual review screenshots. Switch the theme to check both.",

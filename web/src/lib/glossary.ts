@@ -135,6 +135,21 @@ export const GLOSSARY = {
     short:
       "Remote Desktop Protocol: the way to control a Windows computer's screen from far away. A common way in for ransomware gangs.",
   },
+  consensus: {
+    term: "Consensus",
+    short:
+      "Agreement between independent sensors. The network treats an address or file as a real threat only when at least five separate sensors saw it.",
+  },
+  "blinded-indicator": {
+    term: "Blinded indicator",
+    short:
+      "A link or domain turned into a scrambled fingerprint before it leaves your system. Nobody can read it back unless several sensors already saw the same one.",
+  },
+  "eligible-node": {
+    term: "Eligible node",
+    short:
+      "A sensor the network trusts enough to count: at least two weeks old, sending a batch most days, and not often wrong. New sensors become eligible by waiting.",
+  },
   "ip-address": {
     term: "IP address",
     short:
@@ -170,6 +185,9 @@ const SURFACE: [RegExp, TermId][] = [
   [/\bindicators?\b/i, "indicator"],
   [/\bhoneypot\b/i, "honeypot"],
   [/\bblocklists?\b/i, "blocklist"],
+  [/\bconsensus\b/i, "consensus"],
+  [/\bblinded (?:indicator|link|domain)s?\b/i, "blinded-indicator"],
+  [/\beligible nodes?\b/i, "eligible-node"],
 ]
 
 export type TextPart = string | { id: TermId; text: string }
