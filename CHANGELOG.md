@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-01
+
 ### Changed
 
 - `just test-integration` uses `docker-compose.it.yml`, an overlay that keeps `redis` on the backend network only, so the throwaway project fits in Docker's default address pools next to the live stack.
@@ -15,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- VPN configuration upload (M23): Settings > VPN takes the WireGuard `.conf` from your VPN provider, parses it strictly (no `PostUp` and the like, IP endpoint only, full tunnel) after asking for the password again, and writes it to the new `vpn-config` volume. The `vpn` service notices the new file and restarts on it; nothing leaves outside the tunnel during the switch, and the API gets no Docker socket. A new exit address stays blocked until the owner trusts the /24 the gate observed (table `egress_trusted_exits`, migration `0020`); an exit inside the honeypot's own addresses or in an AS listed in the new `EGRESS_DENY_ASNS` can never be trusted, and the exit's AS is shown next to it. `/api/v1/settings/vpn` endpoints, new guardrails.
 - Anonymous reporting (M22): an ingest worker (`ABUSE_REPORTS_ENABLED`, off by default) finds abuse contacts over RDAP through the egress gate and prepares draft reports per recipient. The new `reporting/` package renders plain text, X-ARF v0.2, `.eml`, STIX 2.1 and MISP JSON and builds password-protected sample bundles. An identity guard checks every artefact before it is returned and fails closed. Learned self terms need the owner's confirmation. The package ships no wording: the owner writes it in Settings > Reporting. Nothing is ever sent by the stack. Migration `0019`, `/api/v1/abuse` endpoints, the Abuse reports page, Export for CERT, the sample bundle and the Reporting tab in Settings, `just abuse-guard-check` and the `ABUSE_*` settings.
 - Anonymous egress (M21): a `vpn` service (WireGuard through gluetun, profile `egress`) with a kill switch and an HTTP proxy is the only container with a route to the internet. `ingest` and the new `collector` go through the proxy, an egress gate pauses outbound work when the tunnel or its exit address looks wrong, and the old `egress` network is removed. New `just guardrails` and `just egress-check`, new host firewall rules for `sp-vpn`, `sp-egress` and `sp-samples`.
 - Payload collection and static analysis (M21): the `collector` service fetches captured download URLs through the VPN into a quarantine volume (SSRF validator, size, time and rate caps, never executed), and the network-less `analyzer` service identifies, hashes, scans with YARA, deobfuscates shell scripts and extracts C2 addresses in a limited child process. Migration `0018`, roles `suckerpot_collector` and `suckerpot_analyzer`, the `/api/v1/samples` and `/api/v1/egress` endpoints, a Samples tab, a sample page and an Egress card in Settings. `FETCH_PAYLOADS`, `PAYLOAD_MAX_BYTES` and `PAYLOAD_TIMEOUT_SECONDS` are replaced by `COLLECTOR_ENABLED` and the `COLLECTOR_*` and `QUARANTINE_*` settings.
@@ -26,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The abuse, alerts and intel workers no longer wait up to an hour for their first run on a host that booted recently.
 - CVE watch: the NVD window is 60 days (was 30) and is read in one-day chunks, oldest first, with a page budget, so a busy day no longer loses CVEs silently at the 10,000-result limit. A run that stops early resumes from its last complete chunk.
 - CVE watch: GitHub advisories are read in seven-day chunks, oldest first. A one-time start-up rewind refills a shallow history, and watched CVEs that are missing from the table are fetched by id (at most 10 per run, once per id per 24 hours).
 
@@ -88,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Isolation: four networks with an internal backend, one Redis ACL user per sensor limited to `XADD` on its own stream, least-privilege database roles, no outbound route for the API, non-root read-only containers with all capabilities dropped.
 - The first review of the M1 stack found unbounded stream growth, egress, poison-message and default-credential issues; all were fixed and the second pass passed.
 
-[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Theroxat/suckerpot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Theroxat/suckerpot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Theroxat/suckerpot/releases/tag/v0.1.0

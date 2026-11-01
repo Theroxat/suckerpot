@@ -276,6 +276,7 @@ services:
       EGRESS_CONTROL_URL: ${EGRESS_CONTROL_URL:-http://vpn:8000}
       EGRESS_ECHO_URLS: ${EGRESS_ECHO_URLS:-https://api.ipify.org,https://icanhazip.com}
       EGRESS_ALLOWED_CIDRS: ${EGRESS_ALLOWED_CIDRS:-}
+      EGRESS_DENY_ASNS: ${EGRESS_DENY_ASNS:-}
       EGRESS_CHECK_INTERVAL_S: ${EGRESS_CHECK_INTERVAL_S:-300}
       VPN_WG_ENDPOINT_IP: ${VPN_WG_ENDPOINT_IP:-}
       VPN_WG_DNS: ${VPN_WG_DNS:-}
@@ -356,6 +357,7 @@ services:
       WEB_HOSTNAME: ${WEB_HOSTNAME:-srv-web01}
       SUCKERPOT_ALLOW_DEFAULT_SECRETS: ${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}
       VPN_CONFIG_DIR: /vpn-config
+      EGRESS_DENY_ASNS: ${EGRESS_DENY_ASNS:-}
     # Docker's embedded DNS still answers for service names (it listens on
     # 127.0.0.11); external names fail, so the API cannot resolve the internet.
     dns: ["127.0.0.1"]

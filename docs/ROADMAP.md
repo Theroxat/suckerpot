@@ -272,10 +272,10 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M23 — Upload the VPN configuration from the dashboard
 
-- [ ] Settings → VPN: upload a WireGuard `.conf` (strict parsing, re-authentication, the private key never shown again), and go back to the `.env` settings.
-- [ ] The `vpn` service picks up an uploaded file by itself and restarts on it; nothing leaves outside the tunnel during the switch, and the API gets no Docker socket.
-- [ ] A new exit address stays blocked until the owner trusts the range the gate observed.
-- [ ] Guardrail tests for the new volume, security review and UI review.
+- [x] Settings → VPN: upload a WireGuard `.conf` (strict parsing, re-authentication, the private key never shown again), and go back to the `.env` settings.
+- [x] The `vpn` service picks up an uploaded file by itself and restarts on it; nothing leaves outside the tunnel during the switch, and the API gets no Docker socket.
+- [x] A new exit address stays blocked until the owner trusts the range the gate observed.
+- [x] Guardrail tests for the new volume, security review and UI review.
 
 **Acceptance:** uploading a valid file switches the tunnel with no shell on the VM; an invalid or hostile file is refused; a new exit is unused until trusted; security review PASS.
 
