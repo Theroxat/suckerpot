@@ -56,7 +56,7 @@ export function SetupItems({
             <div className="min-w-0">
               <p className="text-sm font-medium text-fg">
                 {title}
-                <span className={cn("ml-2 text-xs font-medium", tone)}>
+                <span className={cn("ml-2 text-xs font-medium whitespace-nowrap", tone)}>
                   {SETUP_STATE_LABEL[item.state]}
                 </span>
               </p>

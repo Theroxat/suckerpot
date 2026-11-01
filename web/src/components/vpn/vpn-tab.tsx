@@ -154,7 +154,7 @@ export function VpnTab() {
               </p>
             ) : null}
             <StatusDetails v={v} />
-            {v.gate.state === "closed" ? controls : null}
+            {controls}
           </div>
         )}
       </FindingCard>
@@ -186,20 +186,12 @@ export function VpnTab() {
         />
       ) : null}
 
-      <FindingCard
-        eyebrow="Tunnel controls"
-        finding="Look at the exit again right now, or restart the tunnel."
-        detail="Check now asks ingest to test the gate without waiting. Reconnect restarts the tunnel on the same settings."
-      >
-        {controls ?? <SkeletonText lines={2} className="py-1" />}
-      </FindingCard>
-
       <AdminActionDialog
         open={reconnecting}
         onOpenChange={setReconnecting}
         title="Reconnect the tunnel?"
-        description="The tunnel restarts; outbound lookups pause for a few seconds."
-        hint="Changing the VPN asks for your own dashboard password again."
+        description="The tunnel restarts. Lookups and downloads pause until it is back and checked, usually within a minute. Events are still recorded."
+        hint="Reconnecting asks for your own dashboard password again."
         confirmLabel="Reconnect"
         pendingLabel="Reconnecting…"
         run={async (password) => {
@@ -261,6 +253,10 @@ function TunnelButtons({
           {notice}
         </p>
       ) : null}
+      <p className="text-xs text-fg-muted">
+        Check now asks ingest to test the gate without waiting. Reconnect restarts the tunnel on the
+        same settings.
+      </p>
     </div>
   )
 }

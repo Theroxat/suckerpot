@@ -24,7 +24,7 @@ describe("setup checklist helpers", () => {
     expect(describeSetup([item("a", "ok"), item("b", "ok")])).toBe("Everything is set up.")
     expect(
       describeSetup([item("a", "ok"), item("b", "warning"), item("c", "todo"), item("d", "todo")]),
-    ).toBe("1 of 4 steps are done, 1 needs attention, 2 are still to do.")
+    ).toBe("1 of 4 steps is done, 1 needs attention, 2 are still to do.")
   })
 
   it("only follows in-app links", () => {
@@ -35,7 +35,7 @@ describe("setup checklist helpers", () => {
   })
 
   it("titles unknown ids from the id", () => {
-    expect(setupTitle("vpn")).toBe("Outbound gate is open")
+    expect(setupTitle("vpn")).toBe("Outbound gate")
     expect(setupTitle("some_new_item")).toBe("some new item")
   })
 })

@@ -105,11 +105,11 @@ export const HELP = {
   },
   abuse: {
     title: "Abuse reports",
-    body: "Drafts of reports for the networks that host attackers, with the abuse contact looked up over RDAP through the VPN. SuckerPot never sends mail: you review a draft, copy it and send it from your own mailbox. Open a draft to read the identity check first.",
+    body: "Drafts of reports for the networks that host attackers, with the abuse contact looked up over RDAP through the VPN. SuckerPot never sends a report: you review a draft, copy it and send it from your own mailbox. Open a draft to read the identity check first.",
   },
   "abuse-report": {
     title: "Abuse report",
-    body: "One draft report for one abuse desk. The identity check says what was masked, or why the report is blocked, so nothing that points to you leaves. Review it, copy the message, send it yourself, then mark it as sent.",
+    body: "One draft report for one abuse desk. The identity check says what was masked, or why the report is blocked, against your own addresses and the terms you listed in Settings → Reporting. Review it, copy the message, send it yourself, then mark it as sent.",
   },
   "settings-general": {
     title: "General",

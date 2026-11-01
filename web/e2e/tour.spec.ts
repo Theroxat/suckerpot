@@ -78,20 +78,20 @@ test("setup checklist in Settings", async ({ page }, info) => {
 test("vpn closed gate: check now and reconnect in the status card", async ({ page }, info) => {
   await page.goto("/settings?tab=vpn&vpn=upload")
   await expect(page.getByText(/The gate is closed/).first()).toBeVisible()
-  await expect(page.getByRole("button", { name: "Check now" })).toHaveCount(2)
-  await expect(page.getByRole("button", { name: "Reconnect" })).toHaveCount(2)
+  await expect(page.getByRole("button", { name: "Check now" })).toHaveCount(1)
+  await expect(page.getByRole("button", { name: "Reconnect" })).toHaveCount(1)
   await settle(page)
   await shoot(page, "vpn-closed", info.project.name, true)
 
-  await page.getByRole("button", { name: "Check now" }).first().click()
-  await expect(page.getByRole("button", { name: "Checking…" }).first()).toBeVisible()
+  await page.getByRole("button", { name: "Check now" }).click()
+  await expect(page.getByRole("button", { name: "Checking…" })).toBeVisible()
   await shoot(page, "vpn-checking", info.project.name)
   // The mock answers after about four seconds; the tab looks every three.
   await expect(page.getByRole("button", { name: "Checking…" })).toHaveCount(0, { timeout: 15_000 })
 
-  await page.getByRole("button", { name: "Reconnect" }).first().click()
+  await page.getByRole("button", { name: "Reconnect" }).click()
   const dialog = page.getByRole("dialog")
-  await expect(dialog.getByText(/The tunnel restarts; outbound lookups pause/)).toBeVisible()
+  await expect(dialog.getByText(/Events are still recorded/)).toBeVisible()
   await settle(page)
   await shoot(page, "vpn-reconnect-dialog", info.project.name)
 })

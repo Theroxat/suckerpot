@@ -133,7 +133,7 @@ describe("guided tour", () => {
       within(d).getByText(/The host firewall can't be seen from inside the stack/),
     ).toBeInTheDocument()
     expect(calls.filter((u) => u.startsWith("/api/v1/setup/status"))).toHaveLength(1)
-    await user.click(within(list).getByRole("link", { name: "Open Outbound gate is open" }))
+    await user.click(within(list).getByRole("link", { name: "Open Outbound gate" }))
     expect(screen.queryByRole("dialog")).toBeNull()
   })
 

@@ -46,7 +46,7 @@ describe("SetupChecklistCard", () => {
     stub(() => new Response(JSON.stringify({ items: ITEMS }), { status: 200 }))
     mount()
     expect(
-      await screen.findByText("1 of 4 steps are done, 1 needs attention, 1 is still to do."),
+      await screen.findByText("1 of 4 steps is done, 1 needs attention, 1 is still to do."),
     ).toBeInTheDocument()
     const rows = within(screen.getByRole("list", { name: "Setup checklist" })).getAllByRole(
       "listitem",
@@ -63,9 +63,10 @@ describe("SetupChecklistCard", () => {
     expect(within(row(2)).getByText("To do")).toBeInTheDocument()
     expect(within(row(3)).getByText("Off")).toBeInTheDocument()
     expect(within(row(0)).getByText("2 sensors are silent: SIP, RDP.")).toBeInTheDocument()
-    expect(
-      within(row(1)).getByRole("link", { name: "Open Outbound gate is open" }),
-    ).toHaveAttribute("href", "/settings?tab=vpn")
+    expect(within(row(1)).getByRole("link", { name: "Open Outbound gate" })).toHaveAttribute(
+      "href",
+      "/settings?tab=vpn",
+    )
     // An absolute link from the server is not followed.
     expect(within(row(3)).queryByRole("link")).toBeNull()
     expect(
@@ -77,7 +78,7 @@ describe("SetupChecklistCard", () => {
   it("accepts a bare list", async () => {
     stub(() => new Response(JSON.stringify(ITEMS.slice(0, 2)), { status: 200 }))
     mount()
-    expect(await screen.findByText("1 of 2 steps are done, 1 needs attention.")).toBeInTheDocument()
+    expect(await screen.findByText("1 of 2 steps is done, 1 needs attention.")).toBeInTheDocument()
   })
 
   it("says so when the status cannot be read", async () => {
