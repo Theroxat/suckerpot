@@ -69,6 +69,10 @@ const AbusePage = lazy(() => import("@/pages/abuse").then((m) => ({ default: m.A
 const AbuseDetailPage = lazy(() =>
   import("@/pages/abuse-detail").then((m) => ({ default: m.AbuseDetailPage })),
 )
+const NetworkPage = lazy(() => import("@/pages/network").then((m) => ({ default: m.NetworkPage })))
+const NetworkMembersPage = lazy(() =>
+  import("@/pages/network-members").then((m) => ({ default: m.NetworkMembersPage })),
+)
 const AlertsPage = lazy(() => import("@/pages/alerts").then((m) => ({ default: m.AlertsPage })))
 const ReportPage = lazy(() => import("@/pages/report").then((m) => ({ default: m.ReportPage })))
 
@@ -294,6 +298,22 @@ function appRoutes(): RouteObject {
         element: (
           <Lazy>
             <AbuseDetailPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "network",
+        element: (
+          <Lazy>
+            <NetworkPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "network/members",
+        element: (
+          <Lazy>
+            <NetworkMembersPage />
           </Lazy>
         ),
       },
