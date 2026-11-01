@@ -147,7 +147,8 @@ def test_repo_and_enable_switches() -> None:
     assert uc.repo_from_env({"UPDATE_CHECK_REPO": "a/b"}) == "a/b"
     assert uc.repo_from_env({"UPDATE_CHECK_REPO": "a/b/../c"}) == uc.DEFAULT_REPO
     assert uc.repo_from_env({"UPDATE_CHECK_REPO": "x@evil.example.org/y"}) == uc.DEFAULT_REPO
-    assert uc.enabled_from_env({})
+    assert not uc.enabled_from_env({})  # off unless the owner opts in
+    assert not uc.enabled_from_env({"UPDATE_CHECK_ENABLED": ""})
     assert uc.enabled_from_env({"UPDATE_CHECK_ENABLED": "true"})
     for off in ("false", "0", "no", "OFF"):
         assert not uc.enabled_from_env({"UPDATE_CHECK_ENABLED": off})

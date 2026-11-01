@@ -51,11 +51,11 @@ RETRY_CLOSED_S = 30 * 60.0  # the gate was closed: look again soon, without send
 
 def enabled_from_env(env: dict[str, str] | None = None) -> bool:
     source = os.environ if env is None else env
-    return source.get("UPDATE_CHECK_ENABLED", "true").strip().lower() not in (
-        "0",
-        "false",
-        "no",
-        "off",
+    return source.get("UPDATE_CHECK_ENABLED", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
     )
 
 
