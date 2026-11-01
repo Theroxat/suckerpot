@@ -47,9 +47,11 @@ TARGET_STATES = ("confirmed", "reported", "taken_down", "disputed", "expired")
 TARGET_KINDS = ("ip", "url", "domain", "sha256", "c2_ip", "c2_domain")
 WAITING = {
     "waiting_self_address": "self_address",
+    "waiting_enrolment": "enrolment",
     "egress_closed": "egress",
     "no_settings_key": "settings_key",
 }
+HIDDEN_CODES = frozenset({"waiting_self_address", "waiting_enrolment"})
 TRUE_VALUES = {"1", "true", "yes", "on"}
 RECENT_SUBMISSION = timedelta(days=2)
 MAX_SUBMISSIONS = 90
@@ -144,7 +146,7 @@ def status_body(row: Any) -> dict[str, Any]:
         "standing": row.standing if row else None,
         "last_submit_day": _day(row.last_submit_day) if row else None,
         "next_submit_at": _stamp(row.next_submit_at) if row else None,
-        "last_error_code": None if code == "waiting_self_address" else code,
+        "last_error_code": None if code in HIDDEN_CODES else code,
         "waiting": waiting,
     }
 

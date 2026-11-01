@@ -19,8 +19,8 @@ from typing import Any, Final
 from urllib.parse import quote, urlsplit
 
 import httpx
+from suckerpot_netproto import ERROR_STATUS, parse_response, sign
 from suckerpot_netproto import models as wire
-from suckerpot_netproto import parse_response, sign
 from suckerpot_netproto.enums import API_PREFIX, PROTOCOL, USER_AGENT
 
 from ingest.egress import EgressClosed, EgressGate, gate_open, make_client
@@ -268,11 +268,13 @@ class HubClient:
 
 
 def _hub_error(status: int, raw: bytes, headers: Mapping[str, str]) -> HubError:
-    code = "server_error"
+    code = "hub_error"
     try:
         data = json.loads(raw)
         value = data.get("error") if isinstance(data, dict) else None
-        if isinstance(value, str) and len(value) <= 64 and value.replace("_", "").isalnum():
+        # Only a code of the protocol's list is kept; anything else the hub sends (a long or
+        # odd string) is reduced to ``hub_error`` so it never reaches the status or a log.
+        if isinstance(value, str) and value in ERROR_STATUS:
             code = value
     except ValueError:
         pass

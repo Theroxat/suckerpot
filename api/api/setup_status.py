@@ -240,6 +240,7 @@ async def _network(db: AsyncSession, now: datetime) -> SetupItem:
         return _item("network", "ok", "Part of the Selfhostr network; batches are going out.", href)
     waiting = {
         "waiting_self_address": "Waiting for the honeypot's own address before sending.",
+        "waiting_enrolment": "The hub is not taking new members right now; trying again later.",
         "egress_closed": "The outbound gate is closed, so nothing is sent.",
         "no_settings_key": "The settings encryption key is missing.",
     }

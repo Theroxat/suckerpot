@@ -14,6 +14,7 @@ import {
   targetsFinding,
   toNetworkError,
   validatePseudonym,
+  waitingText,
   weeklyFinding,
   type NetworkImpact,
   type NetworkStatus,
@@ -159,5 +160,12 @@ describe("errors", () => {
     expect(toNetworkError(new ApiError(422, "x", "consent_required")).detail).toMatch(/five boxes/)
     expect(toNetworkError(new ApiError(429, "x")).reason).toBe("rate-limited")
     expect(toNetworkError(new Error("offline")).reason).toBe("network")
+  })
+})
+
+describe("waiting", () => {
+  it("says the enrolment wait is temporary and handled by the sensor", () => {
+    expect(waitingText("enrolment")).toMatch(/tries again later by itself/)
+    expect(waitingText(null)).toBeNull()
   })
 })

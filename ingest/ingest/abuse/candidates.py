@@ -76,8 +76,9 @@ async def network_covered(session: AsyncSession) -> set[str]:
 
     Empty unless this node is a member: the network sends one strong report per target, so the
     local workflow must not send a second, weaker one to the same desk. A merely ``confirmed``
-    target is not covered: the hub may never report it, so the local candidate stays. Network kinds ``ip``,
-    ``domain``, ``c2_ip`` and ``c2_domain`` name hosts; a ``c2`` value may carry ``:port``.
+    target is not covered: the hub may never report it, so the local candidate stays. Network
+    kinds ``ip``, ``domain``, ``c2_ip`` and ``c2_domain`` name hosts; a ``c2``
+    value may carry ``:port``.
     """
     rows = await session.execute(
         text(
