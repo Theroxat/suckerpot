@@ -340,6 +340,9 @@ services:
       # Machine-readable blocklist feeds (M16), outside /api/v1 and off by default.
       FEEDS_ENABLED: ${FEEDS_ENABLED:-false}
       # Egress card in Settings (quota meter and quarantine cap).
+      # Reported in the setup checklist only.
+      COLLECTOR_ENABLED: ${COLLECTOR_ENABLED:-false}
+      ABUSE_REPORTS_ENABLED: ${ABUSE_REPORTS_ENABLED:-false}
       COLLECTOR_DAILY_QUOTA: ${COLLECTOR_DAILY_QUOTA:-500}
       QUARANTINE_MAX_MB: ${QUARANTINE_MAX_MB:-2048}
       BLOCKLIST_NEVER: ${BLOCKLIST_NEVER:-}
