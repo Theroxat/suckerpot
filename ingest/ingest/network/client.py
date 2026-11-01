@@ -133,12 +133,17 @@ class HubClient:
             nonce = sign.new_nonce()
             headers[sign.H_NONCE] = nonce
         status, raw, resp_headers = await self._send(method, target, body, headers)
+        if status >= 400 and not resp_headers.get(sign.H_HUB_SIGNATURE):
+            # The hub does not sign an answer to a request it could not authenticate: that is
+            # "not authenticated", never a statement by the hub. Try again later.
+            raise HubUnavailable("unsigned error")
         self._verify(
             method=method,
             target=target,
             node_key=who.node_key if signed and who is not None else None,
             nonce=nonce,
             request_signature=headers.get(sign.H_SIGNATURE),
+            request_body=body,
             status=status,
             body=raw,
             hub_signature=resp_headers.get(sign.H_HUB_SIGNATURE),
@@ -157,17 +162,21 @@ class HubClient:
         node_key: str | None,
         nonce: str,
         request_signature: str | None,
+        request_body: bytes,
         status: int,
         body: bytes,
         hub_signature: str | None,
     ) -> None:
         """The ONE place that checks the hub's answer signature (raises ``hub_signature``).
 
-        The protocol library may bind the signature to more of the request (method, target, node
-        key, request signature); every such fact is passed in, so adapting to a newer netproto
-        is a change of the call below only.
+        The answer is bound to the whole request (method, target, node key, nonce, request
+        signature or body hash). A newer netproto that binds more changes this method only.
         """
-        sign.require_response(self.settings.hub_key, hub_signature, nonce, status, body)
+        if node_key is not None and request_signature is not None:
+            binding = sign.RequestBinding.signed(method, target, node_key, nonce, request_signature)
+        else:
+            binding = sign.RequestBinding.unsigned(method, target, nonce, request_body)
+        sign.require_response(self.settings.hub_key, hub_signature, binding, status, body)
 
     # -- unsigned ---------------------------------------------------------------------------
 

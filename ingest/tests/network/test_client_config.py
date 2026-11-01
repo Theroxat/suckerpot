@@ -5,13 +5,14 @@ from __future__ import annotations
 import random
 from datetime import UTC, date, datetime, timedelta
 
+import httpx
 import pytest
 from suckerpot_egress import EgressClosed
 from suckerpot_netproto import ProtoError, sign
 
 from ingest.network import identity as ident
 from ingest.network import scheduler
-from ingest.network.client import HubClient, HubError
+from ingest.network.client import HubClient, HubError, HubUnavailable
 from ingest.network.config import NetworkSettings
 
 from .helpers import HUB_KEY, HUB_URL, NOW, FakeGate, FakeHub, hub_client, settings
@@ -119,3 +120,38 @@ async def test_only_the_configured_host_and_protocol_paths_are_reachable() -> No
     with pytest.raises(ValueError):
         HubClient(NetworkSettings())
     assert sign.node_key(ident.generate().public)
+
+
+async def test_an_answer_bound_to_another_request_is_refused() -> None:
+    """The answer to GET /v1/node must not pass as the answer to GET /v1/targets."""
+    hub = FakeHub()
+    me = ident.generate()
+    seen: list[httpx.Response] = []
+
+    def replay(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/node":
+            resp = hub.handle(request)
+            seen.append(resp)
+            return resp
+        return seen[0]  # the hub's signed answer to a different request
+
+    transport = httpx.MockTransport(replay)
+    client = HubClient(
+        settings(),
+        me,
+        gate=FakeGate(),  # type: ignore[arg-type]
+        client=httpx.AsyncClient(transport=transport),
+    )
+    await client.node()
+    with pytest.raises(ProtoError) as err:
+        await client.targets(None)
+    assert err.value.code == "hub_signature"
+
+
+async def test_an_unsigned_error_is_not_authenticated_and_retried_later() -> None:
+    hub = FakeHub()
+    hub.unsigned_errors = True
+    hub.fail["GET /v1/node"] = (401, "bad_signature")
+    client = HubClient(settings(), ident.generate(), gate=FakeGate(), client=hub_client(hub))  # type: ignore[arg-type]
+    with pytest.raises(HubUnavailable):
+        await client.node()
