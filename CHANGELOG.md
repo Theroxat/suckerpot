@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-01
+
+### Added
+
+- Sending abuse reports (M25): a "To send" queue on the Abuse reports page opens each ready report in the mail app (the full text is copied to the clipboard), then marks it sent and moves on, with keyboard shortcuts. Free Proton addresses have no SMTP access, so this is the way to use them.
+- Optional SMTP for reports, configured in Settings > Reporting > Sending (password encrypted and write-only, re-authentication, a preset for Proton paid plans with a custom domain). Three modes: off (the default: nothing is ever sent), send on click, and automatic after a waiting time with Cancel and a daily cap. Mail leaves only through the VPN, after a last identity check on the complete message (headers, envelope, EHLO name and every part); with the tunnel down nothing is sent. Delivery is at most once: a send whose outcome is unknown is never retried. Migration `0022`, `/api/v1/abuse/smtp`, `/api/v1/abuse/send-queue` and `/api/v1/abuse/reports/{id}/send`.
+
+### Changed
+
+- Alerts (email, Discord, Teams) now go through the identity check too: the honeypot's own addresses and terms are masked, and alerts pause until the owner's own address is confirmed in Settings > Reporting.
+- The SMTP EHLO name of alert emails is the sender's domain, never the container's host name.
+
 ## [0.4.0] - 2026-11-01
 
 ### Added
@@ -109,7 +121,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Isolation: four networks with an internal backend, one Redis ACL user per sensor limited to `XADD` on its own stream, least-privilege database roles, no outbound route for the API, non-root read-only containers with all capabilities dropped.
 - The first review of the M1 stack found unbounded stream growth, egress, poison-message and default-credential issues; all were fixed and the second pass passed.
 
-[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Theroxat/suckerpot/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Theroxat/suckerpot/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Theroxat/suckerpot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Theroxat/suckerpot/compare/v0.1.0...v0.2.0

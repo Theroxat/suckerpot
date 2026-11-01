@@ -138,3 +138,11 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - **Setup checklist.** `GET /api/v1/setup/status` computes eight items from the real state and links each one to the screen that fixes it. The host firewall is outside the stack's view: the card points to `just egress-check`.
 - **Tunnel controls.** "Check now" (no password, one per 10 s, migration 0021) and "Reconnect" (password, one per minute, a marker file the `vpn` entrypoint watches without reading it). A closed gate re-checks every 20 s, so a tunnel restart no longer pauses lookups for five minutes.
 - **Reviews.** UI review approved after two rounds (copy accuracy, duplicated VPN controls, tour layout on phones).
+
+## 2026-11-01 — M25 Sending abuse reports: send queue and optional SMTP
+
+- **Decision change.** M22 said the stack never sends mail. The owner asked for optional sending: it is off by default, and the manual queue stays the main path (free Proton addresses have no SMTP).
+- **Send queue.** One ready report at a time: open in the mail app with the full text on the clipboard, then "Sent, next".
+- **SMTP.** Profile in Settings > Reporting (encrypted password the API cannot read back, re-authentication, Proton preset), modes off / click / automatic with a hold time, Cancel and a daily cap. The API only queues requests; ingest sends through the VPN proxy after re-checking the report and running the identity guard on the complete message, envelope and EHLO name. Closed gate: nothing is sent (tested at the socket level). At-most-once delivery with a `sending` state and an `unknown_outcome` result that is never retried.
+- **Alerts.** Alert emails and webhooks now go through the identity check: own addresses and terms are masked, and alerts pause until the owner's own address is confirmed.
+- **Reviews.** Security review passed; its findings (re-send after a crash, unguarded alerts, an in-thread deadline, request picking, profile locking, a lock timeout, a test address) are fixed. UI review approved.
