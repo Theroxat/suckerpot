@@ -5,6 +5,7 @@
  */
 import { ApiError, getBlob, getJson, sendJson, type Page } from "./api"
 import { plural } from "./format"
+import type { RepliesStatus, Reply, ReportOutcome } from "./replies"
 
 // --- Vocabulary -------------------------------------------------------------------
 
@@ -90,6 +91,8 @@ export interface Recipient {
   mailbox: string | null
   source: "rdap" | "manual"
   muted: boolean
+  /** A free or shared mailbox: replies are trusted by exact address only. */
+  shared_mailbox?: boolean
 }
 
 export interface AsnRef {
@@ -116,6 +119,8 @@ export interface ReportItem {
   updated_at: string
   revision: number
   guard: GuardResult
+  /** Sent and closed reports only (M26). */
+  outcome?: ReportOutcome | null
 }
 
 export interface ReportSubject {
@@ -164,6 +169,10 @@ export interface ReportDetail extends ReportItem {
   closed_at: string | null
   /** Optional sending (M25): the planned time and the last request, when sending is set up. */
   send_state?: { scheduled_at: string | null; last_request: SendRequestShape | null }
+  /** Latest replies of a sent report (M26); text fields are for administrators only. */
+  replies?: Reply[]
+  /** The token that ties replies to this report. Administrators only. */
+  reply_token?: string | null
 }
 
 export interface Attachment {
@@ -190,6 +199,8 @@ export interface AbuseStatus {
   self_address_fresh: boolean
   counts: Record<ReportStatus, number>
   waiting_for_contact: number
+  /** The replies mailbox (M26). */
+  replies?: RepliesStatus
 }
 
 export interface WaitingRecipient {
