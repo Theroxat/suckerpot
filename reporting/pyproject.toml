@@ -1,0 +1,52 @@
+[project]
+name = "suckerpot-reporting"
+version = "0.1.0"
+description = "Anonymous abuse reporting: evidence model, redaction, identity guard and renderers (pure functions, no I/O)"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.9,<3",
+    "pyyaml>=6,<7",
+    "pyzipper>=0.3.6,<1",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "stix2>=3.0,<4",
+    "types-pyyaml",
+]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["suckerpot_reporting"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "E501", "RUF001", "RUF003"]
+"suckerpot_reporting/normalize.py" = ["RUF001"]
+"suckerpot_reporting/legacy.py" = ["E501"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+exclude = ["^\\.venv/"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["pyzipper", "stix2", "stix2.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
