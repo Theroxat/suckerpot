@@ -268,3 +268,34 @@ async def test_foreign_domain_ntlm_is_untrusted_and_tree_name_present(
         r = await c.request(packet(tds.T_SSPI, ntlm_authenticate(h.profile.domain, "bob", "PC1")))
         assert r.errors[0][0] == 18456
         await c.close()
+
+
+async def test_connect_declares_the_names_the_protocol_serves(
+    make_harness: HarnessFactory,
+) -> None:
+    async with make_harness() as h:
+        c = await Client.connect(h.port)
+        await c.prelogin()
+        c.writer.write(login7("", "", sspi=NTLM_NEGOTIATE))
+        await c.writer.drain()
+        raw = await c.read_message()
+        await c.close()
+        blob = raw[8 + 3 :]
+        length, _, offset = struct.unpack_from("<HHI", blob, 40)
+        info = blob[offset : offset + length]
+        served: set[str] = set()
+        pos = 0
+        while pos + 4 <= len(info):
+            kind, size = struct.unpack_from("<HH", info, pos)
+            if kind == 0:
+                break
+            if kind in (1, 2, 3, 4, 5):
+                served.add(info[pos + 4 : pos + 4 + size].decode("utf-16-le").lower())
+            pos += 4 + size
+        connect = (await h.events("connect"))[0]
+        names = connect.data["self_identity"]["names"]
+        assert 0 < len(names) <= 4 and all(0 < len(n) <= 64 for n in names)
+        declared = {n.lower() for n in names}
+        shared = {h.profile.domain.lower(), h.profile.dns_domain.lower()}
+        assert not shared & declared  # shared domain defaults are never declared
+        assert served - shared <= declared and h.profile.server_name.lower() in declared

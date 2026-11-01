@@ -350,6 +350,8 @@ class SynologySensor:
     ) -> None:
         if conn.quiet:
             return
+        if type_ == EventType.connect:
+            data = {**data, "self_identity": self.api.profile.self_identity()}
         self.sink.emit(
             session_id=conn.sid,
             src_ip=conn.ip,

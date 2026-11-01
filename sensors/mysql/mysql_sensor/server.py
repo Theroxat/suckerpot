@@ -468,7 +468,14 @@ class Session:
         # still has important-event budget, and without charging that budget for it.
         prelude = None
         if not self._connect_sent:
-            prelude = (EventType.connect, {"server_version": self.cfg.version}, self.started_wall)
+            prelude = (
+                EventType.connect,
+                {
+                    "server_version": self.cfg.version,
+                    "self_identity": self.sensor.identity.self_identity(),
+                },
+                self.started_wall,
+            )
         sent = self._emit(type_, data, important=True, prelude=prelude)
         if sent:
             self._connect_sent = True
@@ -625,7 +632,13 @@ class Session:
 
     async def run(self) -> None:
         if self.recorded:
-            self._emit(EventType.connect, {"server_version": self.cfg.version})
+            self._emit(
+                EventType.connect,
+                {
+                    "server_version": self.cfg.version,
+                    "self_identity": self.sensor.identity.self_identity(),
+                },
+            )
         reason = "server_closed"
         try:
             async with asyncio.timeout(self.cfg.max_session):

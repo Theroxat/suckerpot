@@ -206,3 +206,15 @@ async def test_healthcheck_passes_and_is_silent(make_harness, monkeypatch) -> No
         assert await h.events() == [] and h.sink.stats()["summary_pending"] == 0
     monkeypatch.setenv("TELNET_PORT", "1")
     assert await asyncio.to_thread(healthcheck.main) == 1
+
+
+async def test_connect_declares_the_host_name_the_protocol_serves(make_harness) -> None:  # type: ignore[no-untyped-def]
+    async with make_harness() as h:
+        c = await h.connect()
+        await c.login()
+        served = await c.run("hostname")
+        (conn,) = await h.events("connect")
+        names = conn.data["self_identity"]["names"]
+        assert 0 < len(names) <= 4 and all(0 < len(n) <= 64 for n in names)
+        assert served.strip() in names
+        assert names[0] in conn.data["banner"]

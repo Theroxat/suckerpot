@@ -451,6 +451,7 @@ class Connection:
                 "client_version": f"0x{self.client_version:08x}",
                 "client_maxdata": self.client_maxdata,
                 "client_banner": self.client_banner,
+                "self_identity": self.sensor.device.self_identity(),
             },
             ts=self.started_ts,
         )

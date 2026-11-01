@@ -72,6 +72,20 @@ def _derive(secret: str, label: str) -> bytes:
     return hmac.new(secret.encode(), label.encode(), hashlib.sha256).digest()
 
 
+def self_identity(*names: str) -> dict[str, list[str]]:
+    """The ``data.self_identity`` block of a ``connect`` event (up to 4 names, 64 chars each).
+
+    Only this sensor's own configured or derived names, never anything from a client. Ingest
+    uses them to keep the deployment's identity out of anonymous abuse reports.
+    """
+    out: list[str] = []
+    for name in names:
+        clipped = name[:64]
+        if clipped and clipped not in out:
+            out.append(clipped)
+    return {"names": out[:4]}
+
+
 def derive_hostname(secret: str) -> str:
     """A plausible Linux host name such as ``srv-db03``, stable for one deployment."""
     raw = _derive(secret, "mysql-hostname")
@@ -95,6 +109,10 @@ class Identity:
     tls_chain: Path
     tls_key: Path
     secret: str
+
+    def self_identity(self) -> dict[str, list[str]]:
+        """The effective host name (``@@hostname``)."""
+        return self_identity(self.hostname)
 
 
 def _name(common_name: str) -> x509.Name:

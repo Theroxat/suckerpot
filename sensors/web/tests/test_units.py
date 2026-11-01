@@ -292,3 +292,10 @@ async def test_rate_limited_scan_is_aggregated(tls_files: object) -> None:
         scans = [e for e in h.publisher.events if e.type == "scan"]
         assert len(scans) == 1
         assert scans[0].data["kind"] == "rate_limited" and scans[0].data["refused"] >= 4
+
+
+def test_default_hostname_is_a_reserved_fake_name() -> None:
+    """The abuse-report redactor (reporting/terms.py FAKE_HOSTNAMES) knows this default."""
+    from web_sensor.config import Config
+
+    assert Config.from_env({}).hostname in {"srv-web01", "srv-app02", "srv-db01"}

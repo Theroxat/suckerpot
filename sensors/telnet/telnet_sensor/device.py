@@ -236,6 +236,20 @@ nogroup:x:65534:
 """
 
 
+def self_identity(*names: str) -> dict[str, list[str]]:
+    """The ``data.self_identity`` block of a ``connect`` event (up to 4 names, 64 chars each).
+
+    Only this sensor's own configured or derived names, never anything from a client. Ingest
+    uses them to keep the deployment's identity out of anonymous abuse reports.
+    """
+    out: list[str] = []
+    for name in names:
+        clipped = name[:64]
+        if clipped and clipped not in out:
+            out.append(clipped)
+    return {"names": out[:4]}
+
+
 def derive_device(seed: str, cfg_hostname: str, personality: Personality) -> Profile:
     """Fake identity of the device, derived from the private deployment secret."""
     digest = hashlib.sha256(f"{seed}|telnet-device".encode()).digest()

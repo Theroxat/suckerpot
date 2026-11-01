@@ -23,6 +23,7 @@ from telnet_sensor.device import (
     Personality,
     build_base_image,
     derive_device,
+    self_identity,
 )
 from telnet_sensor.devshell import DeviceShell
 from telnet_sensor.events import EventSink, TokenBuckets
@@ -256,6 +257,7 @@ class Connection:
             EventType.connect,
             {
                 "banner": banner,
+                "self_identity": self_identity(self.sensor.profile.hostname),
                 "client_options": list(self.negotiator.seen),
                 "window": list(self.negotiator.window),
                 "terminal": self.negotiator.terminal,

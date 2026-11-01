@@ -33,6 +33,15 @@ class Profile:
     model: str
     serial: str
 
+    def self_identity(self) -> dict[str, list[str]]:
+        """Per-install names only. Host names come from a shared pool (or the model name), so
+        they are generic words and are not declared: ingest would treat them as deny terms."""
+        base = self.hostname.rstrip("0123456789").lower()
+        generic = {n.lower() for n in _NAMES} | {m.replace("+", "plus").lower() for m in _MODELS}
+        if not self.hostname or base in generic or self.hostname.lower() in generic:
+            return {"names": []}
+        return {"names": [self.hostname[:64]]}
+
     def rng(self, label: str) -> random.Random:
         digest = hmac.new(self.secret, label.encode(), hashlib.sha256).digest()
         return random.Random(int.from_bytes(digest[:16], "big"))  # noqa: S311 - content only

@@ -277,3 +277,16 @@ async def test_reset_by_peer_is_not_an_error(harness: Harness, caplog) -> None: 
         await asyncio.sleep(0.3)
     assert "connection handler failed" not in caplog.text
     assert (await harness.events("disconnect"))[-1].data["reason"] == "client-closed"
+
+
+async def test_connect_declares_the_host_name_the_protocol_serves(harness: Harness) -> None:
+    page = await harness.http("GET", "/")
+    info = await harness.http("GET", INFO)
+    assert info.status == 200
+    connects = await harness.events("connect")
+    assert connects
+    names = connects[0].data["self_identity"]["names"]
+    hostname = harness.sensor.api.profile.hostname
+    assert f"<title>{hostname}</title>" in page.body.decode()
+    # Host names come from a shared pool of words: they are never declared as identity.
+    assert names == []
