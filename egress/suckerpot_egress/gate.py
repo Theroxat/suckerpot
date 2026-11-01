@@ -275,6 +275,8 @@ class EgressGate:
         ``on_status`` is awaited after every check (to publish it); its errors are logged only.
         """
         while True:
+            # Clear first: a request that arrives during the check must not be lost.
+            self._wake.clear()
             status = await self.check()
             if on_status is not None:
                 try:
@@ -283,7 +285,6 @@ class EgressGate:
                     raise
                 except Exception as exc:
                     log.warning("could not publish the egress status (%s)", type(exc).__name__)
-            self._wake.clear()
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._wake.wait(), self.next_delay(status))
 

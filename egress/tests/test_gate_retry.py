@@ -58,3 +58,21 @@ async def test_run_waits_the_fast_delay_when_closed(monkeypatch: pytest.MonkeyPa
     with pytest.raises(asyncio.CancelledError):
         await gate.run()
     assert waits == [FAST_RETRY_S, FAST_RETRY_S]
+
+
+async def test_a_request_during_a_check_is_not_lost() -> None:
+    gate = gate_for(fake_world())
+    calls = 0
+
+    async def check() -> GateStatus:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            gate.request_check()  # arrives while the check runs
+        return status(True)
+
+    gate.check = check  # type: ignore[method-assign]
+    task = asyncio.create_task(gate.run())
+    await asyncio.sleep(0.05)
+    task.cancel()
+    assert calls >= 2  # woke at once instead of waiting a full interval

@@ -200,3 +200,26 @@ async def test_check_requests_grants_and_trim(owner: AsyncEngine) -> None:
     finally:
         for engine in (api, ingest, collector):
             await engine.dispose()
+
+
+async def test_trim_is_by_rank_not_by_id(owner: AsyncEngine) -> None:
+    """A row forced to a huge id must not make the trigger prune the others."""
+    api = _as(ENV["POSTGRES_API_USER"], ENV["POSTGRES_API_PASSWORD"])
+    ins = "INSERT INTO egress_check_requests (requested_by) VALUES ('tester')"
+    try:
+        async with owner.begin() as conn:
+            await conn.execute(text("TRUNCATE egress_check_requests"))
+            for _ in range(5):
+                await conn.execute(text(ins))
+            await conn.execute(
+                text(
+                    "INSERT INTO egress_check_requests (id, requested_by) "
+                    "OVERRIDING SYSTEM VALUE VALUES (9000000000000, 'big')"
+                )
+            )
+        assert await _can(api, ins)
+        async with owner.connect() as conn:
+            count = await conn.scalar(text("SELECT count(*) FROM egress_check_requests"))
+        assert count == 7
+    finally:
+        await api.dispose()
