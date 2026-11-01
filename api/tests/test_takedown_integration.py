@@ -194,6 +194,10 @@ async def test_a_target_page_has_children_checks_links_and_bounds(
     assert detail["checks"][0]["detail"] == {"redirects": 1}
     assert detail["ttd"]["seconds"] == 20 * 3600 and detail["ttd"]["down_after"] is not None
     assert (await world.get("/api/v1/takedown/targets/999999")).status_code == 404
+    for bad in ("0", "-1", str(2**63), "99999999999999999999"):
+        assert (await world.get(f"/api/v1/takedown/targets/{bad}")).status_code == 422, bad
+        assert (await world.post(f"/api/v1/takedown/targets/{bad}/recheck")).status_code == 422
+        assert (await world.post(f"/api/v1/takedown/targets/{bad}/stop")).status_code == 422
 
 
 async def test_recheck_moves_the_due_dates_and_is_rate_limited(world: httpx.AsyncClient) -> None:

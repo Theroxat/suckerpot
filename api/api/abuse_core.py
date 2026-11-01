@@ -201,8 +201,14 @@ async def load_settings(db: AsyncSession) -> SettingsBundle:
     )
 
 
-def reply_args(row: AbuseReportRow, bundle: SettingsBundle) -> dict[str, Any]:
-    """The reply token and where to print it, for every rendering that may be sent (M26)."""
+def reply_args(
+    row: AbuseReportRow, bundle: SettingsBundle, *, admin: bool = True
+) -> dict[str, Any]:
+    """The reply token and where to print it, for every rendering that may be sent (M26).
+    The token proves a reply belongs to the report: a viewer's preview or download never
+    carries it."""
+    if not admin:
+        return {"reply_token": None, "reference_style": "off"}
     return {"reply_token": row.reply_token, "reference_style": bundle.reference_style}
 
 
