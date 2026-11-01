@@ -3,7 +3,9 @@
 The package now ships no prose: every sentence comes from the owner's settings. These phrases
 were once public defaults, so a report that still contains one can be found with a web search
 for it. ``guard`` fails with ``default_wording`` when any of them appears. Do not edit the list
-to add new defaults; add owner-facing settings instead.
+to add new defaults; add owner-facing settings instead. The two built-in fallbacks (the subject
+``Abuse report for {value}`` and the X-ARF agent ``Mozilla/5.0``) are deliberately not in it:
+they are generic, and ``tests/test_guard_redact.py`` checks that they never trip the guard.
 """
 
 from __future__ import annotations

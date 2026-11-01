@@ -181,6 +181,7 @@ async def client(
 
 
 WORDING = {
+    "reply_contact": "reports@example.org",
     "intro": "Own intro.",
     "outro": "Own outro.",
     "note": "Own note.",
@@ -219,31 +220,35 @@ async def test_list_detail_status_and_pagination(client: httpx.AsyncClient) -> N
     d = (await client.get(f"/api/v1/abuse/reports/{DEMO_ID}")).json()
     assert d["guard"] == {"ok": True, "codes": []}
     assert d["redaction"] == {"masked": 2, "removed": 1}
-    assert d["custom_intro"] is False and d["subjects"] == []
+    assert d["missing"] == ["reply_contact"] and d["subjects"] == []
     assert d["recipient"]["mailbox"] == "abuse@example.net"
 
 
-async def test_review_needs_a_custom_intro_and_a_current_revision(
+async def test_review_needs_a_reply_contact_and_a_current_revision(
     client: httpx.AsyncClient,
 ) -> None:
     url = f"/api/v1/abuse/reports/{DEMO_ID}/status"
     rev = (await client.get(f"/api/v1/abuse/reports/{DEMO_ID}")).json()["revision"]
-    no_intro = await client.post(url, json={"to": "reviewed", "revision": rev})
-    assert no_intro.status_code == 409 and no_intro.json()["code"] == "custom_intro_required"
+    no_contact = await client.post(url, json={"to": "reviewed", "revision": rev})
+    assert no_contact.status_code == 409 and no_contact.json()["code"] == "settings_incomplete"
+    assert no_contact.json()["missing"] == ["reply_contact"]
+    # the wording alone does not unlock it, and no wording is needed once the contact is set
     part = await client.put("/api/v1/abuse/settings", json=settings_body(0, intro="Own intro."))
     assert part.status_code == 200
     still = await client.post(url, json={"to": "reviewed", "revision": rev})
-    assert still.json()["code"] == "custom_intro_required"
-    assert set(still.json()["missing"]) == {"outro", "note", "subject_template"}
-    put = await client.put("/api/v1/abuse/settings", json=settings_body(1, **WORDING))
+    assert still.json()["code"] == "settings_incomplete"
+    assert still.json()["missing"] == ["reply_contact"]
+    contact_only = settings_body(1, reply_contact="reports@example.org")
+    put = await client.put("/api/v1/abuse/settings", json=contact_only)
     assert put.status_code == 200 and put.json()["revision"] == 2
+    assert put.json()["intro"] is None
     stale = await client.post(url, json={"to": "reviewed", "revision": rev + 5})
     assert stale.json()["code"] == "revision_mismatch"
     bad = await client.post(url, json={"to": "closed", "revision": rev})
     assert bad.json()["code"] == "invalid_transition"
     ok = await client.post(url, json={"to": "reviewed", "revision": rev})
     assert ok.status_code == 200 and ok.json()["status"] == "reviewed"
-    assert ok.json()["custom_intro"] is True
+    assert ok.json()["missing"] == []
     demo_sent = await client.post(url, json={"to": "sent", "revision": rev})
     assert demo_sent.json()["code"] == "demo_report"
     back = await client.post(url, json={"to": "draft", "revision": rev})
@@ -268,7 +273,7 @@ async def test_review_needs_a_custom_intro_and_a_current_revision(
     assert closed.json()["status"] == "closed"
 
 
-async def test_nothing_is_released_without_the_owners_own_intro(
+async def test_nothing_is_released_without_a_reply_contact(
     client: httpx.AsyncClient,
 ) -> None:
     def refused(r: httpx.Response) -> bool:
@@ -287,7 +292,7 @@ async def test_nothing_is_released_without_the_owners_own_intro(
     got = (await client.get("/api/v1/abuse/settings")).json()
     assert got["intro"] is None and got["outro"] is None and got["note"] is None
     miss = (await client.get(f"/api/v1/abuse/reports/{DEMO_ID}/render")).json()["missing"]
-    assert miss == ["intro", "outro", "note", "subject_template"]
+    assert miss == ["reply_contact"]
 
 
 async def test_render_and_download_are_guarded_with_codes_only(
@@ -300,10 +305,17 @@ async def test_render_and_download_are_guarded_with_codes_only(
     assert body["to"] == "abuse@example.net" and body["guard"]["ok"]
     assert [a["name"] for a in body["attachments"]] == ["evidence.csv"]
     eml = await client.get(f"/api/v1/abuse/reports/{DEMO_ID}/render", params={"format": "eml"})
-    assert eml.status_code == 200 and "X-ARF" not in eml.json()["body"]
+    assert eml.status_code == 200 and "Notice, 1 from" in eml.json()["body"]
     xarf = await client.get(f"/api/v1/abuse/reports/{DEMO_ID}/render", params={"format": "xarf"})
-    assert xarf.status_code == 409 and xarf.json()["code"] == "settings_incomplete"
-    assert {"reply_contact", "xarf_user_agent"} <= set(xarf.json()["missing"])
+    assert xarf.status_code == 200 and xarf.json()["guard"]["ok"]
+    # the wording fields are optional: with only the reply contact the plain neutral subject is used
+    bare = await client.put(
+        "/api/v1/abuse/settings", json=settings_body(1, reply_contact="reports@example.org")
+    )
+    assert bare.status_code == 200
+    plain = await client.get(f"/api/v1/abuse/reports/{DEMO_ID}/render", params={"format": "text"})
+    assert plain.status_code == 200 and plain.json()["guard"]["ok"]
+    assert "Abuse report for " in plain.json()["subject"]
     with caplog.at_level("DEBUG"):
         for path in ("render", "download"):
             r = await client.get(f"/api/v1/abuse/reports/{LEAK_ID}/{path}")

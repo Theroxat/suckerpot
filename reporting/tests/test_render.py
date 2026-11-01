@@ -12,6 +12,8 @@ import pytest
 import yaml
 
 from suckerpot_reporting import (
+    DEFAULT_SUBJECT,
+    DEFAULT_XARF_USER_AGENT,
     RenderUnavailable,
     ReportOptions,
     ReportSettings,
@@ -57,23 +59,103 @@ def test_text_minute_precision_and_options() -> None:
     assert "users:" not in body
 
 
-def test_no_default_prose_everything_required() -> None:
-    assert missing_settings(None) == ("intro", "outro", "note", "subject_template")
-    assert "xarf_user_agent" in missing_settings(
-        SETTINGS.model_copy(update={"xarf_user_agent": None}), xarf=True
-    )
-    for field in ("intro", "outro", "note", "subject_template"):
-        bad = SETTINGS.model_copy(update={field: " "})
-        with pytest.raises(RenderUnavailable) as exc:
-            render_text(make_evidence(), bad)
-        assert exc.value.code == "settings_incomplete"
+def test_only_the_reply_contact_is_required() -> None:
+    assert missing_settings(None) == ("reply_contact",)
+    assert missing_settings(ReportSettings()) == ("reply_contact",)
+    assert missing_settings(ReportSettings(), xarf=True) == ("reply_contact",)
+    assert missing_settings(ReportSettings(reply_contact=" ")) == ("reply_contact",)
+    assert missing_settings(ReportSettings(reply_contact="reports@example.org")) == ()
     with pytest.raises(RenderUnavailable) as exc:
         render_text(make_evidence())
     assert exc.value.code == "settings_incomplete"
     with pytest.raises(RenderUnavailable):
-        render_xarf(make_evidence(), SETTINGS.model_copy(update={"xarf_user_agent": None}))
-    # signature is optional
-    assert render_text(make_evidence(), SETTINGS.model_copy(update={"signature": None})).body
+        render_text(make_evidence(), SETTINGS.model_copy(update={"reply_contact": None}))
+    with pytest.raises(RenderUnavailable):
+        render_xarf(make_evidence(), SETTINGS.model_copy(update={"reply_contact": None}))
+    # every other field is optional
+    for field in ("intro", "outro", "note", "signature", "subject_template", "xarf_user_agent"):
+        assert render_text(make_evidence(), SETTINGS.model_copy(update={field: " "})).body
+
+
+BARE = ReportSettings(reply_contact="reports@example.org")
+
+
+def test_text_with_every_optional_field_empty_has_no_blank_sections() -> None:
+    msg = render_text(make_evidence(), BARE)
+    assert msg.subject == "Abuse report for 198.51.100.23"
+    body = msg.body
+    assert body.endswith("Contact: reports@example.org\n")
+    assert not body.startswith("\n") and "\n\n\n" not in body
+    assert body.splitlines()[0].startswith("198.51.100.23")
+    # no wording survives from the filled-in settings
+    for text in ("Hello", "Please look", "Times are UTC", "Regards"):
+        assert text not in body
+    # same without the contact line when the owner switched it off
+    ev = make_evidence(options=ReportOptions(time_precision="second", include_reply_contact=False))
+    plain = render_text(ev, BARE).body
+    assert "Contact:" not in plain and not plain.endswith("\n\n") and "\n\n\n" not in plain
+
+
+def test_optional_parts_are_dropped_one_by_one() -> None:
+    for field, text in (
+        ("intro", "Hello,"),
+        ("outro", "Please look into it."),
+        ("note", "Times are UTC."),
+        ("signature", "Regards, a network volunteer"),
+    ):
+        body = render_text(make_evidence(), SETTINGS.model_copy(update={field: None})).body
+        assert text not in body
+        assert "\n\n\n" not in body and not body.startswith("\n")
+
+
+def test_default_subject_is_neutral_and_data_only() -> None:
+    assert DEFAULT_SUBJECT == "Abuse report for {value}"
+    for blank in (None, "", "  "):
+        cfg = SETTINGS.model_copy(update={"subject_template": blank})
+        assert render_text(make_evidence(), cfg).subject == "Abuse report for 198.51.100.23"
+    demo = render_text(make_evidence(demo=True), BARE).subject
+    assert demo == "DEMO, DO NOT SEND: Abuse report for 198.51.100.23"
+    # the set template keeps winning
+    assert render_text(make_evidence(), SETTINGS).subject == "Attack from 198.51.100.23 (AS64500)"
+    lowered = (DEFAULT_SUBJECT + DEFAULT_XARF_USER_AGENT).casefold()
+    assert "suckerpot" not in lowered and "honeypot" not in lowered
+
+
+def test_xarf_with_every_optional_field_empty_is_valid() -> None:
+    msg = render_xarf(make_evidence(), BARE)
+    assert msg.xarf
+    data = yaml.safe_load(msg.attachments[0].content)
+    assert data["User-Agent"] == DEFAULT_XARF_USER_AGENT == "Mozilla/5.0"
+    assert data["Reported-From"] == "reports@example.org"
+    assert data["Source"] == "198.51.100.23"
+    assert msg.subject == "Abuse report for 198.51.100.23"
+    assert "\n\n\n" not in msg.body
+    eml = render_eml(msg, boundary="===============1234567890123456789==").decode("ascii")
+    parsed = email.message_from_string(eml)
+    assert parsed["Subject"] == "Abuse report for 198.51.100.23" and parsed["X-ARF"] == "YES"
+    assert [p.get_filename() for p in parsed.walk() if p.get_filename()] == [
+        "report.txt",
+        "evidence.txt",
+    ]
+
+
+def test_eml_summary_with_every_optional_field_empty() -> None:
+    ev = make_evidence()
+    two = ev.model_copy(
+        update={
+            "subjects": (
+                ev.subjects[0],
+                ev.subjects[0].model_copy(update={"value": "198.51.100.24"}),
+            )
+        }
+    )
+    msg = render_xarf(two, BARE)
+    assert not msg.xarf
+    eml = render_eml(msg).decode("ascii")
+    parsed = email.message_from_string(eml)
+    assert parsed["Subject"] == "Abuse report for 198.51.100.23"
+    plain = render_eml(render_text(ev, BARE)).decode("ascii")
+    assert str(email.message_from_string(plain).get_payload()).startswith("198.51.100.23")
 
 
 def test_demo_marking() -> None:

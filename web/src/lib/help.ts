@@ -137,7 +137,7 @@ export const HELP = {
   },
   "settings-reporting": {
     title: "Reporting",
-    body: "The wording used in abuse reports: your reply contact, signature, introduction and closing, plus the list of terms that must never appear in a report. Fill every field so drafts are complete; the identity check blocks a report that contains one of those terms. The Sending section sets up optional SMTP: SuckerPot sends a report only if you set up SMTP and choose a sending mode.",
+    body: "The settings used in abuse reports: your reply contact (required), optional texts around the facts, and the list of terms that must never appear in a report. Leave the texts empty to send only the facts. SuckerPot sends a report only if you set up SMTP and choose a sending mode.",
   },
   "settings-vpn": {
     title: "VPN",

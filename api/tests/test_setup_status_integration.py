@@ -142,17 +142,15 @@ async def test_reporting_wording_self_address_and_worker(
         )
     got = await items(admin)
     assert got["reporting_settings"]["state"] == "todo"
-    assert "note" in got["reporting_settings"]["detail"]
-    assert "subject line" in got["reporting_settings"]["detail"]
+    assert "reply contact" in got["reporting_settings"]["detail"]
     assert got["self_address"]["state"] == "todo"  # unconfirmed learned address does not count
     async with owner_engine() as owner, owner.begin() as conn:
-        await conn.execute(
-            text("UPDATE report_settings SET note = 'n', subject_template = 'Abuse from {ip}'")
-        )
+        await conn.execute(text("UPDATE report_settings SET reply_contact = 'reports@example.org'"))
         await conn.execute(text("UPDATE report_self_terms SET confirmed = true"))
     monkeypatch.setenv("ABUSE_REPORTS_ENABLED", "true")
     got = await items(admin)
     assert got["reporting_settings"]["state"] == "ok"
+    assert "optional" in got["reporting_settings"]["detail"]
     assert got["self_address"]["state"] == "ok"
     assert got["abuse_worker"]["state"] == "ok"
     assert "203.0.113.9" not in json.dumps(got)

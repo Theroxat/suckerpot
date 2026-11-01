@@ -542,7 +542,7 @@ Details in [Architecture](ARCHITECTURE.md#anonymous-reporting-m22), [Deployment]
 | `ABUSE_ROUND_TIMES` | `true` | Round times in reports to the minute. Set `false` to allow exact times. |
 | `ABUSE_REPORT_RETENTION_DAYS` | `730` | Days to keep reports marked sent or closed (the duplicate check needs the history). Discarded drafts are removed after 90 days. |
 
-The reply contact, signature and all wording are not environment variables. The owner types them in Settings > Reporting. To keep the identity guard accurate, the `api` service also reads the sensor host name variables, `API_ALLOWED_ORIGINS`, `ALERTS_DASHBOARD_URL`, `INDICATORS_IGNORE`, `BLOCKLIST_NEVER`, `AUTH_TRUSTED_PROXIES` and `VPN_WG_ENDPOINT_IP`. These are used only to build the list of terms a report must never contain.
+The reply contact, signature and all wording are not environment variables. The owner types them in Settings > Reporting. Only the reply contact is required. To keep the identity guard accurate, the `api` service also reads the sensor host name variables, `API_ALLOWED_ORIGINS`, `ALERTS_DASHBOARD_URL`, `INDICATORS_IGNORE`, `BLOCKLIST_NEVER`, `AUTH_TRUSTED_PROXIES` and `VPN_WG_ENDPOINT_IP`. These are used only to build the list of terms a report must never contain.
 
 ## In `.env.example` but not used yet
 

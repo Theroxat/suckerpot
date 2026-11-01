@@ -155,8 +155,8 @@ export interface ReportDetail extends ReportItem {
   options: ReportOptions
   notes: string | null
   history: HistoryEntry[]
-  /** True when the intro is not the public default wording. Review needs it. */
-  custom_intro: boolean
+  /** Required settings still empty (only the reply contact). Review needs none. */
+  missing: string[]
   /** When the same subjects were reported before, if so. */
   previously_reported: string | null
   reviewed_at: string | null
@@ -202,13 +202,13 @@ export interface WaitingRecipient {
 export interface ReportSettings {
   reply_contact: string | null
   signature: string | null
-  /** Null while the public default wording is in use. */
+  /** Optional: empty means the part is left out of the report. */
   intro: string | null
   outro: string | null
   xarf_user_agent: string | null
-  /** The sentence about the withheld destination and the source ports. */
+  /** Optional. A sentence about the withheld destination and the source ports, if wanted. */
   note: string | null
-  /** The subject line of the message. */
+  /** Optional. Empty uses the plain subject "Abuse report for {value}". */
   subject_template: string | null
   /** Round times to the minute (the default). Off sends exact times. */
   round_times: boolean
@@ -306,8 +306,7 @@ function capitalize(s: string): string {
 export function reviewBlocker(r: ReportDetail): string | null {
   if (!r.guard.ok) return "The identity check blocked this report, so it cannot be reviewed."
   if (!r.recipient.mailbox) return "There is no abuse mailbox for this provider yet."
-  if (!r.custom_intro)
-    return "Write your own introduction in Settings first. The default wording is public, so anyone could recognise it."
+  if (r.missing.length > 0) return "Set a reply contact in Settings first."
   return null
 }
 
@@ -327,7 +326,7 @@ export function nextActions(
   }
 }
 
-export const SETTINGS_INCOMPLETE = "Finish the Reporting settings first"
+export const SETTINGS_INCOMPLETE = "Set the reply contact in the Reporting settings first"
 
 /** A readable message for a failed call. */
 export function describeAbuseError(e: unknown): string {
@@ -339,11 +338,7 @@ export function describeAbuseError(e: unknown): string {
     if (e.code === "demo_report") return "This is a demo report. It can be reviewed but never sent."
     if (e.code === "no_mailbox") return "There is no abuse mailbox for this provider yet."
     if (e.code === "evidence_invalid") return "The stored evidence for this report is not valid."
-    if (e.code === "xarf_reply_contact_required")
-      return "X-ARF needs a reply contact, so the abuse desk can answer."
     if (e.code === "xarf_unavailable") return "This report cannot be written as X-ARF."
-    if (e.code === "custom_intro_required")
-      return "Write your own introduction in Settings before marking a report as reviewed."
     if (e.code === "identity_guard_failed") return "The identity check blocked this text."
     if (e.code === "reauth_failed") return "That password is not right."
     if (e.status === 429) return "Too many requests. Wait a moment and try again."

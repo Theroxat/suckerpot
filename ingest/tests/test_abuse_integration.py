@@ -93,12 +93,13 @@ async def rows(engine: AsyncEngine, sql: str, **params: Any) -> list[Any]:
 
 @pytest.fixture(autouse=True)
 async def _owner_wording(engine: AsyncEngine) -> None:
-    """The owner has written the wording (the package ships none)."""
+    """The owner has set a reply contact and some wording (the package ships none)."""
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "INSERT INTO report_settings (id, intro, outro, note, subject_template) VALUES "
-                "(1, 'Intro written by the owner.', 'Outro.', 'Note.', 'Abuse report {value}') "
+                "INSERT INTO report_settings (id, reply_contact, intro, outro, note, subject_template) "
+                "VALUES (1, 'reports@example.org', 'Intro written by the owner.', 'Outro.', "
+                "'Note.', 'Abuse report {value}') "
                 "ON CONFLICT (id) DO NOTHING"
             )
         )
@@ -452,13 +453,13 @@ async def test_demo_events_become_a_guarded_draft(engine: AsyncEngine, factory: 
     assert await scalar(engine, "SELECT revision FROM abuse_reports") == revision
 
 
-async def test_missing_wording_blocks_the_draft_instead_of_crashing(
+async def test_missing_reply_contact_blocks_the_draft_instead_of_crashing(
     engine: AsyncEngine, factory: Factory
 ) -> None:
     await seed_attack(engine)
     await add_self_address(engine)
     async with engine.begin() as conn:
-        await conn.execute(text("UPDATE report_settings SET intro = NULL, subject_template = NULL"))
+        await conn.execute(text("UPDATE report_settings SET reply_contact = NULL"))
     stats = await builder(factory, DEMO).run(NOW, allow_lookups=False)
     assert (stats.created, stats.guard_failed) == (1, 1)
     rep = (await rows(engine, "SELECT guard_ok, guard_codes FROM abuse_reports"))[0]

@@ -184,8 +184,7 @@ class ReportDetail(ReportItem):
     options: OptionsOut
     notes: str | None
     history: list[dict[str, Any]]
-    custom_intro: bool  # true when every required wording field is filled in
-    missing: list[str]
+    missing: list[str]  # required settings still empty (only the reply contact)
     previously_reported: datetime | None
     reviewed_at: datetime | None
     sent_at: datetime | None
@@ -475,7 +474,6 @@ async def _detail(
         options=OptionsOut(**opts.model_dump()),
         notes=row.notes,
         history=await _history(db, row.public_id),
-        custom_intro=not missing_for(bundle.settings),
         missing=list(missing_for(bundle.settings)),
         previously_reported=prev,
         send_state=await send_state(db, row.id),
@@ -841,17 +839,13 @@ async def set_status(
 async def _review_blocker(
     db: AsyncSession, row: AbuseReportRow, rec: AbuseRecipientRow, bundle: SettingsBundle
 ) -> Response | None:
-    """Review needs the owner's own wording, a mailbox and a passing identity check."""
+    """Review needs a reply contact, a mailbox and a passing identity check.
+
+    The report wording is optional (design M22, changed on 2026-11-01).
+    """
     missing = missing_for(bundle.settings)
     if missing:
-        return JSONResponse(
-            {
-                "detail": "Fill in your own wording in Settings first.",
-                "code": "custom_intro_required",
-                "missing": list(missing),
-            },
-            status_code=409,
-        )
+        return settings_incomplete_response(missing)
     if not (rec.override_mailbox or rec.mailbox):
         return error(409, "There is no abuse mailbox for this provider yet.", "no_mailbox")
     try:

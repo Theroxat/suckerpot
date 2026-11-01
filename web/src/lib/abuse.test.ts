@@ -43,9 +43,9 @@ describe("blockedReason", () => {
   it("warns when the learned address is stale", () => {
     expect(blockedReason(status({ self_address_fresh: false }))).toMatch(/fresh one/)
   })
-  it("points to the settings when the wording is incomplete", () => {
+  it("points to the settings when the reply contact is missing", () => {
     expect(describeAbuseError(new ApiError(409, "x", "settings_incomplete"))).toBe(
-      "Finish the Reporting settings first",
+      "Set the reply contact in the Reporting settings first",
     )
   })
   it("is null when everything works", () => {
@@ -74,10 +74,10 @@ describe("review rules", () => {
   const base = {
     guard: { ok: true, codes: [] },
     recipient: { mailbox: "abuse@example.net" },
-    custom_intro: true,
+    missing: [],
   } as unknown as ReportDetail
-  it("needs a custom introduction", () => {
-    expect(reviewBlocker({ ...base, custom_intro: false })).toMatch(/own introduction/)
+  it("needs a reply contact, and no wording", () => {
+    expect(reviewBlocker({ ...base, missing: ["reply_contact"] })).toMatch(/reply contact/)
     expect(reviewBlocker(base)).toBeNull()
   })
   it("is blocked by a failed identity check", () => {

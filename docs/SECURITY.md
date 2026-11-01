@@ -365,7 +365,7 @@ No event stores a destination address, and the stack must not ask an outside ser
 
 ### The owner writes all the wording
 
-The package ships no introduction, closing text, note or subject template. Any text shipped here would sit in a public repo, and a recipient could search for it and land on the project. The owner writes the introduction, closing text, note and subject template in Settings > Reporting. X-ARF also needs a reply contact and a user agent. While one is empty, rendering answers `settings_incomplete` with the field names. The guard also refuses (`default_wording`) text that matches wording published earlier. A report cannot be marked reviewed until the wording is the owner's own.
+The package ships no introduction, closing text, note or signature. Any text shipped here would sit in a public repo, and a recipient could search for it and land on the project. These texts are optional: when the owner leaves one empty it is omitted from every rendering, and the report carries only the facts. Two fallbacks are built from data only and are as generic as possible: the subject `Abuse report for <address>` and the X-ARF user agent `Mozilla/5.0` (the X-ARF 0.2 specification defines no generic agent string, so the most widespread product token is used). The reply contact is the only required setting; while it is empty, rendering answers `settings_incomplete`. The guard still refuses (`default_wording`) text that matches wording published earlier, including text the owner typed.
 
 ### Other limits
 

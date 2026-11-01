@@ -22,7 +22,7 @@ const TITLES: Record<string, string> = {
   sensors: "Sensor traffic",
   vpn: "Outbound gate",
   collector: "Payload collector",
-  reporting_settings: "Report wording",
+  reporting_settings: "Report settings",
   self_address: "Your own address",
   abuse_worker: "Abuse report drafts",
   alerts: "Alert channel",

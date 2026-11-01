@@ -167,20 +167,15 @@ function MessageCard({ r }: { r: ReportDetail }) {
             {reasons
               ? reasons.map(guardReason).join(" ")
               : apiError?.code === "settings_incomplete"
-                ? "Every wording field of the Reporting settings must be filled with your own words before a message can be written."
-                : apiError?.code === "xarf_reply_contact_required"
-                  ? "X-ARF needs a reply contact, so the abuse desk can answer."
-                  : describeAbuseError(q.error)}
+                ? "Set a reply contact in the Reporting settings before a message can be written. The texts around the facts are optional."
+                : describeAbuseError(q.error)}
           </p>
-          {apiError?.code === "xarf_reply_contact_required" ||
-          apiError?.code === "settings_incomplete" ? (
+          {apiError?.code === "settings_incomplete" ? (
             <Link
               to={`/settings?tab=reporting${missing.length ? `&missing=${missing.join(",")}` : ""}`}
               className="font-medium text-fg underline underline-offset-4"
             >
-              {apiError.code === "settings_incomplete"
-                ? "Finish the Reporting settings first"
-                : "Set a reply contact in Settings"}
+              Set a reply contact in Settings
             </Link>
           ) : null}
         </div>
@@ -516,7 +511,7 @@ function Actions({
         <SendControl
           reportId={r.public_id}
           recipient={r.recipient.mailbox ?? r.recipient.name}
-          ready={!r.demo && r.guard.ok && Boolean(r.recipient.mailbox) && r.custom_intro}
+          ready={!r.demo && r.guard.ok && Boolean(r.recipient.mailbox) && r.missing.length === 0}
           scheduledAt={r.send_state?.scheduled_at ?? null}
           lastRequest={r.send_state?.last_request ?? null}
           revision={r.revision}
@@ -527,7 +522,7 @@ function Actions({
           <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
           <span>
             {blocker}{" "}
-            {!r.custom_intro ? (
+            {r.missing.length > 0 ? (
               <Link
                 to="/settings?tab=reporting"
                 className="font-medium text-fg underline underline-offset-4"

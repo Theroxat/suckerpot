@@ -468,7 +468,7 @@ class DraftBuilder:
         try:
             result = guard_message(_message(evidence, report_settings), terms, ctx=gctx)
         except RenderUnavailable as exc:
-            # The owner has not written the wording yet: nothing can be rendered. The evidence
+            # The owner has not set a reply contact yet: nothing can be rendered. The evidence
             # itself is still checked, and the draft is stored as blocked with a constant code.
             checked = guard(evidence.model_dump(mode="json"), terms, fmt="json", ctx=gctx)
             codes = tuple(sorted({*checked.codes, exc.code}))
