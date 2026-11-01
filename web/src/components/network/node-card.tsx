@@ -100,7 +100,7 @@ export function NodeCard({ status: s }: { status: NetworkStatus }) {
             )}
           </Field>
           <Field label="Member since">{formatDay(s.enrolled_day, true)}</Field>
-          <Field label="Counts toward confirmations">{eligibilityText(s)}</Field>
+          <Field label="Eligibility">{eligibilityText(s)}</Field>
           <Field label="Standing">
             {standing ? (
               <>
