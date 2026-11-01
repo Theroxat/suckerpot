@@ -6,6 +6,8 @@ from suckerpot_db.engine import (
     database_url_from_env,
 )
 from suckerpot_db.models import (
+    AbusechSubmissionRow,
+    AbusechSubmissionSettingsRow,
     AbuseSendRequestRow,
     AlertChannelRow,
     AlertCursorRow,
@@ -34,6 +36,7 @@ from suckerpot_db.models import (
     InventoryServiceRow,
     IpReputationRow,
     LlmRequestRow,
+    OutcomeRollupRow,
     ProviderSecretRow,
     ProviderTestRequestRow,
     ReportSmtpRow,
@@ -41,6 +44,9 @@ from suckerpot_db.models import (
     ScriptRow,
     ScriptSessionRow,
     SessionRow,
+    TakedownCheckRow,
+    TakedownTargetLinkRow,
+    TakedownTargetRow,
     TechniqueDailyRow,
     UserRow,
     WatchedCveRow,
@@ -49,6 +55,8 @@ from suckerpot_db.models import (
 
 __all__ = [
     "AbuseSendRequestRow",
+    "AbusechSubmissionRow",
+    "AbusechSubmissionSettingsRow",
     "AlertChannelRow",
     "AlertCursorRow",
     "AlertOutboxRow",
@@ -76,6 +84,7 @@ __all__ = [
     "InventoryServiceRow",
     "IpReputationRow",
     "LlmRequestRow",
+    "OutcomeRollupRow",
     "ProviderSecretRow",
     "ProviderTestRequestRow",
     "ReportSmtpRow",
@@ -83,6 +92,9 @@ __all__ = [
     "ScriptRow",
     "ScriptSessionRow",
     "SessionRow",
+    "TakedownCheckRow",
+    "TakedownTargetLinkRow",
+    "TakedownTargetRow",
     "TechniqueDailyRow",
     "UserRow",
     "WatchedCveRow",

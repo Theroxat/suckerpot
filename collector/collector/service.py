@@ -25,6 +25,7 @@ from suckerpot_egress import EgressClosed, EgressGate, egress_client
 from collector import fetch as fx
 from collector.config import CollectorSettings
 from collector.fetch import Fetcher, FetchResult
+from collector.recheck import Rechecker
 from collector.status import beat, publish_status
 from collector.store import Quarantine, StoredFile
 from collector.validate import UrlRefused, normalize_url
@@ -79,6 +80,7 @@ class CollectorService:
         self._claim_lock = asyncio.Lock()
         self._cursor = 0
         self._last_retention = 0.0
+        self.rechecker = Rechecker(self)
 
     # ---- discovery ---------------------------------------------------------------------------
     async def sync_targets(self) -> int:
@@ -236,9 +238,11 @@ class CollectorService:
             return []
         if used >= cap:
             await publish_status(self.factory, "collector", {**detail, "state": "quarantine_full"})
+            await self.rechecker.run()  # hash only: a re-check stores nothing without room
             return []
         targets = await self._due(DUE_BATCH)
         results = await asyncio.gather(*(self._handle(t) for t in targets))
+        await self.rechecker.run()  # M27, off unless TAKEDOWN_ENABLED
         await publish_status(self.factory, "collector", {**detail, "state": "running"})
         return [r for r in results if r is not None]
 
@@ -297,8 +301,14 @@ class CollectorService:
             self._reserved += claim
             return claim
 
-    def _fetcher(self) -> Fetcher:
-        client = self._client or egress_client(
+    def client(self) -> httpx.AsyncClient:
+        """The one egress client of this service (fetches and takedown re-checks share it)."""
+        if self._client is None:
+            self._client = self._new_client()
+        return self._client
+
+    def _new_client(self) -> httpx.AsyncClient:
+        return egress_client(
             self.gate,
             timeout=httpx.Timeout(
                 self.s.timeout_s, connect=self.s.connect_timeout_s, pool=self.s.connect_timeout_s
@@ -307,8 +317,9 @@ class CollectorService:
             verify=False,  # hostile hosts often have broken certificates; the tunnel is the guard
             limits=httpx.Limits(max_connections=4, max_keepalive_connections=0),
         )
-        self._client = client
-        return Fetcher(client, self.store, self.s)
+
+    def _fetcher(self) -> Fetcher:
+        return Fetcher(self.client(), self.store, self.s)
 
     # ---- bookkeeping -------------------------------------------------------------------------
     async def _record(self, target: Target, result: FetchResult, started: datetime) -> None:

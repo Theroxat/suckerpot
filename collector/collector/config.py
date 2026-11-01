@@ -59,6 +59,8 @@ class CollectorSettings:
     heartbeat_path: Path = Path("/tmp/heartbeat")  # noqa: S108  (tmpfs inside the container)
     analyzer_timeout_s: int = 60
     analyzer_memory_mb: int = 384
+    takedown_enabled: bool = False
+    takedown_http_daily_quota: int = 200
     deny_nets: tuple[Network, ...] = ()
     deny_hosts: tuple[str, ...] = field(default=())
 
@@ -103,6 +105,8 @@ class CollectorSettings:
             heartbeat_path=Path(e.get("HEARTBEAT_PATH", "") or "/tmp/heartbeat"),  # noqa: S108
             analyzer_timeout_s=_int(e, "ANALYZER_TIMEOUT_S", 60, 1, 600),
             analyzer_memory_mb=_int(e, "ANALYZER_MEMORY_MB", 384, 64, 4096),
+            takedown_enabled=_flag(e.get("TAKEDOWN_ENABLED", "false")),
+            takedown_http_daily_quota=_int(e, "TAKEDOWN_HTTP_DAILY_QUOTA", 200, 1, 100000),
             deny_nets=_networks(nets) + net_extra,
             deny_hosts=hosts,
         )

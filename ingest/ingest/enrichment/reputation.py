@@ -46,6 +46,7 @@ class ProviderError(Exception):
 class AbuseResult:
     score: int
     reports: int
+    last_reported_at: datetime | None = None  # AbuseIPDB's lastReportedAt (M27 reads it)
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,7 +180,11 @@ class ReputationWorker:
         _raise_for_status(resp)
         try:
             data = resp.json()["data"]
-            return AbuseResult(int(data["abuseConfidenceScore"]), int(data.get("totalReports", 0)))
+            return AbuseResult(
+                int(data["abuseConfidenceScore"]),
+                int(data.get("totalReports", 0)),
+                _parse_when(data.get("lastReportedAt")),
+            )
         except (ValueError, KeyError, TypeError):
             raise ProviderError("error") from None
 
@@ -347,6 +352,16 @@ class ReputationWorker:
 
     async def aclose(self) -> None:
         await self.client.aclose()
+
+
+def _parse_when(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _raise_for_status(resp: httpx.Response) -> None:

@@ -35,6 +35,8 @@ ORDER = [
     "replies",
     "alerts",
     "provider_keys",
+    "takedown",
+    "abusech_submit",
 ]
 SQL_RESET = (
     "DELETE FROM events",
@@ -49,6 +51,8 @@ SQL_RESET = (
 async def clean(app: Any, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: F811
     monkeypatch.delenv("COLLECTOR_ENABLED", raising=False)
     monkeypatch.delenv("ABUSE_REPORTS_ENABLED", raising=False)
+    monkeypatch.delenv("TAKEDOWN_ENABLED", raising=False)
+    monkeypatch.delenv("ABUSECH_SUBMIT_ENABLED", raising=False)
     async with owner_engine() as owner, owner.begin() as conn:
         for sql in SQL_RESET:
             await conn.execute(text(sql))
@@ -88,6 +92,8 @@ async def test_a_fresh_install_has_things_to_do(admin: httpx.AsyncClient) -> Non
     assert got["abuse_worker"]["state"] == "off"
     assert got["alerts"]["state"] == "off"
     assert got["provider_keys"]["state"] == "off"
+    assert got["takedown"]["state"] == "off"
+    assert got["abusech_submit"]["state"] == "off"
     assert got["vpn"]["href"] == "/settings?tab=vpn"
     assert got["alerts"]["href"] == "/settings?tab=alerts"
     assert got["provider_keys"]["href"] == "/settings?tab=keys"
