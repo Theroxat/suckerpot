@@ -34,6 +34,7 @@ ORDER = [
     "abuse_worker",
     "alerts",
     "provider_keys",
+    "network",
 ]
 SQL_RESET = (
     "DELETE FROM events",

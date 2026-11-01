@@ -39,6 +39,7 @@ from api.insights import router as insights_router
 from api.live import LiveHub, LivePoller, live_router
 from api.live_window import router as live_window_router
 from api.malware import router as malware_router
+from api.network import router as network_router
 from api.provider_keys import install as install_provider_keys
 from api.provider_keys import router as provider_keys_router
 from api.reports import router as reports_router
@@ -145,6 +146,7 @@ def create_app(
         abuse_router,
         abuse_exports_router,
         abuse_smtp_router,
+        network_router,
         search_router,
         today_router,
         live_window_router,
