@@ -6,7 +6,7 @@
 #
 # Dumps are custom-format pg_dump files (TimescaleDB data included) in /backups, mode 0600.
 # Retention: the newest BACKUP_KEEP dumps (default 7), plus the newest dump of each of the last
-# 4 weeks and 3 months. A dump that is smaller than half of the largest one kept is stored, but
+# 4 weeks and 3 months. A dump that is smaller than half of the previous one is stored, but
 # NOTHING is pruned and the service turns unhealthy (marker /backups/.shrunk) until you look at
 # it and remove the marker. The owner credentials come from the environment and are never
 # printed. A failed dump is logged and retried the next hour; the healthcheck needs a dump
@@ -89,11 +89,11 @@ dump() {
     echo "backup: the dump is empty" >&2
     return 1
   fi
-  biggest=0
-  for f in $(list); do
-    s=$(size "$f")
-    if [ "$s" -gt "$biggest" ]; then biggest=$s; fi
-  done
+  # Compare with the newest previous dump, not the largest kept one: after an intended shrink the
+  # next dump matches the new size again, and old large dumps age out normally.
+  previous=0
+  last=$(newest)
+  if [ -n "$last" ]; then previous=$(size "$last"); fi
   if ! mv "$tmp" "$DIR/$name"; then
     rm -f "$tmp"
     echo "backup: could not move the dump into place" >&2
@@ -101,9 +101,9 @@ dump() {
   fi
   new=$(size "$DIR/$name")
   echo "backup: wrote $name ($new bytes)"
-  if [ "$((new * 2))" -lt "$biggest" ]; then
+  if [ "$((new * 2))" -lt "$previous" ]; then
     : > "$DIR/.shrunk"
-    echo "backup: WARNING the new dump is under half of the largest one ($biggest bytes): nothing pruned, marker $DIR/.shrunk set (remove it once checked)" >&2
+    echo "backup: WARNING the new dump is under half of the previous one ($previous bytes): nothing pruned, marker $DIR/.shrunk set (remove it once checked)" >&2
     return 0
   fi
   prune "$KEEP"
