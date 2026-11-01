@@ -76,13 +76,15 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0022() -> None:
+def test_the_chain_is_linear_up_to_0024() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0022"}
-    for n in range(11, 22):
+    assert heads == {"0024"}
+    for n in range(11, 23):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
+    # 0023 (M26) is chained in by the merge; until then 0024 hangs off 0022.
+    assert revs["0024"][0] in {"0022", "0023"}
 
 
 def test_every_new_revision_has_a_downgrade() -> None:
@@ -199,8 +201,11 @@ def test_analyzer_grants() -> None:
 
 
 def test_collector_is_confined_to_its_own_shared_rows() -> None:
-    assert "name IN ('collector', 'egress_collector')" in _GRANTS_COLLECTOR.replace("''", "'")
-    assert "provider = 'collector'" in _GRANTS_COLLECTOR.replace("''", "'")
+    assert (
+        "name IN ('collector', 'egress_collector', 'takedown_http')"
+        in _GRANTS_COLLECTOR.replace("''", "'")
+    )
+    assert "provider IN ('collector', 'takedown_http')" in _GRANTS_COLLECTOR.replace("''", "'")
     assert "CREATE POLICY sp_collector_status" in _GRANTS_COLLECTOR
     assert "CREATE POLICY sp_collector_quota" in _GRANTS_COLLECTOR
     for script in (_GRANTS_INGEST, _GRANTS_API):
@@ -291,3 +296,74 @@ def test_check_request_grants() -> None:
     assert not _update_columns(_GRANTS_API, "egress_check_requests")
     assert "egress_check_requests" not in _grants(_GRANTS_COLLECTOR)
     assert "egress_check_requests" not in _grants(_GRANTS_ANALYZER)
+
+
+M27_TABLES = {
+    "takedown_targets",
+    "takedown_checks",
+    "takedown_target_links",
+    "abusech_submission",
+    "abusech_submissions",
+    "outcome_rollup_monthly",
+}
+
+
+def test_models_and_role_scripts_cover_the_m27_tables() -> None:
+    assert M27_TABLES <= set(models.Base.metadata.tables)
+    for script in (_GRANTS_INGEST, _GRANTS_API):
+        for table in M27_TABLES:
+            assert f"'{table}'" in script, table
+
+
+def test_m27_prune_procedure_and_setting() -> None:
+    from suckerpot_db.retention import TAKEDOWN_PRUNE_PROC, takedown_check_retention_days
+
+    src = (VERSIONS / "0024_takedown.py").read_text()
+    assert f"PROCEDURE {TAKEDOWN_PRUNE_PROC}(" in src
+    assert "DELETE FROM outcome_rollup_monthly" not in src  # the roll-up is kept forever
+    assert takedown_check_retention_days({}) == 400
+    assert takedown_check_retention_days({"TAKEDOWN_CHECK_RETENTION_DAYS": "60"}) == 60
+    for bad in ("1", "x", "99999"):
+        with pytest.raises(RetentionError, match="TAKEDOWN_CHECK_RETENTION_DAYS"):
+            takedown_check_retention_days({"TAKEDOWN_CHECK_RETENTION_DAYS": bad})
+
+
+def test_m27_column_grants() -> None:
+    """The collector moves its own columns, the API only stops tracking, ingest owns the state."""
+    collector = _update_columns(_GRANTS_COLLECTOR, "takedown_targets")
+    assert collector == {
+        "http_step",
+        "http_next_at",
+        "http_last_at",
+        "last_sha256",
+        "http_eligible",
+    }
+    assert _grants(_GRANTS_COLLECTOR)["takedown_targets"] == {"SELECT"}
+    assert _grants(_GRANTS_COLLECTOR)["takedown_checks"] == {"INSERT"}
+    assert "abusech_submission" not in _grants(_GRANTS_COLLECTOR)
+    assert "abusech_submissions" not in _grants(_GRANTS_COLLECTOR)
+    api = _update_columns(_GRANTS_API, "takedown_targets")
+    assert api == {"tracking", "stopped_at", "stopped_by", "http_next_at", "listing_next_at"}
+    ingest = _update_columns(_GRANTS_INGEST, "takedown_targets")
+    assert {"state", "first_down_at", "baseline_sha256"} <= ingest
+    assert not ingest & collector
+    assert not ingest & {"kind", "role", "value", "target_key", "demo"}
+    assert _update_columns(_GRANTS_API, "abusech_submissions") == {
+        "status",
+        "approved_at",
+        "approved_by",
+    }
+    assert "result_code" not in _update_columns(_GRANTS_API, "abusech_submissions")
+    assert _grants(_GRANTS_API)["takedown_checks"] == {"SELECT"}
+    assert _grants(_GRANTS_API)["abusech_submissions"] == {"SELECT"}
+    assert _grants(_GRANTS_INGEST)["abusech_submission"] == {"SELECT"}
+    assert "DELETE" not in _grants(_GRANTS_INGEST)["abusech_submissions"]
+
+
+def test_m27_api_cannot_read_the_auth_key() -> None:
+    joined = re.sub(r"'\s+'", "", _GRANTS_API)
+    select = re.search(r"GRANT SELECT \(([a-z0-9_, ]+)\)\s*ON abusech_submission TO", joined)
+    assert select
+    cols = select.group(1)
+    assert "key_set" in cols and "key_last4" in cols
+    assert "key_ciphertext" not in cols and "key_nonce" not in cols

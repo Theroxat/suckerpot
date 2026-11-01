@@ -53,8 +53,8 @@ def scram_verifier(password: str, salt: bytes | None = None) -> str:
     )
 
 
-COLLECTOR_STATUS = "name IN (''collector'', ''egress_collector'')"
-COLLECTOR_QUOTA = "provider = ''collector''"
+COLLECTOR_STATUS = "name IN (''collector'', ''egress_collector'', ''takedown_http'')"
+COLLECTOR_QUOTA = "provider IN (''collector'', ''takedown_http'')"
 
 
 def _rls(tag: str, status: str, quota: str) -> str:
@@ -144,7 +144,9 @@ DECLARE
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
                   'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
-                  'abuse_send_requests']
+                  'abuse_send_requests', 'takedown_targets', 'takedown_checks',
+                  'takedown_target_links', 'abusech_submission', 'abusech_submissions',
+                  'outcome_rollup_monthly']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -264,6 +266,28 @@ BEGIN
             'GRANT UPDATE (sent_at, sent_by, sent_via, reviewed_at, reviewed_by, '
             'reviewed_revision) ON abuse_reports TO %I', r);
     END IF;
+    IF to_regclass('public.takedown_targets') IS NOT NULL THEN
+        -- M27: ingest syncs targets, decides their state and runs the abuse.ch submissions. The
+        -- collector columns (HTTP re-check progress) and the API columns stay out of its reach.
+        EXECUTE format('GRANT SELECT, INSERT, DELETE ON takedown_targets TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (parent_id, fetch_target_id, network_id, asn, country, provider_key, '
+            'provider_name, reported_at, channels, tracking, track_until, stopped_at, '
+            'stopped_by, state, state_source, state_since, state_updated_at, '
+            'down_before_report, last_up_at, first_down_at, resurrections, listing_step, '
+            'listing_next_at, baseline_sha256) ON takedown_targets TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT ON takedown_checks TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT, DELETE ON takedown_target_links TO %I', r);
+        EXECUTE format('GRANT SELECT ON abusech_submission TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE ON abusech_submissions TO %I', r);
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE, DELETE ON outcome_rollup_monthly TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s, %s, %s TO %I',
+            pg_get_serial_sequence('public.takedown_targets', 'id'),
+            pg_get_serial_sequence('public.takedown_checks', 'id'),
+            pg_get_serial_sequence('public.abusech_submissions', 'id'), r);
+    END IF;
     IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
         -- M23: the gate reads the ranges the owner trusted; only the API changes them.
         EXECUTE format('GRANT SELECT ON egress_trusted_exits TO %I', r);
@@ -322,7 +346,9 @@ DECLARE
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
                   'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
-                  'abuse_send_requests']
+                  'abuse_send_requests', 'takedown_targets', 'takedown_checks',
+                  'takedown_target_links', 'abusech_submission', 'abusech_submissions',
+                  'outcome_rollup_monthly']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -428,6 +454,23 @@ BEGIN
             pg_get_serial_sequence('public.abuse_send_requests', 'id'), r);
         EXECUTE format('GRANT UPDATE (sent_via) ON abuse_reports TO %I', r);
     END IF;
+    IF to_regclass('public.takedown_targets') IS NOT NULL THEN
+        -- M27: the owner stops tracking or asks for an early re-check; nothing else changes.
+        EXECUTE format('GRANT SELECT ON takedown_targets, takedown_checks TO %I', r);
+        EXECUTE format('GRANT SELECT ON takedown_target_links, outcome_rollup_monthly TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (tracking, stopped_at, stopped_by, http_next_at, listing_next_at) '
+            'ON takedown_targets TO %I', r);
+        -- The Auth-Key columns are written but never read back (column grants leave them out).
+        EXECUTE format(
+            'GRANT SELECT (id, mode, threatfox_enabled, anonymous, auto_hold_minutes, '
+            'daily_cap, key_set, key_last4, updated_at, updated_by) '
+            'ON abusech_submission TO %I', r);
+        EXECUTE format('GRANT INSERT, UPDATE, DELETE ON abusech_submission TO %I', r);
+        EXECUTE format('GRANT SELECT ON abusech_submissions TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (status, approved_at, approved_by) ON abusech_submissions TO %I', r);
+    END IF;
     IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
         -- M23: the owner trusts or removes a VPN exit range from the dashboard.
         EXECUTE format('GRANT SELECT, INSERT, DELETE ON egress_trusted_exits TO %I', r);
@@ -478,6 +521,18 @@ BEGIN
             'GRANT USAGE ON SEQUENCE %s, %s TO %I',
             pg_get_serial_sequence('public.fetch_targets', 'id'),
             pg_get_serial_sequence('public.fetch_attempts', 'id'), r);
+    END IF;
+    IF to_regclass('public.takedown_targets') IS NOT NULL THEN
+        -- M27: re-checks of URLs that already served malware. The collector reads the targets,
+        -- moves its own progress columns and appends checks; the state is ingest's.
+        EXECUTE format('GRANT SELECT ON takedown_targets TO %I', r);
+        EXECUTE format(
+            'GRANT UPDATE (http_step, http_next_at, http_last_at, last_sha256, http_eligible) '
+            'ON takedown_targets TO %I', r);
+        EXECUTE format('GRANT INSERT ON takedown_checks TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s TO %I',
+            pg_get_serial_sequence('public.takedown_checks', 'id'), r);
     END IF;
     IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
         EXECUTE format('GRANT SELECT ON egress_trusted_exits TO %I', r);

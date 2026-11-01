@@ -37,6 +37,10 @@ CAMPAIGN_PRUNE_PROC = "suckerpot_campaign_prune"  # created by migration 0011
 SCRIPT_PRUNE_PROC = "suckerpot_script_prune"  # created by migration 0013
 ALERT_PRUNE_PROC = "suckerpot_alert_prune"  # created by migration 0014
 ABUSE_PRUNE_PROC = "suckerpot_abuse_prune"  # created by migration 0019
+TAKEDOWN_PRUNE_PROC = "suckerpot_takedown_prune"  # created by migration 0024
+DEFAULT_TAKEDOWN_CHECK_DAYS = 400
+TAKEDOWN_TARGET_DAYS = 400
+ABUSECH_SUBMISSION_DAYS = 730
 DEFAULT_CAMPAIGNS_MAX_ROWS = 50_000
 DEFAULT_SCRIPTS_MAX_ROWS = 100_000
 ALERT_OUTBOX_DAYS = 30
@@ -128,6 +132,21 @@ def abuse_report_retention_days(env: Mapping[str, str] | None = None) -> int:
     return days
 
 
+def takedown_check_retention_days(env: Mapping[str, str] | None = None) -> int:
+    """Parse ``TAKEDOWN_CHECK_RETENTION_DAYS`` (default 400, range 30 to 3650)."""
+    e = os.environ if env is None else env
+    raw = (e.get("TAKEDOWN_CHECK_RETENTION_DAYS") or "").strip()
+    if not raw:
+        return DEFAULT_TAKEDOWN_CHECK_DAYS
+    try:
+        days = int(raw)
+    except ValueError:
+        raise RetentionError("TAKEDOWN_CHECK_RETENTION_DAYS must be an integer") from None
+    if not 30 <= days <= 3650:
+        raise RetentionError("TAKEDOWN_CHECK_RETENTION_DAYS must be between 30 and 3650")
+    return days
+
+
 def _schedule_prune(conn: Connection, proc: str, every: str, config: dict[str, int]) -> None:
     """Replace the job of a prune procedure; a no-op while the migration that adds it is pending."""
     conn.execute(
@@ -155,6 +174,7 @@ def apply_policies(
     campaign_rows: int | None = None,
     script_rows: int | None = None,
     abuse_days: int | None = None,
+    takedown_days: int | None = None,
 ) -> None:
     """(Re)create every background job with the configured retention. Idempotent."""
     # The compression window is fixed; retention is validated to be at least as long.
@@ -259,6 +279,17 @@ def apply_policies(
             "sent_days": abuse_days or DEFAULT_ABUSE_REPORT_DAYS,
         },
     )
+    # The monthly roll-up is never pruned: the procedure does not touch it.
+    _schedule_prune(
+        conn,
+        TAKEDOWN_PRUNE_PROC,
+        "1 day",
+        {
+            "check_days": takedown_days or DEFAULT_TAKEDOWN_CHECK_DAYS,
+            "target_days": TAKEDOWN_TARGET_DAYS,
+            "submission_days": ABUSECH_SUBMISSION_DAYS,
+        },
+    )
 
 
 def backfill(conn: Connection, days: int) -> None:
@@ -295,6 +326,7 @@ def apply_retention(conn: Connection, env: Mapping[str, str] | None = None) -> i
             campaigns_max_rows(env),
             scripts_max_rows(env),
             abuse_report_retention_days(env),
+            takedown_check_retention_days(env),
         )
         backfill(conn, days)
     except DBAPIError as exc:
