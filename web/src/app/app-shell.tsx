@@ -186,9 +186,10 @@ export function AppShell() {
                 <StatusFooter drawer />
               </SheetContent>
             </Sheet>
-            <Logo />
+            {/* Mark only: the name does not fit next to five controls at 390 px. */}
+            <Logo withName={false} />
             <span className="sr-only">{currentLabel(pathname)}</span>
-            <div className="flex-1" />
+            <div className="min-w-0 flex-1" />
             <SearchTrigger compact />
             <TourButton className="size-10" />
             <ReadOnlyBadge short />
