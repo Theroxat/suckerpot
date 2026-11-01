@@ -215,7 +215,7 @@ hub-integration:
       -v "$PWD:/work" -v "{{uv_cache}}:/cache" -w /work/hub \
       -e HOME=/tmp -e UV_CACHE_DIR=/cache -e UV_LINK_MODE=copy -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
       -e HUB_TEST_DATABASE_URL=postgresql+asyncpg://hub:hubtest-owner-password-0001@hub-db:5432/hub \
-      {{uv_image}} sh -c "uv sync && uv run pytest -q -p no:cacheprovider"
+      {{uv_image}} sh -c "uv sync --refresh-package suckerpot-netproto && uv run pytest -q -p no:cacheprovider"
 
 # Integration tests against the real database and Redis of the compose stack.
 test-integration:
@@ -249,7 +249,7 @@ test-integration:
         -e POSTGRES_INGEST_USER -e POSTGRES_INGEST_PASSWORD -e POSTGRES_API_USER -e POSTGRES_API_PASSWORD \
         -e SUCKERPOT_ALLOW_DEFAULT_SECRETS -e DB_DIR=/work/db \
         -e REDIS_HOST=redis -e REDIS_PORT=6379 -e REDIS_USER=admin -e "REDIS_PASSWORD=$REDIS_PASSWORD" -e REDIS_ADMIN_USER=admin -e "REDIS_ADMIN_PASSWORD=$REDIS_PASSWORD" \
-        {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api && uv run pytest -q -p no:cacheprovider -m integration; rc=\$?; [ \$rc -eq 5 ] && exit 0; exit \$rc")
+        {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api --refresh-package suckerpot-netproto && uv run pytest -q -p no:cacheprovider -m integration; rc=\$?; [ \$rc -eq 5 ] && exit 0; exit \$rc")
       # Default bridge first (to download packages), then the backend network (to reach db/redis).
       docker network connect "${it}_backend" "$cid"
       docker start -a "$cid" || { docker rm -f "$cid" >/dev/null; exit 1; }
@@ -284,7 +284,7 @@ _py cmd: _cache
         -v "$PWD:/work" -v "{{uv_cache}}:/cache" -w "/work/$pkg" \
         -e HOME=/tmp -e UV_CACHE_DIR=/cache -e UV_LINK_MODE=copy -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
         -e RUFF_CACHE_DIR=/tmp/ruff -e MYPY_CACHE_DIR=/tmp/mypy -e USER=x -e LOGNAME=x \
-        {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api && {{cmd}}" || { status=1; failed="$failed $pkg"; }
+        {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api --refresh-package suckerpot-netproto && {{cmd}}" || { status=1; failed="$failed $pkg"; }
     done
     if [ "$status" -ne 0 ]; then echo "FAILED packages:$failed" >&2; fi
     exit $status

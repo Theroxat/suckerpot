@@ -53,13 +53,29 @@ def build() -> dict[str, object]:
             }
         )
     responses = []
-    for status, body in ((200, b'{"deleted":true}'), (429, b'{"error":"rate_limited"}')):
+    first = requests[0]
+    signed_binding = sign.RequestBinding.signed(
+        "GET", first["target"], sign.node_key(pub), NONCE, first["signature"]
+    )
+    unsigned_binding = sign.RequestBinding.unsigned(
+        "POST", "/v1/enrol/challenge", NONCE, b'{"x":1}'
+    )
+    cases = (
+        ("signed", signed_binding, 200, b'{"deleted":true}'),
+        ("unsigned", unsigned_binding, 429, b'{"error":"rate_limited"}'),
+    )
+    for name, binding, status, body in cases:
         responses.append(
             {
+                "name": name,
+                "method": binding.method,
+                "target": binding.target,
+                "node": binding.node,
+                "digest": binding.digest,
                 "status": status,
                 "body": body.decode(),
-                "canonical": sign.canonical_response(NONCE, status, body),
-                "signature": sign.sign_response(HUB_SEED, NONCE, status, body),
+                "canonical": sign.canonical_response(binding, status, body),
+                "signature": sign.sign_response(HUB_SEED, binding, status, body),
             }
         )
     challenge = hashlib.sha256(b"spn/1 test challenge").digest()

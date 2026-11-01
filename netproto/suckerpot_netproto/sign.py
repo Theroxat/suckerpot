@@ -100,8 +100,47 @@ def canonical_request(
     return "\n".join(("SPN1-REQ", method.upper(), target, str(timestamp), nonce, body_sha256(body)))
 
 
-def canonical_response(nonce: str, status: int, body: bytes) -> str:
-    return "\n".join(("SPN1-RESP", nonce, str(status), body_sha256(body)))
+@dataclass(frozen=True)
+class RequestBinding:
+    """The request an answer belongs to. The hub signs it into every answer.
+
+    ``node`` is the ``X-SPN-Key`` of a signed request and ``-`` for an unsigned one. ``digest``
+    is the sha256 (hex) of the request signature for a signed request, and the sha256 of the
+    request body for an unsigned one. Binding the whole request stops a man in the middle from
+    collecting a hub-signed answer with its own request and replaying it to a victim's nonce.
+    """
+
+    method: str
+    target: str
+    nonce: str
+    node: str
+    digest: str
+
+    @classmethod
+    def signed(
+        cls, method: str, target: str, key: str, nonce: str, signature: str
+    ) -> RequestBinding:
+        digest = hashlib.sha256(signature.encode("ascii")).hexdigest()
+        return cls(method.upper(), target, nonce, key, digest)
+
+    @classmethod
+    def unsigned(cls, method: str, target: str, nonce: str, body: bytes = b"") -> RequestBinding:
+        return cls(method.upper(), target, nonce, "-", body_sha256(body))
+
+
+def canonical_response(binding: RequestBinding, status: int, body: bytes) -> str:
+    return "\n".join(
+        (
+            "SPN1-RESP",
+            binding.method,
+            binding.target,
+            binding.node,
+            binding.nonce,
+            binding.digest,
+            str(status),
+            body_sha256(body),
+        )
+    )
 
 
 def _sign(private: bytes, message: str) -> str:
@@ -167,12 +206,12 @@ def verify_request(
     return _verify(public, signature, canonical_request(method, target, timestamp, nonce, body))
 
 
-def sign_response(hub_private: bytes, nonce: str, status: int, body: bytes) -> str:
-    return _sign(hub_private, canonical_response(nonce, status, body))
+def sign_response(hub_private: bytes, binding: RequestBinding, status: int, body: bytes) -> str:
+    return _sign(hub_private, canonical_response(binding, status, body))
 
 
 def verify_response(
-    hub_key: str, signature: str | None, nonce: str, status: int, body: bytes
+    hub_key: str, signature: str | None, binding: RequestBinding, status: int, body: bytes
 ) -> bool:
     """True when ``signature`` is the hub's signature of this answer. Never raises."""
     if not signature:
@@ -181,13 +220,13 @@ def verify_response(
         public = parse_node_key(hub_key)
     except ValueError:
         return False
-    return _verify(public, signature, canonical_response(nonce, status, body))
+    return _verify(public, signature, canonical_response(binding, status, body))
 
 
 def require_response(
-    hub_key: str, signature: str | None, nonce: str, status: int, body: bytes
+    hub_key: str, signature: str | None, binding: RequestBinding, status: int, body: bytes
 ) -> None:
-    if not verify_response(hub_key, signature, nonce, status, body):
+    if not verify_response(hub_key, signature, binding, status, body):
         raise ProtoError("hub_signature")
 
 

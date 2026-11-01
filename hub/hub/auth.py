@@ -107,6 +107,7 @@ async def authenticate(
             body,
         ):
             raise ProtoError("bad_signature")
+        _bind_signed(request, parsed)
     except ProtoError as exc:
         if exc.code not in ("too_large", "rate_limited"):
             ctx.address_limiter.record_failure(request)
@@ -164,10 +165,27 @@ async def authenticate_new_key(
     ):
         ctx.address_limiter.record_failure(request)
         raise ProtoError("bad_signature")
+    _bind_signed(request, parsed)
     return parsed.public, parsed.nonce, body
 
 
 # --- replies ---
+
+
+def _bind_signed(request: Request, parsed: sign.ParsedHeaders) -> None:
+    """From here on the request is authenticated: answers are signed and bound to it."""
+    request.state.binding = sign.RequestBinding.signed(
+        request.method, request_target(request), parsed.key, parsed.nonce, parsed.signature
+    )
+
+
+def bind_unsigned(request: Request, body: bytes = b"") -> None:
+    """Unsigned endpoint: bind the answer to the request when the client sent a nonce."""
+    nonce = request_nonce(request)
+    if nonce is not None:
+        request.state.binding = sign.RequestBinding.unsigned(
+            request.method, request_target(request), nonce, body
+        )
 
 
 def request_nonce(request: Request) -> str | None:
@@ -191,9 +209,9 @@ def reply(
 ) -> Response:
     body = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("ascii")
     out = {"Content-Type": "application/json", "Cache-Control": "no-store", **(headers or {})}
-    nonce = request_nonce(request)
-    if nonce is not None:
-        out[sign.H_HUB_SIGNATURE] = sign.sign_response(ctx.hub_private, nonce, status, body)
+    binding = getattr(request.state, "binding", None)
+    if binding is not None:  # never for a request whose authentication failed
+        out[sign.H_HUB_SIGNATURE] = sign.sign_response(ctx.hub_private, binding, status, body)
     return Response(content=body, status_code=status, headers=out)
 
 

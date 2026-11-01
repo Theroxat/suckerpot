@@ -50,24 +50,33 @@ Every address and name below is a placeholder (documentation ranges and `example
   5. signature (`bad_signature`);
   6. nonce unseen for this key in the last 10 minutes (`replayed_nonce`);
   7. rate limit (`rate_limited`).
-- **Response signature.** Every answer to a signed request carries `X-SPN-Hub-Signature`: the
-  Ed25519 signature of
+- **Response signature.** An answer to an authenticated request carries `X-SPN-Hub-Signature`:
+  the Ed25519 signature by the hub key of
 
   ```
   SPN1-RESP
+  <METHOD uppercase>
+  <path with query exactly as sent>
+  <X-SPN-Key of the request, or "-" for an unsigned request>
   <request X-SPN-Nonce>
+  <lowercase hex sha256 of the request X-SPN-Signature string; for an unsigned request, the
+   lowercase hex sha256 of the request body>
   <HTTP status code>
   <lowercase hex sha256 of the response body>
   ```
 
-  by the hub key. The node checks it against the pinned hub key (base64url public key) and refuses
-  the answer otherwise (`hub_signature`, a node-side code). Binding the request nonce stops a
-  recorded answer from being replayed to another request.
-
+  The node checks it against the pinned hub key (base64url public key) and refuses the answer
+  otherwise (`hub_signature`, a node-side code). The answer is bound to the whole request, not
+  only its nonce: a man in the middle cannot send its own request to the hub, keep the signed
+  answer and replay it to a victim's nonce.
+- **Unsigned answers.** The hub does not sign an answer to a request whose authentication failed
+  (`stale_timestamp`, `unknown_node`, `bad_signature`, malformed headers, an unknown route,
+  `too_large`). A node treats such an error as "not authenticated", never as a statement by the
+  hub, and only retries later.
 - **Unsigned requests.** A client SHOULD send `X-SPN-Nonce` (16 random bytes, base64url) on the
-  unsigned endpoints too. When the header is well formed, the hub signs its answer exactly as above,
-  so a node can check that `/v1/info` and the enrolment challenge come from the pinned hub. Without
-  the header the answer carries no signature.
+  unsigned endpoints too. When the header is well formed, the hub signs its answer with the
+  binding above (key `-`, body hash), so a node can check that `/v1/info` and the enrolment
+  challenge come from the pinned hub. Without the header the answer carries no signature.
 - **Client address.** The hub never stores or logs the client address. It keeps in memory only a
   keyed hash of it, under a random key replaced every day, to rate limit unsigned requests and
   repeated authentication failures.
@@ -218,8 +227,9 @@ GET /v1/info, empty body, canonical string:
   SPN1-REQ\nGET\n/v1/info\n1790000000\nAAECAwQFBgcICQoLDA0ODw\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
   signature  6SmwSsSm-sIfEpE7-Wrhp7An2EATs7mFefPStH8OO6Nicc6x3CSiIYUX-aG9EzbpvMEd7bmvPjwXxcRx2VFlBg
 
-Response 200 {"deleted":true}, canonical string:
-  SPN1-RESP\nAAECAwQFBgcICQoLDA0ODw\n200\n1b70b1c98c544d975c39049311ab1d24ed1d87aedc2874bdc946d39bd421b4b8
+Response 200 {"deleted":true} to that request, canonical string:
+  SPN1-RESP\nGET\n/v1/info\nA6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg\nAAECAwQFBgcICQoLDA0ODw\n5192f07d3c54a1bbc411373a191bde77ed07c5bd9edc0b2ccae5f333ea312060\n200\n1b70b1c98c544d975c39049311ab1d24ed1d87aedc2874bdc946d39bd421b4b8
+  signature  dqYMJ9yk6N8qpc-CsuPJnq-xAAKF3B4vfwuzXwxC9kHafEMHGakhnRjei9dWrgHz6cv9bDaZ0dfh_hrWDvRyDA
 
 Blinding: HTTP://Example.ORG:80/a/B?x=1&y=%2F#frag
   canonical  http://example.org/a/B?x=1&y=%2F
