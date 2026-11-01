@@ -35,7 +35,7 @@ function demoPages(enabled: boolean): Plugin {
     },
     transformIndexHtml(html) {
       if (!enabled) return html
-      const badge = `<a class="demo-badge" href="../" title="Back to the SuckerPot project page"><span aria-hidden="true"></span>Demo &mdash; synthetic data</a>`
+      const badge = `<a class="demo-badge" href="../" title="Back to the Selfhostr project page"><span aria-hidden="true"></span>Demo &mdash; synthetic data</a>`
       const css = `<style>.demo-badge{position:fixed;z-index:60;right:12px;bottom:12px;display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--border-strong);border-radius:999px;background:var(--surface-raised);color:var(--fg-muted);font:500 12px/16px "Inter Variable",system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgb(0 0 0/.25)}.demo-badge:hover{color:var(--fg)}.demo-badge:focus-visible{outline:2px solid var(--fg);outline-offset:2px}.demo-badge span{width:6px;height:6px;border-radius:50%;background:#e0b341}@media(max-width:767px){.demo-badge{right:8px;bottom:auto;top:8px;padding:4px 10px;font-size:11px}}</style>`
       return html.replace("</head>", `${css}</head>`).replace("</body>", `${badge}</body>`)
     },

@@ -110,3 +110,8 @@ def test_no_network_clients_in_package() -> None:
                 if node.func.attr in ("create_connection", "open_connection", "connect", "urlopen"):
                     hits.append(f"{path.name}:{node.lineno} {node.func.attr}")
     assert hits == []
+
+
+def test_product_name_never_appears_in_package() -> None:
+    for path in sorted(PKG.rglob("*.py")):
+        assert "selfhostr" not in path.read_text().lower(), path

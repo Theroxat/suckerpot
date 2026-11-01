@@ -1,1 +1,1 @@
-"""SuckerPot REST API."""
+"""Selfhostr REST API."""

@@ -1,6 +1,6 @@
 # Architecture
 
-This page describes how SuckerPot is built: the services, the networks, the queue, the database and the API. For the threat model and the controls, see [Security](SECURITY.md).
+This page describes how Selfhostr is built: the services, the networks, the queue, the database and the API. For the threat model and the controls, see [Security](SECURITY.md).
 
 ```{admonition} Build status
 :class: note
@@ -22,7 +22,7 @@ This page describes how SuckerPot is built: the services, the networks, the queu
 
 ## Overview
 
-SuckerPot runs as a set of Docker Compose services on one host. Fake services, called sensors, take the attacks. Each attack becomes an event. Events go through Redis streams (one per sensor), are checked, enriched and stored by ingest, and end up in PostgreSQL with TimescaleDB. The API reads the database and serves the dashboard.
+Selfhostr runs as a set of Docker Compose services on one host. Fake services, called sensors, take the attacks. Each attack becomes an event. Events go through Redis streams (one per sensor), are checked, enriched and stored by ingest, and end up in PostgreSQL with TimescaleDB. The API reads the database and serves the dashboard.
 
 ```
 Internet
