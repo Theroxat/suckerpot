@@ -106,7 +106,8 @@ def derive_state(enabled: bool, row: NetworkFeedStateRow | None, now: datetime) 
     code = row.error_code if row is not None else None
     if not enabled:
         state = "disabled"
-    elif row is None or row.serial is None:
+    elif row is None or row.serial is None or row.valid_until is None:
+        # No verified copy: never fetched, or wiped by a disable that kept only the last serial.
         state = "error" if code else "never"
     elif row.valid_until is not None and row.valid_until <= now:
         state = "stale"

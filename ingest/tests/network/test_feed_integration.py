@@ -219,4 +219,8 @@ async def test_wipe_deletes_both_tables_and_reports_whether_anything_was_there(
     assert await store.wipe() is False
     await store.apply(state(1), {"outbound": [entry("203.0.113.50", 4)]}, {"outbound"})
     assert await store.wipe() is True
-    assert await rows(engine) == [] and await store.state() is None
+    assert await rows(engine) == []
+    kept = await store.state()  # only the serial and its key survive (rollback protection, L8)
+    assert kept is not None and kept.serial == 1 and kept.files == {}
+    assert kept.valid_until is None and kept.index_sha256 is None and kept.last_ok_at is None
+    assert await store.wipe() is False

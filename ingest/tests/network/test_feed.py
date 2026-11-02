@@ -144,8 +144,10 @@ class MemoryFeedStore:
         return 0
 
     async def wipe(self) -> bool:
-        had = self.st is not None
-        self.st, self.entries = None, {}
+        # Like the SQL store: the last serial and its key survive (rollback protection).
+        had = bool(self.entries) or (self.st is not None and self.st.valid_until is not None)
+        self.st = FeedState(serial=self.st.serial, key_id=self.st.key_id) if self.st else None
+        self.entries = {}
         self.wiped += 1
         return had
 
@@ -371,9 +373,40 @@ async def test_disabled_wipes_stored_data() -> None:
         if store.wiped:
             break
     task.cancel()
-    assert store.st is None and store.entries == {}
+    assert store.entries == {}
+    assert store.st is not None and store.st.valid_until is None and store.st.files == {}
     assert w.reason == "feed_disabled_wiped"
     assert site.requests == []  # nothing fetched by the disabled worker
+
+
+async def test_rollback_protection_survives_a_disable_and_re_enable() -> None:
+    """Security review L8: turning the feed off wiped the last accepted serial, so an old
+    signed generation was accepted again once the feed was turned back on."""
+    site, store = Site(), MemoryFeedStore()
+    site.publish(5)
+    await make(site, store).run_once()
+    assert store.st and store.st.serial == 5
+    assert await store.wipe() is True  # what the disabled worker does
+    site.publish(4, {"outbound": [entry("203.0.113.99", 4)]})  # a replayed older generation
+    w = make(site, store)
+    await w.run_once()
+    assert w.state == "error" and w.reason == "feed_rollback"
+    assert store.entries == {}
+    site.publish(6)
+    await w.run_once()
+    assert w.state == "ok" and store.st and store.st.serial == 6
+
+
+async def test_a_new_key_starts_a_new_serial_space() -> None:
+    site, store = Site(), MemoryFeedStore()
+    site.publish(5)
+    await make(site, store).run_once()
+    assert store.st is not None
+    store.st.key_id = "0000000000000000"  # the serial was accepted under another key
+    site.publish(2)
+    w = make(site, store)
+    await w.run_once()
+    assert w.state == "ok" and store.st and store.st.serial == 2
 
 
 async def test_client_refuses_a_name_outside_the_feed() -> None:
