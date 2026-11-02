@@ -5,7 +5,8 @@
 * contributor links: when the target is resolved or after 30 days;
 * takedown votes: 30 days; weekly statistics: 8 weeks;
 * feeds: removed entries 90 days, runs 30 days, delisting evidence 30 days after the decision,
-  decided delisting requests 180 days (open ones wait for their decision), expired allow-list rows and payload links straight away;
+  decided delisting requests 180 days (open ones wait for their decision), expired allow-list
+  rows and payload links straight away;
 * nodes with no request for 30 days are deleted with everything linked to them.
 """
 
