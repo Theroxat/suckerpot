@@ -384,12 +384,34 @@ async def _state(session: AsyncSession, key: str) -> str | None:
     return str(row[0]) if row else None
 
 
+SLA_DAYS = 3  # the 72 h delisting SLA, in whole days (requests hold days, never times)
+
+
+async def _overdue_warning(session: AsyncSession, out: Out) -> None:
+    """One line when open delisting requests are past the 72 h SLA (counts and a day only)."""
+    row = (
+        await session.execute(
+            text(
+                "SELECT count(*) AS n, min(created_day) AS oldest FROM delist_requests "
+                "WHERE decided_day IS NULL AND created_day < :due"
+            ),
+            {"due": utcnow().date() - timedelta(days=SLA_DAYS)},
+        )
+    ).one()
+    if row.n:
+        out(
+            f"WARNING: {row.n} open delisting request(s) past the 72 h SLA, oldest from "
+            f"{row.oldest}; see `delist list --state received` and `--state suppressed`"
+        )
+
+
 async def _feeds(
     args: argparse.Namespace, session: AsyncSession, who: str, out: Out, settings: Settings | None
 ) -> int:
     # release, discard, pause and resume write hub_audit themselves (feeds.job).
     if args.action == "status":
         out(f"paused: {await _state(session, feed_job.PAUSED_KEY) == '1'}")
+        await _overdue_warning(session, out)
         out(f"last status: {_safe(await _state(session, feed_job.STATUS_KEY))}")
         rows = await session.execute(
             text(
@@ -509,6 +531,7 @@ async def _allow(args: argparse.Namespace, session: AsyncSession, who: str, out:
 
 async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out: Out) -> int:
     if args.action == "list":
+        await _overdue_warning(session, out)
         sql = "SELECT id, state, outcome, category, list, created_day, value FROM delist_requests"
         params: dict[str, Any] = {}
         if args.state:

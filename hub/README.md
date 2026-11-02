@@ -360,7 +360,7 @@ The `--note` is **public**. The requester sees it, so write it for them.
 | `policy` | Removes the value, allows it for good, and adds it to the never-list. Use it for a resolver or a CDN that should never have been listed. |
 | `rejected` | The value stays, and the note explains why. |
 
-Interim effect: an inbound value is hidden from the next run until the decision. The number of values hidden per day is capped by `HUB_DELIST_AUTO_SUPPRESS_DAILY`. Outbound values are not hidden. They are the ones attackers most want to escape, so they wait for review. A suppressed inbound value stays hidden past the SLA, because a wrongly hidden bot address costs less than a wrongly listed innocent one. Check the queue with `delist list --state received` at least once a day.
+Interim effect: an inbound value is hidden from the next run until the decision. The number of values hidden per day is capped by `HUB_DELIST_AUTO_SUPPRESS_DAILY`. Outbound values are not hidden. They are the ones attackers most want to escape, so they wait for review. A suppressed inbound value stays hidden past the SLA, because a wrongly hidden bot address costs less than a wrongly listed innocent one. Check the queue with `delist list --state received` at least once a day. `delist list` and `feeds status` print a warning line when an open request is past the 72 h SLA.
 
 Scope: a value is hidden only when `inbound` is the only list that holds it, whatever list the request names, and it is hidden from `inbound` only. An accepted request applies to the list it named, or to `inbound` when that was the only list holding the value. Such a decision, a false positive included, never touches the same address on `outbound`. A request that named no list for a value that is on an outbound list too covers every list: narrow it with `delist accept ... --list inbound` (or another list) unless you mean to take the value off every list. `--list` can only narrow, never widen or move, a request's scope. `allow list` shows the scope of every row.
 
@@ -491,7 +491,7 @@ Takedown votes come from members' local re-checks. Members do not send those yet
 | Recipient log (report counts per day) | 90 days |
 | Reports sent, failed or cancelled | 365 days |
 | Nodes with no request for 30 days | Deleted, with everything linked to them |
-| Delisting requests | 180 days once decided (an open request is kept until its decision); evidence and contact 30 days after the decision |
+| Delisting requests | 180 days once decided (an open request is kept until its decision); evidence and contact 30 days after the decision, or 180 days after the request while it is still open |
 
 ## Backups
 

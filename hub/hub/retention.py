@@ -5,7 +5,8 @@
 * contributor links: when the target is resolved or after 30 days;
 * takedown votes: 30 days; weekly statistics: 8 weeks;
 * feeds: removed entries 90 days, runs 30 days, delisting evidence 30 days after the decision,
-  decided delisting requests 180 days (open ones wait for their decision), expired allow-list
+  decided delisting requests 180 days (open ones wait for their decision, without contact and
+  evidence after 180 days), expired allow-list
   rows and payload links straight away;
 * nodes with no request for 30 days are deleted with everything linked to them.
 """
@@ -156,6 +157,17 @@ async def run_retention(
         "UPDATE delist_requests SET evidence = NULL, contact = NULL "
         "WHERE decided_day < :c AND (evidence IS NOT NULL OR contact IS NOT NULL)",
         {"c": today - timedelta(days=DELIST_EVIDENCE_DAYS)},
+        out,
+    )
+    await _delete(
+        session,
+        "delist_open_evidence",
+        # An open request keeps its row (and its suppression) until a decision, but not the
+        # requester's contact and evidence beyond 180 days (security re-review L2).
+        "UPDATE delist_requests SET evidence = NULL, contact = NULL "
+        "WHERE decided_day IS NULL AND created_day < :c "
+        "AND (evidence IS NOT NULL OR contact IS NOT NULL)",
+        {"c": today - timedelta(days=DELIST_REQUEST_DAYS)},
         out,
     )
     await _delete(
