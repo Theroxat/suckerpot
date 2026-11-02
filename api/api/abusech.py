@@ -100,6 +100,10 @@ class SubmissionOut(BaseModel):
     scheduled_at: datetime | None = None
     submitted_at: datetime | None = None
     done_at: datetime | None = None
+    # Evidence from recorded sessions that showed the value (empty when none are linked).
+    session_count: int = 0
+    sensors: list[str] = Field(default_factory=list)
+    last_seen: datetime | None = None
 
 
 class SubmissionPage(BaseModel):
@@ -319,6 +323,33 @@ def to_out(row: Any) -> SubmissionOut:
     )  # fmt: skip
 
 
+EVIDENCE_SQL = """
+SELECT a.id, count(DISTINCT s.session_id) AS session_count,
+       COALESCE(array_agg(DISTINCT s.sensor) FILTER (WHERE s.sensor IS NOT NULL), '{}') AS sensors,
+       max(i.last_seen) AS last_seen
+FROM abusech_submissions a
+LEFT JOIN fetch_targets f ON f.id = a.fetch_target_id
+JOIN indicators i ON i.id = COALESCE(
+    f.indicator_id,
+    (SELECT x.id FROM indicators x
+      WHERE (x.type = 'url' AND x.value = a.value)
+         OR (a.platform = 'threatfox' AND x.type = 'ip' AND x.value = split_part(a.value, ':', 1))
+      ORDER BY x.last_seen DESC LIMIT 1)
+)
+LEFT JOIN indicator_sessions s ON s.indicator_id = i.id
+WHERE a.id = ANY(:ids)
+GROUP BY a.id
+"""
+
+
+async def _evidence(db: AsyncSession, ids: list[int]) -> dict[int, Any]:
+    """One bounded query for a whole page (at most 100 ids): never one query per row."""
+    if not ids:
+        return {}
+    rows = (await db.execute(text(EVIDENCE_SQL), {"ids": ids})).all()
+    return {r.id: r for r in rows}
+
+
 @router.get("/abusech/submissions", response_model=SubmissionPage)
 async def list_submissions(
     db: DbSession,
@@ -370,7 +401,17 @@ async def list_submissions(
         if len(rows) > limit and page
         else None
     )
-    return SubmissionPage(items=[to_out(r) for r in page], next_cursor=nxt, counts=counts)
+    evidence = await _evidence(db, [r.id for r in page])
+    items = []
+    for r in page:
+        item = to_out(r)
+        ev = evidence.get(r.id)
+        if ev is not None:
+            item.session_count = int(ev.session_count)
+            item.sensors = sorted(ev.sensors)
+            item.last_seen = ev.last_seen
+        items.append(item)
+    return SubmissionPage(items=items, next_cursor=nxt, counts=counts)
 
 
 # ---- approve and cancel (administrators) ---------------------------------------------------------

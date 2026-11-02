@@ -15,6 +15,7 @@ import { useAuth } from "@/app/auth"
 import { ConfirmDialog } from "@/components/abuse/status-dialogs"
 import { EmptyState } from "@/components/empty-state"
 import { FindingCard } from "@/components/finding-card"
+import { MetaLine } from "@/components/meta-line"
 import { PageHeader } from "@/components/page-header"
 import { ReadOnlyBadge } from "@/components/read-only-badge"
 import { RelativeTime } from "@/components/relative-time"
@@ -40,6 +41,7 @@ import {
   type SubmissionTab,
 } from "@/lib/abusech"
 import { plural } from "@/lib/format"
+import { sensorMeta } from "@/lib/sensors"
 import { defang } from "@/lib/results-sentences"
 import { cn } from "@/lib/utils"
 
@@ -290,6 +292,19 @@ export function SubmissionsPage() {
                         </Button>
                       ) : null}
                     </div>
+                    {s.session_count > 0 ? (
+                      <MetaLine>
+                        <span>seen in {plural(s.session_count, "session")}</span>
+                        {s.sensors.length > 0 ? (
+                          <span>{s.sensors.map((n) => sensorMeta(n)?.label ?? n).join(", ")}</span>
+                        ) : null}
+                        {s.last_seen ? (
+                          <span>
+                            last <RelativeTime iso={s.last_seen} />
+                          </span>
+                        ) : null}
+                      </MetaLine>
+                    ) : null}
                     {s.result_code ? (
                       <p className="text-xs text-fg-muted">{describeResult(s.result_code)}</p>
                     ) : null}

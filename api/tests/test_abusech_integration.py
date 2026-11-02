@@ -265,3 +265,39 @@ async def test_the_api_role_cannot_mark_a_row_submitted(world: httpx.AsyncClient
                     await conn.execute(text(sql), {"i": sid})
     finally:
         await engine.dispose()
+
+
+async def test_the_list_carries_the_evidence_of_each_url(world: httpx.AsyncClient) -> None:
+    url = "http://files.example.net/evidence.sh"
+    await seed(url)
+    await seed("http://files.example.net/none.sh")
+    async with owner_engine() as owner, owner.begin() as conn:
+        await conn.execute(text("TRUNCATE indicator_sessions, indicators CASCADE"))
+        iid = int(
+            await conn.scalar(
+                text(
+                    "INSERT INTO indicators (type, value, role, first_seen, last_seen) "
+                    "VALUES ('url', :v, 'download_host', now() - interval '2 days', "
+                    "now() - interval '2 hours') RETURNING id"
+                ),
+                {"v": url},
+            )
+            or 0
+        )
+        for sid, sensor in (("s1", "ssh"), ("s2", "ssh"), ("s3", "telnet")):
+            await conn.execute(
+                text(
+                    "INSERT INTO indicator_sessions (indicator_id, session_id, src_ip, sensor, "
+                    "seen_at) VALUES (:i, :s, '192.0.2.7', :n, now())"
+                ),
+                {"i": iid, "s": sid, "n": sensor},
+            )
+    items = {
+        i["value"]: i
+        for i in (await world.get("/api/v1/abusech/submissions?limit=100")).json()["items"]
+    }
+    hit = items[url]
+    assert hit["session_count"] == 3 and hit["sensors"] == ["ssh", "telnet"]
+    assert hit["last_seen"] is not None
+    miss = items["http://files.example.net/none.sh"]
+    assert miss["session_count"] == 0 and miss["sensors"] == [] and miss["last_seen"] is None
