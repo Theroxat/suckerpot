@@ -61,6 +61,9 @@ describe("create a feed token", () => {
     ]) {
       expect(screen.getByRole("checkbox", { name: label })).toBeInTheDocument()
     }
+    // The long label spans both columns (a separate class, not glued to the one before it).
+    const mirror = screen.getByRole("checkbox", { name: "Community lists (local mirror)" })
+    expect(mirror.closest("label")?.classList).toContain("col-span-2")
     const user = userEvent.setup()
     await user.type(screen.getByLabelText("Name"), "Edge firewall")
     await user.click(screen.getByRole("checkbox", { name: "Community lists (local mirror)" }))
