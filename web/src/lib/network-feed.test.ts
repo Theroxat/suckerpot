@@ -4,6 +4,7 @@ import {
   FEED_FORMATS,
   FEED_LIST_IDS,
   FEED_STATES,
+  describeFeedError,
   feedSentence,
   feedStatusLine,
   fileTier,
@@ -36,7 +37,7 @@ const STATUS_KEYS = [
   "local_mirror",
 ].sort()
 const LIST_KEYS = ["id", "direction", "entries", "high", "seen_here", "helped", "files"].sort()
-const FILE_KEYS = ["name", "format", "url"].sort()
+const FILE_KEYS = ["name", "format", "tier", "url"].sort()
 const ENTRY_KEYS = [
   "list",
   "value",
@@ -86,6 +87,7 @@ function checkStatus(s: FeedStatus) {
       expect(keys(f)).toEqual(FILE_KEYS)
       expect(FEED_FORMATS).toContain(f.format)
       expect(f.url).toBe(`${FEED_BASE_URL}/${f.name}`)
+      expect(f.tier).toBe(f.name.includes("-high") ? "high" : "standard")
     }
   }
 }
@@ -156,5 +158,23 @@ describe("sentences and files", () => {
     if (!outbound) throw new Error("no outbound list")
     expect(formatsOf(outbound, "high").every((f) => fileTier(f) === "high")).toBe(true)
     expect(formatsOf(outbound, "standard").map((f) => f.format)).toContain("stix")
+  })
+})
+
+describe("error codes of the feed worker", () => {
+  it("has a plain sentence for every code the worker stores", () => {
+    for (const code of [
+      "not_configured",
+      "egress_closed",
+      "bad_signature",
+      "feed_rollback",
+      "feed_expired",
+      "feed_invalid",
+      "too_large",
+      "unreachable",
+    ])
+      expect(describeFeedError(code)).not.toBe("The last fetch failed.")
+    expect(describeFeedError("http_503")).toContain("503")
+    expect(describeFeedError(null)).toBeNull()
   })
 })

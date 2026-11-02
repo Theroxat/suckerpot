@@ -22,6 +22,7 @@ from suckerpot_db import AlertChannelRow, EnrichmentStatusRow, EventRow
 from suckerpot_db.models import ReportImapRow, ReportImapStateRow
 from suckerpot_db.trusted_exits import ACTIVE_SELF_NETWORKS_SQL
 
+from api import network_feed
 from api.abuse_core import env_flag, load_settings, missing_for
 from api.authz import require_admin
 from api.deps import DbSession
@@ -355,6 +356,29 @@ async def _network(db: AsyncSession, now: datetime) -> SetupItem:
     )
 
 
+async def _network_feed(db: AsyncSession, now: datetime) -> SetupItem:
+    """The community lists (M30): off unless fetching is on; then fresh, or the reason it is not."""
+    href = "/defend/blocklists?tab=network"
+    if not network_feed.feed_enabled():
+        return _item("network_feed", "off", "The community lists are not fetched here.", href)
+    if network_feed.public_base_url() is None:
+        return _item(
+            "network_feed", "warning", "The address of the community lists is not set.", href
+        )
+    info = await network_feed.load_state(db, now)
+    if info.state == "ok":
+        return _item("network_feed", "ok", "The community lists are up to date.", href)
+    if info.state == "never":
+        return _item("network_feed", "ok", "Waiting for the first fetch of the lists.", href)
+    if info.state == "stale":
+        detail = "The community lists have expired; nothing is served to firewalls."
+    else:
+        detail = "The last fetch of the community lists failed."
+    if info.error_code:
+        detail = f"{detail} ({info.error_code})"
+    return _item("network_feed", "warning", detail, href)
+
+
 CHECKS: tuple[tuple[str, Callable[[AsyncSession, datetime], Awaitable[SetupItem]], str], ...] = (
     ("sensors", _sensors, "/settings"),
     ("ports", _ports, "/settings?tab=ports"),
@@ -370,6 +394,7 @@ CHECKS: tuple[tuple[str, Callable[[AsyncSession, datetime], Awaitable[SetupItem]
     ("abusech_submit", _abusech_submit, "/settings?tab=reporting"),
     ("updates", _updates, "/settings"),
     ("network", _network, "/network"),
+    ("network_feed", _network_feed, "/defend/blocklists?tab=network"),
 )
 
 

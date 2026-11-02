@@ -13,7 +13,7 @@ import type { FeedStatus } from "@/lib/network-feed"
  */
 export function FeedOff({ status, onHowTo }: { status: FeedStatus; onHowTo: () => void }) {
   const outbound = status.lists.find((l) => l.id === "outbound")
-  const txt = outbound?.files.find((f) => f.format === "txt" && !f.name.includes("-high"))
+  const txt = outbound?.files.find((f) => f.format === "txt" && f.tier === "standard")
   return (
     <div className="space-y-4">
       <EmptyState

@@ -38,6 +38,7 @@ from api.reauth import error, guard
 router = APIRouter(tags=["defend"])
 
 KindName = Literal["ip", "domain", "url", "hash"]
+TokenKind = Literal["ip", "domain", "url", "hash", "network"]
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 MAX_ACTIVE_TOKENS = 20
@@ -146,7 +147,7 @@ class TokenOut(BaseModel):
     id: int
     name: str
     hint: str
-    kinds: list[KindName]
+    kinds: list[TokenKind]
     min_score: int
     include_benign: bool
     created_by: str
@@ -164,13 +165,13 @@ class TokenPage(BaseModel):
     items: list[TokenOut]
 
 
-def _default_kinds() -> list[KindName]:
+def _default_kinds() -> list[TokenKind]:
     return ["ip"]
 
 
 class TokenBody(BaseModel):
     name: str = Field(min_length=1, max_length=64)
-    kinds: list[KindName] = Field(default_factory=_default_kinds, min_length=1, max_length=4)
+    kinds: list[TokenKind] = Field(default_factory=_default_kinds, min_length=1, max_length=5)
     min_score: int = Field(default=50, ge=0, le=100)
     include_benign: bool = False
     expires_in_days: int | None = Field(default=None, ge=1, le=730)

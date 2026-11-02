@@ -40,6 +40,7 @@ ORDER = [
     "abusech_submit",
     "updates",
     "network",
+    "network_feed",
 ]
 SQL_RESET = (
     "DELETE FROM events",
@@ -71,8 +72,10 @@ async def items(c: httpx.AsyncClient) -> dict[str, dict[str, Any]]:
     assert [i["id"] for i in body["items"]] == ORDER
     for i in body["items"]:
         assert set(i) == {"id", "state", "detail", "href"}
-        # Every link is an in-app path: Settings, or the Network page for the M29 item.
-        home = "/network" if i["id"] == "network" else "/settings"
+        # Every link is an in-app path: Settings, or the Network and Blocklists pages (M29, M30).
+        home = {"network": "/network", "network_feed": "/defend/blocklists"}.get(
+            i["id"], "/settings"
+        )
         assert i["href"].startswith(home) and i["detail"].endswith(".")
     return {i["id"]: i for i in body["items"]}
 
