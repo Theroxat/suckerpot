@@ -562,8 +562,10 @@ def test_readme_template_covers_the_required_topics() -> None:
         "delist.html",
         "72 hours",
         "@FEED_PUBLIC_KEY@",
+        "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
     ):
         assert needle in text_
+    assert "LICENSE.txt" not in text_  # no such file is published
     assert all(len(line) <= 100 for line in text_.splitlines())
     import re
 

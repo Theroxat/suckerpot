@@ -304,7 +304,8 @@ secrets:
   hub_signing_key:
     file: ${HUB_SIGNING_KEY_PATH:-./secrets/hub_signing_key}
   # The minisign key that signs the public feeds (a different key from the hub's own).
-  # Made by `docker compose run --rm hub-admin gen-feed-key`; set HUB_FEED_SIGNING_KEY_FILE to
+  # Made by `docker compose run --rm hub-admin gen-feed-key --out /keys/feed_key --force` (see
+  # hub/README.md); set HUB_FEED_SIGNING_KEY_FILE to
   # /run/secrets/hub_feed_key to use it.
   hub_feed_key:
     file: ${HUB_FEED_KEY_PATH:-./secrets/feed_key}

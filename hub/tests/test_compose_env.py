@@ -68,3 +68,12 @@ def test_tor_exits_are_excluded_whatever_the_environment_says() -> None:
     s = Settings.from_env({"HUB_FEED_EXCLUDE_TOR": "false", "HUB_ALLOW_DOCUMENTATION": "1"})
     excl = build_exclusions(s, never_rows=[], allow_rows=[], range_rows=[("tor", "203.0.113.7/32")])
     assert excl.classify("203.0.113.7", is_domain=False) == TOR
+
+
+def test_feed_key_command_names_the_key_file() -> None:
+    """gen-feed-key needs --out; the documented command writes where the compose secret reads."""
+    for name in (".env.example", "docker-compose.yml", "README.md"):
+        text = (HUB / name).read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if "gen-feed-key" in line and "docker compose run" in line:
+                assert "--out /keys/feed_key" in line, (name, line)
