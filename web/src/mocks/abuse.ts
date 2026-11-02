@@ -224,6 +224,7 @@ const settings: ReportSettings = {
     show_redaction_counts: false,
   },
   default_tlp: "green",
+  reference_style: "subject",
   revision: 1,
 }
 

@@ -19,7 +19,9 @@ import {
   guardReason,
   guardReasonsOf,
   isStale,
+  REFERENCE_STYLE_OPTIONS,
   TLP_OPTIONS,
+  type ReferenceStyle,
   type ReportSettings,
   type SelfTerm,
   type Tlp,
@@ -232,6 +234,19 @@ function SettingsForm({
             options={TLP_OPTIONS}
             className="self-start"
           />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-fg">Reply reference</span>
+          <SegmentedControl
+            label="Reply reference"
+            value={s.reference_style}
+            onChange={(v: ReferenceStyle) => set("reference_style", v)}
+            options={REFERENCE_STYLE_OPTIONS}
+            className="scroll-fade-x max-w-full self-start overflow-x-auto"
+          />
+          <span className="text-xs text-fg-muted">
+            A random code that lets a reply find its report. Off means only SMTP sends can match.
+          </span>
         </div>
       </div>
       <fieldset className="grid gap-3">
