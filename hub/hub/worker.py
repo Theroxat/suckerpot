@@ -23,6 +23,7 @@ from . import logging as hub_logging
 from .config import Settings
 from .db import make_engine, make_sessionmaker, utcnow
 from .external import Corroborator
+from .feeds import external as feed_ranges
 from .feeds import job as feed_job
 from .never import load_never
 from .never_seed import ensure_seed
@@ -44,6 +45,9 @@ class WorkerContext:
     corroborate: consensus.Corroborate | None = None
     resolver: Resolver | None = None
     mailer: report_send.Mailer | None = None
+    # Fetches the CDN and Tor ranges before the feed job. None (the default) never contacts
+    # anything, so tests stay offline; main_async turns it on.
+    ranges: Callable[[AsyncSession, Settings, datetime], Awaitable[dict[str, str]]] | None = None
 
 
 @dataclass
@@ -113,6 +117,10 @@ async def run_cycle(ctx: WorkerContext) -> CycleReport:
     await step("never_recheck", do_never)
     await step("expire", lambda ses: consensus.expire_stale(ses, today))
 
+    if ctx.ranges is not None:
+        refresh_ranges = ctx.ranges
+        await step("ranges", lambda ses: refresh_ranges(ses, s, now))
+
     async def do_feeds(ses: AsyncSession) -> object:
         return feed_job.summary(await feed_job.run_once(ses, s, now, corroborate=ctx.corroborate))
 
@@ -177,6 +185,7 @@ async def main_async(argv: list[str]) -> int:
         ctx.corroborate = corroborator if corroborator.enabled else None
         ctx.resolver = directory.resolve
         ctx.mailer = report_send.smtp_mailer(s, ctx.clock)
+        ctx.ranges = feed_ranges.refresh
         try:
             while True:
                 await run_cycle(ctx)

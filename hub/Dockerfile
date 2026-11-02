@@ -16,7 +16,7 @@ RUN uv sync --frozen --no-dev --no-editable
 FROM python:3.13.17-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH=/opt/venv/bin:$PATH
 RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid 10001 --no-create-home app \
-    && mkdir /keys && chown 10001:10001 /keys
+    && mkdir /keys /srv/feeds && chown 10001:10001 /keys /srv/feeds
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 COPY hub/alembic.ini ./alembic.ini

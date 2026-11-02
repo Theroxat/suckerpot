@@ -92,8 +92,7 @@ def test_feed_code_only_talks_to_the_database_and_the_disk() -> None:
 def test_feeds_site_logs_nothing() -> None:
     caddy = (HUB / "Caddyfile").read_text()
     match = re.search(r"\{\$HUB_FEEDS_DOMAIN[^{]*\{(.*)", caddy, flags=re.S)
-    if match is None:
-        pytest.skip("the feeds site is added to the Caddyfile by the compose task")
+    assert match is not None, "the feeds site must be in the Caddyfile"
     block = match.group(1)
     assert "output discard" in block and not re.search(r"output\s+(file|stdout|stderr)", block)
 
@@ -101,8 +100,6 @@ def test_feeds_site_logs_nothing() -> None:
 def test_external_fetcher_only_contacts_listed_hosts() -> None:
     fetcher = HUB / "hub" / "feeds" / "external.py"
     ranges = HUB / "hub" / "data" / "ranges.yaml"
-    if not fetcher.exists() or not ranges.exists():
-        pytest.skip("the range fetcher is added by the compose task")
     source = fetcher.read_text()
     urls = set(re.findall(r"https?://([A-Za-z0-9.-]+)", source))
     allowed = set(re.findall(r"https?://([A-Za-z0-9.-]+)", ranges.read_text()))

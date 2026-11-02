@@ -39,13 +39,40 @@ x-hub-env: &hub-env
   HUB_WORKER_INTERVAL_S: ${HUB_WORKER_INTERVAL_S:-3600}
   HUB_OBS_RETENTION_DAYS: ${HUB_OBS_RETENTION_DAYS:-14}
 
+# Public blocklist feeds (design M30). Defaults equal hub/config.py; HUB_FEED_MODE=off keeps the
+# whole feature idle.
+x-feed-env: &feed-env
+  HUB_FEED_MODE: ${HUB_FEED_MODE:-off}
+  HUB_FEED_DIR: ${HUB_FEED_DIR:-/srv/feeds}
+  HUB_FEED_SIGNING_KEY_FILE: ${HUB_FEED_SIGNING_KEY_FILE:-}
+  HUB_FEED_INTERVAL_MIN: ${HUB_FEED_INTERVAL_MIN:-60}
+  HUB_FEED_HOLD_HOURS: ${HUB_FEED_HOLD_HOURS:-6}
+  HUB_FEED_VALID_DAYS: ${HUB_FEED_VALID_DAYS:-3}
+  HUB_FEED_TTL_INBOUND_DAYS: ${HUB_FEED_TTL_INBOUND_DAYS:-7}
+  HUB_FEED_TTL_PAYLOAD_DAYS: ${HUB_FEED_TTL_PAYLOAD_DAYS:-14}
+  HUB_FEED_TTL_C2_DAYS: ${HUB_FEED_TTL_C2_DAYS:-30}
+  HUB_FEED_MAX_INBOUND: ${HUB_FEED_MAX_INBOUND:-50000}
+  HUB_FEED_MAX_OUTBOUND: ${HUB_FEED_MAX_OUTBOUND:-20000}
+  HUB_FEED_MAX_DOMAINS: ${HUB_FEED_MAX_DOMAINS:-20000}
+  HUB_FEED_BREAKER_ADD_PCT: ${HUB_FEED_BREAKER_ADD_PCT:-50}
+  HUB_FEED_BREAKER_REMOVE_PCT: ${HUB_FEED_BREAKER_REMOVE_PCT:-50}
+  HUB_FEED_BREAKER_MIN: ${HUB_FEED_BREAKER_MIN:-200}
+  HUB_FEED_NEVER: ${HUB_FEED_NEVER:-}
+  HUB_FEED_EXCLUDE_TOR: ${HUB_FEED_EXCLUDE_TOR:-true}
+  HUB_EXTERNAL_RANGES_ENABLED: ${HUB_EXTERNAL_RANGES_ENABLED:-true}
+
 services:
   caddy:
-    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    # 2.10.2 answers 206 to a plain gzip request on precompressed files; 2.11.x does not.
+    image: caddy:2.11.2-alpine@sha256:834468128c7696cec0ceea6172f7d692daf645ae51983ca76e39da54a97c570d
     <<: *hardening
     user: "65532:65532"
+    # The Caddy binary carries the file capability cap_net_bind_service; with every capability
+    # dropped the kernel refuses to execute it. This one is the only capability added back.
+    cap_add: [NET_BIND_SERVICE]
     environment:
       HUB_DOMAIN: ${HUB_DOMAIN:?HUB_DOMAIN must be set in .env}
+      HUB_FEEDS_DOMAIN: ${HUB_FEEDS_DOMAIN:?HUB_FEEDS_DOMAIN must be set in .env}
     ports:
       - "80:80"
       - "443:443"
@@ -55,6 +82,8 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
+      # The feed files, read-only: Caddy can serve them and never change them.
+      - feeds:/srv/feeds:ro
     tmpfs:
       - /config:rw,noexec,nosuid,nodev,size=8m,uid=65532,gid=65532
     healthcheck:
@@ -104,7 +133,7 @@ services:
     user: "10001:10001"
     command: ["python", "-m", "hub.worker"]
     environment:
-      <<: *hub-env
+      <<: [*hub-env, *feed-env]
       HUB_WORKER_DATABASE_URL: postgresql+asyncpg://hub_worker:${HUB_WORKER_DB_PASSWORD:?HUB_WORKER_DB_PASSWORD must be set}@hub-db:5432/hub
       HUB_REPORT_MODE: ${HUB_REPORT_MODE:-review}
       HUB_REPORT_HOLD_HOURS: ${HUB_REPORT_HOLD_HOURS:-24}
@@ -125,9 +154,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    secrets: [hub_feed_key]
+    volumes:
+      - feeds:/srv/feeds
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
-    # Only service with a route out (RDAP and the report mailbox).
+    # Only service with a route out (RDAP, the report mailbox and the CDN and Tor range lists).
     networks: [hub-internal, hub-out]
     mem_limit: 512m
     cpus: 1.0
@@ -147,10 +179,13 @@ services:
     entrypoint: ["python", "-m", "hub.admin"]
     profiles: [tools]
     environment:
+      <<: *feed-env
       HUB_WORKER_DATABASE_URL: postgresql+asyncpg://hub_worker:${HUB_WORKER_DB_PASSWORD:?HUB_WORKER_DB_PASSWORD must be set}@hub-db:5432/hub
     # Writes the signing key into ./secrets (owned by uid 10001, mode 0700) with gen-signing-key.
     volumes:
       - ${HUB_SIGNING_KEY_DIR:-./secrets}:/keys
+      - feeds:/srv/feeds
+    secrets: [hub_feed_key]
     networks: [hub-internal]
     mem_limit: 256m
     cpus: 0.5
@@ -264,6 +299,11 @@ services:
 secrets:
   hub_signing_key:
     file: ${HUB_SIGNING_KEY_PATH:-./secrets/hub_signing_key}
+  # The minisign key that signs the public feeds (a different key from the hub's own).
+  # Made by `docker compose run --rm hub-admin gen-feed-key`; set HUB_FEED_SIGNING_KEY_FILE to
+  # /run/secrets/hub_feed_key to use it.
+  hub_feed_key:
+    file: ${HUB_FEED_KEY_PATH:-./secrets/feed_key}
 
 volumes:
   db-data:
@@ -272,6 +312,9 @@ volumes:
   backups:
     external: true
     name: ${HUB_VOLUME_PREFIX}_backups
+  feeds:
+    external: true
+    name: ${HUB_VOLUME_PREFIX}_feeds
   caddy-data:
 
 networks:
