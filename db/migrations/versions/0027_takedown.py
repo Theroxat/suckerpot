@@ -358,6 +358,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # The job is scheduled by suckerpot_db.retention; without this it would outlive its procedure.
+    op.execute(
+        "SELECT delete_job(job_id) FROM timescaledb_information.jobs "
+        "WHERE proc_name = 'suckerpot_takedown_prune'"
+    )
     op.execute("DROP PROCEDURE IF EXISTS suckerpot_takedown_prune(integer, jsonb)")
     op.execute("DROP TABLE IF EXISTS outcome_rollup_monthly")
     op.execute("DROP TABLE IF EXISTS takedown_target_links")

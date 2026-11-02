@@ -110,7 +110,7 @@ async def test_down_and_up_again(owner: AsyncEngine) -> None:
             )
 
     assert await exists()
-    _alembic("downgrade", "0022")
+    _alembic("downgrade", "0025")
     assert not await exists()
     _alembic("upgrade", "head")
     assert await exists()

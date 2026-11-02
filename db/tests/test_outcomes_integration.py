@@ -129,7 +129,7 @@ async def test_existing_and_new_reports_get_distinct_immutable_tokens(owner: Asy
             await conn.execute(
                 text(NEW_REPORT.format(extra="", vals="")), {"kind": kind, "status": "draft"}
             )
-    _alembic("downgrade", "0022")
+    _alembic("downgrade", "0025")
     _alembic("upgrade", "head")
     async with owner.connect() as conn:
         tokens = [r[0] for r in await conn.execute(text("SELECT reply_token FROM abuse_reports"))]
