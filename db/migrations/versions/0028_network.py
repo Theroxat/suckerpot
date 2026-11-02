@@ -1,7 +1,7 @@
 """The opt-in Selfhostr network, node side (M29, ``docs/design/m29.md`` section 9.2).
 
-Revision ID: 0026
-Revises: 0022
+Revision ID: 0028
+Revises: 0027
 
 * ``network_membership``: one row (``CHECK id = 1``, seeded here). ``desired`` is what the admin
   asked for (the API writes it), ``state`` is what ingest did. The node's private key is AES-GCM
@@ -23,8 +23,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0026"
-down_revision: str | None = "0022"
+revision: str = "0028"
+down_revision: str | None = "0027"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

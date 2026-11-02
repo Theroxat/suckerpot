@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The Network pages: Overview and Members under Defend, a Network tab in Settings, and a Network item in the setup checklist. The pages show what the network did in the last 30 days and what the sensor helped confirm.
 - The hub (`hub/`): the server of the network, deployed separately with its own compose file, Caddy, PostgreSQL, daily backups and an operator CLI. It keeps no client address. It sends grouped abuse reports for confirmed targets, one review at a time by default. Command-server reports are never sent automatically. See [hub/README.md](hub/README.md).
 - The `spn/1` protocol library (`netproto/`): Ed25519 request and answer signatures bound to the whole request, replay protection, blinding of links and domains, proof of work for enrolment, and golden test vectors.
-- Migration `0026` (node database): membership, submissions, the network's targets and summary, with their roles and retention.
+- Migration `0028` (node database): membership, submissions, the network's targets and summary, with their roles and retention.
 
 ### Known limits
 

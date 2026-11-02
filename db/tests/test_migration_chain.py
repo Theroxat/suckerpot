@@ -327,4 +327,4 @@ def test_network_grants_keep_the_private_key_away_from_the_api() -> None:
 def test_the_network_prune_procedure_is_created_by_its_migration() -> None:
     from suckerpot_db.retention import NETWORK_PRUNE_PROC
 
-    assert f"PROCEDURE {NETWORK_PRUNE_PROC}(" in (VERSIONS / "0026_network.py").read_text()
+    assert f"PROCEDURE {NETWORK_PRUNE_PROC}(" in (VERSIONS / "0028_network.py").read_text()
