@@ -14,17 +14,17 @@ import {
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import {
-  BLOCK_KINDS,
   classifyFailure,
   createFeedToken,
   describeDefendError,
   EXPIRY_OPTIONS,
   DEFAULT_MIN_SCORE,
-  KIND_META,
   SCORE_OPTIONS,
   scorePreset,
-  type BlockKind,
+  TOKEN_KIND_META,
+  TOKEN_KINDS,
   type FeedToken,
+  type TokenKind,
 } from "@/lib/defend"
 
 export interface CreatedToken {
@@ -41,7 +41,7 @@ function CreateForm({
 }) {
   const queryClient = useQueryClient()
   const [name, setName] = useState("")
-  const [kinds, setKinds] = useState<BlockKind[]>(["ip"])
+  const [kinds, setKinds] = useState<TokenKind[]>(["ip"])
   const [minScore, setMinScore] = useState<number>(DEFAULT_MIN_SCORE)
   const [includeBenign, setIncludeBenign] = useState(false)
   const [expiry, setExpiry] = useState("none")
@@ -59,7 +59,7 @@ function CreateForm({
     err: useId(),
   }
 
-  const toggle = (k: BlockKind, on: boolean) =>
+  const toggle = (k: TokenKind, on: boolean) =>
     setKinds((prev) => (on ? [...prev, k] : prev.filter((x) => x !== k)))
 
   async function submit() {
@@ -77,7 +77,7 @@ function CreateForm({
       const created = await createFeedToken(
         {
           name,
-          kinds: BLOCK_KINDS.filter((k) => kinds.includes(k)),
+          kinds: TOKEN_KINDS.filter((k) => kinds.includes(k)),
           minScore,
           includeBenign,
           expiresInDays: EXPIRY_OPTIONS.find((o) => o.value === expiry)?.days ?? null,
@@ -132,10 +132,10 @@ function CreateForm({
       <fieldset className="flex flex-col gap-1.5" aria-describedby={`${ids.kinds}-error`}>
         <legend className="mb-1.5 text-sm font-medium text-fg">Lists it can read</legend>
         <div className="grid grid-cols-2 gap-2">
-          {BLOCK_KINDS.map((k) => (
+          {TOKEN_KINDS.map((k) => (
             <label
               key={k}
-              className="flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm text-fg has-[:checked]:border-border-strong has-[:checked]:bg-surface-raised"
+              className={`flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm text-fg has-[:checked]:border-border-strong has-[:checked]:bg-surface-raised${k === "network" ? "col-span-2" : ""}`}
             >
               <input
                 type="checkbox"
@@ -143,7 +143,7 @@ function CreateForm({
                 onChange={(e) => toggle(k, e.target.checked)}
                 className="size-4 accent-[var(--fg)]"
               />
-              {KIND_META[k].label}
+              {TOKEN_KIND_META[k].label}
             </label>
           ))}
         </div>
