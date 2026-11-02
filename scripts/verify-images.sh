@@ -2,7 +2,13 @@
 # Verifies the cosign signature of every published image of a release (M28), against the identity of
 # this project's release workflow. Nothing is pulled or started: cosign only reads signatures.
 #
-#   scripts/verify-images.sh [vX.Y.Z]
+#   scripts/verify-images.sh [--pull] [--only "api ingest"] [vX.Y.Z]
+#
+# --pull makes the check the gate for what runs: for each image, cosign verifies the tag and
+# reports the digest it verified; the image is then pulled BY THAT DIGEST and the local
+# <prefix>-<image>:<version> tag is pointed at it. Nothing the registry serves later under the
+# same tag can slip in between the check and the start. Any failure stops with a non-zero exit.
+# --only restricts the check (and the pull) to the listed image names, e.g. "api".
 #
 # The version comes from the argument, then SUCKERPOT_VERSION (environment or .env). The registry
 # prefix comes from SUCKERPOT_IMAGE_PREFIX (same lookup, default ghcr.io/theroxat/suckerpot); the
@@ -21,6 +27,8 @@ COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign:v3.1.4@sha256:0f06154836d2de34f887a
 ISSUER="https://token.actions.githubusercontent.com"
 IMAGES="redis migrate ingest api collector demo sensor-ssh sensor-rdp sensor-telnet sensor-web sensor-redis sensor-docker sensor-mysql sensor-mssql sensor-adb sensor-smb sensor-sip sensor-synology"
 
+die() { echo "verify-images: $*" >&2; exit 1; }
+
 # Reads VAR from the environment or from .env (last assignment wins; quotes removed).
 get() {
   eval "val=\${$1:-}"
@@ -30,7 +38,22 @@ get() {
   printf '%s' "${val:-$2}"
 }
 
-die() { echo "verify-images: $*" >&2; exit 1; }
+pull=0
+only=""
+while [ $# -gt 0 ]; do
+  case $1 in
+    --pull) pull=1; shift ;;
+    --only) [ $# -ge 2 ] || die "--only needs a list of image names"; only=$2; shift 2 ;;
+    --*) die "unknown option: $1" ;;
+    *) break ;;
+  esac
+done
+if [ -n "$only" ]; then
+  for name in $only; do
+    case " $IMAGES " in *" $name "*) ;; *) die "unknown image name: $name" ;; esac
+  done
+  IMAGES=$only
+fi
 
 version=${1:-$(get SUCKERPOT_VERSION '')}
 [ -n "$version" ] || die "no version: pass vX.Y.Z or set SUCKERPOT_VERSION"
@@ -51,7 +74,8 @@ if [ "${VERIFY_IMAGES_NO_AUTH:-0}" != 1 ] && [ -f "$HOME/.docker/config.json" ];
   auth=(-v "$HOME/.docker/config.json:/home/nonroot/.docker/config.json:ro")
 fi
 errlog=$(mktemp)
-trap 'rm -f "$errlog"' EXIT
+outlog=$(mktemp)
+trap 'rm -f "$errlog" "$outlog"' EXIT
 
 echo "verify-images: $version, signer github.com/$repo release workflow"
 fail=0
@@ -64,8 +88,26 @@ for image in $IMAGES; do
       "$COSIGN_IMAGE" verify \
       --certificate-identity-regexp "(?i)$identity" \
       --certificate-oidc-issuer "$ISSUER" \
-      "$ref" >/dev/null 2>"$errlog"; then
-    echo "  ok      $image"
+      "$ref" >"$outlog" 2>"$errlog"; then
+    # The digest cosign verified (exactly one distinct value, or the image is refused).
+    digests=$(grep -o '"docker-manifest-digest" *: *"sha256:[0-9a-f]\{64\}"' "$outlog" | grep -o 'sha256:[0-9a-f]\{64\}' | sort -u || true)
+    if [ "$(printf '%s\n' "$digests" | grep -c .)" -ne 1 ]; then
+      echo "  FAILED  $image (no single verified digest in the cosign output)" >&2
+      fail=1
+      continue
+    fi
+    if [ "$pull" = 1 ]; then
+      if docker pull --quiet "$prefix-$image@$digests" >/dev/null 2>"$errlog" \
+        && docker tag "$prefix-$image@$digests" "$ref"; then
+        echo "  ok      $image ($digests)"
+      else
+        echo "  FAILED  $image (could not pull the verified digest)" >&2
+        sed 's/^/          /' "$errlog" | tail -n 3 >&2
+        fail=1
+      fi
+    else
+      echo "  ok      $image ($digests)"
+    fi
   else
     echo "  FAILED  $image" >&2
     sed 's/^/          /' "$errlog" | tail -n 3 >&2
@@ -77,3 +119,4 @@ if [ "$fail" -ne 0 ]; then
   die "at least one image did not verify: do not run this version"
 fi
 echo "verify-images: all $(echo "$IMAGES" | wc -w | tr -d ' ') images carry a valid signature"
+[ "$pull" = 0 ] || echo "verify-images: pulled by verified digest and tagged $version"

@@ -11,4 +11,13 @@ cd "$(dirname "$0")/.."
 . scripts/lib/env.sh
 
 env_drop_loaded
+# Images mode runs only images that the installer or updater verified: never build or pull here.
+if [ "$(env_get SUCKERPOT_INSTALL_MODE source)" = images ] && [ "${1:-}" = up ]; then
+  shift
+  docker compose up --no-build --pull never "$@" || {
+    echo "compose-fresh: an image may be missing locally; run: just update (it verifies and pulls the release images)" >&2
+    exit 1
+  }
+  exit 0
+fi
 exec docker compose "$@"

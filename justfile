@@ -51,7 +51,11 @@ up *flags: _need-project ports
     bash scripts/ensure-volumes.sh "$@"
     if [ "${SUCKERPOT_INSTALL_MODE:-source}" = images ]; then
       # Release images are pulled and verified by the installer and the updater: never build over them.
-      docker compose up -d --no-build --pull missing --wait
+      # An image that is not local was never verified: --pull never fails instead of fetching it.
+      docker compose up -d --no-build --pull never --wait || {
+        echo "an image is missing locally; run: just update (it verifies and pulls the release images)" >&2
+        exit 1
+      }
     else
       docker compose up -d --build --wait
     fi

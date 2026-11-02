@@ -53,6 +53,9 @@ case "$*" in
   "run "*api.hashpw*)
     cat > "$SHIM_DIR/hash-stdin"
     echo '$argon2id$v=19$m=65536,t=3,p=4$ZmFrZXNhbHQ$ZmFrZWhhc2g' ;;
+  "run "*cosign*" verify "*)
+    [ -z "${SHIM_COSIGN_NODIGEST:-}" ] || { echo '[]'; exit 0; }
+    echo '[{"critical":{"image":{"docker-manifest-digest":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}}}]' ;;
   "run "*"--entrypoint test"*) [ -z "${SHIM_DUMP_MISSING:-}" ] || exit 1 ;;
   "run "*) echo 0 ;;
   "image inspect "*) echo "sha256:0123456789abcdef" ;;
