@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
+import { cn } from "@/lib/utils"
 import {
   classifyFailure,
   createFeedToken,
@@ -135,7 +136,10 @@ function CreateForm({
           {TOKEN_KINDS.map((k) => (
             <label
               key={k}
-              className={`flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm text-fg has-[:checked]:border-border-strong has-[:checked]:bg-surface-raised${k === "network" ? " col-span-2" : ""}`}
+              className={cn(
+                "flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm text-fg has-[:checked]:border-border-strong has-[:checked]:bg-surface-raised",
+                k === "network" && "col-span-2",
+              )}
             >
               <input
                 type="checkbox"
