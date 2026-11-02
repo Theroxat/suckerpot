@@ -4,7 +4,8 @@ Pure functions over loaded rows. Inputs are M29 consensus targets in state ``con
 ``reported`` and the per-node observations of eligible nodes. Rules stricter than consensus:
 
 * **TCP-proven inbound behaviour only.** Scans, bare connects and ``http``-only evidence never
-  list an address. Evidence that exists only on ``sip`` (UDP, spoofable) never lists one either.
+  list an address. A row that names ``sip`` (UDP, spoofable) is never evidence, even when it also
+  names a TCP service: the protocol does not say which service carried the activity.
 * **k-support.** Every published value (activity category, service, tag, family, port) and both
   dates need at least ``k`` distinct eligible nodes behind them, so one node's sighting changes
   nothing public (``hub.support`` holds the helpers).
@@ -159,7 +160,16 @@ def _high(
 
 
 def _tcp(row: Obs) -> bool:
-    return any(s not in UDP_SERVICES for s in row.services)
+    """The row's activity is TCP-proven: it names services, and none of them is UDP.
+
+    ``spn/1`` sends one row per address and day, with the union of the services and of the
+    activity of every session, and the attempts summed over all of them. It does not say which
+    service carried which activity. A row that mixes ``sip`` with a TCP service therefore cannot
+    prove anything: spoofed SIP REGISTER floods plus one bare TCP connect would look like a TCP
+    brute force (security review H2). Such a row never counts as evidence; nodes from M30 on
+    also leave ``sip`` sessions out of the activity and attempts they send.
+    """
+    return bool(row.services) and not any(s in UDP_SERVICES for s in row.services)
 
 
 def _window(ttl: int, last: date) -> date:
@@ -171,18 +181,17 @@ def _evaluate_inbound(t: TargetInput, ctx: SelectContext, corroborated: bool | N
     if len({r.node for r in rows}) < ctx.k:
         return Evaluation(None)
     # Evidence kinds. "login" counts only as a heavy brute force (attempts bucket >= 2).
-    everywhere: dict[str, set[object]] = defaultdict(set)
-    on_tcp: dict[str, set[object]] = defaultdict(set)
+    evidence_nodes: dict[str, set[object]] = defaultdict(set)
     for r in rows:
+        if not _tcp(r):
+            continue  # UDP-only or mixed with UDP: no evidence (see _tcp)
         keys = {a for a in r.activity if a in STRONG_IN}
         if "login" in r.activity and (r.attempts or 0) >= LOGIN_ATTEMPTS_MIN:
             keys.add("login")
         for key in keys:
-            everywhere[key].add(r.node)
-            if _tcp(r):
-                on_tcp[key].add(r.node)
-    supported = {key for key, nodes in everywhere.items() if len(nodes) >= ctx.k}
-    if not any(len(on_tcp.get(key, ())) >= ctx.k for key in supported):
+            evidence_nodes[key].add(r.node)
+    supported = {key for key, nodes in evidence_nodes.items() if len(nodes) >= ctx.k}
+    if not supported:
         return Evaluation(None)
     # Dates follow the rows that carry k-supported evidence on a TCP service.
     evidence = [
@@ -191,7 +200,11 @@ def _evaluate_inbound(t: TargetInput, ctx: SelectContext, corroborated: bool | N
         if _tcp(r)
         and (
             any(a in supported for a in r.activity if a in STRONG_IN)
-            or ("login" in supported and "login" in r.activity)
+            or (
+                "login" in supported
+                and "login" in r.activity
+                and (r.attempts or 0) >= LOGIN_ATTEMPTS_MIN
+            )
         )
     ]
     days_by_node = _by_node(evidence)

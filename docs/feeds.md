@@ -45,7 +45,7 @@ The high tier is empty when the hub has no outside source configured. `outbound-
 | Rule | What it means |
 | --- | --- |
 | Several independent sensors | An entry needs observations from at least 5 eligible nodes, the "k" in k-support. One sensor's sighting never changes a list. |
-| TCP evidence for inbound | An address is listed only when the evidence came over TCP. Scans, plain connects and web-only probes never list an address. Evidence that exists only on SIP (UDP) never lists one either, because UDP source addresses can be faked. |
+| TCP evidence for inbound | An address is listed only when the evidence came over TCP. Scans, plain connects and web-only probes never list an address. Evidence seen on SIP (UDP) never lists one either, because UDP source addresses can be faked. A node sends one summary per address and day, so when an address shows up on SIP and on a TCP service the same day, that node's summary for the day is not counted at all. |
 | Payload hosts | A host is listed only when a file was fetched from it by at least 2 nodes, and that file has a known malware family. A URL that was merely typed into a command never lists its host. |
 | Command servers (C2) | A command server is listed only when the hub's analysis rates it with high confidence, and at least two different samples from at least two nodes point to it. |
 | Names | A host name is listed only when it was revealed by the same evidence as the address. Shared hosting and big cloud names are never listed. |
