@@ -261,6 +261,8 @@ class PayloadLink(Base):
     kind: Mapped[str] = mapped_column(Text, primary_key=True)  # payload_ip | domain
     value: Mapped[str] = mapped_column(Text, primary_key=True)  # the host, as in observations
     url_b: Mapped[str] = mapped_column(Text, primary_key=True)
+    # Eligible nodes that asserted the link on that day (one batch per node and day; h0007).
+    nodes: Mapped[int] = mapped_column(Integer, server_default=text("1"))
 
 
 class TargetHost(Base):

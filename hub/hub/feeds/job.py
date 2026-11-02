@@ -136,8 +136,11 @@ async def load_existing(session: AsyncSession) -> dict[tuple[str, str], EntryRow
     return {(r.list, r.value): _row_to_entry(r) for r in rows}
 
 
-async def link_hosts(session: AsyncSession, since: date) -> None:
-    """Tie payload hosts to the URL targets they served (for takedown removal)."""
+async def link_hosts(session: AsyncSession, since: date, k: int) -> None:
+    """Tie payload hosts to the URL targets they served (for takedown removal).
+
+    Only links that at least ``k`` eligible nodes asserted on one day count: one member alone
+    can neither force a takedown removal nor block one (security review M3)."""
     await session.execute(
         text(
             """
@@ -145,11 +148,11 @@ async def link_hosts(session: AsyncSession, since: date) -> None:
             SELECT DISTINCT u.id, h.id FROM payload_links pl
             JOIN targets u ON u.kind = 'url' AND coalesce(u.value_b, u.value) = pl.url_b
             JOIN targets h ON h.kind = pl.kind AND coalesce(h.value_b, h.value) = pl.value
-            WHERE pl.day >= :since
+            WHERE pl.day >= :since AND pl.nodes >= :k
             ON CONFLICT DO NOTHING
             """
         ),
-        {"since": since},
+        {"since": since, "k": k},
     )
 
 
@@ -488,7 +491,7 @@ async def run_once(
         return excl.classify(value, is_domain=list_id == select.DOMAINS, list_id=list_id)
 
     eligible = await consensus.eligible_nodes(session, s, today)
-    await link_hosts(session, today - timedelta(days=s.obs_retention_days))
+    await link_hosts(session, today - timedelta(days=s.obs_retention_days), s.min_nodes)
     inputs = await load_inputs(session, s, today, eligible)
     existing = await load_existing(session)
     ctx = SelectContext(
