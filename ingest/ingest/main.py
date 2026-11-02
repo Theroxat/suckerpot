@@ -41,6 +41,8 @@ from ingest.features import FeatureSettings, FeatureWorker
 from ingest.indicators import IndicatorExtractor, IndicatorSettings
 from ingest.llm import ExplainerWorker
 from ingest.network import BatchBuilder, NetworkSettings, NetworkWorker
+from ingest.network.feed import FeedWorker, SqlFeedStore
+from ingest.network.feed_client import FeedSettings
 from ingest.network.source import SqlSource
 from ingest.network.store import SqlStore
 from ingest.replies import ReplyWorker
@@ -75,6 +77,17 @@ def build_network_worker(features: FeatureSettings, factory: Any) -> NetworkWork
     return NetworkWorker(
         features, network, SqlStore(factory), terms, builder, box=load_secret_box()
     )
+
+
+def build_feed_worker(features: FeatureSettings, factory: Any) -> FeedWorker:
+    """The public blocklist feed worker (M30). A bad NETWORK_FEED_* value leaves it unconfigured
+    (nothing is fetched); it never turns the flag off, so stored data is not wiped by a typo."""
+    try:
+        feed = FeedSettings.from_env()
+    except ValueError as exc:
+        log.error("network feed settings are invalid (%s): the feed is not fetched", exc)
+        feed = FeedSettings()
+    return FeedWorker(features, feed, SqlFeedStore(factory))
 
 
 async def run() -> None:
@@ -218,6 +231,7 @@ async def run() -> None:
             malpedia=malpedia,
         ),
         build_network_worker(features, factory),
+        build_feed_worker(features, factory),
     ]
     for worker in feature_workers:
         appliers.append(worker.apply_settings)

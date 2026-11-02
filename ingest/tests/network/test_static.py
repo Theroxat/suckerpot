@@ -56,9 +56,15 @@ def test_the_only_client_factory_is_make_client() -> None:
     assert "follow_redirects=False" in src
 
 
+def test_the_feed_client_is_the_second_and_last_client_factory() -> None:
+    src = (PACKAGE / "feed_client.py").read_text()
+    assert "make_client(" in src
+    assert "follow_redirects=False" in src
+
+
 def test_every_other_module_uses_the_hub_client_only() -> None:
     for path in FILES:
-        if path.name == "client.py":
+        if path.name in {"client.py", "feed_client.py"}:
             continue
         assert "make_client" not in path.read_text(), path.name
 
