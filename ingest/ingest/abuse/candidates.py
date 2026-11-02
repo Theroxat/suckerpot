@@ -87,7 +87,7 @@ async def network_covered(session: AsyncSession) -> set[str]:
             JOIN network_membership m ON m.id = 1 AND m.state = 'member'
             WHERE t.state IN ('reported', 'taken_down') AND t.value IS NOT NULL
               AND t.kind IN ('ip', 'domain', 'c2_ip', 'c2_domain')
-              AND t.last_day >= (now() AT TIME ZONE 'UTC')::date - :days
+              AND t.last_day >= (now() AT TIME ZONE 'UTC')::date - CAST(:days AS integer)
             """
         ),
         {"days": NETWORK_WINDOW_DAYS},
