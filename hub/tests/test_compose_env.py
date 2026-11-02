@@ -53,3 +53,18 @@ def test_every_variable_is_in_env_example() -> None:
     listed = set(re.findall(r"^(HUB_[A-Z0-9_]+)=", text, flags=re.M))
     missing = sorted(_read_vars() - NOT_IN_EXAMPLE - listed)
     assert not missing, f"missing from .env.example: {missing}"
+
+
+def test_tor_exclusion_has_no_switch() -> None:
+    """Security review L5: Tor exits are always excluded, so no file may offer to turn it off."""
+    for name in ("docker-compose.yml", ".env.example", "README.md", "hub/config.py"):
+        assert "HUB_FEED_EXCLUDE_TOR" not in (HUB / name).read_text(encoding="utf-8"), name
+
+
+def test_tor_exits_are_excluded_whatever_the_environment_says() -> None:
+    from hub.config import Settings
+    from hub.feeds.filter import TOR, build_exclusions
+
+    s = Settings.from_env({"HUB_FEED_EXCLUDE_TOR": "false", "HUB_ALLOW_DOCUMENTATION": "1"})
+    excl = build_exclusions(s, never_rows=[], allow_rows=[], range_rows=[("tor", "203.0.113.7/32")])
+    assert excl.classify("203.0.113.7", is_domain=False) == TOR

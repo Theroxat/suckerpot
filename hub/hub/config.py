@@ -124,7 +124,6 @@ class Settings:
     feed_breaker_remove_pct: int = 50
     feed_breaker_min: int = 200
     feed_never: tuple[str, ...] = ()
-    feed_exclude_tor: bool = True
     external_ranges_enabled: bool = True
     # Public delisting (design M30 section 9): proof-of-work bits, requests per day, and how many
     # inbound values may be hidden at once, per day, before an operator has looked at them.
@@ -166,7 +165,6 @@ class Settings:
             feed_never=tuple(
                 v.strip() for v in e.get("HUB_FEED_NEVER", "").split(",") if v.strip()
             ),
-            feed_exclude_tor=_bool(e, "HUB_FEED_EXCLUDE_TOR", True),
             external_ranges_enabled=_bool(e, "HUB_EXTERNAL_RANGES_ENABLED", True),
             delist_pow_difficulty=_int(e, "HUB_DELIST_POW_DIFFICULTY", 20, 0, 32),
             delist_daily_cap=_int(e, "HUB_DELIST_DAILY_CAP", 200, 0),
