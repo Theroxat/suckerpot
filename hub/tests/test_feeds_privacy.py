@@ -97,6 +97,20 @@ def test_feeds_site_logs_nothing() -> None:
     assert "output discard" in block and not re.search(r"output\s+(file|stdout|stderr)", block)
 
 
+def test_delist_page_hashes_match_the_caddy_policy() -> None:
+    import base64
+    import hashlib
+
+    page = (HUB / "static" / "delist.html").read_text()
+    caddy = (HUB / "Caddyfile").read_text()
+    for tag in ("script", "style"):
+        match = re.search(rf"<{tag}>(.*?)</{tag}>", page, flags=re.S)
+        assert match is not None
+        digest = base64.b64encode(hashlib.sha256(match.group(1).encode()).digest()).decode()
+        assert f"sha256-{digest}" in caddy, f"update the {tag} hash in the Caddyfile"
+    assert page.count("<script") == 1 and page.count("<style") == 1
+
+
 def test_external_fetcher_only_contacts_listed_hosts() -> None:
     fetcher = HUB / "hub" / "feeds" / "external.py"
     ranges = HUB / "hub" / "data" / "ranges.yaml"

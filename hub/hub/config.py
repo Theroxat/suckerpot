@@ -131,6 +131,9 @@ class Settings:
     delist_pow_difficulty: int = 20
     delist_daily_cap: int = 200
     delist_auto_suppress_daily: int = 50
+    # Filled into the public README.txt: the feed host name and the delisting mailbox (optional).
+    feeds_domain: str = "feeds.example.org"
+    delist_mailbox: str = ""
     # External corroboration (optional keys; empty disables the source).
     abuseipdb_key: str = field(default="", repr=False)
     greynoise_key: str = field(default="", repr=False)
@@ -168,6 +171,8 @@ class Settings:
             delist_pow_difficulty=_int(e, "HUB_DELIST_POW_DIFFICULTY", 20, 0, 32),
             delist_daily_cap=_int(e, "HUB_DELIST_DAILY_CAP", 200, 0),
             delist_auto_suppress_daily=_int(e, "HUB_DELIST_AUTO_SUPPRESS_DAILY", 50, 0),
+            feeds_domain=e.get("HUB_FEEDS_DOMAIN", "feeds.example.org") or "feeds.example.org",
+            delist_mailbox=e.get("HUB_DELIST_MAILBOX", ""),
             database_url=e.get("HUB_DATABASE_URL", ""),
             worker_database_url=e.get("HUB_WORKER_DATABASE_URL", ""),
             signing_key_file=e.get("HUB_SIGNING_KEY_FILE", ""),
