@@ -36,7 +36,8 @@ router = APIRouter()
 
 SLA_HOURS = 72
 CHALLENGE_TTL_S = 600
-SUPPRESSIBLE_LISTS = frozenset({"inbound"})
+SUPPRESSIBLE = "inbound"
+SUPPRESSIBLE_LISTS = frozenset({SUPPRESSIBLE})
 ID_RE = re.compile(r"^d_[0-9a-f]{16}$")
 OPEN_STATES = ("received", "suppressed")
 # The nonce is bound to the challenge only: there is no key to bind it to.
@@ -183,15 +184,16 @@ async def submit(request: Request) -> Response:
             raise ProtoError("pow_invalid")
         value = normalize_value(req.value, allow_documentation=s.allow_documentation)
         await session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:v))"), {"v": value})
-        listed = (
-            await session.execute(
-                text(
-                    "SELECT DISTINCT list FROM feed_entries WHERE value = :v AND state = 'listed' "
-                    "AND (CAST(:l AS text) IS NULL OR list = :l)"
-                ),
-                {"v": value, "l": req.list_id},
+        # Every list the value is on, whatever list the requester named: whether a value may be
+        # hidden at once depends on all of them (security review H1).
+        on_lists = {
+            str(r[0])
+            for r in await session.execute(
+                text("SELECT DISTINCT list FROM feed_entries WHERE value = :v AND state = 'listed'"),
+                {"v": value},
             )
-        ).all()
+        }
+        listed = on_lists if req.list_id is None else on_lists & {req.list_id}
         if not listed:
             await session.rollback()
             return reply(request, ctx, 200, {"listed": False, "state": "not_listed"})
@@ -213,21 +215,27 @@ async def submit(request: Request) -> Response:
         if counts.today >= s.delist_daily_cap:
             await session.rollback()
             raise ProtoError("rate_limited", "3600")
-        on_inbound_only = {r[0] for r in listed} <= SUPPRESSIBLE_LISTS
+        on_inbound_only = on_lists <= SUPPRESSIBLE_LISTS
         hide = on_inbound_only and counts.hidden < s.delist_auto_suppress_daily
+        # The list a decision may act on: the one named, or ``inbound`` when that is the only
+        # list holding the value. NULL (every list) only for a request about a value that is on
+        # an outbound list too, which is never hidden before an operator looks at it.
+        scope = req.list_id or (SUPPRESSIBLE if on_inbound_only else None)
         request_id = "d_" + secrets.token_hex(8)
         token = secrets.token_bytes(32)
         state = "suppressed" if hide else "received"
         await session.execute(
             text(
-                "INSERT INTO delist_requests (id, token_hash, value, list, category, evidence, "
-                "contact, state, created_day) VALUES (:id, :th, :v, :l, :cat, :ev, :co, :st, :d)"
+                "INSERT INTO delist_requests (id, token_hash, value, list, scope, category, "
+                "evidence, contact, state, created_day) "
+                "VALUES (:id, :th, :v, :l, :sc, :cat, :ev, :co, :st, :d)"
             ),
             {
                 "id": request_id,
                 "th": hashlib.sha256(token).digest(),
                 "v": value,
                 "l": req.list_id,
+                "sc": scope,
                 "cat": req.category,
                 "ev": req.evidence,
                 "co": req.contact,

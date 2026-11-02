@@ -449,13 +449,13 @@ async def _allow(args: argparse.Namespace, session: AsyncSession, who: str, out:
     if args.action == "list":
         rows = await session.execute(
             text(
-                "SELECT value, kind, reason, source, expires_day, note FROM feed_allow "
+                "SELECT value, kind, reason, source, list, expires_day, note FROM feed_allow "
                 "ORDER BY kind, value"
             )
         )
         for r in rows:
             out(
-                f"{r.kind}\t{_safe(r.value)}\t{r.reason}\t{r.source}\t"
+                f"{r.kind}\t{_safe(r.value)}\t{r.reason}\t{r.source}\t{r.list or 'all lists'}\t"
                 f"{r.expires_day or 'never'}\t{_safe(r.note)}"
             )
         return 0
@@ -472,7 +472,7 @@ async def _allow(args: argparse.Namespace, session: AsyncSession, who: str, out:
                 "VALUES (:v, :k, :r, :n, :t, :e, 'admin') ON CONFLICT (value) DO UPDATE SET "
                 "kind = EXCLUDED.kind, reason = EXCLUDED.reason, note = EXCLUDED.note, "
                 "added_day = EXCLUDED.added_day, expires_day = EXCLUDED.expires_day, "
-                "source = EXCLUDED.source"
+                "source = EXCLUDED.source, list = NULL"
             ),
             {
                 "v": value,
@@ -518,7 +518,7 @@ async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out
     row = (
         await session.execute(
             text(
-                "SELECT id, value, list, category, evidence, contact, state, outcome, "
+                "SELECT id, value, list, scope, category, evidence, contact, state, outcome, "
                 "public_note, created_day, decided_day FROM delist_requests WHERE id = :id"
             ),
             {"id": args.id},
@@ -555,14 +555,17 @@ async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out
                 penalised += await reputation.dispute(session, target_id)
         await session.execute(
             text(
-                "INSERT INTO feed_allow (value, kind, reason, note, added_day, expires_day, source) "
-                "VALUES (:v, :k, :r, :n, :t, :e, 'delist') ON CONFLICT (value) DO UPDATE SET "
-                "kind = EXCLUDED.kind, reason = EXCLUDED.reason, note = EXCLUDED.note, "
+                "INSERT INTO feed_allow (value, kind, reason, note, added_day, expires_day, source, "
+                "list) VALUES (:v, :k, :r, :n, :t, :e, 'delist', :l) ON CONFLICT (value) DO UPDATE "
+                "SET kind = EXCLUDED.kind, reason = EXCLUDED.reason, note = EXCLUDED.note, "
                 "added_day = EXCLUDED.added_day, expires_day = EXCLUDED.expires_day, "
-                "source = EXCLUDED.source"
+                "source = EXCLUDED.source, "
+                # Two decisions on one value only ever widen what is allowed.
+                "list = CASE WHEN feed_allow.list = EXCLUDED.list THEN EXCLUDED.list END"
             ),
             {
                 "v": row.value,
+                "l": row.scope,
                 "k": kind,
                 "r": reason,
                 "n": "delisting " + row.id,

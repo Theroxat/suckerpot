@@ -338,6 +338,8 @@ class FeedAllow(Base):
     added_day: Mapped[date] = mapped_column(Date)
     expires_day: Mapped[date | None] = mapped_column(Date)
     source: Mapped[str] = mapped_column(Text)  # admin | delist
+    # The list the row applies to; NULL for every list (migration h0006).
+    list_id: Mapped[str | None] = mapped_column("list", Text)
 
 
 class FeedAutoRange(Base):
@@ -371,3 +373,5 @@ class DelistRequest(Base):
     public_note: Mapped[str | None] = mapped_column(Text)
     created_day: Mapped[date] = mapped_column(Date)
     decided_day: Mapped[date | None] = mapped_column(Date)
+    # The list an accepted decision applies to; NULL for every list (migration h0006).
+    scope: Mapped[str | None] = mapped_column(Text)

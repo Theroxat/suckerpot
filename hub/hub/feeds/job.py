@@ -485,7 +485,7 @@ async def run_once(
         return await _status(session, JobResult("failed", error_code="ranges_stale"), now)
 
     def excluded(list_id: str, value: str) -> str | None:
-        return excl.classify(value, is_domain=list_id == select.DOMAINS)
+        return excl.classify(value, is_domain=list_id == select.DOMAINS, list_id=list_id)
 
     eligible = await consensus.eligible_nodes(session, s, today)
     await link_hosts(session, today - timedelta(days=s.obs_retention_days))
