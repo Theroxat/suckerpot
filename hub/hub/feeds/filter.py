@@ -36,6 +36,7 @@ from suckerpot_netproto.blind import canonical_domain
 from suckerpot_netproto.feeds.models import check_ip_global
 
 from ..config import Settings
+from .external import load_sources
 
 NEVER_FILE = Path(__file__).resolve().parent.parent / "data" / "never.yaml"
 RANGES_MAX_AGE_DAYS = 30
@@ -53,7 +54,12 @@ SUPPRESSIBLE = "inbound"  # the only list a pending delisting request may hide a
 
 
 class RangesStale(RuntimeError):
-    """The CDN or Tor ranges are missing or older than 30 days: every feed run stops."""
+    """A CDN or Tor source is missing or older than 30 days: every feed run stops."""
+
+
+def required_sources() -> set[str]:
+    """Every source of ``ranges.yaml``, and ``tor`` always (Tor exits are always excluded)."""
+    return {src.name for src in load_sources()} | {TOR}
 
 
 class NetSet:
@@ -264,7 +270,10 @@ async def load_exclusions(session: AsyncSession, s: Settings, today: date) -> Ex
     newest: dict[str, date] = {}
     for source, _prefix, fetched in ranges:
         newest[source] = max(newest.get(source, fetched), fetched)
-    if not newest or any(d < today - timedelta(days=RANGES_MAX_AGE_DAYS) for d in newest.values()):
+    # Fail closed per source: one source that was never fetched (or went stale) would let its
+    # addresses through while the others look fine (security review M1).
+    oldest_ok = today - timedelta(days=RANGES_MAX_AGE_DAYS)
+    if any(newest.get(name, date.min) < oldest_ok for name in required_sources()):
         raise RangesStale("ranges_stale")
     return build_exclusions(
         s,

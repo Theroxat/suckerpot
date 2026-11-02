@@ -375,7 +375,7 @@ The hub excludes what no list may carry: reserved space, public resolvers, share
 
 - A failed refresh keeps the last good copy. It retries after 6 hours.
 - A source is refused when it holds a prefix wider than /8 (IPv4) or /16 (IPv6), when it is too small, or when it shrinks by more than half.
-- A copy older than 30 days stops every feed run (`ranges_stale`). The hub does not publish without its exclusions.
+- Every source of `ranges.yaml`, and `tor` always, must have a copy younger than 30 days. A source that was never fetched, or whose copy is older, stops every feed run (`ranges_stale`). The hub does not publish without its exclusions.
 - `ranges status` shows the copies, and `ranges refresh` fetches now.
 - `HUB_EXTERNAL_RANGES_ENABLED=false` keeps every feed off, because the exclusions would be missing.
 

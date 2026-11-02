@@ -20,7 +20,7 @@ from hub.feeds.select import Candidate, Obs, SelectContext, TargetInput
 from hub.never import Never
 
 from .conftest import Env, make_settings
-from .seed import TODAY, add_nodes, observe
+from .seed import TODAY, add_nodes, observe, shipped_ranges
 
 D = [TODAY - timedelta(days=n) for n in (1, 2, 3, 4)]
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
@@ -461,6 +461,7 @@ async def add_ranges(
             {"p": tor, "c": cdn, "d": day},
         )
         await s.commit()
+    await shipped_ranges(env.worker, day)
 
 
 async def confirm(env: Env, settings: Any = None) -> None:

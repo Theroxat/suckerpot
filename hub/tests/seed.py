@@ -107,3 +107,22 @@ async def target(sm: async_sessionmaker[AsyncSession], kind: str, value: str) ->
             .mappings()
             .first()
         )
+
+
+async def shipped_ranges(
+    sm: async_sessionmaker[AsyncSession], day: date = TODAY, *, skip: frozenset[str] = frozenset()
+) -> None:
+    """One harmless documentation prefix for every range source the feed job requires, fetched
+    on ``day`` (the job fails closed unless every source has a fresh copy)."""
+    from hub.feeds.filter import required_sources
+
+    async with sm() as s:
+        for i, name in enumerate(sorted(required_sources() - skip)):
+            await s.execute(
+                text(
+                    "INSERT INTO feed_auto_ranges (source, prefix, fetched_day) VALUES (:s, :p, :d) "
+                    "ON CONFLICT (source, prefix) DO UPDATE SET fetched_day = EXCLUDED.fetched_day"
+                ),
+                {"s": name, "p": f"2001:db8:fffe:{i}::/64", "d": day},
+            )
+        await s.commit()
