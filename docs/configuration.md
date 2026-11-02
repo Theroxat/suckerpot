@@ -1,6 +1,6 @@
 # Configuration
 
-SuckerPot is configured with environment variables. You set them in `.env`, which Docker Compose reads. The template is `.env.example`. Copy it, then replace every placeholder.
+Selfhostr is configured with environment variables. You set them in `.env`, which Docker Compose reads. The template is `.env.example`. Copy it, then replace every placeholder.
 
 ```bash
 cp .env.example .env
@@ -604,7 +604,7 @@ These names are in the template. The code does not read them, so setting them ha
 
 ## Data sources and attribution
 
-SuckerPot shows data from third parties. Keep these credits visible if you publish a screenshot or a page that shows the data.
+Selfhostr shows data from third parties. Keep these credits visible if you publish a screenshot or a page that shows the data.
 
 | Data | Used when | Credit |
 | --- | --- | --- |

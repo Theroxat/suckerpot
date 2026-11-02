@@ -1,6 +1,6 @@
 # Third-party notices
 
-SuckerPot ships a few pieces of third-party material. Software dependencies keep their own licences (see each package's lockfile); this file covers data that is bundled in the repository.
+Selfhostr ships a few pieces of third-party material. Software dependencies keep their own licences (see each package's lockfile); this file covers data that is bundled in the repository.
 
 ## Common passwords list
 
@@ -14,6 +14,6 @@ SuckerPot ships a few pieces of third-party material. Software dependencies keep
 
 `ingest/rules/attack/techniques.yaml` lists a small subset of the technique ids, names and tactics of MITRE ATT&CK®, used to label what attackers did and to draw the Techniques page. The ids, names and tactics are taken from <https://attack.mitre.org/>.
 
-- MITRE ATT&CK® is a registered trademark of The MITRE Corporation. SuckerPot is not affiliated with or endorsed by MITRE.
+- MITRE ATT&CK® is a registered trademark of The MITRE Corporation. Selfhostr is not affiliated with or endorsed by MITRE.
 - © 2015-2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation, under the [ATT&CK Terms of Use](https://attack.mitre.org/resources/legal-and-branding/terms-of-use/).
-- Changes: only the technique ids, names and tactics are kept, each with the SuckerPot "stage" it is told under. The mapping rules in `ingest/rules/attack/mapping.yaml` are SuckerPot's own.
+- Changes: only the technique ids, names and tactics are kept, each with the Selfhostr "stage" it is told under. The mapping rules in `ingest/rules/attack/mapping.yaml` are Selfhostr's own.

@@ -1,5 +1,5 @@
 /**
- * Typed client for the SuckerPot REST API (api/api/schemas.py is the source
+ * Typed client for the Selfhostr REST API (api/api/schemas.py is the source
  * of truth for these shapes). Times are ISO 8601 strings in UTC.
  */
 

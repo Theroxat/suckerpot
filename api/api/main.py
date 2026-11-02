@@ -97,7 +97,7 @@ def create_app(
     if enable_docs is None:
         enable_docs = os.environ.get("API_ENABLE_DOCS", "false").strip().lower() in TRUE_VALUES
     app = FastAPI(
-        title="API",
+        title="Selfhostr API",
         version="0.1.0",
         lifespan=lifespan,
         docs_url="/docs" if enable_docs else None,
