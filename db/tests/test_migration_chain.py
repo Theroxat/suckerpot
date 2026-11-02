@@ -77,11 +77,11 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0028() -> None:
+def test_the_chain_is_linear_up_to_0029() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0028"}
+    assert heads == {"0029"}
     for n in range(11, 23):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
     # 0023 and 0024 were never released; 0025 (M28) is chained on 0022.
@@ -91,6 +91,8 @@ def test_the_chain_is_linear_up_to_0028() -> None:
     assert revs["0027"][0] == "0026"
     # M29 (network, never deployed before 0027 went live) follows the deployed head.
     assert revs["0028"][0] == "0027"
+    # M30 (community feed) follows 0028, which is deployed.
+    assert revs["0029"][0] == "0028"
 
 
 def test_every_new_revision_has_a_downgrade() -> None:
@@ -339,6 +341,33 @@ def test_the_network_prune_procedure_is_created_by_its_migration() -> None:
     from suckerpot_db.retention import NETWORK_PRUNE_PROC
 
     assert f"PROCEDURE {NETWORK_PRUNE_PROC}(" in (VERSIONS / "0028_network.py").read_text()
+
+
+FEED_TABLES = ("network_feed_state", "network_feed_entries")
+
+
+def test_feed_tables_are_modelled_and_least_privilege() -> None:
+    assert set(FEED_TABLES) <= set(models.Base.metadata.tables)
+    for script in (_GRANTS_INGEST, _GRANTS_API):
+        for table in FEED_TABLES:
+            assert f"'{table}'" in script, table  # in the REVOKE list
+    ingest = _grants(_GRANTS_INGEST)
+    api = _grants(_GRANTS_API)
+    for table in FEED_TABLES:
+        assert ingest[table] == {"SELECT", "INSERT", "UPDATE", "DELETE"}, table
+        assert api[table] == {"SELECT"}, table
+    for script in (_GRANTS_COLLECTOR, _GRANTS_ANALYZER):
+        assert not any(t in script for t in FEED_TABLES)
+    for script in (_GRANTS_INGEST, _GRANTS_API):
+        assert "TO PUBLIC" not in script.upper()
+
+
+def test_the_feed_migration_leaves_the_hypertables_and_jobs_alone() -> None:
+    script = (VERSIONS / "0029_network_feed.py").read_text()
+    code = script.split("def upgrade", 1)[1]
+    for hypertable in ("events", "sessions"):
+        assert not re.search(rf"\b(TABLE|ON|INTO|FROM)\s+{hypertable}\b", code), hypertable
+    assert "add_job" not in code and "CREATE PROCEDURE" not in code.upper()
 
 
 M26_TABLES = {

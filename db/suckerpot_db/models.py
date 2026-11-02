@@ -1661,3 +1661,46 @@ class NetworkSummaryRow(Base):
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=_now(), nullable=False
     )
+
+
+class NetworkFeedStateRow(Base):
+    """What the feed worker last verified from the public blocklist feed (M30): one row."""
+
+    __tablename__ = "network_feed_state"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default=text("1"))
+    serial: Mapped[int | None] = mapped_column(BigInteger)
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    key_id: Mapped[str | None] = mapped_column(Text)
+    index_sha256: Mapped[str | None] = mapped_column(Text)
+    files: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    last_fetch_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class NetworkFeedEntryRow(Base):
+    """One entry of a stored public feed list (M30). Replaced list by list on every fetch."""
+
+    __tablename__ = "network_feed_entries"
+    __table_args__ = (Index("ix_network_feed_entries_value", "value"),)
+
+    # The column is "list"; the attribute avoids shadowing the builtin inside the class body.
+    list_name: Mapped[str] = mapped_column("list", Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, primary_key=True)
+    family: Mapped[int | None] = mapped_column(SmallInteger)
+    tier: Mapped[str | None] = mapped_column(Text)
+    categories: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    services: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    tags: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    families: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    ports: Mapped[list[int]] = mapped_column(ARRAY(Integer), server_default=text("'{}'"))
+    first_seen: Mapped[date | None] = mapped_column(Date)
+    last_seen: Mapped[date | None] = mapped_column(Date)
+    expires: Mapped[date | None] = mapped_column(Date)
+    reported: Mapped[bool | None] = mapped_column(Boolean)
+    seen_here: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
