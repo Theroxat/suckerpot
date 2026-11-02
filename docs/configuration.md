@@ -558,7 +558,7 @@ Details in [Replies to reports](replies.md). The worker is off by default. Mail 
 | `ABUSE_REPLY_EXCERPT_CHARS` | `2000` | Characters of a reply kept as an excerpt (0 to 2,000). `0` keeps none. |
 | `ABUSE_REPLY_EXCERPT_DAYS` | `180` | Days an excerpt is kept (1 to 3,650). Read by `migrate` for the retention job. |
 | `ABUSE_REPLY_MATCH_DAYS` | `120` | A reply is matched to reports sent in the last N days (1 to 730). |
-| `ABUSE_NO_ANSWER_DAYS` | `14` | Days without an answer before a sent report shows **No answer**. Read by `api`. |
+| `ABUSE_NO_ANSWER_DAYS` | `14` | Days without an answer before a sent report shows **No answer** (1 to 365). Read by `api`. |
 
 The check interval of the mailbox is set in Settings (5 to 1440 minutes, 15 by default), not here.
 
@@ -577,7 +577,7 @@ abuse.ch submission needs three things: `ABUSECH_SUBMIT_ENABLED=true`, a mode ot
 | `TAKEDOWN_ABUSEIPDB_DAILY_QUOTA` | `50` | AbuseIPDB reads per day that takedown tracking may make. Each one also counts against `ABUSEIPDB_DAILY_QUOTA`. Selfhostr never reports to AbuseIPDB. |
 | `TAKEDOWN_QUIET_DAYS` | `7` | Days without a sighting before an attacking address counts as quiet (1 to 90). |
 | `TAKEDOWN_CHECK_RETENTION_DAYS` | `400` | Days to keep individual checks (30 to 3,650). Read by `migrate`. The monthly roll-up is kept forever. |
-| `TAKEDOWN_INTERVAL_S` | `600` | Seconds between two takedown cycles in `ingest` (30 to 86,400). Read by the worker; not listed in `.env.example`. |
+| `TAKEDOWN_INTERVAL_S` | `600` | Seconds between two takedown cycles in `ingest` (30 to 86,400). Read by the worker. |
 | `ABUSECH_SUBMIT_ENABLED` | `false` | Server switch for submitting captured malware URLs to URLhaus, and C2 addresses to ThreatFox. Read by `ingest` and `api`. When it is `false`, the Settings card shows the switch as disabled. |
 
 The abuse.ch lookup key (used to check whether a value is already listed) is the same as before: `ABUSECH_AUTH_KEY`, or the key on the Settings page. The submission Auth-Key is separate and is entered only in Settings > Reporting > abuse.ch.
