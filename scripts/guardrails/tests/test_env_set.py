@@ -107,6 +107,47 @@ def test_set_allows_the_network_settings(
     assert key not in proc.stdout
 
 
+def test_set_accepts_a_base64url_hub_key_with_underscore_and_dash(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    sandbox.write_env(BASE_ENV)
+    key = "A_-" * 14 + "Q"  # 43 base64url characters
+    proc = sandbox.run(
+        "scripts/env-set.sh", "set", "NETWORK_HUB_URL=https://hub.example.org:9443",
+        f"NETWORK_HUB_KEY={key}",
+    )  # fmt: skip
+    assert proc.returncode == 0, proc.stderr
+    assert parse_env(sandbox.root / ".env")["NETWORK_HUB_KEY"] == key
+
+
+@pytest.mark.parametrize(
+    "pair",
+    [
+        "NETWORK_HUB_URL=http://hub.example.org",
+        "NETWORK_HUB_URL=https://192.0.2.10",
+        "NETWORK_HUB_URL=https://192.0.2.10:8443",
+        "NETWORK_HUB_URL=https://localhost",
+        "NETWORK_HUB_URL=https://hub",
+        "NETWORK_HUB_URL=https://hub.local",
+        "NETWORK_HUB_URL=https://hub.lan",
+        "NETWORK_HUB_URL=https://hub.internal",
+        "NETWORK_HUB_URL=https://hub.home.arpa",
+        "NETWORK_HUB_URL=https://hub.localhost",
+        "NETWORK_HUB_URL=https://hub.test",
+        "NETWORK_HUB_URL=https://hub.example.org/path",
+        "NETWORK_HUB_URL=https://hub.example.org:123456",
+        "NETWORK_HUB_URL=https://Hub.example.org",
+        "NETWORK_HUB_KEY=short",
+        "NETWORK_HUB_KEY=" + "A" * 44,
+        "NETWORK_HUB_KEY=" + "A" * 42 + "+",
+    ],
+)
+def test_set_refuses_a_bad_network_hub(sandbox: Sandbox, pair: str) -> None:
+    sandbox.write_env(BASE_ENV)
+    assert sandbox.run("scripts/env-set.sh", "set", pair).returncode != 0
+    assert (sandbox.root / ".env").read_text() == BASE_ENV
+
+
 @pytest.mark.parametrize("pair", ["NETWORK_HUB_PRIVATE_KEY=x", "NETWORK_SIGNING_KEY=x"])
 def test_set_still_refuses_other_network_keys(sandbox: Sandbox, pair: str) -> None:
     sandbox.write_env(BASE_ENV)
