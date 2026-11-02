@@ -208,7 +208,7 @@ def from_known_recipient(reply: ParsedReply, recent: list[RecentReport]) -> bool
     return any(r.trust.covers(reply.from_address, reply.from_domain) for r in recent)
 
 
-def is_verified(found: Match, reply: ParsedReply, trust: Trust) -> bool:
+def is_verified(found: Match, reply: ParsedReply, trust: Trust, outcome: str | None = None) -> bool:
     """Vouched for. Quoting our Message-ID proves nothing about the sender (anyone who saw the
     mail can), so it counts only from a party we wrote to; a delivery status notification
     also counts when its mail system authenticated; the rest needs both."""
@@ -219,11 +219,9 @@ def is_verified(found: Match, reply: ParsedReply, trust: Trust) -> bool:
     # wrote it is rarely the recipient, so authentication alone also vouches for it.
     if reply.content_type == "multipart/report" or reply.dsn_action is not None:
         if found.method in ("message_id", "dsn") and found.via_message_id:
-            return reply.auth == "pass" or speaks
+            # Authentication alone vouches only for a genuine bounce: any other reading of the
+            # mail (resolved, rejected...) is a claim that needs a party we wrote to.
+            return speaks or (reply.auth == "pass" and outcome == "bounce")
     if found.method == "message_id":
         return speaks
-    # A "dsn" match was made from the notification's own fields, so it is a bounce even when the
-    # parser did not see a multipart/report body.
-    if found.method == "dsn" and found.via_message_id:
-        return reply.auth == "pass" or speaks
     return reply.auth == "pass" and speaks

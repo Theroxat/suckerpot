@@ -61,12 +61,49 @@ def test_what_each_match_may_verify() -> None:
         dsn_action="failed",
         auth="pass",
     )
-    assert is_verified(ours, bounce, trust)  # a bounce that answers our Message-ID, authenticated
-    assert not is_verified(ours, replace(bounce, auth="none"), trust)
-    assert is_verified(dsn, reply("mailer-daemon@mx.example.org", "pass"), trust)
-    assert is_verified(dsn, reply("mailer-daemon@example.net"), trust)
+    assert is_verified(ours, bounce, trust, "bounce")  # answers our Message-ID, authenticated
+    assert not is_verified(ours, replace(bounce, auth="none"), trust, "bounce")
+    assert is_verified(dsn, bounce, trust, "bounce")  # a bounce-shaped mail, authenticated
+    assert not is_verified(dsn, replace(bounce, auth="none"), trust, "bounce")
+    # A plain reply with a "dsn" match is not a bounce: authentication alone never vouches.
+    assert not is_verified(dsn, reply("mailer-daemon@mx.example.org", "pass"), trust, "bounce")
+    from_us = replace(bounce, from_address="mailer-daemon@example.net", from_domain="example.net")
+    assert is_verified(dsn, replace(from_us, auth="none"), trust, "bounce")
     assert not is_verified(dsn, reply("mailer-daemon@mx.example.org"), trust)
     token = Match(1, "token")
     assert not is_verified(token, reply("a@example.net"), trust)  # needs authentication too
     assert is_verified(token, reply("a@example.net", "pass"), trust)
     assert not is_verified(Match(None, "none"), reply("a@example.net", "pass"), trust)
+
+
+def test_a_mixed_mail_attaching_our_message_is_not_verified_by_auth_alone() -> None:
+    trust = Trust(frozenset({"example.net"}))
+    attached = ParsedReply(
+        from_address="attacker@evil.example.org",
+        from_domain="evil.example.org",
+        content_type="multipart/mixed",
+        auth="pass",
+        dsn_message_id="<ours@example.net>",
+    )
+    for method in ("dsn", "message_id"):
+        assert not is_verified(Match(1, method, True), attached, trust, "resolved")
+        assert not is_verified(Match(1, method, True), attached, trust, "bounce")
+
+
+def test_auth_alone_verifies_only_a_bounce_classification() -> None:
+    trust = Trust(frozenset({"example.net"}))
+    found = Match(1, "message_id", True)
+    report = ParsedReply(
+        from_address="mailer-daemon@mx.example.org",
+        from_domain="mx.example.org",
+        content_type="multipart/report",
+        dsn_action="delivered",
+        auth="pass",
+    )
+    assert is_verified(found, report, trust, "bounce")
+    for outcome in ("resolved", "rejected", "acknowledged"):
+        assert not is_verified(found, report, trust, outcome)
+    assert not is_verified(found, report, trust)  # no classification given: not a bounce
+    # A party we wrote to still speaks for any classification.
+    ours = replace(report, from_address="a@example.net", from_domain="example.net", auth="none")
+    assert is_verified(found, ours, trust, "resolved")
