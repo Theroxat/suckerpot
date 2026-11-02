@@ -544,6 +544,26 @@ Details in [Architecture](ARCHITECTURE.md#anonymous-reporting-m22), [Deployment]
 
 The reply contact, signature and all wording are not environment variables. The owner types them in Settings > Reporting. Only the reply contact is required. To keep the identity guard accurate, the `api` service also reads the sensor host name variables, `API_ALLOWED_ORIGINS`, `ALERTS_DASHBOARD_URL`, `INDICATORS_IGNORE`, `BLOCKLIST_NEVER`, `AUTH_TRUSTED_PROXIES` and `VPN_WG_ENDPOINT_IP`. These are used only to build the list of terms a report must never contain.
 
+## Selfhostr network (M29)
+
+The network is off by default. Details are in [The Selfhostr network](network.md) and [Network protocol](network-protocol.md). A system sends nothing until two things are true: `NETWORK_ENABLED=true` here, and an administrator has joined in Settings, Network.
+
+| Variable | Default | Service | Description |
+| --- | --- | --- | --- |
+| `NETWORK_ENABLED` | `false` | `ingest`, `api` | Master switch. Without `true` the worker never contacts the hub, and the Network pages explain how to allow it |
+| `NETWORK_HUB_URL` | empty | `ingest`, `api` | Address of the hub, for example `https://hub.example.org`. Must be HTTPS, with no path and no credentials. Set it together with `NETWORK_HUB_KEY` |
+| `NETWORK_HUB_KEY` | empty | `ingest`, `api` | The hub's public key (base64url, 32 bytes). The node refuses any answer that this key did not sign |
+| `NETWORK_INTERVAL_S` | `900` | `ingest` | Seconds between worker cycles, from 30 to 86400. While a join or a leave is pending, the worker checks every 60 seconds |
+| `NETWORK_SUBMIT_DELAY_MIN_H` | `2` | `ingest` | Shortest random wait, in hours, after a UTC day ends before its batch is sent. From 0 to 23 |
+| `NETWORK_SUBMIT_DELAY_MAX_H` | `20` | `ingest` | Longest random wait, in hours. From 1 to 23, and above the minimum |
+| `NETWORK_MAX_SOURCES` | `5000` | `ingest` | Attacker addresses per batch. The most severe are kept first. From 1 to 5000 |
+
+Notes:
+
+- A wrong value (for example a hub URL with a path, or only one of the URL and the key) keeps the network off, and `ingest` logs an error. Check its log after you change these.
+- Storing the node key needs `SETTINGS_ENCRYPTION_KEY`. Without it, joining stops with `no_settings_key`.
+- Joining, the pseudonym, the country and leaving are done in the dashboard, not in `.env`. The hub's own settings are in `hub/README.md`.
+
 ## In `.env.example` but not used yet
 
 These names are in the template. The code does not read them, so setting them has no effect today.

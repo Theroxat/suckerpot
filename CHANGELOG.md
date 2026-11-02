@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The Selfhostr network (M29): an opt-in, anonymous pool of what many Selfhostr sensors see. Joining needs `NETWORK_ENABLED=true` in `.env` and an administrator's join in Settings, Network, with the password typed again and five consents ticked. Nothing is sent before both. A member's batch carries attacker addresses, rounded counts, blinded download links, malware hashes and command servers, never credentials, commands, ports, exact times or anything of the member's own. A target is confirmed only by consensus of at least five eligible nodes. Leaving deletes the node's data at the hub. Documented in [The Selfhostr network](docs/network.md), [Network protocol](docs/network-protocol.md) and [configuration](docs/configuration.md#selfhostr-network-m29).
+- The Network pages: Overview and Members under Defend, a Network tab in Settings, and a Network item in the setup checklist. The pages show what the network did in the last 30 days and what the sensor helped confirm.
+- The hub (`hub/`): the server of the network, deployed separately with its own compose file, Caddy, PostgreSQL, daily backups and an operator CLI. It keeps no client address. It sends grouped abuse reports for confirmed targets, one review at a time by default. Command-server reports are never sent automatically. See [hub/README.md](hub/README.md).
+- The `spn/1` protocol library (`netproto/`): Ed25519 request and answer signatures bound to the whole request, replay protection, blinding of links and domains, proof of work for enrolment, and golden test vectors.
+- Migration `0026` (node database): membership, submissions, the network's targets and summary, with their roles and retention.
+
+### Known limits
+
+- Takedown checks are not active yet. Members do not send re-check results until the local re-check feature (M27) exists, so no target becomes taken down for now.
+- `hub/docker-compose.yml` does not pass every `HUB_*` setting through to its containers yet. Settings it does not pass have no effect under compose. See the note in [hub/README.md](hub/README.md#configuration).
+
 ### Changed
 
 - Renamed to Selfhostr. The product name in the dashboard, documentation and exported reports changes; technical names (packages, volumes, environment variables, database roles) keep the `suckerpot` prefix so existing installs and data are unaffected.

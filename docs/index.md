@@ -21,6 +21,7 @@ deployment
 demo-data
 ui
 defend
+network
 api-keys
 ```
 
