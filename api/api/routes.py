@@ -30,6 +30,7 @@ from api.cursor import (
 )
 from api.deps import DbSession
 from api.live import fetch_recent
+from api.network_feed import router as network_feed_router
 from api.schemas import (
     EnrichmentSettings,
     EventOut,
@@ -51,6 +52,7 @@ from api.sensors import SensorFilter
 from api.story import STATEMENT_TIMEOUT_MS, Stage, stage_expr
 
 router = APIRouter()
+router.include_router(network_feed_router)
 health_router = APIRouter()
 
 MAX_LIMIT = 200
