@@ -1,6 +1,6 @@
 """End to end through the real API and worker code, against a throwaway PostgreSQL.
 
-Seven synthetic nodes enrol with a low proof-of-work difficulty, are aged by moving their
+Ten synthetic nodes enrol with a low proof-of-work difficulty, are aged by moving their
 enrolment day back, submit batches with documentation addresses, the worker runs, a target is
 confirmed, revealed, rechecked and reported in review mode through a local SMTP sink, and one
 node leaves and is deleted.

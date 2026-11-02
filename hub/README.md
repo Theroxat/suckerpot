@@ -183,9 +183,7 @@ Without a key, a source is off. Addresses then need 10 nodes instead of 5. The l
 | `HUB_ALLOW_DOCUMENTATION` | off | Accepts documentation address ranges. Never set it on a real hub |
 | `HUB_TRUST_PROXY` | set to `1` by compose on `hub-api` | Reads the client address from the forwarding header that Caddy sets. Used only for the in-memory rate limits |
 
-```{note}
-**Compose gap.** `hub/docker-compose.yml` passes a fixed set of `HUB_*` variables into the containers. It does not yet pass `HUB_ENROL_STEP`, `HUB_CHALLENGES_PER_PREFIX`, `HUB_AUTO_MIN_COHORTS`, the `HUB_RATE_*` limits, `HUB_REVEALS_PER_DAY`, `HUB_NEW_VALUES_PER_DAY` or `HUB_WORKER_INTERVAL_S`. Setting one of them in `.env` has no effect until the compose file passes it through. The code reads the variable from the environment, so the fix is to add it to the `x-hub-env` block (for `hub-api` and `hub-worker`) in `docker-compose.yml`. Until then, the code defaults apply.
-```
+Every variable `hub/hub/config.py` reads is passed through by `hub/docker-compose.yml` with the same default, except the few that compose sets itself (database URLs, signing key path, proxy trust) or that exist only for tests; `hub/tests/test_compose_env.py` fails if one is missing.
 
 ## Privacy: what is and is not logged
 
@@ -382,5 +380,4 @@ The integration run uses its own project name and its own volumes, and removes t
 - No web admin. Everything is done through the CLI.
 - No restore script yet (see [Restoring](#restoring)).
 - Takedown votes are not sent by members yet, so no target becomes `taken_down`.
-- The compose file does not pass every `HUB_*` variable through (see the [compose gap](#configuration)).
 - Command-server reports are always reviewed by hand. The hub never connects to a target itself. A confirmed target is a judgement by consensus, not a proof.
