@@ -23,6 +23,7 @@ from . import logging as hub_logging
 from .config import Settings
 from .db import make_engine, make_sessionmaker, utcnow
 from .external import Corroborator
+from .feeds import job as feed_job
 from .never import load_never
 from .never_seed import ensure_seed
 from .reports import select as report_select
@@ -111,6 +112,11 @@ async def run_cycle(ctx: WorkerContext) -> CycleReport:
 
     await step("never_recheck", do_never)
     await step("expire", lambda ses: consensus.expire_stale(ses, today))
+
+    async def do_feeds(ses: AsyncSession) -> object:
+        return feed_job.summary(await feed_job.run_once(ses, s, now, corroborate=ctx.corroborate))
+
+    await step("feeds", do_feeds)
     await step("reputation", lambda ses: reputation.run_daily(ses, s, today))
 
     async def do_stats(ses: AsyncSession) -> object:

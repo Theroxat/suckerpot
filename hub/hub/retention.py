@@ -4,6 +4,8 @@
 * batch markers: 14 days; nonces and challenges: until they expire (10 minutes);
 * contributor links: when the target is resolved or after 30 days;
 * takedown votes: 30 days; weekly statistics: 8 weeks;
+* feeds: removed entries 90 days, runs 30 days, delisting evidence 30 days after the decision,
+  delisting requests 180 days, expired allow-list rows and payload links straight away;
 * nodes with no request for 30 days are deleted with everything linked to them.
 """
 
@@ -23,6 +25,10 @@ EXPIRED_TARGET_DAYS = 180
 CANDIDATE_DAYS = 14
 RECIPIENT_LOG_DAYS = 90
 REPORT_DAYS = 365
+FEED_REMOVED_DAYS = 90
+FEED_RUN_DAYS = 30
+DELIST_EVIDENCE_DAYS = 30
+DELIST_REQUEST_DAYS = 180
 
 
 @dataclass
@@ -105,6 +111,57 @@ async def run_retention(
         "reports",
         "DELETE FROM reports WHERE state IN ('sent', 'failed', 'cancelled') AND created_day < :c",
         {"c": today - timedelta(days=REPORT_DAYS)},
+        out,
+    )
+    # Feeds (design M30 section 7.4). feed_daily and feed_auto_ranges are kept on purpose.
+    await _delete(
+        session,
+        "feed_entries",
+        "DELETE FROM feed_entries WHERE state = 'removed' AND removed_day < :c",
+        {"c": today - timedelta(days=FEED_REMOVED_DAYS)},
+        out,
+    )
+    await _delete(
+        session,
+        "feed_runs",
+        "DELETE FROM feed_runs WHERE run_at < :c",
+        {"c": now - timedelta(days=FEED_RUN_DAYS)},
+        out,
+    )
+    await _delete(
+        session,
+        "feed_allow",
+        "DELETE FROM feed_allow WHERE expires_day < :t",
+        {"t": today},
+        out,
+    )
+    await _delete(
+        session,
+        "payload_links",
+        "DELETE FROM payload_links WHERE day < :c",
+        {"c": obs_cutoff},
+        out,
+    )
+    await _delete(
+        session,
+        "delist_challenges",
+        "DELETE FROM delist_challenges WHERE expires_at < :n",
+        {"n": now},
+        out,
+    )
+    await _delete(
+        session,
+        "delist_evidence",
+        "UPDATE delist_requests SET evidence = NULL, contact = NULL "
+        "WHERE decided_day < :c AND (evidence IS NOT NULL OR contact IS NOT NULL)",
+        {"c": today - timedelta(days=DELIST_EVIDENCE_DAYS)},
+        out,
+    )
+    await _delete(
+        session,
+        "delist_requests",
+        "DELETE FROM delist_requests WHERE created_day < :c",
+        {"c": today - timedelta(days=DELIST_REQUEST_DAYS)},
         out,
     )
     await _delete(
