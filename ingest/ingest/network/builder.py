@@ -52,6 +52,10 @@ SEVERITY: Final = {
     "connect": 0,
 }
 SELF_CODES: Final = frozenset({"self_address", "self_name", "owner_domain", "vpn_address"})
+# UDP sensors: the source address is spoofable, so a session there proves presence only. Its
+# logins, commands, tags and attempts are never sent: one source row merges every service, and
+# spoofed REGISTER floods must not turn into a brute force next to one real TCP connect.
+UDP_SENSORS: Final = frozenset({"sip"})
 _INT_HOST = re.compile(r"^(0x[0-9a-f]+|0[0-7]*|[0-9]+)$", re.IGNORECASE)
 
 
@@ -226,14 +230,18 @@ class BatchBuilder:
             )
             if f.sensor in SERVICES:
                 e["services"].add(f.sensor)
+            e["sessions"] += f.sessions
+            if f.sensor in UDP_SENSORS:
+                continue  # presence only (see UDP_SENSORS)
             e["activity"] |= activities_of(f)
             e["tags"] |= set(f.tags)
-            e["sessions"] += f.sessions
             e["attempts"] += f.login_attempts
         items: list[dict[str, Any]] = []
         for ip, e in per_ip.items():
             if not e["services"]:
                 continue
+            if not e["activity"]:
+                e["activity"] = {"connect"}  # only UDP sessions: bare presence
             item = {
                 "ip": ip,
                 "services": sorted(e["services"]),
