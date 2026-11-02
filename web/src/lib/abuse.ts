@@ -249,22 +249,26 @@ export interface ReportFilters {
 
 // --- Sentences ---------------------------------------------------------------------
 
-/** The sentence above the list. */
-export function describeReports(status: AbuseStatus | undefined): string {
+/**
+ * The sentence above the list. It counts what the tabs count: drafts, reports ready to send (the
+ * To send queue) and replies to check.
+ */
+export function describeReports(
+  status: AbuseStatus | undefined,
+  extra: { toSend?: number; replies?: number } = {},
+): string {
   if (!status) return "Reports to the networks that host the attackers, for you to review and send."
   if (!status.enabled)
     return "Abuse reports are switched off on this server, so no drafts are written."
-  const ready = status.counts.draft
-  const reviewed = status.counts.reviewed
-  if (ready === 0 && reviewed === 0)
+  const drafts = status.counts.draft
+  const toSend = extra.toSend ?? status.counts.reviewed
+  const replies = extra.replies ?? 0
+  if (drafts === 0 && toSend === 0 && replies === 0)
     return "Nothing to report: no source crossed the thresholds this week."
   const parts: string[] = []
-  if (ready > 0)
-    parts.push(`${plural(ready, "report")} ${ready === 1 ? "is" : "are"} ready for review`)
-  if (reviewed > 0)
-    parts.push(
-      `${plural(reviewed, "report")} ${reviewed === 1 ? "is" : "are"} reviewed and waiting to be sent`,
-    )
+  if (drafts > 0) parts.push(`${plural(drafts, "draft")} to review`)
+  if (toSend > 0) parts.push(`${plural(toSend, "report")} ready to send`)
+  if (replies > 0) parts.push(`${plural(replies, "reply", "replies")} to check`)
   return `${parts.join(", ")}.`
 }
 

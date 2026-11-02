@@ -32,6 +32,7 @@ function HandlerHelp() {
         Make Proton Mail open email links
       </summary>
       <div className="mt-2 space-y-2 text-fg-muted">
+        <p>Free Proton addresses have no SMTP access: this queue is how to use them.</p>
         <p>
           The Open in mail app button uses a standard email link. Your browser decides which app
           answers it.
@@ -199,7 +200,7 @@ export function SendQueue() {
                   </a>
                 </Button>
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => void sentNext()}>
-                  <Check aria-hidden /> {busy ? "Saving…" : "Sent, next"}
+                  <Check aria-hidden /> {busy ? "Saving…" : "Mark as sent, next"}
                 </Button>
                 <Button size="sm" variant="ghost" disabled={sorted.length < 2} onClick={skip}>
                   <SkipForward aria-hidden /> Skip
@@ -218,17 +219,12 @@ export function SendQueue() {
             {error}
           </p>
           <p className="hidden text-xs text-fg-muted md:block">
-            Shortcuts: <Kbd>o</Kbd> open in mail app, <Kbd>n</Kbd> sent and next, <Kbd>s</Kbd> skip.
-          </p>
-          <p className="text-xs text-fg-muted">
-            Sent, next records the report as sent; nothing is sent by this button.
+            Shortcuts: <Kbd>o</Kbd> open in mail app, <Kbd>n</Kbd> mark as sent and go to the next,{" "}
+            <Kbd>s</Kbd> skip.
           </p>
         </div>
       </FindingCard>
       <HandlerHelp />
-      <p className="text-xs text-fg-muted">
-        Free Proton addresses have no SMTP access: this queue is how to use them.
-      </p>
     </div>
   )
 }

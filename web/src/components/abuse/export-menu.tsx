@@ -3,6 +3,15 @@ import { useId, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -32,7 +41,16 @@ import { useAuth } from "@/app/auth"
  * "Export for CERT": STIX 2.1 or MISP JSON of one report or one campaign, with a TLP choice. The
  * files are guarded by the server; a blocked check is explained here in plain words.
  */
-export function ExportMenu({ scope, className }: { scope: ExportScope; className?: string }) {
+export function ExportMenu({
+  scope,
+  className,
+  blockedReason,
+}: {
+  scope: ExportScope
+  className?: string
+  /** Why exporting is not possible right now (the identity check blocked the report). */
+  blockedReason?: string
+}) {
   const { canWrite } = useAuth()
   // The default TLP is a setting only an administrator can read; everyone else gets GREEN.
   const settings = useQuery({
@@ -46,12 +64,11 @@ export function ExportMenu({ scope, className }: { scope: ExportScope; className
   const [description, setDescription] = useState("")
   const descId = useId()
   const [message, setMessage] = useState<string | null>(null)
+  const [mispOpen, setMispOpen] = useState(false)
 
   async function run(kind: "stix" | "misp") {
-    if (kind === "misp" && !description.trim()) {
-      setMessage("Write a description for the MISP event first.")
-      return
-    }
+    if (kind === "misp" && !description.trim()) return
+    setMispOpen(false)
     setBusy(true)
     setMessage(null)
     try {
@@ -76,43 +93,83 @@ export function ExportMenu({ scope, className }: { scope: ExportScope; className
 
   return (
     <div className={className}>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" disabled={busy}>
-            <Share2 aria-hidden />
-            {busy ? "Preparing…" : "Export for CERT"}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>Sharing level</DropdownMenuLabel>
-          <DropdownMenuRadioGroup value={tlp} onValueChange={(v) => setChosen(v as Tlp)}>
-            {TLP_OPTIONS.map((o) => (
-              <DropdownMenuRadioItem key={o.value} value={o.value}>
-                {o.label}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => void run("stix")}>
-            <Download aria-hidden /> STIX 2.1 bundle
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void run("misp")}>
-            <Download aria-hidden /> MISP event (JSON)
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <div className="mt-2 flex max-w-sm flex-col gap-1">
-        <label htmlFor={descId} className="text-xs font-medium text-fg-muted">
-          Description (required for MISP)
-        </label>
-        <Input
-          id={descId}
-          value={description}
-          maxLength={500}
-          autoComplete="off"
-          onChange={(e) => setDescription(e.target.value)}
-        />
-      </div>
+      {blockedReason ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              tabIndex={0}
+              className="inline-flex rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <Button variant="outline" size="sm" disabled aria-describedby={descId}>
+                <Share2 aria-hidden />
+                Export for CERT
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent id={descId}>{blockedReason}</TooltipContent>
+        </Tooltip>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" disabled={busy}>
+              <Share2 aria-hidden />
+              {busy ? "Preparing…" : "Export for CERT"}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>Sharing level</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={tlp} onValueChange={(v) => setChosen(v as Tlp)}>
+              {TLP_OPTIONS.map((o) => (
+                <DropdownMenuRadioItem key={o.value} value={o.value}>
+                  {o.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => void run("stix")}>
+              <Download aria-hidden /> STIX 2.1 bundle
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setMispOpen(true)}>
+              <Download aria-hidden /> MISP event (JSON)
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      <Dialog open={mispOpen} onOpenChange={setMispOpen}>
+        <DialogContent>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              void run("misp")
+            }}
+            className="space-y-4"
+          >
+            <DialogHeader>
+              <DialogTitle>MISP event</DialogTitle>
+              <DialogDescription>
+                MISP needs a short description of the event. Write it in your own words.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-1">
+              <label htmlFor={`${descId}-misp`} className="text-sm font-medium">
+                Description
+              </label>
+              <Input
+                id={`${descId}-misp`}
+                value={description}
+                maxLength={500}
+                autoComplete="off"
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="submit" size="sm" disabled={!description.trim()}>
+                <Download aria-hidden /> Download
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <p
         role="status"
         aria-live="polite"

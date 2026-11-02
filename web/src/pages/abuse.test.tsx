@@ -189,7 +189,7 @@ describe("AbusePage", () => {
   it("opens with a sentence and groups reports by provider", async () => {
     stub()
     renderAt("/defend/abuse")
-    expect(await screen.findByText("1 report is ready for review.")).toBeInTheDocument()
+    expect(await screen.findByText("1 draft to review.")).toBeInTheDocument()
     expect(await screen.findByRole("heading", { name: "Example Hosting B.V." })).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /AS64500/ })).toHaveAttribute(
       "href",

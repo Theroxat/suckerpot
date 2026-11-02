@@ -5,7 +5,7 @@ import {
   FileSearch,
   FlaskConical,
   Info,
-  OctagonAlert,
+  TriangleAlert,
   RefreshCw,
 } from "lucide-react"
 import { useId, useState } from "react"
@@ -16,6 +16,7 @@ import { ExportMenu } from "@/components/abuse/export-menu"
 import { OutcomeCard } from "@/components/abuse/outcome-card"
 import { StatusStepper } from "@/components/abuse/status-stepper"
 import { SendControl } from "@/components/abuse/send-control"
+import { useSendMode } from "@/components/abuse/send-hooks"
 import { inFlight } from "@/lib/abuse-send"
 import { ConfirmDialog, MarkSentDialog } from "@/components/abuse/status-dialogs"
 import { EmptyState } from "@/components/empty-state"
@@ -76,10 +77,10 @@ function IdentityCard({ r }: { r: ReportDetail }) {
       finding={describeGuard(r.guard, r.redaction)}
       detail={
         ok
-          ? "Run on every view and download. It looks for anything that could point back to you."
+          ? "Runs on every view and download. It looks for anything that could point back to you."
           : undefined
       }
-      className={ok ? "normal-nums" : "border-sev-severe/40 normal-nums"}
+      className={ok ? "normal-nums" : "border-sev-warning/40 normal-nums"}
     >
       <div className="flex items-start gap-2.5 text-sm">
         {ok ? (
@@ -89,7 +90,7 @@ function IdentityCard({ r }: { r: ReportDetail }) {
           </>
         ) : (
           <>
-            <OctagonAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-sev-severe" />
+            <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-sev-warning" />
             <div className="space-y-2">
               <span className="font-medium text-fg">Blocked</span>
               <ul className="list-disc space-y-1 pl-5 text-fg-muted">
@@ -98,7 +99,15 @@ function IdentityCard({ r }: { r: ReportDetail }) {
                 ))}
               </ul>
               <p className="text-fg-muted">
-                Regenerate the draft after fixing the cause, or discard it.
+                Regenerate the draft after fixing the cause, or discard it. The words it looks for
+                are listed in{" "}
+                <Link
+                  to="/settings?tab=reporting#reporting-never"
+                  className="font-medium text-fg underline underline-offset-4"
+                >
+                  Settings, Reporting, Never in a report
+                </Link>
+                .
               </p>
             </div>
           </>
@@ -233,7 +242,7 @@ function SubjectsCard({ r }: { r: ReportDetail }) {
   return (
     <FindingCard
       eyebrow="Subjects"
-      finding={`${plural(r.subjects.length, "subject")} in this report.`}
+      finding={`${r.kind === "attack_source" ? plural(r.subjects.length, "address", "addresses") : plural(r.subjects.length, "host")} in this report.`}
       detail="These links open the dashboard and exist only here: they are never part of the message."
       className="normal-nums"
       bodyClassName="px-0 sm:px-0 pb-0 sm:pb-0"
@@ -415,7 +424,7 @@ function HistoryCard({ r }: { r: ReportDetail }) {
   return (
     <FindingCard
       eyebrow="History"
-      finding={`Last change: ${STATUS_LABEL[r.status].toLowerCase()}, ${formatAbsolute(r.updated_at)}.`}
+      finding={`Last change: ${STATUS_LABEL[r.status].toLowerCase()}.`}
       bodyClassName="px-0 sm:px-0 pb-1 sm:pb-1"
     >
       <ol className="divide-y border-t">
@@ -429,7 +438,9 @@ function HistoryCard({ r }: { r: ReportDetail }) {
                 ? `${STATUS_LABEL[h.from]} to ${STATUS_LABEL[h.to]}`
                 : `${STATUS_LABEL[h.to]} written`}
             </span>
-            <span className="text-fg-muted">by {h.actor}</span>
+            <span className="text-fg-muted">
+              {h.actor === "ingest" ? "automatically" : `by ${h.actor}`}
+            </span>
             <RelativeTime iso={h.ts} className="ml-auto" />
           </li>
         ))}
@@ -448,6 +459,7 @@ function Actions({
   onChanged: (d: ReportDetail | null, message?: string) => void
 }) {
   const { canWrite } = useAuth()
+  const mode = useSendMode()
   const [sentOpen, setSentOpen] = useState(false)
   const [confirm, setConfirm] = useState<"discarded" | "draft" | "regenerate" | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -483,13 +495,17 @@ function Actions({
           </Button>
         ) : null}
         {next.includes("sent") && !r.demo ? (
-          <Button size="sm" onClick={() => setSentOpen(true)}>
+          <Button
+            size="sm"
+            variant={mode === "click" ? "outline" : "default"}
+            onClick={() => setSentOpen(true)}
+          >
             Mark sent
           </Button>
         ) : null}
         {next.includes("closed") ? (
           <Button size="sm" onClick={() => go("closed")}>
-            Close
+            Mark as closed
           </Button>
         ) : null}
         {next.includes("draft") ? (
@@ -516,6 +532,7 @@ function Actions({
           scheduledAt={r.send_state?.scheduled_at ?? null}
           lastRequest={r.send_state?.last_request ?? null}
           revision={r.revision}
+          primary={r.status !== "draft"}
         />
       ) : null}
       {r.status === "draft" && blocker ? (
@@ -645,7 +662,14 @@ export function AbuseDetailPage() {
         actions={
           <>
             <ReadOnlyBadge />
-            <ExportMenu scope={{ report: r.public_id }} />
+            <ExportMenu
+              scope={{ report: r.public_id }}
+              blockedReason={
+                r.guard.ok
+                  ? undefined
+                  : "The identity check blocked this report, so it cannot be exported."
+              }
+            />
           </>
         }
       />
