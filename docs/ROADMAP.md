@@ -300,26 +300,26 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 ```markdown
 ## M26 — Report outcomes: did anyone answer?
 
-- [ ] A random reply token (`ref` plus 12 hex characters) in the subject of every report, stored per report and independent of every internal id, with the SMTP Message-ID kept for matching. The identity guard and its tests cover the token: never in exports, never derived from an internal id.
-- [ ] Optional mailbox in Settings > Reporting > Replies (IMAPS or STARTTLS, DNS host name only, password encrypted, re-authentication, admin only), off by default, with "Test connection" and "Check now".
-- [ ] Ingest replies worker (`ABUSE_REPLIES_ENABLED`, off by default) that reads the mailbox through the VPN tunnel only. Headers come first, unrelated mail is never stored or flagged, size caps apply, attachments are never decoded, HTML is never rendered, and mail is only marked read or moved, never deleted or answered.
-- [ ] Declarative reply rules in `ingest/rules/replies/` (auto-acknowledgement, ticket opened with ticket id, resolved, rejected, bounce, human reply, unknown) with generic defaults.
-- [ ] Matching by our Message-ID, then the token, the bounce's original headers, the ticket id and the sender domain. Only verified replies (our Message-ID, or authenticated from the provider's domain) change an outcome by themselves.
-- [ ] Paste a reply or upload an `.eml` by hand, set an outcome by hand, and confirm or link replies. Excerpts (2,000 characters at most) are kept 180 days.
-- [ ] Results page (Abuse reports hub): reports sent per kind, provider, ASN and country over time, answers by kind, response delays, each card opening with a plain-English finding.
-- [ ] Security review (hostile mail, egress, token) and UI review.
+- [x] A random reply token (`ref` plus 12 hex characters) in the subject of every report, stored per report and independent of every internal id, with the SMTP Message-ID kept for matching. The identity guard and its tests cover the token: never in exports, never derived from an internal id.
+- [x] Optional mailbox in Settings > Reporting > Replies (IMAPS or STARTTLS, DNS host name only, password encrypted, re-authentication, admin only), off by default, with "Test connection" and "Check now".
+- [x] Ingest replies worker (`ABUSE_REPLIES_ENABLED`, off by default) that reads the mailbox through the VPN tunnel only. Headers come first, unrelated mail is never stored or flagged, size caps apply, attachments are never decoded, HTML is never rendered, and mail is only marked read or moved, never deleted or answered.
+- [x] Declarative reply rules in `ingest/rules/replies/` (auto-acknowledgement, ticket opened with ticket id, resolved, rejected, bounce, human reply, unknown) with generic defaults.
+- [x] Matching by our Message-ID, then the token, the bounce's original headers, the ticket id and the sender domain. Only verified replies (our Message-ID, or authenticated from the provider's domain) change an outcome by themselves.
+- [x] Paste a reply or upload an `.eml` by hand, set an outcome by hand, and confirm or link replies. Excerpts (2,000 characters at most) are kept 180 days.
+- [x] Results page (Abuse reports hub): reports sent per kind, provider, ASN and country over time, answers by kind, response delays, each card opening with a plain-English finding.
+- [x] Security review (hostile mail, egress, token) and UI review.
 
 **Acceptance:** with no mailbox nothing connects and the owner can still paste replies and set outcomes; with a mailbox, a provider's reply is matched to its report through the tunnel only, classified, and shown with its delay; unrelated mail is never stored; no mail is ever deleted or answered; security review PASS.
 
 ## M27 — Takedown tracking and abuse.ch submission
 
-- [ ] Takedown targets from sent reports (attacking addresses, payload hosts and their malware URLs, C2 servers) and from abuse.ch submissions, each tracked for 30 days (`TAKEDOWN_ENABLED`, off by default).
-- [ ] Collector re-checks: one bounded GET through the VPN to a URL that already served malware, on a 0 h, 1 h, 6 h, 24 h, 48 h, then daily schedule, with the M21 URL validator on every hop and a daily quota. Nothing is stored unless the file changed. C2 servers and attacking addresses are never contacted.
-- [ ] Passive signals within quotas: URLhaus and ThreatFox listing status, AbuseIPDB (read only), whether our own sensors still see an attacking address, whether new samples still point to a C2.
-- [ ] States up, down, changed and unknown; down confirmed by two checks; time to takedown with its bounds; resurrections; monthly roll-up kept forever.
-- [ ] Optional abuse.ch submission behind `ABUSECH_SUBMIT_ENABLED` and an explicit owner switch (off, review each, automatic after a hold with a daily cap). Captured malware URLs go to URLhaus (optional C2 `ip:port` to ThreatFox) with an encrypted Auth-Key. A lookup comes first to skip known entries, the identity guard checks every body, delivery is at most once, and submissions show their status and form the audit log.
-- [ ] Results page: a finding sentence before each chart ("12 of 31 reported malware URLs went down within 48 h"), a time-to-takedown curve, a per-provider table (median time to takedown, % taken down, % answered), and a timeline per target; a Submissions tab.
-- [ ] CLAUDE.md §5 amended (owner approval) to allow takedown re-checks of URLs that served malware; security review and UI review.
+- [x] Takedown targets from sent reports (attacking addresses, payload hosts and their malware URLs, C2 servers) and from abuse.ch submissions, each tracked for 30 days (`TAKEDOWN_ENABLED`, off by default).
+- [x] Collector re-checks: one bounded GET through the VPN to a URL that already served malware, on a 0 h, 1 h, 6 h, 24 h, 48 h, then daily schedule, with the M21 URL validator on every hop and a daily quota. Nothing is stored unless the file changed. C2 servers and attacking addresses are never contacted.
+- [x] Passive signals within quotas: URLhaus and ThreatFox listing status, AbuseIPDB (read only), whether our own sensors still see an attacking address, whether new samples still point to a C2.
+- [x] States up, down, changed and unknown; down confirmed by two checks; time to takedown with its bounds; resurrections; monthly roll-up kept forever.
+- [x] Optional abuse.ch submission behind `ABUSECH_SUBMIT_ENABLED` and an explicit owner switch (off, review each, automatic after a hold with a daily cap). Captured malware URLs go to URLhaus (optional C2 `ip:port` to ThreatFox) with an encrypted Auth-Key. A lookup comes first to skip known entries, the identity guard checks every body, delivery is at most once, and submissions show their status and form the audit log.
+- [x] Results page: a finding sentence before each chart ("12 of 31 reported malware URLs went down within 48 h"), a time-to-takedown curve, a per-provider table (median time to takedown, % taken down, % answered), and a timeline per target; a Submissions tab.
+- [x] CLAUDE.md §5 amended (owner approval) to allow takedown re-checks of URLs that served malware; security review and UI review.
 
 **Acceptance:** with the flags off nothing is checked or submitted; with tracking on, a reported malware URL that goes offline is shown as down with its time to takedown, an unchanged file is never stored again, and no request ever reaches a C2 or an attacking address; with submission on, a URL is sent to URLhaus only after the guard passes and only if URLhaus did not know it; security review PASS.
 

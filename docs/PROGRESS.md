@@ -163,3 +163,12 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - **Low memory and VPN idle.** `docker-compose.lowmem.yml`; the VPN stays idle, with no route out, until a WireGuard file is uploaded.
 - **Reviews.** Security review failed once (image name collisions, stale dotenv values, mediums), then passed after fixes; the re-review findings (idle mode never starting, unverified image paths, rollback state) are fixed. UI review approved.
 - **Deployed.** Backup taken first; migration 0025 applied; every service healthy; no event lost.
+
+## 2026-11-02 — M26 Report outcomes and M27 Takedown tracking
+
+- **Replies (M26).** An optional IMAP reader (`ABUSE_REPLIES_ENABLED`, through the VPN only) reads the reply mailbox header-first, never deletes (seen flag or move only), matches replies to reports by a reply token in the subject, a quoted Message-ID or a bounce, and classifies them with YAML rules. Only a party we wrote to can set an outcome; authentication alone vouches for a genuine bounce and nothing else. Shared-mailbox and trusted provider name (`trusted_authserv_id`) settings.
+- **Takedowns (M27).** Reported payload URLs are re-checked by the collector with one bounded GET through the VPN; attacking addresses and C2s are never contacted and are followed passively only. States, time to takedown and per-provider statistics under a 48 h rule. Optional URLhaus/ThreatFox submissions (`ABUSECH_SUBMIT_ENABLED`, off by default) with a review queue and a lookup before each submission.
+- **Dashboard.** Results (KPIs, takedown curve, targets and providers, answers), target detail, Submissions with the evidence behind each URL, reply and outcome cards on each report, and Settings → Reporting with IMAP, abuse.ch, a section nav and unsaved-change hints.
+- **Migrations.** Renumbered to 0026 and 0027 after the deployed 0025; a test upgrades from 0025 with data to head and back.
+- **Reviews.** Security review failed (a poison-pill mail, forged replies, freemail relevance, re-checks reaching attackers, token exposure), then passed after fixes. The merge review caught the forged-reply path reopened by a test-driven change; it is reverted and covered by negative tests. UI review approved after two rounds.
+- **Deployed.** Backup taken first; migrations 0026 and 0027 applied; every service healthy; no event lost. Every new worker stays off until its flag is set.
