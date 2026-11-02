@@ -47,6 +47,8 @@ SQL_RESET = (
     "DELETE FROM alert_channels",
     "DELETE FROM provider_secrets",
     "DELETE FROM report_settings",
+    "UPDATE network_membership SET desired = 'off', state = 'off', last_submit_day = NULL, "
+    "last_error_code = NULL",
 )
 
 
@@ -69,7 +71,9 @@ async def items(c: httpx.AsyncClient) -> dict[str, dict[str, Any]]:
     assert [i["id"] for i in body["items"]] == ORDER
     for i in body["items"]:
         assert set(i) == {"id", "state", "detail", "href"}
-        assert i["href"].startswith("/settings") and i["detail"].endswith(".")
+        # Every link is an in-app path: Settings, or the Network page for the M29 item.
+        home = "/network" if i["id"] == "network" else "/settings"
+        assert i["href"].startswith(home) and i["detail"].endswith(".")
     return {i["id"]: i for i in body["items"]}
 
 
@@ -93,6 +97,7 @@ async def test_a_fresh_install_has_things_to_do(admin: httpx.AsyncClient) -> Non
     assert got["reporting_settings"]["state"] == "todo"
     assert got["self_address"]["state"] == "todo"
     assert got["abuse_worker"]["state"] == "off"
+    assert got["network"]["state"] == "off"  # never joined by itself
     assert got["alerts"]["state"] == "off"
     assert got["provider_keys"]["state"] == "off"
     assert got["takedown"]["state"] == "off"
