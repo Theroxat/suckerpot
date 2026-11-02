@@ -491,6 +491,7 @@ Takedown votes come from members' local re-checks. Members do not send those yet
 | Recipient log (report counts per day) | 90 days |
 | Reports sent, failed or cancelled | 365 days |
 | Nodes with no request for 30 days | Deleted, with everything linked to them |
+| Delisting requests | 180 days once decided (an open request is kept until its decision); evidence and contact 30 days after the decision |
 
 ## Backups
 
