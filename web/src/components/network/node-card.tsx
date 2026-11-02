@@ -139,8 +139,9 @@ export function NodeCard({ status: s }: { status: NetworkStatus }) {
             </Button>
           ) : null}
           {canWrite ? (
+            // Outlined, never red: leaving is a normal choice, not a danger.
             <Button
-              variant="destructive"
+              variant="outline"
               size="sm"
               onClick={() => setLeaving(true)}
               className="ml-auto"
