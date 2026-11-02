@@ -150,6 +150,26 @@ export const GLOSSARY = {
     short:
       "A sensor the network trusts enough to count: at least two weeks old, sending a batch most days, and not often wrong. New sensors become eligible by waiting.",
   },
+  "inbound-list": {
+    term: "Inbound list",
+    short:
+      "A list of addresses to block when they connect to you. Useful in front of services you expose to the internet, such as a web server or a VPN.",
+  },
+  "outbound-list": {
+    term: "Outbound list",
+    short:
+      "A list of malware and command servers to block when your own devices connect to them. A hit usually means a device inside is infected.",
+  },
+  "high-tier": {
+    term: "High tier",
+    short:
+      "The entries confirmed by the most sensors. A smaller list that is safer to block without reviewing it.",
+  },
+  "k-support": {
+    term: "k-support",
+    short:
+      "How many independent sensors must agree before something is listed or shown. Below that number nothing is published, to protect everyone's privacy.",
+  },
   "ip-address": {
     term: "IP address",
     short:

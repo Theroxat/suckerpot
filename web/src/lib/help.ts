@@ -83,6 +83,10 @@ export const HELP = {
     title: "Blocklists",
     body: "Addresses, domains, URLs and hashes seen attacking you, each scored from 0 to 100 with a reason for every point. Ingest rescores them every 15 minutes when the blocklist worker is on. Download a list for your firewall, or add an override to always allow or always block a value.",
   },
+  "blocklists-network": {
+    title: "Community lists",
+    body: "Free lists of malware hosts, command servers and attack sources, each confirmed by at least five independent sensors in the Selfhostr network. They stay empty until enough members exist. Copy a list address into OPNsense, pfSense or nftables and pick the format; using them is optional and needs no account.",
+  },
   detections: {
     title: "Detections",
     body: "Sigma and Suricata rules written from what the sensors recorded, plus a checklist for your own company. They come from decoy traffic and can match harmless activity, so review them before deploying. Switch the format, then copy or download a rule.",

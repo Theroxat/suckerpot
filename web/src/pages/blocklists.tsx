@@ -2,6 +2,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { Download, SearchX, ShieldCheck, ShieldOff } from "lucide-react"
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useWindowVirtualizer } from "@tanstack/react-virtual"
+import { useSearchParams } from "react-router"
 import { useAuth } from "@/app/auth"
 import { BLOCKLIST_GRID, BlocklistRow } from "@/components/defend/blocklist-row"
 import { ExportPanel } from "@/components/defend/export-panel"
@@ -20,6 +21,8 @@ import { ReadOnlyBadge } from "@/components/read-only-badge"
 import { SegmentedControl } from "@/components/segmented-control"
 import { SkeletonList, SkeletonRow } from "@/components/skeletons"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { NetworkFeedTab } from "@/components/defend/network-feed/network-feed-tab"
 import { Switch } from "@/components/ui/switch"
 import { useUrlParam } from "@/hooks/use-url-param"
 import {
@@ -41,7 +44,50 @@ import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 50
 
+const TABS = [
+  { id: "sensor", label: "This sensor" },
+  { id: "network", label: "Network" },
+] as const
+
+/**
+ * Two views of the blocklists: what this sensor saw, and the community lists built from the
+ * network. The tab lives in the URL (`?tab=network`) and switching drops the other filters.
+ */
 export function BlocklistsPage() {
+  const [params, setParams] = useSearchParams()
+  const tab = params.get("tab") === "network" ? "network" : "sensor"
+  const tabs = (
+    <Tabs
+      value={tab}
+      onValueChange={(next) => setParams(next === "network" ? { tab: "network" } : {})}
+      className="mt-2 mb-4"
+    >
+      <TabsList variant="line" aria-label="Blocklist views" className="justify-start">
+        {TABS.map((t) => (
+          <TabsTrigger key={t.id} value={t.id} className="flex-none px-3">
+            {t.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  )
+  if (tab === "network") {
+    return (
+      <>
+        <PageHeader
+          help="blocklists-network"
+          title="Blocklists"
+          description="Free community lists for your firewall, built only from what several independent sensors confirmed."
+        />
+        {tabs}
+        <NetworkFeedTab />
+      </>
+    )
+  }
+  return <SensorBlocklists tabs={tabs} />
+}
+
+function SensorBlocklists({ tabs }: { tabs: React.ReactNode }) {
   const { canWrite } = useAuth()
   const [kindParam, setKindParam] = useUrlParam("kind")
   const [scoreParam, setScoreParam] = useUrlParam("min_score")
@@ -152,6 +198,7 @@ export function BlocklistsPage() {
     return (
       <>
         {header}
+        {tabs}
         <EmptyState
           icon={off ? ShieldOff : ShieldCheck}
           title={off ? "Blocklists are turned off" : "No entries scored yet"}
@@ -179,6 +226,7 @@ export function BlocklistsPage() {
   return (
     <>
       {header}
+      {tabs}
 
       <KindTiles summary={s} kind={kind} onSelect={(k) => setKindParam(k)} />
 
