@@ -10,6 +10,7 @@ import {
 import { useEffect, useRef } from "react"
 import { Link } from "react-router"
 import { ReportingCard } from "@/components/abuse/reporting-card"
+import { ReportingNav } from "@/components/abuse/reporting-nav"
 import { AbusechCard } from "@/components/abuse/abusech-card"
 import { ImapCard } from "@/components/abuse/imap-card"
 import { SendingCard } from "@/components/abuse/sending-card"
@@ -391,7 +392,13 @@ export function SettingsPage() {
 
       <div className="mb-6 flex items-start gap-2.5 rounded-lg border border-dashed px-4 py-3 text-sm text-fg-muted">
         <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-        {canWrite ? (
+        {canWrite && tab === "reporting" ? (
+          <p>
+            Reporting settings are saved here. Only the server switches, such as{" "}
+            <code className="font-mono text-fg">ABUSE_REPORTS_ENABLED</code>, live in{" "}
+            <code className="font-mono text-fg">.env</code>.
+          </p>
+        ) : canWrite ? (
           <p>
             The enrichment API keys, the users and the alert channels can be edited below.
             Everything else lives in <code className="font-mono text-fg">.env</code>: change it
@@ -452,10 +459,17 @@ export function SettingsPage() {
         ) : null}
         {canWrite ? (
           <TabsContent value="reporting" className="grid grid-cols-1 gap-4">
+            <ReportingNav />
             <ReportingCard />
-            <SendingCard />
-            <ImapCard />
-            <AbusechCard />
+            <section id="reporting-sending" className="scroll-mt-16">
+              <SendingCard />
+            </section>
+            <section id="reporting-replies" className="scroll-mt-16">
+              <ImapCard />
+            </section>
+            <section id="reporting-abusech" className="scroll-mt-16">
+              <AbusechCard />
+            </section>
           </TabsContent>
         ) : null}
         {canWrite ? (

@@ -39,6 +39,7 @@ import {
   type SubmissionStatus,
   type SubmissionTab,
 } from "@/lib/abusech"
+import { plural } from "@/lib/format"
 import { defang } from "@/lib/results-sentences"
 import { cn } from "@/lib/utils"
 
@@ -110,6 +111,21 @@ export function SubmissionsPage() {
   const submittable = (s: Submission) => s.status === "candidate" && s.lookup === "unknown"
   const chosen = items.filter((s) => selected.has(s.id) && submittable(s))
   const canSubmit = canWrite && mode !== undefined && mode !== "off"
+  const total = counts?.[tab] ?? items.length
+  const mostTagged = (() => {
+    const n = new Map<string, number>()
+    for (const s of items) for (const t of s.tags) n.set(t, (n.get(t) ?? 0) + 1)
+    return [...n.entries()].sort((a, b) => b[1] - a[1])[0]
+  })()
+  const finding =
+    tab === "review"
+      ? `${plural(total, "URL")} ${total === 1 ? "waits" : "wait"} for your review${
+          mostTagged
+            ? `; ${mostTagged[1]} ${mostTagged[1] === 1 ? "is" : "are"} tagged ${mostTagged[0]}`
+            : ""
+        }.`
+      : `${plural(total, "URL")} in this list.`
+  const onePlatform = items.every((s) => s.platform === items[0]?.platform)
 
   return (
     <>
@@ -184,14 +200,24 @@ export function SubmissionsPage() {
       ) : (
         <FindingCard
           eyebrow={SUBMISSION_TABS.find((t) => t.value === tab)?.label ?? "Submissions"}
-          finding={`${counts?.[tab] ?? items.length} ${(counts?.[tab] ?? items.length) === 1 ? "URL" : "URLs"} in this list.`}
+          finding={finding}
           detail="URLs are shown defanged and are never links."
           action={
             canSubmit && tab === "review" ? (
-              <Button size="sm" disabled={chosen.length === 0} onClick={() => setConfirm(true)}>
-                <Send aria-hidden /> Submit selected
-                {chosen.length > 0 ? ` (${chosen.length})` : ""}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {chosen.length === 0 ? (
+                  <span className="text-xs text-fg-muted">Select URLs to submit</span>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant={chosen.length === 0 ? "outline" : "default"}
+                  disabled={chosen.length === 0}
+                  onClick={() => setConfirm(true)}
+                >
+                  <Send aria-hidden /> Submit selected
+                  {chosen.length > 0 ? ` (${chosen.length})` : ""}
+                </Button>
+              </div>
             ) : undefined
           }
           bodyClassName="px-0 sm:px-0 pb-0 sm:pb-0"
@@ -230,11 +256,13 @@ export function SubmissionsPage() {
                   <div className="min-w-0 space-y-1.5">
                     <p className="font-mono text-xs break-all text-fg">{defang(s.value)}</p>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-fg-muted">
-                      <StatusMark s={s} />
-                      <TagBadge
-                        tag={s.platform === "urlhaus" ? "URLhaus" : "ThreatFox"}
-                        href={null}
-                      />
+                      {tab === "review" ? null : <StatusMark s={s} />}
+                      {onePlatform ? null : (
+                        <TagBadge
+                          tag={s.platform === "urlhaus" ? "URLhaus" : "ThreatFox"}
+                          href={null}
+                        />
+                      )}
                       {s.tags.map((t) => (
                         <TagBadge key={t} tag={t} href={null} />
                       ))}

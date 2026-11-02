@@ -353,6 +353,15 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
               value={f.since}
               onChange={(e) => set("since", e.target.value)}
             />
+            {f.since ? (
+              <p className="mt-1 text-xs text-fg-muted">
+                Mail received before{" "}
+                {new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(
+                  new Date(`${f.since}T00:00:00`),
+                )}{" "}
+                is never read.
+              </p>
+            ) : null}
           </Field>
         </div>
 

@@ -32,7 +32,9 @@ test("abuse report blocked and demo", async ({ page }, info) => {
 test("settings reporting", async ({ page }, info) => {
   await page.goto("/settings?tab=reporting")
   await expect(page.getByRole("textbox", { name: "Reply contact" })).toBeVisible()
-  await expect(page.getByText("Never in a report", { exact: true })).toBeVisible()
+  await expect(
+    page.locator("#reporting-never").getByText("Never in a report", { exact: true }),
+  ).toBeVisible()
   // The wording form has six optional texts; the mailbox card has its own two (see results.spec.ts).
   const wording = page.locator("form", {
     has: page.getByRole("textbox", { name: "Reply contact" }),
