@@ -16,6 +16,8 @@ from typing import Protocol
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from . import demo
+
 SESSION_ROWS = 20_000
 PAYLOAD_ROWS = 3_000
 C2_ROWS = 3_000
@@ -84,17 +86,20 @@ class SqlSource:
         self.factory = factory
 
     async def sessions(self, day: date) -> list[SessionFact]:
+        from .scheduler import day_start
+
         async with self.factory() as session:
             rows = (
                 await session.execute(
                     text(
-                        """
+                        f"""
                         WITH s AS (
                             SELECT src_ip, sensor, login_attempts, login_success, commands,
                                    downloads, http_requests, tags
-                            FROM sessions
+                            FROM sessions se
                             WHERE NOT benign AND scanner_name IS NULL
                               AND started_at >= :d0 AND started_at < :d1
+                              AND {demo.not_demo("se", ":d0", ":d2")}
                         ), t AS (
                             SELECT src_ip, sensor, array_agg(DISTINCT tag) AS tags
                             FROM s, unnest(s.tags) AS tag GROUP BY src_ip, sensor
@@ -103,13 +108,17 @@ class SqlSource:
                                sum(s.login_attempts) AS attempts, bool_or(s.login_success) AS ok,
                                sum(s.commands) AS commands, sum(s.downloads) AS downloads,
                                sum(s.http_requests) AS http,
-                               COALESCE(t.tags, CAST('{}' AS text[])) AS tags
+                               COALESCE(t.tags, CAST('{{}}' AS text[])) AS tags
                         FROM s LEFT JOIN t ON t.src_ip = s.src_ip AND t.sensor = s.sensor
                         GROUP BY s.src_ip, s.sensor, t.tags
                         ORDER BY count(*) DESC LIMIT :lim
-                        """
+                        """  # noqa: S608  (constant fragments only)
                     ),
-                    {**_bounds(day), "lim": SESSION_ROWS},
+                    {
+                        **_bounds(day),
+                        "d2": day_start(day + timedelta(days=3)),
+                        "lim": SESSION_ROWS,
+                    },
                 )
             ).all()
         return [
