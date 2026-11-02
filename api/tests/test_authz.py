@@ -213,11 +213,17 @@ def public_paths(app: FastAPI) -> set[str]:
 def test_the_feeds_are_the_only_route_group_outside_the_login(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Off by default; when on, only the two token-authenticated feed routes (and /healthz)."""
+    """Off by default; when on, only the token-authenticated feed routes (and /healthz)."""
     monkeypatch.delenv("FEEDS_ENABLED", raising=False)
     assert public_paths(build()) == {"/healthz"}
     monkeypatch.setenv("FEEDS_ENABLED", "true")
-    assert public_paths(build()) == {"/healthz", "/feeds/{token}/{name}", "/feeds/{name}"}
+    assert public_paths(build()) == {
+        "/healthz",
+        "/feeds/{token}/{name}",
+        "/feeds/{name}",
+        "/feeds/network/{name}",  # the verified mirror of the community lists (M30)
+        "/feeds/{token}/network/{name}",
+    }
 
 
 def test_no_feed_route_is_in_the_api_prefix_and_none_writes(
@@ -231,5 +237,5 @@ def test_no_feed_route_is_in_the_api_prefix_and_none_writes(
         for kind, p, x in walk(build().routes)
         if kind == "route" and p.startswith("/feeds") and isinstance(x[0], APIRoute)
     ]
-    assert len(feeds) == 2
+    assert len(feeds) == 4
     assert all(r.methods == {"GET"} for r in feeds)

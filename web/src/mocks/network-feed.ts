@@ -142,11 +142,18 @@ function filesFor(id: FeedListId): FeedFile[] {
           ["json", "json"],
           ...(id === "outbound" ? ([["stix", "stix.json"]] as [FeedFormat, string][]) : []),
         ]
-  const names = id === "outbound-domains" ? [id] : [id, `${id}-high`]
-  return names.flatMap((base) =>
+  const names: [string, FeedTier][] =
+    id === "outbound-domains"
+      ? [[id, "standard"]]
+      : [
+          [id, "standard"],
+          [`${id}-high`, "high"],
+        ]
+  return names.flatMap(([base, tier]) =>
     formats.map(([format, ext]) => ({
       name: `${base}.${ext}`,
       format,
+      tier,
       url: `${FEED_BASE_URL}/${base}.${ext}`,
     })),
   )

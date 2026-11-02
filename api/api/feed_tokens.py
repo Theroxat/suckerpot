@@ -13,6 +13,8 @@ import binascii
 import hashlib
 import secrets
 
+# What a token may be allowed to read: blocklist kinds, and the community lists mirror (M30).
+TOKEN_KINDS = ("ip", "domain", "url", "hash", "network")
 TOKEN_CHARS = 43
 HINT_CHARS = 6
 _ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")

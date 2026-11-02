@@ -11,6 +11,9 @@ Revises: 0028
 Both tables hold public feed content, never a credential, a command or a raw event. There is no
 prune job: entries are replaced on every fetch and wiped by the worker when the feed is turned
 off. The migration does not touch ``events`` or ``sessions``.
+
+It also lets ``feed_tokens`` carry the kind ``network`` (the local mirror of the community lists,
+section 10.5): the kinds check of migration 0012 allowed four kinds and now allows five.
 """
 
 from collections.abc import Sequence
@@ -64,9 +67,22 @@ def upgrade() -> None:
         """
     )
     op.execute("CREATE INDEX ix_network_feed_entries_value ON network_feed_entries (value)")
+    op.execute("ALTER TABLE feed_tokens DROP CONSTRAINT IF EXISTS feed_tokens_kinds_check")
+    op.execute(
+        "ALTER TABLE feed_tokens ADD CONSTRAINT feed_tokens_kinds_check CHECK ("
+        "cardinality(kinds) BETWEEN 1 AND 5 "
+        "AND kinds <@ ARRAY['ip', 'domain', 'url', 'hash', 'network'])"
+    )
 
 
 def downgrade() -> None:
+    # Tokens of kind network cannot exist under the old check: drop them first.
+    op.execute("DELETE FROM feed_tokens WHERE 'network' = ANY(kinds)")
+    op.execute("ALTER TABLE feed_tokens DROP CONSTRAINT IF EXISTS feed_tokens_kinds_check")
+    op.execute(
+        "ALTER TABLE feed_tokens ADD CONSTRAINT feed_tokens_kinds_check CHECK ("
+        "cardinality(kinds) BETWEEN 1 AND 4 AND kinds <@ ARRAY['ip', 'domain', 'url', 'hash'])"
+    )
     # No retention job exists for these tables, so nothing can dangle.
     op.execute("DROP TABLE IF EXISTS network_feed_entries")
     op.execute("DROP TABLE IF EXISTS network_feed_state")

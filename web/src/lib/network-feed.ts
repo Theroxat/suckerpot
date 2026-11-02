@@ -32,10 +32,12 @@ export const FEED_FORMATS: readonly FeedFormat[] = [
   "stix",
 ]
 
-/** One downloadable file of a list. A `-high` file name is the high tier of the list. */
+/** One downloadable file of a list. */
 export interface FeedFile {
   name: string
   format: FeedFormat
+  /** `high` for the `-high` files (the subset confirmed by more sensors), else `standard`. */
+  tier: FeedTier
   /** The public address, built from the fixed file names: it exists even when fetching is off. */
   url: string
 }
@@ -188,9 +190,9 @@ export function categoryLabel(category: string): string {
   return CATEGORY_LABEL[category] ?? category.replace(/_/g, " ")
 }
 
-/** The high tier of a list is the file whose name carries `-high`. */
+/** The tier of a file, as the API says it. */
 export function fileTier(file: FeedFile): FeedTier {
-  return file.name.includes("-high") ? "high" : "standard"
+  return file.tier
 }
 
 /** Files of one tier in the order of FEED_FORMATS. */
@@ -221,6 +223,7 @@ export const FEED_ERROR_TEXT: Record<string, string> = {
   feed_expired: "The lists have expired and no fresh copy has been published.",
   feed_invalid: "The lists failed a check and were refused.",
   too_large: "The lists were larger than allowed and were refused.",
+  unreachable: "The list server could not be reached.",
 }
 
 export function describeFeedError(code: string | null): string | null {
@@ -334,6 +337,6 @@ const PLACEHOLDER_BASE = "https://feeds.example.org/v1"
 export function addressFor(app: FirewallApp, status: FeedStatus | undefined): string {
   const outbound = status?.lists.find((l) => l.id === "outbound")
   const wanted = app === "nftables" ? "nft" : "txt"
-  const found = outbound?.files.find((f) => f.format === wanted && !f.name.includes("-high"))
+  const found = outbound?.files.find((f) => f.format === wanted && fileTier(f) === "standard")
   return found?.url ?? `${status?.public_base_url ?? PLACEHOLDER_BASE}/outbound.${wanted}`
 }
