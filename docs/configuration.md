@@ -654,6 +654,26 @@ Notes:
 - `NETWORK_ENABLED`, `NETWORK_HUB_URL` and `NETWORK_HUB_KEY` can be changed with `just set` (for example `just set NETWORK_ENABLED=true`). `NETWORK_HUB_KEY` is the hub's public key, so it is the one `*_KEY` name that `just set` accepts.
 - Joining, the pseudonym, the country and leaving are done in the dashboard, not in `.env`. The hub's own settings are in `hub/README.md`.
 
+## Community lists (M30)
+
+The community blocklist feeds are free and public. A node can fetch them, and firewalls can fetch the public files directly, with or without a node. Details are in [Community blocklist feeds](feeds.md). Fetching is off by default, and it does not depend on network membership.
+
+| Variable | Default | Service | Description |
+| --- | --- | --- | --- |
+| `NETWORK_FEED_ENABLED` | `false` | `ingest`, `api` | Fetch the public lists through the VPN gate. Nothing is requested while this is `false`. The Network tab shows the lists as off until it is `true`. |
+| `NETWORK_FEED_URL` | empty | `ingest`, `api` | Base address of the feed, for example `https://feeds.example.org/v1`. HTTPS only, no query string, no credentials. The API shows it as the copy address. Set it by hand in `.env`. |
+| `NETWORK_FEED_KEY` | empty | `ingest` | The feed's minisign public key, starting with `RW`. This is not the hub key. Set it by hand in `.env`. |
+| `NETWORK_FEED_INTERVAL_S` | `3600` | `ingest` | Seconds between fetches, from 900 to 86400 |
+| `NETWORK_FEED_LISTS` | `inbound,outbound,outbound-domains` | `ingest` | Lists to store. Choose from `inbound`, `inbound-high`, `outbound`, `outbound-high` and `outbound-domains`. The high lists are subsets, and each stored row carries its tier. |
+| `FEEDS_ENABLED` | `false` | `api` | Serves the token-protected mirror under `/feeds`. Needed for the local mirror of the community lists (token kind `network`). The same switch as in [Blocklists and feeds (M16)](#blocklists-and-feeds-m16). |
+
+Notes:
+
+- `NETWORK_FEED_URL` and `NETWORK_FEED_KEY` must be set together. A wrong value leaves the feed unconfigured, and `ingest` logs an error. Check its log after you change them.
+- `just set NETWORK_FEED_ENABLED=true` works. `NETWORK_FEED_URL` and `NETWORK_FEED_KEY` are not in the `just set` list, so set them in `.env`.
+- Turning the fetch off deletes the stored list rows on the next worker cycle. Leaving the Selfhostr network does not delete them.
+- The node checks the signature, the serial (no rollback), `valid_until`, and the sha256 of every file before it stores anything. If a check fails, the last good copy stays. After `valid_until` without a new index, the entries are kept for display only, and the local mirror serves nothing.
+
 ## In `.env.example` but not used yet
 
 These names are in the template. The code does not read them, so setting them has no effect today.

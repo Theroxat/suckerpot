@@ -26,6 +26,7 @@ defend
 replies
 takedowns
 network
+feeds
 api-keys
 ```
 

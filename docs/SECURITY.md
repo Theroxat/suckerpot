@@ -375,6 +375,66 @@ The package ships no introduction, closing text, note or signature. Any text shi
 - Demo reports can never become `sent` (database trigger).
 - RDAP uses the egress gate and a generic client identity. Static tests fail on mail-sending code in `reporting/` and `ingest/ingest/abuse/`.
 
+## Community lists (M30)
+
+The community blocklist feeds ([Community blocklist feeds](feeds.md)) add three kinds of exposure: the hub publishes files to the internet, nodes download them, and a bad list can reach many firewalls at once. The design is in [M30](design/m30.md).
+
+### New adversaries
+
+| # | Who | What they want |
+| --- | --- | --- |
+| A8 | A competitor or griefer | Get a third party's address or name listed. They control botnets, can type any command into honeypots, and can send spoofed UDP. |
+| A9 | A listed attacker | Get their own command server or payload host removed, with delisting spam or false evidence |
+| A10 | A feed flooder | Overload the feed site or the delisting API |
+| A11 | A feed forger | Serve an altered or old list, through a man in the middle, a rogue mirror or a compromised CDN |
+
+### Attacks and their controls
+
+| Attack | Control |
+| --- | --- |
+| Sybil nodes list a victim (A2, A8) | Only hub targets in state `confirmed` or `reported` are inputs. The high tier needs more nodes, more days, more enrolment weeks and an outside source. |
+| Spoofed UDP packets with a victim's source address (A8) | Inbound listing needs TCP evidence. Evidence only from SIP (UDP) never lists. Plain connects and scans never list. |
+| A botnet types a URL into every honeypot (A8) | A URL or host typed in a command never lists by itself. A payload host needs a fetched file with a known family from 2 nodes. |
+| Decoy command-server addresses in malware configs (A8) | A command server needs high confidence and at least 2 samples from 2 nodes. |
+| Member data learned from list content (A1) | Entries carry no node data. Every published attribute needs k-support: at least 5 eligible nodes. No countries, no node counts. |
+| Probing one suspected sensor with a listed address (A1) | k-support: one node's sighting changes nothing public. |
+| Timing of changes (A1) | The feed is rebuilt on a fixed hourly schedule. New values wait 6 hours. |
+| Downloaders learned from the feed site (A3, A4) | No access log, no cookies, no query strings on files, no script on list files, no analytics, no CDN at launch. |
+| Delisting spam (A9) | Proof of work on each request, a daily cap, one open request per value, operator review. Inbound values can be hidden for up to 72 hours, within a daily cap. Command-server and payload entries are never hidden. |
+| Feed flood (A10) | Static files, precompressed, `ETag` and `304`, one write an hour. Feed host separate from the API paths. Delisting and lookup rate limited, plus proof of work. Lists stay valid for 3 days without the hub. |
+| Forged or rolled-back list (A11) | minisign (Ed25519) signature on the index and on every file. The signed comment must name the file and the serial. The node checks the sha256, the serial (no rollback) and `valid_until`. The feed key is separate from the hub key. |
+| A compromised hub publishes a huge list | Single addresses only, never a prefix shorter than /32 or /128. Caps per list. A change breaker holds big jumps. Renderers and the node parser reject prefixes and oversized files. |
+| Tor exit relays and shared CDN addresses listed by mistake | Excluded from every list by default (`HUB_FEED_EXCLUDE_TOR`). CDN and Tor ranges are fetched from a fixed list of hosts, with size checks and a refusal to publish when the ranges are stale (fail closed). |
+
+### Invariants
+
+| # | Invariant | Where it is enforced |
+| --- | --- | --- |
+| F1 | Only `confirmed`, `reported` and `taken_down` targets are inputs | Hub feed selection, with tests |
+| F2 | Every value passes the never-list, the allow-list, the CDN and Tor exclusions and the reserved-range check when a list is rendered | Hub feed filter, renderers re-check |
+| F3 | Entries are single global addresses or exact names. No prefix, no wildcard, no parent domain. | Format library, parser |
+| F4 | Every published attribute and date has k-support | Hub feed selection, with tests |
+| F5 | No node id, fingerprint, pseudonym, country, node count, precise time or target id in any feed file | A scan test over every rendered file |
+| F6 | Files are written atomically and signed. Unchanged files keep their modification time. | Hub publish, with tests |
+| F7 | The feed site keeps no client address | Caddy configuration test, plus the rate-limit module as the only reader |
+| F8 | The hub never contacts a listed host | A static test of the hub's outbound hosts |
+| N11 | A node sends no feed request unless the feed is on, and its address and key are set | Node feed worker, with tests |
+| N12 | Every feed request goes through the VPN gate, is a `GET` to the configured host only, uses HTTPS, follows no redirect, sends no cookie and no query, and sends a generic client name | Node feed client, with tests |
+| N13 | Data is accepted only after the index verifies, names `index.json`, has a serial that does not go down, is not expired, and every file matches its sha256 | Node feed worker, with tests |
+| N14 | Parsing is strict. Over 1 % invalid entries rejects the file. Size caps apply. Nothing pulled is executed or contacted. | Format library parser, with tests |
+| N15 | After `valid_until`, the node keeps the stored data for display, and its local mirror serves nothing | Node feed worker and the mirror, with tests |
+
+### Privacy of members and downloaders
+
+- The lists name no member, no sensor and no country.
+- A node's fetch is a plain `GET` with the generic name `spn-feed/1`. It carries no node id and no query.
+- The hub keeps no client address for the feed site. Delisting requests hold the value, a category, the day and the decision. The evidence and the contact address are deleted 30 days after the decision. Requests are deleted after 180 days.
+- The lookup endpoint returns one word (`listed`, `removed` or `not_listed`). It exposes no dates, categories or lists.
+
+### Legal and accuracy
+
+The lists are a factual statement: at least five independent sensors observed the behaviour. They are not an accusation. IP addresses can be personal data, so retention is short, and a delisting path is public with a 72 hour target. A short legal review is an owner action before the hub leaves `HUB_FEED_MODE=off`. This is not legal advice.
+
 ## Defend: feeds, exports and generated rules (M16)
 
 The Defend pages turn recorded data into lists and rules (see [Defend](defend.md)). The rules for that code:
