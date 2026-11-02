@@ -72,26 +72,28 @@ function Row({ t }: { t: NetworkTarget }) {
   const days = daysToTakedown(t)
   return (
     <li
-      className={`grid min-w-0 grid-cols-1 items-center gap-x-4 gap-y-1.5 px-4 py-3 sm:px-5 ${COLS}`}
+      className={`grid min-w-0 grid-cols-2 items-center gap-x-4 gap-y-1.5 px-4 py-3 sm:px-5 ${COLS}`}
     >
-      <div className="min-w-0 space-y-1">
+      <div className="col-span-2 min-w-0 space-y-1 sm:col-span-1">
         <TargetValue t={t} />
         {t.mine ? (
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-fg">
+          <span className="flex w-fit items-center gap-1 text-xs font-medium text-fg">
             <BadgeCheck aria-hidden className="size-3.5 text-status-ok" />
             You helped
           </span>
         ) : null}
       </div>
-      <span className="text-xs text-fg-muted">
-        <span className="sm:hidden">Kind: </span>
-        {TARGET_KIND_LABEL[t.kind]}
-      </span>
+      <span className="text-xs text-fg-muted">{TARGET_KIND_LABEL[t.kind]}</span>
       <span className="flex min-w-0 flex-wrap gap-1.5">
         {t.families.length === 0 ? (
-          <span className="text-xs text-fg-subtle">No family</span>
+          <span className="text-xs text-fg-subtle">
+            <span className="hidden sm:inline">No family</span>
+            <span className="sr-only sm:hidden">No family</span>
+          </span>
         ) : (
-          t.families.map((f) => <TagBadge key={f} tag={f} href={`/attacks?tag=${f}`} />)
+          t.families.map((f) => (
+            <TagBadge key={f} tag={f} href={`/attacks?tag=${encodeURIComponent(f)}`} />
+          ))
         )}
       </span>
       <span className="text-xs text-fg-muted tabular-nums">
