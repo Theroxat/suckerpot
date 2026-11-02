@@ -136,7 +136,7 @@ settable_key() {
 }
 
 # Succeeds when VALUE is safe to write unquoted into .env.
-settable_value() { [[ $1 =~ ^[A-Za-z0-9._,:/@+-]{0,512}$ ]]; }
+settable_value() { [[ $1 =~ ^[A-Za-z0-9._,:/@+_-]{0,512}$ ]]; }
 
 # Version comparison: succeeds when $1 >= $2 (dotted numbers).
 ver_ge() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$2" ]; }

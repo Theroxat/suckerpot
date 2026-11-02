@@ -42,6 +42,20 @@ begin() {
   cp .env "$backup"
 }
 
+# Succeeds for https://<public DNS name>[:port]: no IP literal, no single label, no local suffix.
+hub_url_ok() {
+  local url=$1 host
+  [[ $url =~ ^https://[a-z0-9.-]+(:[0-9]{1,5})?$ ]] || return 1
+  host=${url#https://}
+  host=${host%%:*}
+  [[ $host == *.* ]] || return 1
+  [[ $host =~ ^[0-9.]+$ ]] && return 1
+  case $host in
+    localhost | .* | *..* | *. | *.local | *.lan | *.internal | *.home.arpa | *.localhost | *.test) return 1 ;;
+  esac
+  return 0
+}
+
 cmd=${1:-}
 [ $# -gt 0 ] && shift
 
@@ -96,6 +110,8 @@ case $cmd in
         *_HOST_PORT | DASHBOARD_PORT)
           [[ $value =~ ^[0-9]{1,5}$ ]] && [ "$value" -ge 1 ] && [ "$value" -le 65535 ] || die "$key must be a port number"
           ;;
+        NETWORK_HUB_URL) [ -z "$value" ] || hub_url_ok "$value" || die "NETWORK_HUB_URL must be https://<public DNS name>[:port] (no IP address, no local name)" ;;
+        NETWORK_HUB_KEY) [ -z "$value" ] || [[ $value =~ ^[A-Za-z0-9_-]{43}$ ]] || die "NETWORK_HUB_KEY must be 43 base64url characters" ;;
       esac
       keys+=("$key")
       values+=("$value")
