@@ -44,7 +44,9 @@ test("settings ports tab", async ({ page }, info) => {
 
 test("settings updates card", async ({ page }, info) => {
   await page.goto("/settings?update=1")
-  await expect(page.getByText("Selfhostr v0.9.0 is available. You are running v0.8.0.")).toBeVisible()
+  await expect(
+    page.getByText("Selfhostr v0.9.0 is available. You are running v0.8.0."),
+  ).toBeVisible()
   await settle(page)
   await shoot(page, "settings-updates", info.project.name, true)
 })
