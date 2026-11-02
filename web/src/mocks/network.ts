@@ -87,6 +87,20 @@ function buildMembers(): NetworkMember[] {
       tier: Math.min(4, 1 + Math.floor(rand() * 4)) as MemberTier,
     })
   }
+  // Keep the list coherent: a sensor idle all week sent nothing, and this node's own entry matches
+  // its status (gray-heron, 3f9a1c07, Switzerland, joined last month).
+  for (const m of members) {
+    if (m.active_days === 0) m.tier = 0
+    if (m.pseudonym === "gray-heron") {
+      Object.assign(m, {
+        fingerprint: "3f9a1c07",
+        country: "CH",
+        member_since: dayAgo(23).slice(0, 7),
+        active_days: 7,
+        tier: 3,
+      })
+    }
+  }
   // k-anonymity, like the hub: a country shows only when at least 3 members share it.
   const count = new Map<string, number>()
   for (const m of members) if (m.country) count.set(m.country, (count.get(m.country) ?? 0) + 1)

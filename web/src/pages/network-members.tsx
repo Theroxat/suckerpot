@@ -85,7 +85,7 @@ export function NetworkMembersPage() {
               />
             </div>
           ) : (
-            <MembersList members={shown} />
+            <MembersList members={shown} self={status.data?.fingerprint} />
           )}
         </FindingCard>
       )}
