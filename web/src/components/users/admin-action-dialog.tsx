@@ -21,6 +21,11 @@ interface FormProps {
   hint?: string
   /** Extra fields above the password (a role picker, say). */
   children?: ReactNode
+  /**
+   * Focus the password on open (the default). A long form turns it off, so the dialog opens at its
+   * top and the reader meets the text before the password.
+   */
+  focusPassword?: boolean
   /** Runs the change with the administrator's password; resolves when it went through. */
   run: (password: string) => Promise<void>
   /** Checks the extra fields first; a message stops the submit. */
@@ -40,6 +45,7 @@ function ActionForm({
   pendingLabel,
   hint = "Changing users asks for your own dashboard password again.",
   children,
+  focusPassword = true,
   run,
   validate,
   onDone,
@@ -98,7 +104,7 @@ function ActionForm({
           name="password"
           type="password"
           autoComplete="current-password"
-          autoFocus
+          autoFocus={focusPassword}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           aria-invalid={passwordError ? true : undefined}
@@ -130,7 +136,8 @@ export function AdminActionDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-popover">
+      {/* A long form scrolls inside the dialog, so its title and buttons stay reachable. */}
+      <DialogContent className="max-h-[90dvh] overflow-y-auto bg-popover">
         <ActionForm
           {...form}
           onCancel={() => onOpenChange(false)}

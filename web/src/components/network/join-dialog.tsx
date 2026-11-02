@@ -57,8 +57,9 @@ export function JoinDialog({
         onOpenChange(next)
       }}
       title="Join the Selfhostr network"
-      description="Joining is optional and you can leave at any time with one click. Tick each thing you agree to share."
+      description="Joining is optional and you can leave at any time with one click. Read the five things that would leave this system and tick each one: joining needs all five."
       hint="Joining asks for your own dashboard password again."
+      focusPassword={false}
       confirmLabel="Join the network"
       pendingLabel="Joining…"
       validate={() => {
