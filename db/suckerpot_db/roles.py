@@ -150,7 +150,8 @@ DECLARE
                   'takedown_targets', 'takedown_checks',
                   'takedown_target_links', 'abusech_submission', 'abusech_submissions',
                   'outcome_rollup_monthly', 'network_membership',
-                  'network_submissions', 'network_targets', 'network_summary']
+                  'network_submissions', 'network_targets', 'network_summary',
+                  'network_feed_state', 'network_feed_entries']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -334,6 +335,11 @@ BEGIN
             'GRANT USAGE ON SEQUENCE %s TO %I',
             pg_get_serial_sequence('public.network_submissions', 'id'), r);
     END IF;
+    IF to_regclass('public.network_feed_state') IS NOT NULL THEN
+        -- M30: the feed worker owns the public feed mirror (state row and entries).
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON network_feed_state TO %I', r);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON network_feed_entries TO %I', r);
+    END IF;
     IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
         -- M23: the gate reads the ranges the owner trusted; only the API changes them.
         EXECUTE format('GRANT SELECT ON egress_trusted_exits TO %I', r);
@@ -398,7 +404,8 @@ DECLARE
                   'takedown_targets', 'takedown_checks',
                   'takedown_target_links', 'abusech_submission', 'abusech_submissions',
                   'outcome_rollup_monthly', 'network_membership',
-                  'network_submissions', 'network_targets', 'network_summary']
+                  'network_submissions', 'network_targets', 'network_summary',
+                  'network_feed_state', 'network_feed_entries']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -569,6 +576,10 @@ BEGIN
             'requested_at) ON network_membership TO %I', r);
         EXECUTE format(
             'GRANT SELECT ON network_submissions, network_targets, network_summary TO %I', r);
+    END IF;
+    IF to_regclass('public.network_feed_state') IS NOT NULL THEN
+        -- M30: the API serves the feed status, entries and the local mirror; it never writes them.
+        EXECUTE format('GRANT SELECT ON network_feed_state, network_feed_entries TO %I', r);
     END IF;
     IF to_regclass('public.egress_trusted_exits') IS NOT NULL THEN
         -- M23: the owner trusts or removes a VPN exit range from the dashboard.
