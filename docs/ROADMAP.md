@@ -325,16 +325,16 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M28 — Installable by anyone
 
-- [ ] `scripts/install.sh`: checks Docker and Compose, RAM, disk and ports, asks a few questions, generates every secret and the admin password hash, writes `.env` (mode 0600) with `COMPOSE_PROJECT_NAME` and `SUCKERPOT_VOLUME_PREFIX`, creates the volumes, starts the stack and prints the URL and next steps. It never overwrites an `.env`, never adopts existing volumes and never looks up the public address.
-- [ ] Sensor choice: each sensor can be switched off (`SENSOR_<NAME>=0`, default on, so existing installs keep every sensor); `just sensors` and `just set` change `.env` from the host, and the port guard and the setup checklist follow the selection.
-- [ ] First-run setup in the dashboard (migration `0025`): welcome, sensors, ports, VPN upload, own address, reporting, alerts, then the M24 checklist and tour; can be skipped and reopened.
-- [ ] A "Sensors & ports" page listing what to open on the router, the port on this machine, and whether each sensor already receives traffic.
-- [ ] `just update` (backup, code, `.env` migration, pull or build, migrate, health check, rollback hint) and `just rollback` (restores the pre-update dump after confirmation).
-- [ ] Low-memory overlay (`docker-compose.lowmem.yml`) for 2 GiB machines, checked by the guardrails.
-- [ ] Version shown in the dashboard; a daily update check through the VPN only (no version or identifier sent, can be switched off).
-- [ ] Signed multi-arch images (amd64, arm64) on GHCR from a release workflow, with an install smoke test; build from source stays supported.
-- [ ] VPN idle mode, so the egress profile can start before a WireGuard file is uploaded.
-- [ ] Install guide, configuration and deployment updates; security review and UI review.
+- [x] `scripts/install.sh`: checks Docker and Compose, RAM, disk and ports, asks a few questions, generates every secret and the admin password hash, writes `.env` (mode 0600) with `COMPOSE_PROJECT_NAME` and `SUCKERPOT_VOLUME_PREFIX`, creates the volumes, starts the stack and prints the URL and next steps. It never overwrites an `.env`, never adopts existing volumes and never looks up the public address.
+- [x] Sensor choice: each sensor can be switched off (`SENSOR_<NAME>=0`, default on, so existing installs keep every sensor); `just sensors` and `just set` change `.env` from the host, and the port guard and the setup checklist follow the selection.
+- [x] First-run setup in the dashboard (migration `0025`): welcome, sensors, ports, VPN upload, own address, reporting, alerts, then the M24 checklist and tour; can be skipped and reopened.
+- [x] A "Sensors & ports" page listing what to open on the router, the port on this machine, and whether each sensor already receives traffic.
+- [x] `just update` (backup, code, `.env` migration, pull or build, migrate, health check, rollback hint) and `just rollback` (restores the pre-update dump after confirmation).
+- [x] Low-memory overlay (`docker-compose.lowmem.yml`) for 2 GiB machines, checked by the guardrails.
+- [x] Version shown in the dashboard; a daily update check through the VPN only (no version or identifier sent, can be switched off).
+- [x] Signed multi-arch images (amd64, arm64) on GHCR from a release workflow, with an install smoke test; build from source stays supported.
+- [x] VPN idle mode, so the egress profile can start before a WireGuard file is uploaded.
+- [x] Install guide, configuration and deployment updates; security review and UI review.
 
 **Acceptance:** on a fresh Linux VM with Docker, `scripts/install.sh` brings a healthy stack from published images on amd64 and arm64 in one command, and the dashboard walks the owner through the rest; `just update` from the previous release keeps the data and a failed update prints a working rollback; the update check never leaves outside the tunnel and never sends the running version; guardrails and security review PASS.
 
