@@ -28,6 +28,7 @@ const TITLES: Record<string, string> = {
   alerts: "Alert channel",
   provider_keys: "Reputation keys",
   network: "Selfhostr network",
+  network_feed: "Community lists",
 }
 const ORDER = Object.keys(TITLES)
 
