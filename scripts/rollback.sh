@@ -90,5 +90,10 @@ if [ "$mode" = images ]; then
 else
   docker compose up -d --wait --wait-timeout 600
 fi
+# Mark the recorded update as resolved, so the next `just update` is not blocked by its lock.
+tmp=$(mktemp ".suckerpot-state/.state.XXXXXX")
+sed 's/"completed": false,/"completed": true,/' "$STATE" > "$tmp"
+chmod 600 "$tmp"
+mv "$tmp" "$STATE"
 echo
 echo "Rolled back to $from_version."
