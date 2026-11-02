@@ -241,7 +241,7 @@ export function feedSentence(s: FeedStatus): string {
     (listById(s, "outbound")?.entries ?? 0) + (listById(s, "outbound-domains")?.entries ?? 0)
   const sources = listById(s, "inbound")?.entries ?? 0
   if (hosts + sources === 0)
-    return "The community lists are empty for now. They only fill once enough members confirm the same host."
+    return `The community lists are empty for now: no host has been confirmed by ${MIN_CONFIRMING_SENSORS} independent sensors yet.`
   const seen = s.lists.reduce((n, l) => n + l.seen_here, 0)
   const tail =
     seen > 0
@@ -268,8 +268,7 @@ export function feedStatusLine(
       return {
         tone: "warning",
         label: "Out of date",
-        detail:
-          "No fresh copy arrived in time. The stored entries stay readable here, and this dashboard no longer serves them to firewalls.",
+        detail: `${s.last_ok_at ? `No fresh copy since ${fmt(s.last_ok_at)}. ` : "No fresh copy arrived in time. "}The entries stay readable here, but this dashboard stopped serving its copy to firewalls.`,
       }
     case "error":
       return {

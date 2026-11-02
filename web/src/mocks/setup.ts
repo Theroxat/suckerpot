@@ -114,6 +114,19 @@ function items(done: boolean): SetupItem[] {
           detail: "No reputation keys. AbuseIPDB and GreyNoise add a score and a scanner label.",
           href: "/settings?tab=keys",
         },
+    done
+      ? {
+          id: "network_feed",
+          state: "ok",
+          detail: "The community lists are up to date.",
+          href: "/defend/blocklists?tab=network",
+        }
+      : {
+          id: "network_feed",
+          state: "off",
+          detail: "The community lists are not fetched here.",
+          href: "/defend/blocklists?tab=network",
+        },
   ]
 }
 

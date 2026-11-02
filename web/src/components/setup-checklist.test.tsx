@@ -75,6 +75,29 @@ describe("SetupChecklistCard", () => {
     expect(screen.getByText("just egress-check")).toBeInTheDocument()
   })
 
+  it("titles the community lists item and links it to the Network tab of Blocklists", async () => {
+    stub(
+      () =>
+        new Response(
+          JSON.stringify({
+            items: [
+              {
+                id: "network_feed",
+                state: "off",
+                detail: "The community lists are not fetched here.",
+                href: "/defend/blocklists?tab=network",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    )
+    mount()
+    const link = await screen.findByRole("link", { name: "Open Community lists" })
+    expect(link).toHaveAttribute("href", "/defend/blocklists?tab=network")
+    expect(screen.getByText("The community lists are not fetched here.")).toBeInTheDocument()
+  })
+
   it("accepts a bare list", async () => {
     stub(() => new Response(JSON.stringify(ITEMS.slice(0, 2)), { status: 200 }))
     mount()

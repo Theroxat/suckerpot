@@ -6,13 +6,26 @@ import { SkeletonCard, SkeletonText } from "@/components/skeletons"
 import { Term } from "@/components/term"
 import { Button } from "@/components/ui/button"
 import { formatAbsolute } from "@/lib/format"
-import { feedSentence, feedStatusLine, isEmptyForNow } from "@/lib/network-feed"
+import {
+  feedSentence,
+  feedStatusLine,
+  isEmptyForNow,
+  LIST_META,
+  type FeedList,
+} from "@/lib/network-feed"
 import { EntriesCard } from "./entries-card"
 import { FeedOff } from "./feed-off"
 import { HowToDrawer } from "./how-to-drawer"
 import { ListCard } from "./list-card"
 import { useFeedStatus } from "./use-feed"
 import { WhyJoinCard } from "./why-join-card"
+
+/** The recommended list ("Start here") first, then the API order. */
+function byRecommendation(lists: FeedList[]): FeedList[] {
+  return [...lists].sort(
+    (a, b) => Number(LIST_META[b.id].startHere) - Number(LIST_META[a.id].startHere),
+  )
+}
 
 /**
  * Blocklists, tab "Network": the free community lists built from network consensus. Everything
@@ -75,7 +88,10 @@ export function NetworkFeedTab() {
             className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-muted"
           >
             <span className="inline-flex items-center gap-1.5 font-medium text-fg">
-              <StatusIcon aria-hidden className="size-4" />
+              <StatusIcon
+                aria-hidden
+                className={line.tone === "warning" ? "size-4 text-sev-warning" : "size-4"}
+              />
               {line.label}
             </span>
             {line.detail ? <span>{line.detail}</span> : null}
@@ -97,13 +113,13 @@ export function NetworkFeedTab() {
         <EmptyState
           className="mt-6"
           icon={Rss}
-          title="The lists are empty for now"
-          description="An entry appears once at least 5 independent sensors confirmed the same host. The lists fill as more members join. Firewalls can already use the addresses below; they just have nothing to block yet."
+          title="Nothing to block yet"
+          description="The lists grow as more members join the network. You can already add an address below to your firewall: it picks up new entries on its own as they appear."
         />
       ) : null}
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {s.lists.map((l) => (
+        {byRecommendation(s.lists).map((l) => (
           <ListCard key={l.id} list={l} mirrorLink={canWrite && s.local_mirror.feeds_enabled} />
         ))}
       </div>
