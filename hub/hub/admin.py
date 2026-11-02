@@ -28,6 +28,7 @@ from . import reputation
 from .config import ConfigError, Settings, load_signing_key
 from .db import make_engine, make_sessionmaker, utcnow
 from .feeds import job as feed_job
+from .feeds.select import BASE_LISTS as DELIST_LISTS
 
 Out = Callable[[str], None]
 
@@ -106,6 +107,12 @@ def _parser() -> argparse.ArgumentParser:
         "--as", dest="outcome", required=True, choices=["false_positive", "remediated", "policy"]
     )
     da.add_argument("--note", required=True, help="PUBLIC: shown to the requester")
+    da.add_argument(
+        "--list",
+        dest="list_id",
+        choices=DELIST_LISTS,
+        help="apply the decision to this list only (narrows a request that covers every list)",
+    )
     dr = ds.add_parser("reject")
     dr.add_argument("id")
     dr.add_argument("--note", required=True, help="PUBLIC: shown to the requester")
@@ -537,6 +544,13 @@ async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out
     today = utcnow().date()
     outcome = "rejected" if args.action == "reject" else args.outcome
     penalised = 0
+    scope = row.scope
+    if args.action == "accept" and args.list_id is not None:
+        # The operator may narrow a request that covers every list, never widen one.
+        if scope is not None and scope != args.list_id:
+            out(f"this request concerns {scope} only")
+            return 1
+        scope = args.list_id
     if args.action == "accept":
         kind = _kind_of(row.value)
         reason = outcome
@@ -546,9 +560,12 @@ async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out
                 await session.execute(
                     text(
                         "SELECT DISTINCT target_id FROM feed_entries "
-                        "WHERE value = :v AND target_id IS NOT NULL"
+                        "WHERE value = :v AND target_id IS NOT NULL "
+                        # Only the targets behind the list the decision is about: an inbound
+                        # false positive never disputes the same address as a malware host.
+                        "AND (CAST(:l AS text) IS NULL OR list = :l)"
                     ),
-                    {"v": row.value},
+                    {"v": row.value, "l": scope},
                 )
             ).all()
             for (target_id,) in targets:
@@ -565,7 +582,7 @@ async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out
             ),
             {
                 "v": row.value,
-                "l": row.scope,
+                "l": scope,
                 "k": kind,
                 "r": reason,
                 "n": "delisting " + row.id,
@@ -584,9 +601,10 @@ async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out
     await session.execute(
         text(
             "UPDATE delist_requests SET state = :st, outcome = :o, public_note = :n, "
-            "decided_day = :d WHERE id = :id"
+            "decided_day = :d, scope = :sc WHERE id = :id"
         ),
         {
+            "sc": scope,
             "st": "rejected" if args.action == "reject" else "accepted",
             "o": outcome,
             "n": args.note[:NOTE_MAX],
