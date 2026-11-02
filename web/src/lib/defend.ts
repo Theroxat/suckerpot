@@ -497,11 +497,25 @@ export function validateInventory(input: InventoryInput): { name?: string } {
 
 /* --- Feeds -------------------------------------------------------------- */
 
+/**
+ * What a feed token may read: the four blocklists, and the verified local mirror of the
+ * community lists (M30; api/api/feed_tokens.py TOKEN_KINDS).
+ */
+export const TOKEN_KINDS = [...BLOCK_KINDS, "network"] as const
+export type TokenKind = (typeof TOKEN_KINDS)[number]
+
+export const TOKEN_KIND_META: Record<TokenKind, { label: string; phrase: string }> = {
+  ...(Object.fromEntries(
+    BLOCK_KINDS.map((k) => [k, { label: KIND_META[k].label, phrase: KIND_META[k].phrase }]),
+  ) as Record<BlockKind, { label: string; phrase: string }>),
+  network: { label: "Community lists (local mirror)", phrase: "the community lists" },
+}
+
 export interface FeedToken {
   id: number
   name: string
   hint: string
-  kinds: BlockKind[]
+  kinds: TokenKind[]
   min_score: number
   include_benign: boolean
   created_by: string
@@ -521,7 +535,7 @@ export interface FeedTokenList {
 
 export interface NewFeedToken {
   name: string
-  kinds: BlockKind[]
+  kinds: TokenKind[]
   minScore: number
   includeBenign: boolean
   expiresInDays: number | null
@@ -545,8 +559,8 @@ export function feedsSentence(list: FeedTokenList | undefined): string {
 }
 
 /** The kinds a token covers, as words: "IP addresses and domains". */
-export function kindsPhrase(kinds: readonly BlockKind[]): string {
-  const names = BLOCK_KINDS.filter((k) => kinds.includes(k)).map((k) => KIND_META[k].phrase)
+export function kindsPhrase(kinds: readonly TokenKind[]): string {
+  const names = TOKEN_KINDS.filter((k) => kinds.includes(k)).map((k) => TOKEN_KIND_META[k].phrase)
   if (names.length <= 1) return names[0] ?? "nothing"
   return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
 }
@@ -554,6 +568,15 @@ export function kindsPhrase(kinds: readonly BlockKind[]): string {
 /** The URL form works for firewalls that cannot send headers (OPNsense, pfSense URL tables). */
 export function feedUrl(origin: string, token: string, kind: BlockKind = "ip"): string {
   return `${origin.replace(/\/+$/, "")}/feeds/${token}/${kind}.txt`
+}
+
+/** The local mirror of a community list, in URL form (the token covers "network"). */
+export function networkFeedUrl(origin: string, token: string, list = "outbound"): string {
+  return `${origin.replace(/\/+$/, "")}/feeds/${token}/network/${list}.txt`
+}
+
+export function networkFeedCurl(origin: string, token: string, list = "outbound"): string {
+  return `curl -H "Authorization: Bearer ${token}" ${origin.replace(/\/+$/, "")}/feeds/network/${list}.txt`
 }
 
 export function feedCurl(origin: string, token: string, kind: BlockKind = "ip"): string {

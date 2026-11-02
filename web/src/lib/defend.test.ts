@@ -227,6 +227,8 @@ describe("feeds", () => {
   it("names the kinds a token covers", () => {
     expect(kindsPhrase(["domain", "ip"])).toBe("IP addresses and domains")
     expect(kindsPhrase(["url", "hash", "domain"])).toBe("domains, URLs and file hashes")
+    expect(kindsPhrase(["network", "ip"])).toBe("IP addresses and the community lists")
+    expect(kindsPhrase(["network"])).toBe("the community lists")
   })
 })
 

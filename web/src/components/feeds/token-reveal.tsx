@@ -1,7 +1,14 @@
 import { KeyRound, X } from "lucide-react"
 import { CopyButton } from "@/components/defend/copy-button"
 import { Button } from "@/components/ui/button"
-import { feedCurl, feedUrl, kindsPhrase } from "@/lib/defend"
+import {
+  feedCurl,
+  feedUrl,
+  isBlockKind,
+  kindsPhrase,
+  networkFeedCurl,
+  networkFeedUrl,
+} from "@/lib/defend"
 import type { CreatedToken } from "./create-token-dialog"
 
 function Snippet({ label, text }: { label: string; text: string }) {
@@ -39,7 +46,9 @@ export function TokenReveal({
 }) {
   const origin = window.location.origin
   const { token, item } = created
-  const first = item.kinds[0] ?? "ip"
+  const blocks = item.kinds.filter(isBlockKind)
+  const first = blocks[0] ?? "ip"
+  const mirrorOnly = blocks.length === 0 && item.kinds.includes("network")
   return (
     <section
       aria-labelledby="token-reveal-title"
@@ -71,23 +80,46 @@ export function TokenReveal({
 
       <div className="mt-4 space-y-4">
         <Snippet label="Token" text={token} />
-        <Snippet
-          label="URL form, for OPNsense and pfSense URL tables"
-          text={feedUrl(origin, token, first)}
-        />
-        <p className="-mt-2 text-xs text-fg-muted">
-          Firewalls cannot send headers, so the token is part of the URL. For the other lists
-          replace <code className="font-mono">{first}.txt</code> with{" "}
-          {item.kinds
-            .filter((k) => k !== first)
-            .map((k) => `${k}.txt`)
-            .join(", ") || "another list"}
-          , or use <code className="font-mono">.csv</code> for a file with a header line.
-        </p>
-        <Snippet
-          label="Header form, for scripts and proxies"
-          text={feedCurl(origin, token, first)}
-        />
+        {mirrorOnly ? (
+          <>
+            <Snippet
+              label="URL form, for OPNsense and pfSense URL tables"
+              text={networkFeedUrl(origin, token)}
+            />
+            <p className="-mt-2 text-xs text-fg-muted">
+              This is the verified copy of the community outbound list. For the others replace{" "}
+              <code className="font-mono">outbound.txt</code> with{" "}
+              <code className="font-mono">outbound-high.txt</code>,{" "}
+              <code className="font-mono">outbound-domains.txt</code>,{" "}
+              <code className="font-mono">inbound.txt</code> or{" "}
+              <code className="font-mono">inbound-high.txt</code>.
+            </p>
+            <Snippet
+              label="Header form, for scripts and proxies"
+              text={networkFeedCurl(origin, token)}
+            />
+          </>
+        ) : (
+          <>
+            <Snippet
+              label="URL form, for OPNsense and pfSense URL tables"
+              text={feedUrl(origin, token, first)}
+            />
+            <p className="-mt-2 text-xs text-fg-muted">
+              Firewalls cannot send headers, so the token is part of the URL. For the other lists
+              replace <code className="font-mono">{first}.txt</code> with{" "}
+              {blocks
+                .filter((k) => k !== first)
+                .map((k) => `${k}.txt`)
+                .join(", ") || "another list"}
+              , or use <code className="font-mono">.csv</code> for a file with a header line.
+            </p>
+            <Snippet
+              label="Header form, for scripts and proxies"
+              text={feedCurl(origin, token, first)}
+            />
+          </>
+        )}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
