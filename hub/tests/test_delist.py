@@ -587,7 +587,7 @@ async def test_inbound_request_never_unlists_the_same_value_from_outbound(
     d_env: Env, feed_dir: Path, key_file: Path
 ) -> None:
     from .seed import observe
-    from .test_feeds_select import D, NOW, add_ranges, confirm, entries, feed_settings, run_job
+    from .test_feeds_select import NOW, D, add_ranges, confirm, entries, feed_settings, run_job
 
     env = d_env
     s = feed_settings(feed_dir, key_file, delist_pow_difficulty=DIFFICULTY)

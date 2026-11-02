@@ -189,7 +189,9 @@ async def submit(request: Request) -> Response:
         on_lists = {
             str(r[0])
             for r in await session.execute(
-                text("SELECT DISTINCT list FROM feed_entries WHERE value = :v AND state = 'listed'"),
+                text(
+                    "SELECT DISTINCT list FROM feed_entries WHERE value = :v AND state = 'listed'"
+                ),
                 {"v": value},
             )
         }
