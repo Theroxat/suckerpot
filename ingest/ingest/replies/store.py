@@ -112,7 +112,7 @@ async def store_reply(
     verdict = rules.classify(reply, matched=found.report_id is not None)
     trust = await report_trust(session, found.report_id) if found.report_id is not None else Trust()
     by_owner = source == "paste" and found.report_id is not None
-    verified = by_owner or is_verified(found, reply, trust)
+    verified = by_owner or is_verified(found, reply, trust, verdict.outcome)
     row = (
         await session.execute(
             text(INSERT_REPLY),

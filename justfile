@@ -286,7 +286,7 @@ test-integration:
         -e POSTGRES_HOST=db -e POSTGRES_PORT=5432 \
         -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD \
         -e POSTGRES_INGEST_USER -e POSTGRES_INGEST_PASSWORD -e POSTGRES_API_USER -e POSTGRES_API_PASSWORD \
-        -e SUCKERPOT_ALLOW_DEFAULT_SECRETS -e DB_DIR=/work/db \
+        -e SUCKERPOT_ALLOW_DEFAULT_SECRETS -e DB_DIR=/work/db -e COMPOSE_PROJECT_NAME \
         -e REDIS_HOST=redis -e REDIS_PORT=6379 -e REDIS_USER=admin -e "REDIS_PASSWORD=$REDIS_PASSWORD" -e REDIS_ADMIN_USER=admin -e "REDIS_ADMIN_PASSWORD=$REDIS_PASSWORD" \
         {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api && uv run pytest -q -p no:cacheprovider -m integration; rc=\$?; [ \$rc -eq 5 ] && exit 0; exit \$rc")
       # Default bridge first (to download packages), then the backend network (to reach db/redis).

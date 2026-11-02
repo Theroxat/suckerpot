@@ -141,6 +141,9 @@ async def _dangling_jobs(engine: AsyncEngine) -> list[str]:
 
 @pytest.fixture
 async def owner() -> AsyncIterator[AsyncEngine]:
+    # Destructive: it downgrades the database it is pointed at. Only a throwaway project.
+    if "-it-" not in os.environ.get("COMPOSE_PROJECT_NAME", ""):
+        pytest.skip("destructive test: needs a throwaway COMPOSE_PROJECT_NAME containing '-it-'")
     _alembic("upgrade", "head")
     engine = create_async_engine(database_url_from_env(ENV))
     yield engine
