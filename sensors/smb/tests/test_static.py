@@ -122,5 +122,6 @@ def test_no_giveaways_in_package() -> None:
     for path in sorted(PKG.rglob("*.py")):
         text = path.read_text().lower()
         assert "honeypot" not in text, path
+        assert "selfhostr" not in text, path
         for word in ("starlette", "uvicorn"):
             assert word not in text, f"{path}: {word}"

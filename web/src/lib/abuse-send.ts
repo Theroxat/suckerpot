@@ -86,7 +86,7 @@ export const MODE_OPTIONS = [
 ] as const
 
 export const MODE_EXPLANATION: Record<SendMode, string> = {
-  off: "Nothing is sent by SuckerPot. You copy each report or open it in your mail app from the To send queue.",
+  off: "Nothing is sent by Selfhostr. You copy each report or open it in your mail app from the To send queue.",
   click:
     "A Send now button appears on a ready report. Nothing leaves until you confirm for that report.",
   auto: "Ready reports are sent after a waiting time, with a Cancel button while they wait.",
@@ -121,7 +121,7 @@ export const SEND_ERROR: Record<string, string> = {
   mode_off: "Sending was switched off before this went out.",
   mode_changed: "The sending mode changed before this went out.",
   not_ready: "The report was no longer ready to send.",
-  internal: "Something went wrong inside SuckerPot. Try again.",
+  internal: "Something went wrong inside Selfhostr. Try again.",
   unknown_outcome:
     "The server stopped answering mid-send: the mail may or may not have left. Check your sent folder before sending again.",
 }

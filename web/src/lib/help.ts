@@ -105,11 +105,11 @@ export const HELP = {
   },
   abuse: {
     title: "Abuse reports",
-    body: "Drafts of reports for the networks that host attackers, with the abuse contact looked up over RDAP through the VPN. The To send queue walks through the ready ones; SuckerPot sends a report only if you set up SMTP and choose a sending mode. Open a draft to read the identity check first.",
+    body: "Drafts of reports for the networks that host attackers, with the abuse contact looked up over RDAP through the VPN. The To send queue walks through the ready ones; Selfhostr sends a report only if you set up SMTP and choose a sending mode. Open a draft to read the identity check first.",
   },
   "abuse-report": {
     title: "Abuse report",
-    body: "One draft report for one abuse desk. The identity check says what was masked, or why the report is blocked, against your own addresses and the terms you listed in Settings → Reporting. Review it, then copy the message and send it yourself and mark it as sent, or let SuckerPot send it if you set up SMTP sending (Send now, or automatically after a waiting time, with Cancel).",
+    body: "One draft report for one abuse desk. The identity check says what was masked, or why the report is blocked, against your own addresses and the terms you listed in Settings → Reporting. Review it, then copy the message and send it yourself and mark it as sent, or let Selfhostr send it if you set up SMTP sending (Send now, or automatically after a waiting time, with Cancel).",
   },
   "settings-general": {
     title: "General",
@@ -137,7 +137,7 @@ export const HELP = {
   },
   "settings-reporting": {
     title: "Reporting",
-    body: "The settings used in abuse reports: your reply contact (required), optional texts around the facts, and the list of terms that must never appear in a report. Leave the texts empty to send only the facts. SuckerPot sends a report only if you set up SMTP and choose a sending mode.",
+    body: "The settings used in abuse reports: your reply contact (required), optional texts around the facts, and the list of terms that must never appear in a report. Leave the texts empty to send only the facts. Selfhostr sends a report only if you set up SMTP and choose a sending mode.",
   },
   "settings-vpn": {
     title: "VPN",

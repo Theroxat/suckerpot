@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - `docs/deployment.md` "Upgrading" now points to `just update`. The old `git pull` and `docker compose up` steps are replaced.
+- Renamed to Selfhostr. The product name in the dashboard, documentation and exported reports changes; technical names (packages, volumes, environment variables, database roles) keep the `suckerpot` prefix so existing installs and data are unaffected.
 - Abuse report wording is now optional (owner decision of 2026-11-01). Only the reply contact is required. An empty introduction, closing, note or signature is left out of every rendering (text, X-ARF, `.eml`), an empty subject template gives `Abuse report for <address>`, and an empty X-ARF user agent gives `Mozilla/5.0`. The `custom_intro_required` gate on marking a report reviewed is gone, and the report detail answers `missing` instead of `custom_intro`. The setup checklist item is green once the reply contact is set. The `default_wording` identity check still refuses text that equals wording published earlier.
 
 ## [0.5.0] - 2026-11-01

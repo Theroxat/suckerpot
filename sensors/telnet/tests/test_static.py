@@ -97,3 +97,8 @@ def test_no_write_outside_data_path() -> None:
             if marker in text:
                 offenders.append(f"{path.name}: {marker}")
     assert offenders == []
+
+
+def test_product_name_never_appears_in_package() -> None:
+    for path in sorted(PKG.rglob("*.py")):
+        assert "selfhostr" not in path.read_text().lower(), path

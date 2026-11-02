@@ -15,7 +15,7 @@ export interface TourStep {
 export const TOUR_STEPS: readonly TourStep[] = [
   {
     id: "what",
-    title: "SuckerPot is a trap: fake servers that attackers find on the internet.",
+    title: "Selfhostr is a trap: fake servers that attackers find on the internet.",
     body: "Twelve sensors pretend to be SSH, a web app, a database and more, with nothing real behind them. Every attempt is recorded, and the events of one connection are grouped into a session you can read as a story.",
   },
   {
@@ -41,7 +41,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
   {
     id: "abuse",
     title: "Abuse reports are drafts for you to send.",
-    body: "When abuse reports are on, contacts are found over RDAP through the VPN, and one draft is built per abuse contact. You review it and send it from your own mailbox: by default SuckerPot never sends a report, and it does so only if you set up SMTP and choose a sending mode. An identity check masks or blocks anything that matches your own addresses or the terms you listed.",
+    body: "When abuse reports are on, contacts are found over RDAP through the VPN, and one draft is built per abuse contact. You review it and send it from your own mailbox: by default Selfhostr never sends a report, and it does so only if you set up SMTP and choose a sending mode. An identity check masks or blocks anything that matches your own addresses or the terms you listed.",
   },
   {
     id: "alerts",
