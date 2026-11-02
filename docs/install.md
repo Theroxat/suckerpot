@@ -211,7 +211,7 @@ just sensors recommended        # SSH, Telnet, Web, Redis, Docker, ADB
 just sensors all                # all twelve
 ```
 
-`just sensors` writes the switches to `.env`, checks the port layout, and then starts the stack again. A sensor set to `0` is not started. Check with `docker compose ps`.
+`just sensors` writes the switches to `.env`, checks the port layout, and then starts the stack again. A sensor set to `0` is not started, and one that was running is stopped and removed (the same applies to `just set SENSOR_<NAME>=0`). Check with `docker compose ps`.
 
 After a change, forward the new set of ports on your router. The Ports page shows the list.
 

@@ -97,7 +97,10 @@ If one image fails, nothing starts. The update, or the installer, exits with an 
 
 ### Run the check yourself
 
+`just verify-images` runs the script below and passes its arguments on.
+
 ```bash
+just verify-images vX.Y.Z
 scripts/verify-images.sh vX.Y.Z           # check only: nothing is pulled or started
 scripts/verify-images.sh --pull vX.Y.Z    # check, then pull the verified digests
 scripts/verify-images.sh --only api vX.Y.Z
@@ -169,7 +172,7 @@ The lock protects you from a second update on top of a half-done one. There is n
 - **Roll back.** Run `just rollback`. Read [Rollback](#rollback) first.
 - **Fix the cause and retry.** Run `just update --force`. This skips the lock check only. It does not skip the backup or the signature check.
 
-After a rollback, the state file is kept. If the failed update had not finished, the lock stays. Then the next `just update` needs `--force` too. The update does not take the lock off by itself.
+After a successful rollback, the state file is kept but marked `"completed": true`, so the lock is released and the next `just update` does not need `--force`. A rollback that fails part way leaves the lock in place.
 
 ## Rollback
 
