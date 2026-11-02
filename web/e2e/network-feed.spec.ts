@@ -42,7 +42,7 @@ test("network lists, off", async ({ page }, info) => {
 
 test("network lists, empty until enough members", async ({ page }, info) => {
   await page.goto("/defend/blocklists?tab=network&feed=empty")
-  await expect(page.getByText("The lists are empty for now")).toBeVisible()
+  await expect(page.getByText("Nothing to block yet")).toBeVisible()
   await settle(page)
   await shoot(page, "network-feed-empty", info.project.name, true)
 })

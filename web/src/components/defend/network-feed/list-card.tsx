@@ -78,7 +78,9 @@ function CopyMenu({ list, title }: { list: FeedList; title: string }) {
             <Check aria-hidden className="size-3.5" />
             Copied: {done}
           </span>
-        ) : null}
+        ) : (
+          "Most firewalls want plain text"
+        )}
       </span>
     </div>
   )
@@ -117,7 +119,8 @@ export function ListCard({
         <p className="text-sm font-medium text-fg">{meta.directionLabel}</p>
         <p className="text-sm text-pretty text-fg-muted">{meta.purpose}</p>
       </header>
-      <div className="grid grid-cols-2 gap-3">
+      {/* Pushed to the bottom so the figures line up across cards of different text length. */}
+      <div className="mt-auto grid grid-cols-2 gap-3">
         <StatTile label="Entries" value={list.entries} />
         <StatTile label="High tier" value={list.high} />
       </div>
@@ -140,7 +143,7 @@ export function ListCard({
           to="/settings?tab=feeds"
           className="text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
         >
-          Use the verified copy from this dashboard
+          Or let this dashboard serve a verified copy
         </Link>
       ) : null}
     </Card>

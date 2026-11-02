@@ -52,7 +52,7 @@ describe("NetworkFeedTab", () => {
   it("says the lists are empty until enough members exist", async () => {
     stubFetch("empty")
     wrap(<NetworkFeedTab />)
-    expect(await screen.findByText("The lists are empty for now")).toBeInTheDocument()
+    expect(await screen.findByText("Nothing to block yet")).toBeInTheDocument()
     expect(screen.getAllByText(/at least 5 independent sensors/).length).toBeGreaterThan(0)
     expect(screen.queryByRole("heading", { name: "Entries" })).not.toBeInTheDocument()
   })
