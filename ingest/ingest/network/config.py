@@ -6,6 +6,7 @@ without both the network cannot be joined. Nothing here is a secret (the hub key
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -14,6 +15,21 @@ from urllib.parse import urlsplit
 from suckerpot_netproto import sign
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
+MIN_SUBMIT_DELAY_H = 2
+RESERVED_SUFFIXES = (".local", ".lan", ".internal", ".home.arpa", ".localhost", ".test")
+
+
+def check_hub_host(host: str) -> None:
+    """Refuse a hub host that is not a public DNS name (IP literal, single label, local suffix)."""
+    h = host.lower().rstrip(".")
+    try:
+        ipaddress.ip_address(h.strip("[]"))
+    except ValueError:
+        pass
+    else:
+        raise ValueError("NETWORK_HUB_URL must name a public DNS host, not an IP address")
+    if "." not in h or h.endswith(RESERVED_SUFFIXES):
+        raise ValueError("NETWORK_HUB_URL must name a public DNS host")
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +60,7 @@ class NetworkSettings:
             hub_url=url,
             hub_key=key,
             interval_s=_int(e, "NETWORK_INTERVAL_S", 900, 30, 86_400),
-            delay_min_h=float(_int(e, "NETWORK_SUBMIT_DELAY_MIN_H", 2, 0, 23)),
+            delay_min_h=float(_int(e, "NETWORK_SUBMIT_DELAY_MIN_H", 2, MIN_SUBMIT_DELAY_H, 23)),
             delay_max_h=float(_int(e, "NETWORK_SUBMIT_DELAY_MAX_H", 20, 1, 23)),
             max_sources=_int(e, "NETWORK_MAX_SOURCES", 5000, 1, 5000),
         )
@@ -58,6 +74,7 @@ class NetworkSettings:
                 raise ValueError("NETWORK_HUB_URL must be an https URL without a path")
             if parts.username or parts.password or parts.fragment:
                 raise ValueError("NETWORK_HUB_URL must not hold credentials")
+            check_hub_host(parts.hostname)
             try:
                 sign.parse_node_key(key)
             except ValueError:

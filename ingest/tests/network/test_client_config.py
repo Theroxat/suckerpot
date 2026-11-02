@@ -41,6 +41,34 @@ def test_settings_validation() -> None:
             NetworkSettings.from_env(bad)
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://192.0.2.10",
+        "https://" + ".".join(("10", "0", "0", "1")) + ":9443",
+        "https://[::1]",
+        "https://localhost",
+        "https://hub",
+        "https://hub.local",
+        "https://hub.lan",
+        "https://hub.internal",
+        "https://hub.home.arpa",
+        "https://hub.localhost",
+        "https://hub.test",
+    ],
+)
+def test_a_hub_host_must_be_a_public_dns_name(url: str) -> None:
+    env = {"NETWORK_HUB_URL": url, "NETWORK_HUB_KEY": HUB_KEY}
+    with pytest.raises(ValueError):
+        NetworkSettings.from_env(env)
+
+
+def test_the_submit_delay_has_a_two_hour_floor() -> None:
+    with pytest.raises(ValueError):
+        NetworkSettings.from_env({"NETWORK_SUBMIT_DELAY_MIN_H": "1"})
+    assert NetworkSettings.from_env({"NETWORK_SUBMIT_DELAY_MIN_H": "2"}).delay_min_h == 2.0
+
+
 def test_the_schedule_stays_in_bounds_and_never_picks_the_current_day() -> None:
     rng = random.Random(1)  # noqa: S311
     for _ in range(200):
