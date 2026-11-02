@@ -238,7 +238,7 @@ def test_build_rows_merges_a_source_and_a_payload_host() -> None:
     )
     out, accepted, rejected = build_rows(parsed, Never())
     by_key = {(r["kind"], r["value"]): r for r in out}
-    assert len(out) == 3 and not rejected
+    assert len(out) == 4 and not rejected  # ip, url, sha256 and the hub-internal payload_ip
     assert by_key[("ip", "192.0.2.4")]["activity"] == ["download", "login"]
     assert by_key[("ip", "192.0.2.4")]["tags"] == ["malware-drop", "mirai"]
     assert by_key[("ip", "192.0.2.4")]["sessions"] == 2

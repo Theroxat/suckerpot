@@ -13,7 +13,7 @@ from suckerpot_netproto import ProtoError, buckets, models, sign
 
 from ..auth import MAX_BODY_OBSERVATIONS, authenticate, reply
 from ..context import get_ctx
-from ..models import Batch, Observation
+from ..models import Batch, Observation, PayloadLink
 from ..never import Never
 
 router = APIRouter()
@@ -37,9 +37,12 @@ def c2_value(ip: str, port: int) -> str:
 
 
 def build_rows(
-    batch: models.ObservationBatch, never: Never
+    batch: models.ObservationBatch, never: Never, links: set[tuple[str, str, str]] | None = None
 ) -> tuple[list[dict[str, Any]], dict[str, int], dict[str, int]]:
-    """Observation rows for a batch, items accepted per list and rejections by reason."""
+    """Observation rows for a batch, items accepted per list and rejections by reason.
+
+    ``links`` (when given) collects ``(host_kind, host, url_b)`` of every accepted payload host.
+    """
     rows: dict[tuple[str, str], dict[str, Any]] = {}
     accepted = {"sources": 0, "payloads": 0, "c2": 0, "files": 0}
     rejected: dict[str, int] = {}
@@ -102,8 +105,20 @@ def build_rows(
                     families=fam,
                     fetched=p.fetched,
                 )
+                # Hub-internal kind for the feeds: the host as a payload host (never sent to nodes).
+                put(
+                    "payload_ip",
+                    p.host_ip,
+                    activity=["download"],
+                    families=fam,
+                    fetched=p.fetched,
+                )
+                if links is not None:
+                    links.add(("payload_ip", p.host_ip, p.url_b))
         elif p.host_b is not None:
             put("domain", p.host_b, activity=["download"], families=fam, fetched=p.fetched)
+            if links is not None:
+                links.add(("domain", p.host_b, p.url_b))
         if p.sha256 is not None:
             if never.has_hash(p.sha256):
                 reject("never_listed")
@@ -171,7 +186,8 @@ async def observations(request: Request) -> Response:
                 )
             raise ProtoError("invalid_payload", "day already submitted")
         never = await ctx.never.get(session)
-        rows, accepted, rejected = build_rows(batch, never)
+        links: set[tuple[str, str, str]] = set()
+        rows, accepted, rejected = build_rows(batch, never, links)
         cap = ctx.settings.new_values_per_day
         if len(rows) > cap:
             rejected["cap"] = len(rows) - cap
@@ -188,6 +204,19 @@ async def observations(request: Request) -> Response:
                     ]
                     await session.execute(
                         pg_insert(Observation).values(chunk).on_conflict_do_nothing()
+                    )
+                # Which URLs a payload host served (no node reference): the feeds drop a host
+                # once every URL it served is down.
+                if links:
+                    await session.execute(
+                        pg_insert(PayloadLink)
+                        .values(
+                            [
+                                {"day": day, "kind": k, "value": h, "url_b": u}
+                                for k, h, u in sorted(links)
+                            ]
+                        )
+                        .on_conflict_do_nothing()
                     )
             await session.commit()
         except IntegrityError:

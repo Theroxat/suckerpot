@@ -87,7 +87,7 @@ class Never:
 
     def matches(self, kind: str, value: str) -> bool:
         """Whether a clear target value is on the list. Blinded values cannot be checked."""
-        if kind in ("ip", "c2_ip"):
+        if kind in ("ip", "c2_ip", "payload_ip"):
             return self.has_ip(value)
         if kind in ("domain", "c2_domain"):
             return self.has_domain(value)

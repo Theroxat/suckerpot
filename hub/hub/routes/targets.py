@@ -83,7 +83,11 @@ async def targets(request: Request) -> Response:
             (
                 await session.execute(
                     select(Target)
-                    .where(Target.seq > since, Target.state.in_(PUBLISHED))
+                    .where(
+                        Target.seq > since,
+                        Target.state.in_(PUBLISHED),
+                        Target.kind != "payload_ip",  # hub-internal: nodes reject unknown kinds
+                    )
                     .order_by(Target.seq)
                     .limit(limit)
                 )
@@ -131,7 +135,7 @@ async def targets(request: Request) -> Response:
                     .where(
                         Target.state.in_(OPEN_STATES),
                         Target.value.is_not(None),
-                        Target.kind != "sha256",
+                        Target.kind.not_in(("sha256", "payload_ip")),
                         ~voted_today,
                     )
                     .order_by(last_vote.asc().nulls_first(), Target.seq)
