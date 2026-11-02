@@ -128,7 +128,12 @@ async def test_payload_hosts_are_reported_only_with_fetched_evidence(env: Env) -
         env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
     )
     host = "192.0.2.120"
-    common: dict[str, Any] = {"services": [], "activity": ["download"], "tags": [], "attempts": None}
+    common: dict[str, Any] = {
+        "services": [],
+        "activity": ["download"],
+        "tags": [],
+        "attempts": None,
+    }
     await observe(env.worker, nodes[:2], "payload_ip", host, [D1, D2], fetched=True, **common)
     await observe(env.worker, nodes[2:], "payload_ip", host, [D1, D2], **common)
     async with env.worker() as s:
