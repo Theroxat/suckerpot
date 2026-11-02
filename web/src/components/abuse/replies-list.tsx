@@ -69,9 +69,11 @@ export function ReplyView({ r, actions }: { r: Reply; actions?: React.ReactNode 
       {r.excerpt_purged ? (
         <p className="text-xs text-fg-subtle">The text was deleted after its retention period.</p>
       ) : r.excerpt ? (
-        <pre className="max-h-40 overflow-auto rounded-md border bg-bg px-3 py-2 font-mono text-xs break-words whitespace-pre-wrap text-fg-muted">
-          {r.excerpt}
-        </pre>
+        <div className="overflow-hidden rounded-md border bg-bg">
+          <pre className="scroll-fade-y max-h-40 overflow-auto px-3 py-2 font-mono text-xs break-words whitespace-pre-wrap text-fg-muted">
+            {r.excerpt}
+          </pre>
+        </div>
       ) : null}
       {actions}
     </li>

@@ -418,7 +418,7 @@ export function SettingsPage() {
           ref={tabsRef}
           variant="line"
           aria-label="Settings sections"
-          className="mb-2 max-w-full justify-start overflow-x-auto"
+          className="scroll-fade-x mb-2 max-w-full justify-start overflow-x-auto"
         >
           {tabs.map((t) => (
             <TabsTrigger key={t.id} value={t.id} className="flex-none px-3">

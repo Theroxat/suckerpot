@@ -160,7 +160,7 @@ export function SubmissionsPage() {
         <TabsList
           variant="line"
           aria-label="Submission status"
-          className="mb-4 max-w-full justify-start overflow-x-auto"
+          className="scroll-fade-x mb-4 max-w-full justify-start overflow-x-auto"
         >
           {SUBMISSION_TABS.map((t) => (
             <TabsTrigger key={t.value} value={t.value} className="flex-none px-3">

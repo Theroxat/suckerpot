@@ -37,16 +37,19 @@ export function CopyField({ label, value, multiline = false, className }: CopyFi
           </Button>
         )}
       </div>
-      <pre
-        aria-label={label}
-        tabIndex={multiline ? 0 : undefined}
-        className={cn(
-          "overflow-auto rounded-md border bg-bg px-3 py-2 font-mono text-xs/5 break-words whitespace-pre-wrap text-fg",
-          multiline ? "max-h-96 min-h-32" : "max-h-20",
-        )}
-      >
-        {shown || " "}
-      </pre>
+      {/* The frame holds the border, so the scroll fade only fades the text. */}
+      <div className="overflow-hidden rounded-md border bg-bg has-[pre:focus-visible]:ring-2 has-[pre:focus-visible]:ring-ring">
+        <pre
+          aria-label={label}
+          tabIndex={multiline ? 0 : undefined}
+          className={cn(
+            "scroll-fade-y overflow-auto px-3 py-2 font-mono text-xs/5 break-words whitespace-pre-wrap text-fg outline-none",
+            multiline ? "max-h-96 min-h-32" : "max-h-20",
+          )}
+        >
+          {shown || " "}
+        </pre>
+      </div>
     </div>
   )
 }

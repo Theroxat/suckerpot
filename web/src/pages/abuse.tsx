@@ -271,7 +271,7 @@ export function AbusePage() {
         <TabsList
           variant="line"
           aria-label="Report status"
-          className="mb-4 max-w-full justify-start overflow-x-auto"
+          className="scroll-fade-x mb-4 max-w-full justify-start overflow-x-auto"
         >
           {canWrite ? (
             <TabsTrigger value="queue" className="flex-none px-3">
