@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button"
 import { useUrlParam } from "@/hooks/use-url-param"
 import { getJson } from "@/lib/api"
 import {
+  AFTER_SETUP,
   firstOpenStep,
   stepIndex,
   WIZARD_STEPS,
@@ -74,6 +75,24 @@ function StepMark({
         index + 1
       )}
     </span>
+  )
+}
+
+/** Two plain answers above the action bar: can this step be skipped, and what comes next. */
+function StepGuide({ skip, next }: { skip: string | null; next: string }) {
+  return (
+    <dl className="grid max-w-4xl gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+      {skip ? (
+        <div className="space-y-0.5">
+          <dt className="text-xs font-medium text-fg-subtle">Can I skip it?</dt>
+          <dd className="text-pretty text-fg-muted">{skip}</dd>
+        </div>
+      ) : null}
+      <div className="space-y-0.5">
+        <dt className="text-xs font-medium text-fg-subtle">What happens next</dt>
+        <dd className="text-pretty text-fg-muted">{next}</dd>
+      </div>
+    </dl>
   )
 }
 
@@ -162,13 +181,7 @@ function Stepper() {
       case "network":
         return <NetworkStep />
       default:
-        return (
-          <DoneStep
-            pending={change.isPending}
-            onTour={tour.start}
-            onFinish={() => leave({ finish: true })}
-          />
-        )
+        return <DoneStep />
     }
   })()
 
@@ -240,6 +253,8 @@ function Stepper() {
 
           {body}
 
+          <StepGuide skip={step.skip} next={steps[index + 1]?.teaser ?? AFTER_SETUP} />
+
           <div className="sticky bottom-0 z-10 -mx-4 flex items-center gap-2 border-t bg-bg/90 px-4 py-3 backdrop-blur-md sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
             {index > 0 ? (
               <Button variant="outline" onClick={() => go(index - 1)}>
@@ -247,22 +262,34 @@ function Stepper() {
                 Back
               </Button>
             ) : null}
-            <Button variant="ghost" asChild className="ml-auto">
-              <Link to="/">Finish later</Link>
-            </Button>
-            {!last ? (
-              step.optional && !satisfied ? (
-                <Button variant="outline" onClick={() => next("skipped")}>
-                  Skip for now
+            {last ? (
+              <>
+                <Button variant="outline" className="ml-auto" onClick={tour.start}>
+                  Take the tour
+                </Button>
+                <Button disabled={change.isPending} onClick={() => leave({ finish: true })}>
+                  Go to Today
                   <ArrowRight aria-hidden />
                 </Button>
-              ) : (
-                <Button onClick={() => next("done")}>
-                  Next
-                  <ArrowRight aria-hidden />
+              </>
+            ) : (
+              <>
+                <Button variant="ghost" asChild className="ml-auto">
+                  <Link to="/">Finish later</Link>
                 </Button>
-              )
-            ) : null}
+                {step.optional && !satisfied ? (
+                  <Button variant="outline" onClick={() => next("skipped")}>
+                    Skip for now
+                    <ArrowRight aria-hidden />
+                  </Button>
+                ) : (
+                  <Button onClick={() => next("done")}>
+                    Next
+                    <ArrowRight aria-hidden />
+                  </Button>
+                )}
+              </>
+            )}
           </div>
         </section>
       </div>

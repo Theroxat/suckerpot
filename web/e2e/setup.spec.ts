@@ -25,6 +25,13 @@ for (const s of STEPS) {
   })
 }
 
+test("setup vpn idle", async ({ page }, info) => {
+  await page.goto("/setup?wizard=progress&step=vpn&vpn=none")
+  await expect(page.getByText("No VPN yet, so nothing leaves this machine.")).toBeVisible()
+  await settle(page)
+  await shoot(page, "setup-vpn-idle", info.project.name, true)
+})
+
 test("setup sensors command", async ({ page }, info) => {
   await page.goto("/setup?wizard=new&step=sensors")
   await page.getByRole("switch", { name: /SIP/ }).click()
