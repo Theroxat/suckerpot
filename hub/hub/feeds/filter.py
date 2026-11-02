@@ -225,6 +225,11 @@ async def load_exclusions(session: AsyncSession, s: Settings, today: date) -> Ex
             )
         )
     ]
+    # A value hidden by a delisting request stays out of the lists until an operator decides.
+    for (hidden,) in await session.execute(
+        text("SELECT value FROM delist_requests WHERE state = 'suppressed'")
+    ):
+        allow_rows.append((hidden, "ip" if parse_network(hidden) else "domain", "delist"))
     ranges = (
         await session.execute(text("SELECT source, prefix, fetched_day FROM feed_auto_ranges"))
     ).all()
