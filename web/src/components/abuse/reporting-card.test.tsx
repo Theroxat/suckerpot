@@ -34,6 +34,7 @@ const BARE = {
     distinct_sources: 1,
   },
   default_tlp: "green",
+  reference_style: "subject",
   revision: 4,
 }
 

@@ -1,0 +1,22 @@
+# Replies: a ticket was opened. A ticket id is found by a linear scan after one of these markers
+# (no regular expression); an automatic acknowledgement that carries one is a ticket, not noise.
+tickets:
+  - id: generic-ticket
+    after: ["ticket #", "ticket#", "ticket:", "ticket id:", "case #", "case:", "incident #",
+            "[#", "reference:", "ref#", "ticket number"]
+    fields: [subject, body]
+    min_len: 4
+    max_len: 32
+    chars: "A-Za-z0-9-_"
+rules:
+  - id: ticket-opened
+    outcome: ticket_opened
+    priority: 40
+    description: The provider opened a ticket for the report.
+    when:
+      all:
+        - {field: ticket_id, exists: true}
+        - any:
+            - {field: auto_submitted, startswith: "auto-"}
+            - {field: body, contains_any: ["ticket has been created", "case has been opened",
+                                           "we have received your report"]}

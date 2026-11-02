@@ -85,6 +85,9 @@ class IntelResult:
     tags: tuple[str, ...] = ()
     first_seen_ext: datetime | None = None
     reference: str | None = None
+    # URLhaus only (M27): "online" | "offline" | "unknown" and when it was last seen online.
+    url_status: str | None = None
+    last_online: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -294,7 +297,22 @@ class IntelWorker:
                         collected.extend(t for t in item["tags"] if isinstance(t, str))
                 tags = clean_tags(collected)
                 threat = threat or "malware_download"
-        return IntelResult("urlhaus", True, family, threat, tags, first, reference)
+        url_status: str | None = None
+        last_online: datetime | None = None
+        if kind == "url":
+            raw_status = payload.get("url_status")
+            url_status = raw_status if raw_status in ("online", "offline") else "unknown"
+            last_online = parse_when(payload.get("last_online"))
+        elif kind != "hash":  # host answer: online when any listed URL is
+            listed = [
+                i.get("url_status")
+                for i in (payload.get("urls") or [])[:100]
+                if isinstance(i, dict)
+            ]
+            url_status = "online" if "online" in listed else "offline" if listed else "unknown"
+        return IntelResult(
+            "urlhaus", True, family, threat, tags, first, reference, url_status, last_online
+        )
 
     async def threatfox(self, kind: str, value: str) -> IntelResult:
         if kind == "hash":

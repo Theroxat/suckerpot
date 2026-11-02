@@ -50,6 +50,11 @@ async def _clean(conn: AsyncConnection) -> None:
         )
 
 
+# Enough data in the old chunks that dropping some of them clears the 80 percent mark with room to
+# spare: the fixed size of the schema (catalog, empty tables) grows with every migration.
+OLD_ROWS = 150
+
+
 async def _fill(conn: AsyncConnection, days: range, rows: int = 60) -> None:
     for day in days:
         await conn.execute(
@@ -142,13 +147,15 @@ async def test_below_ninety_percent_nothing_is_dropped(auto: AsyncConnection) ->
 async def test_above_ninety_percent_drops_oldest_chunks_until_below_eighty(
     auto: AsyncConnection,
 ) -> None:
-    await _fill(auto, range(5, 13))  # eight chunks, all older than the protected 4 days
+    await _fill(
+        auto, range(5, 13), rows=OLD_ROWS
+    )  # eight chunks, all older than the protected 4 days
     await _fill(auto, range(0, 2), rows=10)  # recent chunks: never dropped
     refresh = "CALL refresh_continuous_aggregate('{v}', now() - INTERVAL '30 days', now() + INTERVAL '2 days')"
     for view in VIEWS:
         await auto.execute(text(refresh.format(v=view)))
     aggregated = await _hourly_total(auto)
-    assert aggregated == 8 * 60 + 2 * 10
+    assert aggregated == 8 * OLD_ROWS + 2 * 10
     size = await _size(auto)
     ceiling = int(size / 0.93)
     job = await _set_ceiling(auto, ceiling)
@@ -158,7 +165,7 @@ async def test_above_ninety_percent_drops_oldest_chunks_until_below_eighty(
     after = await _size(auto)
     assert after < 0.8 * ceiling
     raw = (await auto.execute(text("SELECT count(*) FROM events"))).scalar_one()
-    assert 20 <= raw < 8 * 60 + 20  # old chunks gone, the recent ones kept
+    assert 20 <= raw < 8 * OLD_ROWS + 20  # old chunks gone, the recent ones kept
     # Oldest first: what is left of the old data is the newest part.
     oldest_left = (
         await auto.execute(

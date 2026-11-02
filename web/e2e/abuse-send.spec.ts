@@ -18,7 +18,7 @@ test("abuse send queue skip and mark sent", async ({ page }) => {
   await expect(page.getByLabel("Progress")).toHaveText("Report 1 of 3")
   await page.getByRole("button", { name: "Skip" }).click()
   await expect(page.getByLabel("Progress")).toHaveText("Report 1 of 3")
-  await page.getByRole("button", { name: "Sent, next" }).click()
+  await page.getByRole("button", { name: "Mark as sent, next" }).click()
   await expect(page.getByLabel("Progress")).toHaveText("Report 2 of 3")
 })
 

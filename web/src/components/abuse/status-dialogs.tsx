@@ -107,6 +107,8 @@ interface ConfirmProps {
   confirmLabel: string
   run: () => Promise<void>
   describe: (e: unknown) => string
+  /** Extra content under the description, e.g. the list of what is about to be sent. */
+  children?: React.ReactNode
 }
 
 /** A plain confirmation for a step that is hard to undo (discard). */
@@ -118,6 +120,7 @@ export function ConfirmDialog({
   confirmLabel,
   run,
   describe,
+  children,
 }: ConfirmProps) {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
@@ -141,6 +144,7 @@ export function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+        {children}
         <FormError id={errId} message={error} />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

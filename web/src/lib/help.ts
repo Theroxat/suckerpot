@@ -107,6 +107,18 @@ export const HELP = {
     title: "Abuse reports",
     body: "Drafts of reports for the networks that host attackers, with the abuse contact looked up over RDAP through the VPN. The To send queue walks through the ready ones; Selfhostr sends a report only if you set up SMTP and choose a sending mode. Open a draft to read the identity check first.",
   },
+  "abuse-results": {
+    title: "Results",
+    body: "What your abuse reports led to: how many were sent, who answered and how fast, and, with takedown tracking on, how quickly reported malware URLs went down. Answers are read from the replies mailbox you set up in Settings, or added by hand on a report. Counts only include targets followed long enough, so young reports never pull a rate down.",
+  },
+  "abuse-submissions": {
+    title: "Submissions",
+    body: "Captured malware URLs that can be shared with URLhaus, off by default. In review mode you pick the URLs and confirm; in automatic mode each URL waits for a delay in which you can cancel it. URLs are shown defanged and never as links.",
+  },
+  "abuse-target": {
+    title: "Target",
+    body: "One reported address or URL and what we saw since. Only the exact reported URL is re-checked, through the VPN, and nothing it serves is run. Command servers and attacking addresses are never contacted; their state comes from public lists and from our own sensors.",
+  },
   "abuse-report": {
     title: "Abuse report",
     body: "One draft report for one abuse desk. The identity check says what was masked, or why the report is blocked, against your own addresses and the terms you listed in Settings → Reporting. Review it, then copy the message and send it yourself and mark it as sent, or let Selfhostr send it if you set up SMTP sending (Send now, or automatically after a waiting time, with Cancel).",
@@ -142,6 +154,14 @@ export const HELP = {
   "settings-vpn": {
     title: "VPN",
     body: "Where outbound traffic leaves. Only the vpn service has a route to the internet, and the gate pauses every lookup when the tunnel or its exit looks wrong. You can check now, reconnect, upload a new WireGuard file and trust a new exit.",
+  },
+  setup: {
+    title: "Setup",
+    body: "The first-run setup: which sensors to run, which router ports to open, the VPN, your own address, abuse reports and alerts. Every step can be skipped and reopened from Settings. Where a change needs the host, the page shows the command to copy; it never edits your files.",
+  },
+  "settings-ports": {
+    title: "Sensors and ports",
+    body: "Each sensor, the port to open on your router, the port on this machine it is forwarded to, and whether it has received a connection in the last 24 hours. The status is read from the stored events. To switch sensors on or off, copy the command from the setup.",
   },
   network: {
     title: "Network",

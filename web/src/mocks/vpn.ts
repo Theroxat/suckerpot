@@ -2,10 +2,11 @@
  * MSW handlers for the M23 VPN endpoints (docs/design/m23.md section 6). Demo data only:
  * addresses are in the documentation ranges and keys are fake. State lives for the page load.
  *
- * Three starting states: the default (settings from .env, gate open) and `?vpn=upload` (uploaded
- * configuration whose new exit is not trusted yet, so there is a trust candidate). Uploading in
- * the default state moves to the second one; a file whose text contains "invalid" is refused;
- * the password "wrong" is refused.
+ * Starting states: the default (settings from .env, gate open), `?vpn=upload` (uploaded
+ * configuration whose new exit is not trusted yet, so there is a trust candidate), `?vpn=self`
+ * (the exit is the home connection) and `?vpn=none` (first run, no tunnel yet). Uploading moves
+ * to the `upload` state; a file whose text contains "invalid" is refused; the password "wrong" is
+ * refused.
  */
 import { delay, http, HttpResponse, type RequestHandler } from "msw"
 import type { TrustedExit, VpnStatus } from "@/lib/vpn"
@@ -76,6 +77,23 @@ const uploadedSelf = (): VpnStatus => {
   }
 }
 
+/** `?vpn=none`: a first run with no tunnel yet, so the gate has never opened. */
+const noTunnel = (): VpnStatus => ({
+  ...envStatus(),
+  endpoint_ip: null,
+  endpoint_port: null,
+  addresses: null,
+  peer_key_fingerprint: null,
+  gate: {
+    state: "closed",
+    reason: "no_status",
+    egress_ip: null,
+    egress_asn: null,
+    egress_org: null,
+    checked_at: null,
+  },
+})
+
 let state: VpnStatus | null = null
 let nextId = 1
 
@@ -84,7 +102,13 @@ function current(): VpnStatus {
     const wanted =
       typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("vpn")
     state =
-      wanted === "self" ? uploadedSelf() : wanted === "upload" ? uploadedClosed() : envStatus()
+      wanted === "none"
+        ? noTunnel()
+        : wanted === "self"
+          ? uploadedSelf()
+          : wanted === "upload"
+            ? uploadedClosed()
+            : envStatus()
     if (wanted === "upload") {
       state.trusted_exits = [
         {

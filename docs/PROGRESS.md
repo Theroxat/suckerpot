@@ -152,3 +152,23 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - **Incident.** Every live volume of the production project was destroyed, most likely by compose commands in a throwaway checkout whose `.env` copied the live `COMPOSE_PROJECT_NAME`.
 - **Fix.** Data volumes are external, named from the required `SUCKERPOT_VOLUME_PREFIX` (no `.env`, no compose), and are created by `just up` (`scripts/ensure-volumes.sh`), which also refuses to start an empty database when dumps exist. The IT and CI overlays make them local; guardrail tests enforce it. `just test-integration` refuses non-`-it-` projects, `just up-test` never uses the live name, and the live recipes need `COMPOSE_PROJECT_NAME` and `SUCKERPOT_VOLUME_PREFIX` from `.env`.
 - **Backups.** A `backup` service dumps daily into the external `backups` volume (7 kept); `just backup`, `just backups`, `just restore latest`.
+
+## 2026-11-02 — M28 Installable by anyone
+
+- **Install.** `scripts/install.sh` (also `just install`) checks the machine, asks a few questions, generates every secret on the host, writes `.env` (mode 0600), creates the volumes and starts the stack. It refuses an existing `.env`, existing volumes or containers of the project, and a non-loopback dashboard bind without `--public-host` or `--allow-lan`. Two modes: signed release images (default) or a build from the checkout.
+- **Sensor switches.** `SENSOR_<NAME>` (default on) with `just sensors` and `just set`; a sensor switched off while running is stopped and removed, and the port guard follows the selection.
+- **First-run setup.** `/setup` wizard (migration 0025) and a Settings "Sensors & ports" tab. The ports step puts the never-forward rule (dashboard, admin SSH, DMZ) first; the VPN step has an idle state.
+- **Updates.** `just update` (pre-update dump kept outside retention, signature check before anything runs, pull by verified digest, health check, unfinished-update lock) and `just rollback`. The update check is off by default and goes through the VPN only.
+- **Release.** Signed multi-arch images (cosign keyless) published only from a pushed `v*` tag; locally built images are named per compose project, so test stacks can no longer retag the live images.
+- **Low memory and VPN idle.** `docker-compose.lowmem.yml`; the VPN stays idle, with no route out, until a WireGuard file is uploaded.
+- **Reviews.** Security review failed once (image name collisions, stale dotenv values, mediums), then passed after fixes; the re-review findings (idle mode never starting, unverified image paths, rollback state) are fixed. UI review approved.
+- **Deployed.** Backup taken first; migration 0025 applied; every service healthy; no event lost.
+
+## 2026-11-02 — M26 Report outcomes and M27 Takedown tracking
+
+- **Replies (M26).** An optional IMAP reader (`ABUSE_REPLIES_ENABLED`, through the VPN only) reads the reply mailbox header-first, never deletes (seen flag or move only), matches replies to reports by a reply token in the subject, a quoted Message-ID or a bounce, and classifies them with YAML rules. Only a party we wrote to can set an outcome; authentication alone vouches for a genuine bounce and nothing else. Shared-mailbox and trusted provider name (`trusted_authserv_id`) settings.
+- **Takedowns (M27).** Reported payload URLs are re-checked by the collector with one bounded GET through the VPN; attacking addresses and C2s are never contacted and are followed passively only. States, time to takedown and per-provider statistics under a 48 h rule. Optional URLhaus/ThreatFox submissions (`ABUSECH_SUBMIT_ENABLED`, off by default) with a review queue and a lookup before each submission.
+- **Dashboard.** Results (KPIs, takedown curve, targets and providers, answers), target detail, Submissions with the evidence behind each URL, reply and outcome cards on each report, and Settings → Reporting with IMAP, abuse.ch, a section nav and unsaved-change hints.
+- **Migrations.** Renumbered to 0026 and 0027 after the deployed 0025; a test upgrades from 0025 with data to head and back.
+- **Reviews.** Security review failed (a poison-pill mail, forged replies, freemail relevance, re-checks reaching attackers, token exposure), then passed after fixes. The merge review caught the forged-reply path reopened by a test-driven change; it is reverted and covered by negative tests. UI review approved after two rounds.
+- **Deployed.** Backup taken first; migrations 0026 and 0027 applied; every service healthy; no event lost. Every new worker stays off until its flag is set.

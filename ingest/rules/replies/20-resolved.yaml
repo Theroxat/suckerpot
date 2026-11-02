@@ -1,0 +1,15 @@
+# Replies: the provider says it acted.
+rules:
+  - id: resolved-action-taken
+    outcome: resolved
+    priority: 20
+    description: The provider says it acted (suspended, terminated, removed, null-routed).
+    when:
+      any:
+        - {field: body, contains_any: ["has been suspended", "has been terminated",
+                                       "we have taken action", "action has been taken",
+                                       "has been removed", "null-routed",
+                                       "the server has been shut down",
+                                       "issue has been resolved", "customer has been notified and",
+                                       "service was terminated", "content was removed"]}
+        - {field: subject, contains_any: ["resolved", "closed - action taken"]}

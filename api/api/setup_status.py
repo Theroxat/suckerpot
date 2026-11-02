@@ -19,6 +19,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db import AlertChannelRow, EnrichmentStatusRow, EventRow
+from suckerpot_db.models import ReportImapRow, ReportImapStateRow
 from suckerpot_db.trusted_exits import ACTIVE_SELF_NETWORKS_SQL
 
 from api.abuse_core import env_flag, load_settings, missing_for
@@ -28,6 +29,8 @@ from api.egress import _checked_at
 from api.network import recent_submission
 from api.provider_keys import _configured
 from api.sensors import SENSOR_LABELS, SENSORS
+from api.setup_wizard import build_ports, last_events, sensor_enabled
+from api.version import load_version
 
 router = APIRouter(tags=["settings"])
 
@@ -35,6 +38,8 @@ State = Literal["ok", "todo", "warning", "off"]
 SILENT_AFTER = timedelta(hours=24)
 GATE_FRESH = timedelta(minutes=15)  # an "open" verdict older than this is not trusted
 MAX_NAMED = 6
+PORTS_GRACE = timedelta(hours=2)  # a sensor may wait this long for its first visitor
+STARTED = datetime.now(UTC)  # this process; the setup is "old enough" once it has run 2 hours
 
 
 class SetupItem(BaseModel):
@@ -89,17 +94,44 @@ async def _sensors(db: AsyncSession, now: datetime) -> SetupItem:
         )
     ).all()
     active = {r.sensor for r in rows}
-    silent = [SENSOR_LABELS.get(s, s) for s in SENSORS if s not in active]
+    enabled = [s for s in SENSORS if sensor_enabled(s)]  # a disabled sensor is not "silent"
+    silent = [SENSOR_LABELS.get(s, s) for s in enabled if s not in active]
     href = "/settings"
+    if not enabled:
+        return _item("sensors", "warning", "Every sensor is switched off.", href)
     if not silent:
         return _item(
-            "sensors", "ok", f"All {len(SENSORS)} sensors sent events in the last 24 hours.", href
+            "sensors", "ok", f"All {len(enabled)} sensors sent events in the last 24 hours.", href
         )
-    if len(silent) == len(SENSORS):
+    if len(silent) == len(enabled):
         return _item(
             "sensors", "warning", "No sensor has sent an event in the last 24 hours.", href
         )
     return _item("sensors", "warning", f"Silent for 24 hours or more: {_names(silent)}.", href)
+
+
+async def _ports(db: AsyncSession, now: datetime) -> SetupItem:
+    href = "/settings?tab=ports"
+    items = build_ports(await last_events(db, now), now)
+    enabled = [i for i in items if i.enabled]
+    waiting = sorted({i.label for i in enabled if i.state == "waiting"})
+    if not enabled:
+        return _item("ports", "off", "No sensor is switched on, so no port needs opening.", href)
+    if not waiting:
+        return _item("ports", "ok", "Every enabled port has received a connection.", href)
+    if now - STARTED < PORTS_GRACE:
+        return _item(
+            "ports",
+            "ok",
+            "Waiting for the first connections. Bots usually arrive within minutes.",
+            href,
+        )
+    return _item(
+        "ports",
+        "todo",
+        f"Nothing has reached {_names(waiting)} yet. Check the port forwards on your router.",
+        href,
+    )
 
 
 async def _vpn(db: AsyncSession, now: datetime) -> SetupItem:
@@ -184,6 +216,62 @@ async def _abuse_worker(_db: AsyncSession, _now: datetime) -> SetupItem:
     )
 
 
+async def _replies(db: AsyncSession, _now: datetime) -> SetupItem:
+    """Optional: reading replies needs a mailbox and the server switch. Never a to-do."""
+    href = "/settings?tab=reporting"
+    profile = (
+        await db.execute(
+            select(ReportImapRow.enabled, ReportImapRow.password_set).where(ReportImapRow.id == 1)
+        )
+    ).first()
+    if profile is None or not profile.password_set:
+        return _item(
+            "replies",
+            "off",
+            "Replies mailbox: optional, not set up. You can still paste a reply on a report.",
+            href,
+        )
+    if not env_flag("ABUSE_REPLIES_ENABLED", False) or not profile.enabled:
+        return _item(
+            "replies", "off", "Replies mailbox is saved but reading is switched off.", href
+        )
+    error = await db.scalar(select(ReportImapStateRow.last_error).where(ReportImapStateRow.id == 1))
+    if error:
+        return _item(
+            "replies", "warning", "The last check of the replies mailbox did not work.", href
+        )
+    return _item("replies", "ok", "Replies are read from your mailbox through the VPN.", href)
+
+
+async def _takedown(_db: AsyncSession, _now: datetime) -> SetupItem:
+    href = "/settings?tab=reporting"
+    if env_flag("TAKEDOWN_ENABLED", False):
+        return _item("takedown", "ok", "Takedown tracking is on.", href)
+    return _item(
+        "takedown",
+        "off",
+        "Takedown tracking is off. Turn it on to see which reported targets went down.",
+        href,
+    )
+
+
+async def _abusech_submit(db: AsyncSession, _now: datetime) -> SetupItem:
+    href = "/settings?tab=reporting"
+    if not env_flag("ABUSECH_SUBMIT_ENABLED", False):
+        return _item("abusech_submit", "off", "abuse.ch submission is off on this server.", href)
+    mode = await db.scalar(text("SELECT mode FROM abusech_submission WHERE id = 1"))
+    if mode == "review":
+        return _item("abusech_submit", "ok", "You review each URL before it goes to URLhaus.", href)
+    if mode == "auto":
+        return _item("abusech_submit", "ok", "New URLs go to URLhaus automatically.", href)
+    return _item(
+        "abusech_submit",
+        "off",
+        "abuse.ch submission is allowed on this server but switched off in Settings.",
+        href,
+    )
+
+
 async def _alerts(db: AsyncSession, _now: datetime) -> SetupItem:
     href = "/settings?tab=alerts"
     count = await db.scalar(
@@ -223,6 +311,21 @@ async def _provider_keys(db: AsyncSession, _now: datetime) -> SetupItem:
     )
 
 
+async def _updates(db: AsyncSession, _now: datetime) -> SetupItem:
+    href = "/settings"
+    info = await load_version(db)
+    if info.check == "off":
+        return _item("updates", "off", "The update check is off.", href)
+    if info.update_available:
+        return _item(
+            "updates",
+            "warning",
+            f"Selfhostr {info.latest} is available (you run {info.version}).",
+            href,
+        )
+    return _item("updates", "ok", "No newer release is known.", href)
+
+
 async def _network(db: AsyncSession, now: datetime) -> SetupItem:
     """The opt-in network (M29): off unless this system joined; then fresh batches or a reason."""
     href = "/network"
@@ -254,13 +357,18 @@ async def _network(db: AsyncSession, now: datetime) -> SetupItem:
 
 CHECKS: tuple[tuple[str, Callable[[AsyncSession, datetime], Awaitable[SetupItem]], str], ...] = (
     ("sensors", _sensors, "/settings"),
+    ("ports", _ports, "/settings?tab=ports"),
     ("vpn", _vpn, "/settings?tab=vpn"),
     ("collector", _collector, "/settings"),
     ("reporting_settings", _reporting_settings, "/settings?tab=reporting"),
     ("self_address", _self_address, "/settings?tab=reporting"),
     ("abuse_worker", _abuse_worker, "/settings?tab=reporting"),
+    ("replies", _replies, "/settings?tab=reporting"),
     ("alerts", _alerts, "/settings?tab=alerts"),
     ("provider_keys", _provider_keys, "/settings?tab=keys"),
+    ("takedown", _takedown, "/settings?tab=reporting"),
+    ("abusech_submit", _abusech_submit, "/settings?tab=reporting"),
+    ("updates", _updates, "/settings"),
     ("network", _network, "/network"),
 )
 

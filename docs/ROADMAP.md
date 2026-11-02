@@ -300,41 +300,41 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 ```markdown
 ## M26 — Report outcomes: did anyone answer?
 
-- [ ] A random reply token (`ref` plus 12 hex characters) in the subject of every report, stored per report and independent of every internal id, with the SMTP Message-ID kept for matching. The identity guard and its tests cover the token: never in exports, never derived from an internal id.
-- [ ] Optional mailbox in Settings > Reporting > Replies (IMAPS or STARTTLS, DNS host name only, password encrypted, re-authentication, admin only), off by default, with "Test connection" and "Check now".
-- [ ] Ingest replies worker (`ABUSE_REPLIES_ENABLED`, off by default) that reads the mailbox through the VPN tunnel only. Headers come first, unrelated mail is never stored or flagged, size caps apply, attachments are never decoded, HTML is never rendered, and mail is only marked read or moved, never deleted or answered.
-- [ ] Declarative reply rules in `ingest/rules/replies/` (auto-acknowledgement, ticket opened with ticket id, resolved, rejected, bounce, human reply, unknown) with generic defaults.
-- [ ] Matching by our Message-ID, then the token, the bounce's original headers, the ticket id and the sender domain. Only verified replies (our Message-ID, or authenticated from the provider's domain) change an outcome by themselves.
-- [ ] Paste a reply or upload an `.eml` by hand, set an outcome by hand, and confirm or link replies. Excerpts (2,000 characters at most) are kept 180 days.
-- [ ] Results page (Abuse reports hub): reports sent per kind, provider, ASN and country over time, answers by kind, response delays, each card opening with a plain-English finding.
-- [ ] Security review (hostile mail, egress, token) and UI review.
+- [x] A random reply token (`ref` plus 12 hex characters) in the subject of every report, stored per report and independent of every internal id, with the SMTP Message-ID kept for matching. The identity guard and its tests cover the token: never in exports, never derived from an internal id.
+- [x] Optional mailbox in Settings > Reporting > Replies (IMAPS or STARTTLS, DNS host name only, password encrypted, re-authentication, admin only), off by default, with "Test connection" and "Check now".
+- [x] Ingest replies worker (`ABUSE_REPLIES_ENABLED`, off by default) that reads the mailbox through the VPN tunnel only. Headers come first, unrelated mail is never stored or flagged, size caps apply, attachments are never decoded, HTML is never rendered, and mail is only marked read or moved, never deleted or answered.
+- [x] Declarative reply rules in `ingest/rules/replies/` (auto-acknowledgement, ticket opened with ticket id, resolved, rejected, bounce, human reply, unknown) with generic defaults.
+- [x] Matching by our Message-ID, then the token, the bounce's original headers, the ticket id and the sender domain. Only verified replies (our Message-ID, or authenticated from the provider's domain) change an outcome by themselves.
+- [x] Paste a reply or upload an `.eml` by hand, set an outcome by hand, and confirm or link replies. Excerpts (2,000 characters at most) are kept 180 days.
+- [x] Results page (Abuse reports hub): reports sent per kind, provider, ASN and country over time, answers by kind, response delays, each card opening with a plain-English finding.
+- [x] Security review (hostile mail, egress, token) and UI review.
 
 **Acceptance:** with no mailbox nothing connects and the owner can still paste replies and set outcomes; with a mailbox, a provider's reply is matched to its report through the tunnel only, classified, and shown with its delay; unrelated mail is never stored; no mail is ever deleted or answered; security review PASS.
 
 ## M27 — Takedown tracking and abuse.ch submission
 
-- [ ] Takedown targets from sent reports (attacking addresses, payload hosts and their malware URLs, C2 servers) and from abuse.ch submissions, each tracked for 30 days (`TAKEDOWN_ENABLED`, off by default).
-- [ ] Collector re-checks: one bounded GET through the VPN to a URL that already served malware, on a 0 h, 1 h, 6 h, 24 h, 48 h, then daily schedule, with the M21 URL validator on every hop and a daily quota. Nothing is stored unless the file changed. C2 servers and attacking addresses are never contacted.
-- [ ] Passive signals within quotas: URLhaus and ThreatFox listing status, AbuseIPDB (read only), whether our own sensors still see an attacking address, whether new samples still point to a C2.
-- [ ] States up, down, changed and unknown; down confirmed by two checks; time to takedown with its bounds; resurrections; monthly roll-up kept forever.
-- [ ] Optional abuse.ch submission behind `ABUSECH_SUBMIT_ENABLED` and an explicit owner switch (off, review each, automatic after a hold with a daily cap). Captured malware URLs go to URLhaus (optional C2 `ip:port` to ThreatFox) with an encrypted Auth-Key. A lookup comes first to skip known entries, the identity guard checks every body, delivery is at most once, and submissions show their status and form the audit log.
-- [ ] Results page: a finding sentence before each chart ("12 of 31 reported malware URLs went down within 48 h"), a time-to-takedown curve, a per-provider table (median time to takedown, % taken down, % answered), and a timeline per target; a Submissions tab.
-- [ ] CLAUDE.md §5 amended (owner approval) to allow takedown re-checks of URLs that served malware; security review and UI review.
+- [x] Takedown targets from sent reports (attacking addresses, payload hosts and their malware URLs, C2 servers) and from abuse.ch submissions, each tracked for 30 days (`TAKEDOWN_ENABLED`, off by default).
+- [x] Collector re-checks: one bounded GET through the VPN to a URL that already served malware, on a 0 h, 1 h, 6 h, 24 h, 48 h, then daily schedule, with the M21 URL validator on every hop and a daily quota. Nothing is stored unless the file changed. C2 servers and attacking addresses are never contacted.
+- [x] Passive signals within quotas: URLhaus and ThreatFox listing status, AbuseIPDB (read only), whether our own sensors still see an attacking address, whether new samples still point to a C2.
+- [x] States up, down, changed and unknown; down confirmed by two checks; time to takedown with its bounds; resurrections; monthly roll-up kept forever.
+- [x] Optional abuse.ch submission behind `ABUSECH_SUBMIT_ENABLED` and an explicit owner switch (off, review each, automatic after a hold with a daily cap). Captured malware URLs go to URLhaus (optional C2 `ip:port` to ThreatFox) with an encrypted Auth-Key. A lookup comes first to skip known entries, the identity guard checks every body, delivery is at most once, and submissions show their status and form the audit log.
+- [x] Results page: a finding sentence before each chart ("12 of 31 reported malware URLs went down within 48 h"), a time-to-takedown curve, a per-provider table (median time to takedown, % taken down, % answered), and a timeline per target; a Submissions tab.
+- [x] CLAUDE.md §5 amended (owner approval) to allow takedown re-checks of URLs that served malware; security review and UI review.
 
 **Acceptance:** with the flags off nothing is checked or submitted; with tracking on, a reported malware URL that goes offline is shown as down with its time to takedown, an unchanged file is never stored again, and no request ever reaches a C2 or an attacking address; with submission on, a URL is sent to URLhaus only after the guard passes and only if URLhaus did not know it; security review PASS.
 
 ## M28 — Installable by anyone
 
-- [ ] `scripts/install.sh`: checks Docker and Compose, RAM, disk and ports, asks a few questions, generates every secret and the admin password hash, writes `.env` (mode 0600) with `COMPOSE_PROJECT_NAME` and `SUCKERPOT_VOLUME_PREFIX`, creates the volumes, starts the stack and prints the URL and next steps. It never overwrites an `.env`, never adopts existing volumes and never looks up the public address.
-- [ ] Sensor choice: each sensor can be switched off (`SENSOR_<NAME>=0`, default on, so existing installs keep every sensor); `just sensors` and `just set` change `.env` from the host, and the port guard and the setup checklist follow the selection.
-- [ ] First-run setup in the dashboard (migration `0025`): welcome, sensors, ports, VPN upload, own address, reporting, alerts, then the M24 checklist and tour; can be skipped and reopened.
-- [ ] A "Sensors & ports" page listing what to open on the router, the port on this machine, and whether each sensor already receives traffic.
-- [ ] `just update` (backup, code, `.env` migration, pull or build, migrate, health check, rollback hint) and `just rollback` (restores the pre-update dump after confirmation).
-- [ ] Low-memory overlay (`docker-compose.lowmem.yml`) for 2 GiB machines, checked by the guardrails.
-- [ ] Version shown in the dashboard; a daily update check through the VPN only (no version or identifier sent, can be switched off).
-- [ ] Signed multi-arch images (amd64, arm64) on GHCR from a release workflow, with an install smoke test; build from source stays supported.
-- [ ] VPN idle mode, so the egress profile can start before a WireGuard file is uploaded.
-- [ ] Install guide, configuration and deployment updates; security review and UI review.
+- [x] `scripts/install.sh`: checks Docker and Compose, RAM, disk and ports, asks a few questions, generates every secret and the admin password hash, writes `.env` (mode 0600) with `COMPOSE_PROJECT_NAME` and `SUCKERPOT_VOLUME_PREFIX`, creates the volumes, starts the stack and prints the URL and next steps. It never overwrites an `.env`, never adopts existing volumes and never looks up the public address.
+- [x] Sensor choice: each sensor can be switched off (`SENSOR_<NAME>=0`, default on, so existing installs keep every sensor); `just sensors` and `just set` change `.env` from the host, and the port guard and the setup checklist follow the selection.
+- [x] First-run setup in the dashboard (migration `0025`): welcome, sensors, ports, VPN upload, own address, reporting, alerts, then the M24 checklist and tour; can be skipped and reopened.
+- [x] A "Sensors & ports" page listing what to open on the router, the port on this machine, and whether each sensor already receives traffic.
+- [x] `just update` (backup, code, `.env` migration, pull or build, migrate, health check, rollback hint) and `just rollback` (restores the pre-update dump after confirmation).
+- [x] Low-memory overlay (`docker-compose.lowmem.yml`) for 2 GiB machines, checked by the guardrails.
+- [x] Version shown in the dashboard; a daily update check through the VPN only (no version or identifier sent, can be switched off).
+- [x] Signed multi-arch images (amd64, arm64) on GHCR from a release workflow, with an install smoke test; build from source stays supported.
+- [x] VPN idle mode, so the egress profile can start before a WireGuard file is uploaded.
+- [x] Install guide, configuration and deployment updates; security review and UI review.
 
 **Acceptance:** on a fresh Linux VM with Docker, `scripts/install.sh` brings a healthy stack from published images on amd64 and arm64 in one command, and the dashboard walks the owner through the rest; `just update` from the previous release keeps the data and a failed update prints a working rollback; the update check never leaves outside the tunnel and never sends the running version; guardrails and security review PASS.
 
@@ -359,7 +359,7 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - [ ] Exclusions at render time: reserved and documentation ranges, public resolvers and shared hosts (kept in sync with M16 by a test), CDN front-end ranges, Tor exits, research scanners, an operator allow-list.
 - [ ] Public static feed site (`feeds.example.org/v1/`, Caddy): no account, no cookies, no logs of downloaders, no CDN by default, ETag/Last-Modified/304, precompressed gzip, atomic hourly publish that keeps unchanged files untouched, data under CC0 1.0, `stats.json` for the project site, `removed.json` (expired and taken-down entries only).
 - [ ] Delisting: a static form and an API with proof of work, per-day caps and a status token; inbound entries suppressed at once pending review (capped per day), outbound ones reviewed first; outcomes false positive, remediated, policy or rejected, with a reputation penalty only for false positives; 72 h decision target; requester data deleted on schedule.
-- [ ] Node consumer (`NETWORK_FEED_ENABLED`, off by default, members and non-members): VPN egress gate only, fetch from the feed host only, signature, sha256, rollback and expiry checks, strict parsing, migration `0027`. A verified local mirror under the M16 feed tokens where the always-allow overrides win; the local M16 lists stay unchanged.
+- [ ] Node consumer (`NETWORK_FEED_ENABLED`, off by default, members and non-members): VPN egress gate only, fetch from the feed host only, signature, sha256, rollback and expiry checks, strict parsing, migration `0029`. A verified local mirror under the M16 feed tokens where the always-allow overrides win; the local M16 lists stay unchanged.
 - [ ] Blocklists page tab "Network": a finding sentence, one card per list with copyable URLs per format, "seen here" and "you helped" badges, firewall setup help, and an honest card saying the lists are the same for everyone and joining makes them better.
 - [ ] `docs/feeds.md` with exact OPNsense, pfSense and pfBlockerNG steps, nftables, ipset, MikroTik, MISP and DNS filter recipes, signature verification, licence, accuracy statement and delisting; operator guide; threat model additions; M29 amendments (k-support on `/v1/targets`, `payload_ip`, Tor exits); security review and UI review.
 

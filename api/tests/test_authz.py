@@ -37,12 +37,17 @@ ADMIN_ONLY_GETS = {
     "/api/v1/abuse/settings",
     "/api/v1/abuse/self-terms",
     "/api/v1/abuse/smtp",
+    "/api/v1/abuse/imap",
+    "/api/v1/abuse/imap/requests/{request_id}",
+    "/api/v1/abusech/submission",
     "/api/v1/abuse/send-queue",
     "/api/v1/settings/vpn",
     "/api/v1/setup/status",
     "/api/v1/network/submissions",
     "/api/v1/network/submissions/{day}",
     "/api/v1/network/preview",
+    "/api/v1/setup/progress",
+    "/api/v1/setup/ports",
 }
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 

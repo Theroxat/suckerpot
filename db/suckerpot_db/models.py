@@ -20,6 +20,7 @@ from sqlalchemy import (
     Numeric,
     SmallInteger,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, CIDR, INET, JSONB, UUID
@@ -976,6 +977,10 @@ class AbuseRecipientRow(Base):
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=_now(), nullable=False
     )
+    # Other domains a provider answers from (M26), at most 5.
+    reply_domains: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
 
 
 class AbuseReportRow(Base):
@@ -1018,6 +1023,10 @@ class AbuseReportRow(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_by: Mapped[str | None] = mapped_column(Text)
     sent_via: Mapped[str | None] = mapped_column(Text)  # manual | smtp (NULL before M25)
+    # 12 random hex digits, unrelated to every other id (M26); immutable.
+    reply_token: Mapped[str] = mapped_column(
+        Text, server_default=text("left(replace(gen_random_uuid()::text, '-', ''), 12)")
+    )
 
 
 class AbuseReportSubjectRow(Base):
@@ -1069,6 +1078,10 @@ class ReportSettingsRow(Base):
     outro: Mapped[str | None] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
     subject_template: Mapped[str | None] = mapped_column(Text)
+    # subject | subject_and_body | off (M26)
+    reference_style: Mapped[str] = mapped_column(
+        Text, server_default=text("'subject'"), nullable=False
+    )
     xarf_user_agent: Mapped[str | None] = mapped_column(Text)
     defaults: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     revision: Mapped[int] = mapped_column(Integer, server_default=text("1"), nullable=False)
@@ -1170,6 +1183,391 @@ class AbuseSendRequestRow(Base):
     error_code: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    message_id: Mapped[str | None] = mapped_column(Text)  # SMTP Message-ID, set once (M26)
+
+
+class ReportImapRow(Base):
+    """The one IMAP profile that receives replies to reports (M26). The API writes the password
+    columns but its role cannot read them back; only ingest decrypts them."""
+
+    __tablename__ = "report_imap"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default=text("1"))
+    enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    host: Mapped[str] = mapped_column(Text)
+    port: Mapped[int] = mapped_column(Integer)
+    security: Mapped[str] = mapped_column(Text)  # ssl | starttls
+    username: Mapped[str] = mapped_column(Text)
+    password_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
+    password_nonce: Mapped[bytes | None] = mapped_column(LargeBinary)
+    password_set: Mapped[bool] = mapped_column(
+        Boolean, Computed("password_ciphertext IS NOT NULL", persisted=True)
+    )
+    folder: Mapped[str] = mapped_column(Text, server_default=text("'INBOX'"), nullable=False)
+    processed_action: Mapped[str] = mapped_column(
+        Text, server_default=text("'mark_read'"), nullable=False
+    )  # mark_read | move
+    move_folder: Mapped[str | None] = mapped_column(Text)
+    poll_minutes: Mapped[int] = mapped_column(Integer, server_default=text("15"), nullable=False)
+    since: Mapped[date] = mapped_column(
+        Date, server_default=text("((now() AT TIME ZONE 'UTC')::date)"), nullable=False
+    )
+    # The authserv-id of the Authentication-Results header the owner's mailbox provider adds.
+    trusted_authserv_id: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    updated_by: Mapped[str | None] = mapped_column(Text)
+
+
+class TakedownTargetRow(Base):
+    """A reported target whose fate is tracked (M27). Ingest owns the state, the collector the HTTP
+    re-check columns; ``reported_at`` only moves earlier."""
+
+    __tablename__ = "takedown_targets"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)  # url | ip | domain
+    role: Mapped[str] = mapped_column(Text)  # attack_source | payload_host | payload_url | c2
+    value: Mapped[str] = mapped_column(Text)
+    target_key: Mapped[str] = mapped_column(Text)  # sha256(kind || ':' || value)
+    parent_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("takedown_targets.id", ondelete="CASCADE")
+    )
+    fetch_target_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("fetch_targets.id", ondelete="SET NULL")
+    )
+    network_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_networks.id", ondelete="SET NULL")
+    )
+    asn: Mapped[int | None] = mapped_column(Integer)
+    country: Mapped[str | None] = mapped_column(Text)
+    provider_key: Mapped[str] = mapped_column(Text)
+    provider_name: Mapped[str | None] = mapped_column(Text)
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    channels: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    demo: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    tracking: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
+    track_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    stopped_by: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(Text, server_default=text("'unknown'"), nullable=False)
+    state_source: Mapped[str | None] = mapped_column(Text)
+    state_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    state_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    down_before_report: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false"), nullable=False
+    )
+    last_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_down_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resurrections: Mapped[int] = mapped_column(
+        SmallInteger, server_default=text("0"), nullable=False
+    )
+    listing_step: Mapped[int] = mapped_column(
+        SmallInteger, server_default=text("0"), nullable=False
+    )
+    listing_next_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    http_eligible: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false"), nullable=False
+    )
+    baseline_sha256: Mapped[str | None] = mapped_column(Text)
+    last_sha256: Mapped[str | None] = mapped_column(Text)
+    http_step: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"), nullable=False)
+    http_next_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    http_last_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class TakedownCheckRow(Base):
+    """One check of a target. ``detail`` holds constants and small numbers only."""
+
+    __tablename__ = "takedown_checks"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    target_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("takedown_targets.id", ondelete="CASCADE")
+    )
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    method: Mapped[str] = mapped_column(Text)  # http | urlhaus | threatfox | abuseipdb | ...
+    outcome: Mapped[str] = mapped_column(Text)
+    http_status: Mapped[int | None] = mapped_column(SmallInteger)
+    sha256: Mapped[str | None] = mapped_column(Text)
+    bytes: Mapped[int | None] = mapped_column(BigInteger)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    detail: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )
+
+
+class AbusechSubmissionSettingsRow(Base):
+    """The one abuse.ch submission profile (M27). The Auth-Key is AES-GCM ciphertext (AAD
+    ``abusech_submission``); the API cannot read it back, only ingest decrypts it."""
+
+    __tablename__ = "abusech_submission"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default=text("1"))
+    mode: Mapped[str] = mapped_column(Text, server_default=text("'off'"))  # off | review | auto
+    threatfox_enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    anonymous: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    auto_hold_minutes: Mapped[int] = mapped_column(Integer, server_default=text("60"))
+    daily_cap: Mapped[int] = mapped_column(Integer, server_default=text("20"))
+    key_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
+    key_nonce: Mapped[bytes | None] = mapped_column(LargeBinary)
+    key_set: Mapped[bool] = mapped_column(
+        Boolean, Computed("key_ciphertext IS NOT NULL", persisted=True)
+    )
+    key_last4: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    updated_by: Mapped[str | None] = mapped_column(Text)
+
+
+class ReportImapStateRow(Base):
+    """What ingest remembers about the mailbox between polls (M26). Single row."""
+
+    __tablename__ = "report_imap_state"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default=text("1"))
+    profile_fingerprint: Mapped[str | None] = mapped_column(Text)
+    uidvalidity: Mapped[int | None] = mapped_column(BigInteger)
+    last_uid: Mapped[int] = mapped_column(BigInteger, server_default=text("0"), nullable=False)
+    move_supported: Mapped[bool | None] = mapped_column(Boolean)
+    last_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    counters: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )
+
+
+class ReportImapRequestRow(Base):
+    """A test or a poll asked from Settings by the API and answered by ingest (M26)."""
+
+    __tablename__ = "report_imap_requests"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)  # test | poll
+    requested_by: Mapped[str] = mapped_column(Text)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, server_default=text("'pending'"), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(Text)
+    result: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AbuseReplyRow(Base):
+    """One relevant incoming mail: metadata and a bounded plain-text excerpt (M26)."""
+
+    __tablename__ = "abuse_replies"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    source: Mapped[str] = mapped_column(Text)  # imap | paste
+    uidvalidity: Mapped[int | None] = mapped_column(BigInteger)
+    uid: Mapped[int | None] = mapped_column(BigInteger)
+    message_id_sha256: Mapped[str | None] = mapped_column(Text, unique=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    date_header: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    from_address: Mapped[str | None] = mapped_column(Text)
+    from_domain: Mapped[str | None] = mapped_column(Text)
+    subject: Mapped[str | None] = mapped_column(Text)
+    auth: Mapped[str] = mapped_column(Text, server_default=text("'none'"), nullable=False)
+    report_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_reports.id", ondelete="CASCADE")
+    )
+    # message_id | token | dsn | ticket | sender_domain | manual | none
+    match_method: Mapped[str] = mapped_column(Text)
+    verified: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    # auto_ack | ticket_opened | resolved | rejected | bounce | human_reply | unknown
+    classification: Mapped[str] = mapped_column(Text)
+    classification_source: Mapped[str] = mapped_column(
+        Text, server_default=text("'rule'"), nullable=False
+    )  # rule | manual
+    rule_id: Mapped[str | None] = mapped_column(Text)
+    ticket_id: Mapped[str | None] = mapped_column(Text)
+    dsn_status: Mapped[str | None] = mapped_column(Text)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    truncated: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    attachments: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    excerpt: Mapped[str | None] = mapped_column(Text)
+    excerpt_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (UniqueConstraint("source", "uidvalidity", "uid"),)
+
+
+class AbuseReplyImportRow(Base):
+    """A pasted or uploaded reply waiting for ingest; the raw bytes are cleared once done."""
+
+    __tablename__ = "abuse_reply_imports"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    report_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_reports.id", ondelete="CASCADE")
+    )
+    raw: Mapped[bytes] = mapped_column(LargeBinary)
+    requested_by: Mapped[str] = mapped_column(Text)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, server_default=text("'pending'"), nullable=False)
+    reply_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_replies.id", ondelete="SET NULL")
+    )
+    error_code: Mapped[str | None] = mapped_column(Text)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AbuseReportOutcomeRow(Base):
+    """What came of a sent report: derived columns (ingest) and the owner's override (API)."""
+
+    __tablename__ = "abuse_report_outcomes"
+
+    report_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("abuse_reports.id", ondelete="CASCADE"), primary_key=True
+    )
+    auto_outcome: Mapped[str] = mapped_column(Text, server_default=text("'none'"), nullable=False)
+    reply_count: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    first_reply_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_human_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ticket_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bounced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ticket_id: Mapped[str | None] = mapped_column(Text)
+    needs_review: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false"), nullable=False
+    )
+    auto_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    manual_outcome: Mapped[str | None] = mapped_column(Text)
+    manual_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    manual_by: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+
+
+class AbusechSubmissionRow(Base):
+    """A URL or C2 address submitted (or to be submitted) to URLhaus or ThreatFox; the audit log."""
+
+    __tablename__ = "abusech_submissions"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    platform: Mapped[str] = mapped_column(Text)  # urlhaus | threatfox
+    ioc_type: Mapped[str] = mapped_column(Text)  # url | ip:port
+    value: Mapped[str] = mapped_column(Text)
+    threat: Mapped[str] = mapped_column(Text)  # malware_download | botnet_cc
+    malware: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    sample_sha256: Mapped[str | None] = mapped_column(
+        Text, ForeignKey("samples.sha256", ondelete="SET NULL")
+    )
+    fetch_target_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("fetch_targets.id", ondelete="SET NULL")
+    )
+    demo: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    lookup: Mapped[str] = mapped_column(Text, server_default=text("'pending'"), nullable=False)
+    # candidate | pending | submitting | submitted | duplicate | rejected | failed | cancelled
+    # | skipped_known | skipped_never_list | guard_failed
+    status: Mapped[str] = mapped_column(Text, server_default=text("'candidate'"), nullable=False)
+    result_code: Mapped[str | None] = mapped_column(Text)
+    reference: Mapped[str | None] = mapped_column(Text)
+    auto: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[str | None] = mapped_column(Text)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TakedownTargetLinkRow(Base):
+    """Which report or submission put a target under tracking (the table has no primary key; the
+    mapper identity is the whole row)."""
+
+    __tablename__ = "takedown_target_links"
+
+    target_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("takedown_targets.id", ondelete="CASCADE"), primary_key=True
+    )
+    report_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abuse_reports.id", ondelete="CASCADE"), primary_key=True
+    )
+    submission_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("abusech_submissions.id", ondelete="CASCADE"), primary_key=True
+    )
+    linked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class OutcomeRollupRow(Base):
+    """Monthly aggregates per provider, kind and channel: no values, kept forever."""
+
+    __tablename__ = "outcome_rollup_monthly"
+
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    provider_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    channel: Mapped[str] = mapped_column(Text, primary_key=True)
+    asn: Mapped[int | None] = mapped_column(Integer)
+    country: Mapped[str | None] = mapped_column(Text)
+    reports_sent: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    reports_answered: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    auto_ack: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    ticket_opened: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    resolved: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    rejected: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    bounced: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    human_reply: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_eligible_48h: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_down_48h: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_eligible_7d: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_down_7d: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_eligible_30d: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    targets_down_30d: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    ttd_p50_s: Mapped[int | None] = mapped_column(Integer)
+    first_reply_p50_s: Mapped[int | None] = mapped_column(Integer)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), nullable=False
+    )
+
+
+class SetupProgressRow(Base):
+    """The one row (``id = 1``) that remembers how far the first-run setup got (M28)."""
+
+    __tablename__ = "setup_progress"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default=text("1"))
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_by: Mapped[str | None] = mapped_column(Text)
+    steps: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
+    )
 
 
 class NetworkMembershipRow(Base):

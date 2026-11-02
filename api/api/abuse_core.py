@@ -30,9 +30,11 @@ from suckerpot_db.models import (
     SessionRow,
 )
 from suckerpot_reporting import (
+    REFERENCE_STYLES,
     Evidence,
     GuardContext,
     GuardResult,
+    ReferenceStyle,
     RenderedMessage,
     RenderUnavailable,
     ReportOptions,
@@ -154,6 +156,7 @@ class SettingsBundle:
     settings: ReportSettings
     defaults: dict[str, Any]
     revision: int
+    reference_style: str = "subject"  # subject | subject_and_body | off (M26)
 
     @property
     def round_times(self) -> bool:
@@ -194,7 +197,19 @@ async def load_settings(db: AsyncSession) -> SettingsBundle:
         ),
         dict(row.defaults or {}),
         row.revision,
+        row.reference_style,
     )
+
+
+def reply_args(
+    row: AbuseReportRow, bundle: SettingsBundle, *, admin: bool = True
+) -> dict[str, Any]:
+    """The reply token and where to print it, for every rendering that may be sent (M26).
+    The token proves a reply belongs to the report: a viewer's preview or download never
+    carries it."""
+    if not admin:
+        return {"reply_token": None, "reference_style": "off"}
+    return {"reply_token": row.reply_token, "reference_style": bundle.reference_style}
 
 
 def effective_options(stored: dict[str, Any] | None, bundle: SettingsBundle) -> ReportOptions:
@@ -233,9 +248,9 @@ def build_evidence(
 
 
 async def guard_context(db: AsyncSession, row: AbuseReportRow, evidence: Evidence) -> GuardContext:
-    """Internal identifiers that must not appear: the report's own session ids."""
+    """Internal identifiers that must not appear: the report's own session ids and its seed."""
     ips = [s.value for s in evidence.subjects if s.type == "ip"]
-    ids: set[str] = set()
+    ids: set[str] = {row.id_seed.hex}  # the seed never leaves, and no token is built from it
     if ips:
         found = await db.scalars(
             select(SessionRow.session_id)
@@ -257,8 +272,14 @@ class Rendered:
     guard: GuardResult
 
 
-def _text_message(evidence: Evidence, settings: ReportSettings) -> RenderedMessage:
-    return replace(render_text(evidence, settings), attachments=(render_csv(evidence),))
+def _text_message(
+    evidence: Evidence,
+    settings: ReportSettings,
+    reply_token: str | None = None,
+    reference_style: ReferenceStyle = "subject",
+) -> RenderedMessage:
+    body = render_text(evidence, settings, reply_token=reply_token, reference_style=reference_style)
+    return replace(body, attachments=(render_csv(evidence),))
 
 
 def render_checked(
@@ -268,21 +289,29 @@ def render_checked(
     ctx: GuardContext,
     fmt: str,
     subject: str | None = None,
+    *,
+    reply_token: str | None = None,
+    reference_style: str = "subject",
 ) -> Rendered:
     """Render one format and run the guard on everything produced. Pure, so it runs in a thread.
 
     The caller decides what to do with a failed ``guard`` (``require_ok``): nothing is released.
     """
     eml: bytes | None = None
+    style: ReferenceStyle = reference_style if reference_style in REFERENCE_STYLES else "subject"  # type: ignore[assignment]
     if fmt == "text":
-        msg = _text_message(evidence, settings)
+        msg = _text_message(evidence, settings, reply_token, style)
     elif fmt == "xarf":
-        msg = render_xarf(evidence, settings, subject=subject)
+        msg = render_xarf(
+            evidence, settings, subject=subject, reply_token=reply_token, reference_style=style
+        )
     elif fmt == "eml":
         try:
-            msg = render_xarf(evidence, settings, subject=subject)
+            msg = render_xarf(
+                evidence, settings, subject=subject, reply_token=reply_token, reference_style=style
+            )
         except RenderUnavailable:
-            msg = _text_message(evidence, settings)
+            msg = _text_message(evidence, settings, reply_token, style)
         eml = render_eml(msg)
     else:
         raise RenderUnavailable("unknown_format")

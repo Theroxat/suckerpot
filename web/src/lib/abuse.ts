@@ -5,6 +5,7 @@
  */
 import { ApiError, getBlob, getJson, sendJson, type Page } from "./api"
 import { plural } from "./format"
+import type { RepliesStatus, Reply, ReportOutcome } from "./replies"
 
 // --- Vocabulary -------------------------------------------------------------------
 
@@ -52,6 +53,13 @@ export const TLP_OPTIONS = [
 ] as const
 export const DEFAULT_TLP: Tlp = "green"
 
+export type ReferenceStyle = "subject" | "subject_and_body" | "off"
+export const REFERENCE_STYLE_OPTIONS = [
+  { value: "subject", label: "In the subject" },
+  { value: "subject_and_body", label: "Subject and body" },
+  { value: "off", label: "Off" },
+] as const satisfies readonly { value: ReferenceStyle; label: string }[]
+
 /** Reason codes of the identity check. They never carry the matched value. */
 export const GUARD_REASON: Record<string, string> = {
   self_address: "The text contains the public address of the monitored system.",
@@ -90,6 +98,8 @@ export interface Recipient {
   mailbox: string | null
   source: "rdap" | "manual"
   muted: boolean
+  /** A free or shared mailbox: replies are trusted by exact address only. */
+  shared_mailbox?: boolean
 }
 
 export interface AsnRef {
@@ -116,6 +126,8 @@ export interface ReportItem {
   updated_at: string
   revision: number
   guard: GuardResult
+  /** Sent and closed reports only (M26). */
+  outcome?: ReportOutcome | null
 }
 
 export interface ReportSubject {
@@ -164,6 +176,10 @@ export interface ReportDetail extends ReportItem {
   closed_at: string | null
   /** Optional sending (M25): the planned time and the last request, when sending is set up. */
   send_state?: { scheduled_at: string | null; last_request: SendRequestShape | null }
+  /** Latest replies of a sent report (M26); text fields are for administrators only. */
+  replies?: Reply[]
+  /** The token that ties replies to this report. Administrators only. */
+  reply_token?: string | null
 }
 
 export interface Attachment {
@@ -190,6 +206,8 @@ export interface AbuseStatus {
   self_address_fresh: boolean
   counts: Record<ReportStatus, number>
   waiting_for_contact: number
+  /** The replies mailbox (M26). */
+  replies?: RepliesStatus
 }
 
 export interface WaitingRecipient {
@@ -217,6 +235,8 @@ export interface ReportSettings {
     "defang" | "include_usernames" | "include_reply_contact" | "show_redaction_counts"
   >
   default_tlp: Tlp
+  /** Where the reply reference is printed. */
+  reference_style: ReferenceStyle
   revision: number
 }
 
@@ -238,22 +258,26 @@ export interface ReportFilters {
 
 // --- Sentences ---------------------------------------------------------------------
 
-/** The sentence above the list. */
-export function describeReports(status: AbuseStatus | undefined): string {
+/**
+ * The sentence above the list. It counts what the tabs count: drafts, reports ready to send (the
+ * To send queue) and replies to check.
+ */
+export function describeReports(
+  status: AbuseStatus | undefined,
+  extra: { toSend?: number; replies?: number } = {},
+): string {
   if (!status) return "Reports to the networks that host the attackers, for you to review and send."
   if (!status.enabled)
     return "Abuse reports are switched off on this server, so no drafts are written."
-  const ready = status.counts.draft
-  const reviewed = status.counts.reviewed
-  if (ready === 0 && reviewed === 0)
+  const drafts = status.counts.draft
+  const toSend = extra.toSend ?? status.counts.reviewed
+  const replies = extra.replies ?? 0
+  if (drafts === 0 && toSend === 0 && replies === 0)
     return "Nothing to report: no source crossed the thresholds this week."
   const parts: string[] = []
-  if (ready > 0)
-    parts.push(`${plural(ready, "report")} ${ready === 1 ? "is" : "are"} ready for review`)
-  if (reviewed > 0)
-    parts.push(
-      `${plural(reviewed, "report")} ${reviewed === 1 ? "is" : "are"} reviewed and waiting to be sent`,
-    )
+  if (drafts > 0) parts.push(`${plural(drafts, "draft")} to review`)
+  if (toSend > 0) parts.push(`${plural(toSend, "report")} ready to send`)
+  if (replies > 0) parts.push(`${plural(replies, "reply", "replies")} to check`)
   return `${parts.join(", ")}.`
 }
 

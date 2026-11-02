@@ -19,9 +19,14 @@ import { scriptsHandlers } from "./scripts"
 import { alertsHandlers } from "./alerts"
 import { abuseHandlers } from "./abuse"
 import { abuseSendHandlers } from "./abuse-send"
+import { repliesHandlers } from "./replies"
+import { resultsHandlers } from "./results"
+import { takedownHandlers } from "./takedown"
+import { abusechHandlers } from "./abusech"
 import { vpnHandlers } from "./vpn"
 import { networkHandlers } from "./network"
 import { setupHandlers } from "./setup"
+import { setupWizardHandlers } from "./setup-wizard"
 import { searchHandlers } from "./search"
 import { todayHandlers } from "./today"
 import { parseStage, sessionStage } from "@/lib/story"
@@ -95,10 +100,15 @@ export const handlers = [
   ...defendHandlers,
   ...samplesHandlers,
   ...abuseSendHandlers,
+  ...repliesHandlers,
+  ...resultsHandlers,
+  ...takedownHandlers,
+  ...abusechHandlers,
   ...abuseHandlers,
   ...vpnHandlers,
   ...networkHandlers,
   ...setupHandlers,
+  ...setupWizardHandlers,
   ...scriptsHandlers,
   ...alertsHandlers,
   ...searchHandlers,

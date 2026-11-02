@@ -27,6 +27,8 @@ interface SendControlProps {
   revision?: number
   /** Buttons that sit in the same row as Send now (the queue passes its own). */
   actions?: ReactNode
+  /** Send now is the one filled button of its screen; false when another action leads. */
+  primary?: boolean
 }
 
 /**
@@ -41,6 +43,7 @@ export function SendControl({
   lastRequest,
   revision,
   actions,
+  primary = true,
 }: SendControlProps) {
   const { canWrite } = useAuth()
   const mode = useSendMode()
@@ -78,13 +81,16 @@ export function SendControl({
 
   return (
     <div className="space-y-2">
-      {canSend || actions ? (
+      {canSend ? (
         <div className="flex flex-wrap items-center gap-2">
-          {canSend ? (
-            <Button size="sm" onClick={() => setOpen(true)}>
-              <Send aria-hidden /> Send now
-            </Button>
-          ) : null}
+          <Button size="sm" variant={primary ? "default" : "outline"} onClick={() => setOpen(true)}>
+            <Send aria-hidden /> Send now
+          </Button>
+        </div>
+      ) : null}
+      {actions ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {canSend ? <span className="text-sm text-fg-muted">Or send it yourself:</span> : null}
           {actions}
         </div>
       ) : null}

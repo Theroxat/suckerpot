@@ -3,7 +3,7 @@
 FROM ghcr.io/astral-sh/uv:0.8.24 AS uv
 
 # Web UI build. Node is only used in this stage and never ends up in the final image.
-FROM node:22.21.1-bookworm-slim AS web-build
+FROM --platform=$BUILDPLATFORM node:22.21.1-bookworm-slim AS web-build
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=1
 RUN corepack enable
 WORKDIR /web
@@ -40,6 +40,10 @@ RUN mkdir -p /quarantine && chown 10001:10001 /quarantine && chmod 0700 /quarant
 # (no CAP_DAC_OVERRIDE) can still traverse it and read the 0644 files.
 RUN mkdir -p /vpn-config && chown 10001:10001 /vpn-config && chmod 0755 /vpn-config
 COPY --from=web-build /web/dist /app/web
+# Build metadata (M28): passed by compose or the release workflow, read by the api and ingest.
+ARG VERSION=dev BUILD_KIND=source COMMIT=unknown
+ENV SUCKERPOT_RUNNING_VERSION=$VERSION SUCKERPOT_BUILD_KIND=$BUILD_KIND SUCKERPOT_COMMIT=$COMMIT
+LABEL org.opencontainers.image.version=$VERSION org.opencontainers.image.revision=$COMMIT
 USER 10001:10001
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \

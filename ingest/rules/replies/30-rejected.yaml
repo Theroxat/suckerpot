@@ -1,0 +1,25 @@
+# Replies: the provider says it will not or cannot act.
+rules:
+  - id: not-our-customer
+    outcome: rejected
+    priority: 30
+    description: The provider says the address is not theirs.
+    when:
+      field: body
+      contains_any: ["not our customer", "not within our network", "does not belong to",
+                     "we do not host", "not hosted by", "please contact the",
+                     "outside our jurisdiction"]
+  - id: insufficient-evidence
+    outcome: rejected
+    priority: 31
+    description: The provider says the report is not enough to act on.
+    when:
+      field: body
+      contains_any: ["insufficient evidence", "unable to act"]
+  - id: form-required
+    outcome: rejected
+    priority: 32
+    description: The provider asks for its own web form or portal.
+    when:
+      field: body
+      contains_any: ["please use our web form", "submit via our portal"]

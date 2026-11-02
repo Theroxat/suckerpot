@@ -3,6 +3,8 @@
 
 set dotenv-load := true
 set shell := ["bash", "-euo", "pipefail", "-c"]
+# Recipe arguments reach scripts as "$@" (never pasted into the command line).
+set positional-arguments
 
 uv_image := "ghcr.io/astral-sh/uv:0.8.24-python3.13-bookworm-slim"
 uv_cache := "suckerpot-uv-cache"
@@ -44,8 +46,19 @@ default:
 # are external: they are created first, and the start is refused if the database volume is gone
 # while the backups volume still holds dumps (--force-empty accepts an empty database on purpose).
 up *flags: _need-project ports
-    bash scripts/ensure-volumes.sh {{flags}}
-    docker compose up -d --build --wait
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash scripts/ensure-volumes.sh "$@"
+    if [ "${SUCKERPOT_INSTALL_MODE:-source}" = images ]; then
+      # Release images are pulled and verified by the installer and the updater: never build over them.
+      # An image that is not local was never verified: --pull never fails instead of fetching it.
+      docker compose up -d --no-build --pull never --wait || {
+        echo "an image is missing locally; run: just update (it verifies and pulls the release images)" >&2
+        exit 1
+      }
+    else
+      docker compose up -d --build --wait
+    fi
 
 # Start the stack for tests: dashboard authentication OFF (docker-compose.ci.yml).
 # Required auth settings get dummy values when .env has none. Never on an exposed machine.
@@ -66,7 +79,7 @@ down: _need-project
 
 # Follow logs, optionally for some services: just logs ingest api
 logs *svc: _need-project
-    docker compose logs -f --tail=100 {{svc}}
+    docker compose logs -f --tail=100 "$@"
 
 # Show service status.
 ps: _need-project
@@ -103,7 +116,7 @@ demo *args: _need-project
       echo "note: threat-intel keys are set. Demo indicators are marked and never sent to abuse.ch or VirusTotal," >&2
       echo "      but real traffic on this stack is. Use a separate stack for demos if that is not what you want." >&2
     fi
-    docker compose --profile tools run --rm demo {{args}}
+    docker compose --profile tools run --rm demo "$@"
 
 # Keep generating live demo traffic (stop with Ctrl+C).
 demo-live: _need-project
@@ -168,11 +181,51 @@ backups: _need-project
 
 # Restore a dump, replacing the whole database (asks for confirmation): just restore latest | FILE | volume:NAME
 restore file: _need-project
-    bash scripts/restore-db.sh {{file}}
+    bash scripts/restore-db.sh "$@"
 
 # HTTP requests (WordPress login + PHP upload-progress) against the web sensor, then check the API.
 http-test:
     scripts/web-test.sh
+
+# First-time install on this machine (checks, secrets, .env, volumes, start): just install --help
+install *args:
+    bash scripts/install.sh "$@"
+
+# Safe update: backup, new code and images, restart, health check: just update [vX.Y.Z] [--yes]
+update *args: _need-project
+    bash scripts/update.sh "$@"
+
+# Undo the last update: previous code and the database dump taken before it (asks to confirm).
+rollback: _need-project
+    bash scripts/rollback.sh
+
+# Verify the signatures of a release's images (cosign): just verify-images [--pull] [--only "api ingest"] [vX.Y.Z]
+verify-images *args:
+    bash scripts/verify-images.sh "$@"
+
+# Choose the sensors: just sensors ssh,telnet,web | recommended | all (no argument: show the selection).
+sensors *list: _need-project
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash scripts/env-set.sh sensors "$@"
+    if [ "$#" -gt 0 ]; then bash scripts/compose-fresh.sh up -d --wait; fi
+
+# Change allow-listed .env settings (never secrets): just set ABUSE_REPORTS_ENABLED=true COOKIE_SECURE=true
+set *pairs: _need-project
+    bash scripts/env-set.sh set "$@"
+    bash scripts/compose-fresh.sh up -d --wait
+
+# Show the version in git, in .env and the one running.
+version:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "checkout: $(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
+    echo "mode:     ${SUCKERPOT_INSTALL_MODE:-source}"
+    [ "${SUCKERPOT_INSTALL_MODE:-source}" = images ] && echo "image:    ${SUCKERPOT_VERSION:-unset}"
+    if [ -n "${COMPOSE_PROJECT_NAME:-}" ]; then
+      echo "running:  $(docker compose exec -T api printenv SUCKERPOT_RUNNING_VERSION 2>/dev/null | tr -d '\r' || true)"
+    fi
+    exit 0
 
 # Open a psql shell in the database container.
 psql: _need-project
@@ -247,7 +300,7 @@ test-integration:
         -e POSTGRES_HOST=db -e POSTGRES_PORT=5432 \
         -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD \
         -e POSTGRES_INGEST_USER -e POSTGRES_INGEST_PASSWORD -e POSTGRES_API_USER -e POSTGRES_API_PASSWORD \
-        -e SUCKERPOT_ALLOW_DEFAULT_SECRETS -e DB_DIR=/work/db \
+        -e SUCKERPOT_ALLOW_DEFAULT_SECRETS -e DB_DIR=/work/db -e COMPOSE_PROJECT_NAME \
         -e REDIS_HOST=redis -e REDIS_PORT=6379 -e REDIS_USER=admin -e "REDIS_PASSWORD=$REDIS_PASSWORD" -e REDIS_ADMIN_USER=admin -e "REDIS_ADMIN_PASSWORD=$REDIS_PASSWORD" \
         {{uv_image}} sh -c "uv sync --refresh-package suckerpot-common --refresh-package suckerpot-db --refresh-package suckerpot-api --refresh-package suckerpot-netproto && uv run pytest -q -p no:cacheprovider -m integration; rc=\$?; [ \$rc -eq 5 ] && exit 0; exit \$rc")
       # Default bridge first (to download packages), then the backend network (to reach db/redis).
