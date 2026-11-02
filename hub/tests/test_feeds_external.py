@@ -306,6 +306,32 @@ async def test_nothing_is_contacted_when_off_or_disabled(env: Env) -> None:
 
 
 @pytest.mark.integration
+async def test_one_source_never_fetched_stops_the_feed_job(
+    env: Env, feed_dir: Path, key_file: Path
+) -> None:
+    """Security review M1: fresh copies of some sources must not hide that another one (here a
+    CDN, then Tor) was never fetched. Its addresses would otherwise be published."""
+    from .seed import shipped_ranges
+
+    s = settings(feed_dir=str(feed_dir), feed_signing_key_file=str(key_file))
+    await shipped_ranges(env.worker, NOW.date(), skip=frozenset({"cdn:fastly"}))
+    async with env.worker() as ses:
+        res = await job.run_once(ses, s, NOW, force=True)
+    assert res.state == "failed" and res.error_code == "ranges_stale"
+    async with env.worker() as ses:
+        await ses.execute(text("DELETE FROM feed_auto_ranges"))
+        await ses.commit()
+    await shipped_ranges(env.worker, NOW.date(), skip=frozenset({"tor"}))
+    async with env.worker() as ses:
+        res = await job.run_once(ses, s, NOW, force=True)
+    assert res.state == "failed" and res.error_code == "ranges_stale"
+    await shipped_ranges(env.worker, NOW.date())
+    async with env.worker() as ses:
+        res = await job.run_once(ses, s, NOW, force=True)
+    assert res.error_code != "ranges_stale"
+
+
+@pytest.mark.integration
 async def test_a_copy_older_than_thirty_days_stops_the_feed_job(
     env: Env, feed_dir: Path, key_file: Path
 ) -> None:

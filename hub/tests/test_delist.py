@@ -19,7 +19,7 @@ from hub.feeds import filter as feed_filter
 from hub.retention import DELIST_EVIDENCE_DAYS
 
 from .conftest import Env
-from .seed import TODAY, add_nodes
+from .seed import TODAY, add_nodes, shipped_ranges
 
 HERE = Path(__file__).resolve().parent.parent
 BOTS = "192.0.2.10"
@@ -266,11 +266,7 @@ async def test_suppressed_value_is_kept_out_of_the_lists(d_env: Env) -> None:
     env = d_env
     await add_entry(env, BOTS)
     await add_entry(env, OTHER)
-    async with env.worker() as s:
-        await s.execute(
-            text("INSERT INTO feed_auto_ranges VALUES ('tor', '203.0.113.64/28', :d)"), {"d": TODAY}
-        )
-        await s.commit()
+    await shipped_ranges(env.worker)
     assert (await ask(env, BOTS)).json()["state"] == "suppressed"
     async with env.worker() as s:
         excl = await feed_filter.load_exclusions(s, env.settings, TODAY)
@@ -631,11 +627,8 @@ async def test_a_suppressed_inbound_value_is_not_hidden_from_outbound(d_env: Env
     await add_entry(env, BOTS)
     assert (await ask(env, BOTS)).json()["state"] == "suppressed"
     await add_entry(env, BOTS, "outbound")  # later, the same address serves malware
+    await shipped_ranges(env.worker)
     async with env.worker() as s:
-        await s.execute(
-            text("INSERT INTO feed_auto_ranges VALUES ('tor', '203.0.113.64/28', :d)"), {"d": TODAY}
-        )
-        await s.commit()
         excl = await feed_filter.load_exclusions(s, env.settings, TODAY)
     assert excl.classify(BOTS, is_domain=False, list_id="inbound") == "delisted"
     assert excl.classify(BOTS, is_domain=False, list_id="outbound") is None
