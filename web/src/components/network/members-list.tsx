@@ -59,7 +59,7 @@ function TierMeter({ tier }: { tier: NetworkMember["tier"] }) {
   )
 }
 
-export function MemberRow({ m }: { m: NetworkMember }) {
+export function MemberRow({ m, self = false }: { m: NetworkMember; self?: boolean }) {
   return (
     <div
       className={cn(
@@ -72,6 +72,11 @@ export function MemberRow({ m }: { m: NetworkMember }) {
         {m.pseudonym ? (
           <span className="ml-2 font-mono text-2xs font-normal text-fg-subtle">
             {m.fingerprint}
+          </span>
+        ) : null}
+        {self ? (
+          <span className="ml-2 rounded-sm border px-1.5 py-px text-2xs font-medium text-fg-muted">
+            You
           </span>
         ) : null}
       </span>
@@ -104,7 +109,14 @@ export function MemberRow({ m }: { m: NetworkMember }) {
  * The members, sorted by name (never by activity: there is no ranking). Virtualised: the list
  * can grow to hundreds without slowing the page.
  */
-export function MembersList({ members }: { members: readonly NetworkMember[] }) {
+export function MembersList({
+  members,
+  self,
+}: {
+  members: readonly NetworkMember[]
+  /** This node's fingerprint, so its own row says "You". */
+  self?: string | null
+}) {
   const ref = useRef<HTMLDivElement>(null)
   // The virtualizer is used as intended; the compiler just cannot memoize its return value.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -144,7 +156,7 @@ export function MembersList({ members }: { members: readonly NetworkMember[] }) 
                 className="absolute top-0 left-0 w-full border-b"
                 style={{ height: item.size, transform: `translateY(${item.start}px)` }}
               >
-                <MemberRow m={m} />
+                <MemberRow m={m} self={!!self && m.fingerprint === self} />
               </div>
             )
           })}
