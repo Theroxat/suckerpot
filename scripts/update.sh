@@ -2,7 +2,7 @@
 # Safe update of an installed Selfhostr: backup first, then new code, new images, restart, health
 # check. Called by `just update [vX.Y.Z]`. See docs/design/m28.md section 6.
 #
-#   scripts/update.sh [--yes] [--no-backup] [--skip-verify] [vX.Y.Z]
+#   scripts/update.sh [--yes] [--no-backup] [--skip-verify] [--force] [vX.Y.Z]
 #
 # A database dump is taken first and recorded in .suckerpot-state/last-update.json, together with
 # the commit and version you were on, so `just rollback` can put everything back. Migrations are
@@ -21,15 +21,17 @@ TOTAL=9
 assume_yes=0
 no_backup=0
 skip_verify=0
+force=0
 target=""
 while [ $# -gt 0 ]; do
   case $1 in
     --yes | -y) assume_yes=1 ;;
     --no-backup) no_backup=1 ;;
     --skip-verify) skip_verify=1 ;;
+    --force) force=1 ;;
     -h | --help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     v[0-9]*) target=$1 ;;
-    *) echo "update: unknown argument: $1 (usage: update.sh [--yes] [--no-backup] [--skip-verify] [vX.Y.Z])" >&2; exit 2 ;;
+    *) echo "update: unknown argument: $1 (usage: update.sh [--yes] [--no-backup] [--skip-verify] [--force] [vX.Y.Z])" >&2; exit 2 ;;
   esac
   shift
 done
@@ -79,6 +81,10 @@ if [ "$backup_health" != healthy ]; then
   echo "      warning: the backup service is not healthy" >&2
 fi
 
+if [ "$force" = 0 ] && [ -f "$STATE" ] && grep -q '"completed": false' "$STATE"; then
+  die "the previous update never finished (see $STATE). Run just rollback, or finish it, or retry with --force"
+fi
+
 from_ref=$(git rev-parse HEAD 2> /dev/null || true)
 [ -n "$from_ref" ] || die "this folder is not a git checkout"
 from_branch=$(git symbolic-ref --short -q HEAD 2> /dev/null || true)
@@ -113,7 +119,7 @@ if [ "$pull_branch" = 1 ]; then
   echo "      target:  newest commit of branch $from_branch (git pull --ff-only)"
 else
   echo "      target:  $target"
-  notes=$(git tag -l --format='%(contents)' "$target" 2> /dev/null || true)
+  notes=$(git tag -l --format='%(contents)' "$target" 2> /dev/null | tr -d '\000-\010\013-\037\177' || true)
   if [ -n "$notes" ]; then
     echo "      release notes:"
     printf '%s\n' "$notes" | sed 's/^/        /'
@@ -161,6 +167,7 @@ cat > "$tmp" << EOF
   "dump": "$(clean "$dump")",
   "target": "$(clean "$target")",
   "at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "completed": false,
   "images": {
 ${images_json}
   }
@@ -203,11 +210,13 @@ step 6 "Getting the new images"
 if [ "$mode" = images ]; then
   env_set_line .env SUCKERPOT_VERSION "$target"
   env_drop_loaded
-  docker compose pull
   if [ "$skip_verify" = 1 ]; then
     echo "      warning: --skip-verify, the image signatures were NOT checked" >&2
+    docker compose pull
   else
-    bash scripts/verify-images.sh "$target" || die "the image signatures could not be verified; nothing was started. Run just rollback to go back, or retry with --skip-verify only if you accept the risk"
+    # Verify the digest, pull exactly that digest, tag it: what runs is what was verified.
+    bash scripts/verify-images.sh --pull "$target" || die "the image signatures could not be verified; nothing was started. Run just rollback to go back, or retry with --skip-verify only if you accept the risk"
+    docker compose pull --policy missing
   fi
   expected=$target
 else
@@ -221,7 +230,11 @@ fi
 # ---------------------------------------------------------------- 7. start
 step 7 "Restarting (migrations run first)"
 bash scripts/check-ports.sh --dotenv-only
-docker compose up -d --wait --wait-timeout 600
+if [ "$mode" = images ]; then
+  docker compose up -d --no-build --pull never --wait --wait-timeout 600
+else
+  docker compose up -d --wait --wait-timeout 600
+fi
 
 # ---------------------------------------------------------------- 8. health
 step 8 "Checking health"
@@ -242,6 +255,11 @@ fi
 # ---------------------------------------------------------------- 9. done
 step 9 "Done"
 changed=0
+# Final step: mark the recorded update as finished (a new one is refused while this is false).
+tmp=$(mktemp "$STATE_DIR/.state.XXXXXX")
+sed 's/"completed": false,/"completed": true,/' "$STATE" > "$tmp"
+chmod 600 "$tmp"
+mv "$tmp" "$STATE"
 echo
 echo "Selfhostr is now on $expected (commit ${new_ref:0:9})."
 if [ -n "$dump" ]; then

@@ -41,6 +41,9 @@ git rev-parse -q --verify "$from_ref^{commit}" > /dev/null || die "commit $from_
 # The dump must still be there BEFORE anything is changed (code, images or database).
 db_image=$(awk '/^  db:/ {indb=1} indb && /image: / {print $2; exit}' docker-compose.yml)
 [ -n "$db_image" ] || die "could not read the db image from docker-compose.yml"
+# Never let docker create a missing volume (it would be empty, and a false "dump gone" answer).
+docker volume inspect "${SUCKERPOT_VOLUME_PREFIX}_backups" > /dev/null 2>&1 \
+  || die "the backups volume ${SUCKERPOT_VOLUME_PREFIX}_backups does not exist. Nothing was changed."
 docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true --user 70:70 \
   -v "${SUCKERPOT_VOLUME_PREFIX}_backups:/b:ro" --entrypoint test "$db_image" -s "/b/$dump" \
   || die "the dump $dump is no longer in the backups volume (retention removed it?). Nothing was changed."
@@ -66,7 +69,10 @@ echo "[2/4] Restoring the images"
 if [ "$mode" = images ]; then
   env_set_line .env SUCKERPOT_VERSION "$from_version"
   env_drop_loaded
-  docker compose pull
+  # Same gate as an update: verify the signatures, pull the verified digests, run only those.
+  bash scripts/verify-images.sh --pull "$from_version" \
+    || die "the image signatures of $from_version could not be verified; nothing was started"
+  docker compose pull --policy missing
 else
   SUCKERPOT_BUILD_VERSION=$(git describe --tags --always --dirty 2> /dev/null || echo dev)
   SUCKERPOT_BUILD_COMMIT=$(git rev-parse --short HEAD 2> /dev/null || echo unknown)
@@ -79,6 +85,10 @@ bash scripts/restore-db.sh "volume:$dump"
 
 echo "[4/4] Starting"
 bash scripts/check-ports.sh --dotenv-only
-docker compose up -d --wait --wait-timeout 600
+if [ "$mode" = images ]; then
+  docker compose up -d --no-build --pull never --wait --wait-timeout 600
+else
+  docker compose up -d --wait --wait-timeout 600
+fi
 echo
 echo "Rolled back to $from_version."

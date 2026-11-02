@@ -402,13 +402,21 @@ if [ "$mode" = images ]; then
   [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ || ( $dry_run = 1 && $version = dev ) ]] || die "--version must look like v1.2.3"
 fi
 image_prefix=${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}
+[[ $image_prefix =~ ^ghcr\.io/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$ ]] \
+  || die "SUCKERPOT_IMAGE_PREFIX must look like ghcr.io/<owner>/<name>"
 if [ "$dry_run" = 1 ]; then
   hash='$argon2id$v=19$m=65536,t=3,p=4$cGxhY2Vob2xkZXI$cGxhY2Vob2xkZXItaGFzaC1ub3QtcmVhbA'
   note "dry run: placeholder hash"
 else
   if [ "$mode" = images ]; then
     api_image="${image_prefix}-api:${version}"
-    docker pull "$api_image" > /dev/null || die "could not pull $api_image"
+    if [ "$skip_verify" = 1 ]; then
+      docker pull "$api_image" > /dev/null || die "could not pull $api_image"
+    else
+      # Verify before the image ever runs (it hashes the password): pulled by the verified digest.
+      SUCKERPOT_IMAGE_PREFIX=$image_prefix bash scripts/verify-images.sh --pull --only api "$version" \
+        || die "the api image could not be verified, so it was not run. Check the version, or only if you accept the risk: --skip-verify"
+    fi
   else
     api_image=suckerpot-install-api
     docker build -q -f api/Dockerfile -t "$api_image" . > /dev/null || die "could not build the api image"
@@ -522,13 +530,15 @@ fi
 # ---------------------------------------------------------------- 9. start
 step 9 "Starting Selfhostr (this can take several minutes)"
 if [ "$mode" = images ]; then
-  docker compose pull || die "could not pull the images. Check the version and your network, then run: docker compose pull"
   if [ "$skip_verify" = 1 ]; then
     warn "--skip-verify: the image signatures were NOT checked"
+    docker compose pull || die "could not pull the images. Check the version and your network, then run: docker compose pull"
   else
-    bash scripts/verify-images.sh "$version" || die "the image signatures could not be verified, so nothing was started. Check the version, or run scripts/verify-images.sh $version. Only if you accept the risk: --skip-verify"
+    SUCKERPOT_IMAGE_PREFIX=$image_prefix bash scripts/verify-images.sh --pull "$version" || die "the image signatures could not be verified, so nothing was started. Check the version, or run scripts/verify-images.sh $version. Only if you accept the risk: --skip-verify"
+    # Our images are now local (pulled by verified digest); this fetches only the pinned third-party ones.
+    docker compose pull --policy missing || die "could not pull the remaining images (database, VPN). Check your network, then run: docker compose pull --policy missing"
   fi
-  docker compose up -d --wait --wait-timeout 600 || die "the stack did not become healthy. See: docker compose ps, docker compose logs"
+  docker compose up -d --no-build --pull never --wait --wait-timeout 600 || die "the stack did not become healthy. See: docker compose ps, docker compose logs"
 else
   SUCKERPOT_BUILD_VERSION=$(git describe --tags --always --dirty 2> /dev/null || echo dev)
   SUCKERPOT_BUILD_COMMIT=$(git rev-parse --short HEAD 2> /dev/null || echo unknown)

@@ -30,6 +30,7 @@ def prepare(sb: Sandbox, mode: str = "images", branch: str = "") -> None:
     sb.git_set("notes", "Adds the setup wizard.")
     sb.git_set("branch", branch)
     sb.env["SHIM_RUNNING_VERSION"] = "v0.9.0"
+    sb.env["SHIM_EXISTING_VOLUMES"] = "demo_backups"
 
 
 def run_update(sb: Sandbox, *args: str, stdin: str = "") -> tuple[int, str]:
@@ -48,10 +49,15 @@ def test_update_images_mode_full_flow(sandbox: Sandbox) -> None:
     order = [
         joined.index("backup-service.sh now preupdate"),
         joined.index("git checkout --quiet v0.9.0"),
-        joined.index("docker compose pull"),
-        joined.index("docker compose up -d --wait --wait-timeout 600"),
+        joined.index("cosign"),
+        joined.index("docker compose up -d --no-build --pull never --wait --wait-timeout 600"),
     ]
     assert order == sorted(order)
+    # Pulled by the digest cosign verified, then tagged; never pulled by tag.
+    assert "docker pull --quiet ghcr.io/theroxat/suckerpot-api@sha256:" in joined
+    assert "docker tag ghcr.io/theroxat/suckerpot-api@sha256:" in joined
+    assert "docker compose pull --policy missing" in joined
+    assert "docker compose pull\n" not in joined + "\n"
     assert re.search(r"SUCKERPOT_VERSION=v0\.9\.0", (sandbox.root / ".env").read_text())
     assert "# added by just update" in (sandbox.root / ".env").read_text()
     state = sandbox.root / ".suckerpot-state" / "last-update.json"
@@ -206,11 +212,11 @@ def test_rollback_restores_code_images_and_dump(sandbox: Sandbox) -> None:
     joined = "\n".join(calls)
     assert f"git checkout --quiet {OLD}" in calls
     assert "SUCKERPOT_VERSION=v0.8.0" in (sandbox.root / ".env").read_text()
-    assert "docker compose pull" in calls
+    assert "docker compose pull --policy missing" in calls
     order = [
         joined.index("git checkout"),
-        joined.index("docker compose pull"),
-        joined.index("docker compose up -d --wait --wait-timeout 600"),
+        joined.index("cosign"),
+        joined.index("docker compose up -d --no-build --pull never --wait --wait-timeout 600"),
     ]
     assert order == sorted(order)
     assert "events received since that dump are lost" in proc.stdout.lower()
@@ -271,14 +277,14 @@ def test_update_ignores_stale_exported_values(sandbox: Sandbox) -> None:
     assert "SUCKERPOT_VERSION=v0.9.0" in (sandbox.root / ".env").read_text()
 
 
-def test_update_checks_signatures_after_the_pull_and_fails_closed(sandbox: Sandbox) -> None:
+def test_update_verifies_before_anything_runs_and_fails_closed(sandbox: Sandbox) -> None:
     prepare(sandbox)
     (sandbox.root / "scripts/verify-images.sh").write_text("#!/bin/sh\nexit 1\n")
     rc, out = run_update(sandbox, "--yes")
     assert rc != 0
     assert "signatures could not be verified" in out
     assert not any(c.startswith("docker compose up") for c in sandbox.docker_calls())
-    rc, out = run_update(sandbox, "--yes", "--skip-verify")
+    rc, out = run_update(sandbox, "--yes", "--skip-verify", "--force")
     assert rc == 0, out
     assert "NOT checked" in out
 
@@ -310,3 +316,38 @@ def test_rollback_checks_ports_and_ignores_stale_values(sandbox: Sandbox) -> Non
     sandbox.write_env(ENV.replace("v0.8.0", "v0.9.0") + "SSH_HOST_PORT=8443\n")
     proc = sandbox.run("scripts/rollback.sh", stdin="rollback\n")
     assert proc.returncode != 0
+
+
+def test_rollback_refuses_unverifiable_images(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    write_state(sandbox)
+    (sandbox.root / "scripts" / "restore-db.sh").write_text("true\n")
+    (sandbox.root / "scripts/verify-images.sh").write_text("#!/bin/sh\nexit 1\n")
+    proc = sandbox.run("scripts/rollback.sh", stdin="rollback\n")
+    assert proc.returncode != 0
+    assert "could not be verified" in proc.stderr
+    assert not any(c.startswith("docker compose up") for c in sandbox.docker_calls())
+
+
+def test_rollback_never_lets_docker_create_the_backups_volume(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    write_state(sandbox)
+    sandbox.env["SHIM_EXISTING_VOLUMES"] = ""
+    proc = sandbox.run("scripts/rollback.sh", stdin="rollback\n")
+    assert proc.returncode != 0
+    assert "does not exist" in proc.stderr
+    assert not any(c.startswith("docker run") for c in sandbox.docker_calls())
+
+
+def test_unfinished_update_blocks_a_new_one_unless_forced(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    rc, out = run_update(sandbox, "--yes")
+    assert rc == 0, out
+    state = sandbox.root / ".suckerpot-state" / "last-update.json"
+    assert '"completed": true' in state.read_text()
+    state.write_text(state.read_text().replace('"completed": true', '"completed": false'))
+    rc, out = run_update(sandbox, "--yes")
+    assert rc != 0
+    assert "never finished" in out
+    rc, out = run_update(sandbox, "--yes", "--force")
+    assert "never finished" not in out

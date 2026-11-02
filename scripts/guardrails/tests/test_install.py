@@ -251,11 +251,11 @@ def test_full_install_with_fake_docker(
     for name in SECRET_NAMES:
         assert env[name] not in calls
         assert env[name] not in out
-    assert "docker pull ghcr.io/theroxat/suckerpot-api:v0.8.0" in calls
+    assert "docker pull --quiet ghcr.io/theroxat/suckerpot-api@sha256:" in calls
     assert "--network none" in calls
     assert "docker volume create suckerpot_db-data" in calls
-    assert "docker compose pull" in calls
-    assert "docker compose up -d --wait --wait-timeout 600" in calls
+    assert "docker compose pull --policy missing" in calls
+    assert "docker compose up -d --no-build --pull never --wait --wait-timeout 600" in calls
     assert "curl -fsS --max-time 5 http://127.0.0.1:8443/healthz" in calls
     log = (sandbox.root / "install.log").read_text()
     assert PASSWORD not in log
@@ -392,16 +392,17 @@ def test_script_never_looks_up_a_public_address() -> None:
                 assert re.search(r"http://(\$hbind|\$bind|127\.0\.0\.1)", line), (rel, line)
 
 
-def test_images_install_verifies_signatures_after_the_pull(
+def test_images_install_verifies_before_anything_runs(
     sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
 ) -> None:
     rc, out = _real_run(sandbox)
     assert rc == 0, out
     calls = sandbox.docker_calls()
-    pull = next(i for i, c in enumerate(calls) if c == "docker compose pull")
     verify = next(i for i, c in enumerate(calls) if "cosign" in c and " verify " in c)
+    hasher = next(i for i, c in enumerate(calls) if "api.hashpw" in c)
     up = next(i for i, c in enumerate(calls) if c.startswith("docker compose up"))
-    assert pull < verify < up
+    assert verify < hasher < up  # the api image is verified before it hashes the password
+    assert "docker compose pull" not in calls
     env = parse_env(sandbox.root / ".env")
     assert env["SUCKERPOT_IMAGE_PREFIX"].startswith("ghcr.io/")
     assert env["UPDATE_CHECK_ENABLED"] == "false"
@@ -411,7 +412,8 @@ def test_failed_signature_check_starts_nothing(sandbox: Sandbox) -> None:
     (sandbox.root / "scripts/verify-images.sh").write_text("#!/bin/sh\nexit 1\n")
     rc, out = _real_run(sandbox)
     assert rc != 0
-    assert "signatures could not be verified" in out
+    assert "could not be verified" in out
+    assert not any("api.hashpw" in c for c in sandbox.docker_calls())
     assert not any(c.startswith("docker compose up") for c in sandbox.docker_calls())
 
 
@@ -442,3 +444,11 @@ def test_a_failed_install_leaves_no_temporary_env(sandbox: Sandbox) -> None:
     sandbox.env["SHIM_PROJECT_CONTAINERS"] = "0123456789ab"
     _real_run(sandbox)
     assert not list(sandbox.root.glob(".env*.tmp")) and not (sandbox.root / ".env.tmp").exists()
+
+
+def test_bad_image_prefix_is_refused(sandbox: Sandbox) -> None:
+    sandbox.env["SUCKERPOT_IMAGE_PREFIX"] = "evil.example/x/y"
+    rc, out = _real_run(sandbox)
+    assert rc != 0
+    assert "SUCKERPOT_IMAGE_PREFIX" in out
+    assert not any("api.hashpw" in c for c in sandbox.docker_calls())
