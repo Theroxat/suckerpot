@@ -1,0 +1,4 @@
+value,family,list,tier,categories,services,tags,families,ports,first_seen,last_seen,expires,reported
+192.0.2.14,4,inbound,standard,login-success,ssh,,,,2026-10-26,2026-10-31,2026-11-14,false
+198.51.100.200,4,inbound,high,brute-force;command-exec,ssh;telnet,mirai;recon,,,2026-10-26,2026-10-31,2026-11-14,false
+2001:db8:1::7,6,inbound,standard,exploit,web,php2shell,,,2026-10-26,2026-10-31,2026-11-14,false

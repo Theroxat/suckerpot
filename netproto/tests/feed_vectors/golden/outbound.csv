@@ -1,0 +1,5 @@
+value,family,list,tier,categories,services,tags,families,ports,first_seen,last_seen,expires,reported
+192.0.2.77,4,outbound,standard,malware-drop;payload-host,,cve-2024-3721,,,2026-10-26,2026-10-31,2026-11-14,false
+198.51.100.9,4,outbound,high,payload-host,,mirai,mirai,,2026-10-26,2026-10-31,2026-11-14,true
+203.0.113.50,4,outbound,standard,c2,,,mirai,23;2323,2026-10-28,2026-10-30,2026-11-29,false
+2001:db8::50,6,outbound,standard,c2,,,gafgyt,443,2026-10-26,2026-10-31,2026-11-14,true

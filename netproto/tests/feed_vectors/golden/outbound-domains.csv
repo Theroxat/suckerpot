@@ -1,0 +1,3 @@
+value,family,list,tier,categories,services,tags,families,ports,first_seen,last_seen,expires,reported
+cnc.example.org,dns,outbound-domains,high,c2,,,mirai,23,2026-10-26,2026-10-31,2026-11-14,false
+dl.example.net,dns,outbound-domains,standard,payload-host,,crypto-miner,xmrig,,2026-10-26,2026-10-31,2026-11-14,false

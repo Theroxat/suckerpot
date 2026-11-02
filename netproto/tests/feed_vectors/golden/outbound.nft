@@ -1,0 +1,9 @@
+# selfhostr outbound serial 4812 generated 2026-11-01T13:00:00Z licence CC0-1.0
+table inet selfhostr {
+  set outbound_v4 { type ipv4_addr; flags interval; auto-merge; }
+  set outbound_v6 { type ipv6_addr; flags interval; auto-merge; }
+}
+flush set inet selfhostr outbound_v4
+flush set inet selfhostr outbound_v6
+add element inet selfhostr outbound_v4 { 192.0.2.77, 198.51.100.9, 203.0.113.50 }
+add element inet selfhostr outbound_v6 { 2001:db8::50 }

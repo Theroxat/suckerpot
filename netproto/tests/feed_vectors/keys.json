@@ -1,0 +1,10 @@
+{
+  "_comment": "Fixed test keys, never used anywhere else. Signatures are deterministic.",
+  "secret_seed_hex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+  "key_id_bytes_hex": "0102030405060708",
+  "key_id": "0807060504030201",
+  "public_key": "RWQBAgMEBQYHCCVDuS/xCVURR2rcg2nbbdyTNmWhGXjdoUBO4QZsqVWd",
+  "serial": 4812,
+  "sign_timestamp": 1793538000,
+  "secret_key_file": "untrusted comment: minisign secret key\nRWQAAEIyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQIDBAUGBwhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXyVDuS/xCVURR2rcg2nbbdyTNmWhGXjdoUBO4QZsqVWdxJfGb9+Fjcr0Q53hfEYb7vkJy2RLMl+mAof5BNsExw0=\n"
+}

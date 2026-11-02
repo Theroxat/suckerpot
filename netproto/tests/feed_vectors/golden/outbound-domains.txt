@@ -1,0 +1,2 @@
+cnc.example.org
+dl.example.net
