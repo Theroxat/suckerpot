@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { ChartNoAxesCombined, X } from "lucide-react"
+import { ChartNoAxesCombined } from "lucide-react"
 import { useMemo } from "react"
 import { Link, useSearchParams } from "react-router"
 import { AbusechSummaryCard } from "@/components/results/abusech-summary-card"
@@ -9,12 +9,14 @@ import { OverTimeCard } from "@/components/results/over-time-card"
 import { ProvidersCard } from "@/components/results/providers-card"
 import { TargetsCard } from "@/components/results/targets-card"
 import { EmptyState } from "@/components/empty-state"
+import { FilterBar, type FilterChipDef } from "@/components/filter-bar"
 import { PageHeader } from "@/components/page-header"
 import { SegmentedControl } from "@/components/segmented-control"
 import { StatTile } from "@/components/stat-tile"
 import { Button } from "@/components/ui/button"
 import { formatNumber, formatPercent } from "@/lib/format"
 import {
+  CHANNEL_LABEL,
   resultKeys,
   resultsApi,
   type Channel,
@@ -22,6 +24,21 @@ import {
   type ResultFilters,
 } from "@/lib/results"
 import { describeTakedownHeader, describeTtd, shortDelay } from "@/lib/results-sentences"
+
+/** Filters that arrive from links elsewhere (a target page, the takedown tiles). */
+const FILTER_CHIPS: FilterChipDef[] = [
+  {
+    param: "kind",
+    label: "Kind",
+    render: (v) => (v === "url" ? "URLs" : v === "host" ? "Hosts" : v),
+  },
+  { param: "provider", label: "Provider" },
+  {
+    param: "channel",
+    label: "Channel",
+    render: (v) => (v in CHANNEL_LABEL ? CHANNEL_LABEL[v as Channel] : v),
+  },
+]
 
 const PERIODS = [
   { value: "30", label: "30 days" },
@@ -123,27 +140,12 @@ export function ResultsPage() {
               setParam("since", v === String(DEFAULT_DAYS) ? null : daysAgo(Number(v)))
             }
             options={PERIODS}
-            className="max-w-full overflow-x-auto"
+            className="scroll-fade-x max-w-full overflow-x-auto"
           />
         }
       />
 
-      {active.length > 0 ? (
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
-          Filtered by
-          {active.map(([k, v]) => (
-            <Button
-              key={k}
-              variant="outline"
-              size="xs"
-              onClick={() => setParam(k, null)}
-              aria-label={`Remove the ${k} filter ${v}`}
-            >
-              {k}: {v} <X aria-hidden />
-            </Button>
-          ))}
-        </div>
-      ) : null}
+      {active.length > 0 ? <FilterBar className="mb-4" chips={FILTER_CHIPS} /> : null}
 
       {nothing ? (
         <EmptyState

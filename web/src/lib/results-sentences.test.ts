@@ -232,7 +232,7 @@ describe("takedown sentences", () => {
     expect(describeCurve(summary({ urls: counts({ eligible_48h: 0 }) }))).toMatch(/too early/)
   })
   it("needs five values for a median", () => {
-    expect(describeTtd({ ttd_p50_s: 19 * H, ttd_n: 12 })).toBe("19 h, across 12 URLs taken down")
+    expect(describeTtd({ ttd_p50_s: 19 * H, ttd_n: 12 })).toBe("Across 12 URLs taken down")
     expect(describeTtd({ ttd_p50_s: 19 * H, ttd_n: 3 })).toBe("Not enough data yet")
   })
   it("names the fastest provider", () => {

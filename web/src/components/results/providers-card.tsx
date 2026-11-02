@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react"
 import { useMemo } from "react"
 import { Link } from "react-router"
 import { CountryFlag } from "@/components/country-flag"
+import { MetaLine } from "@/components/meta-line"
 import { FindingCard } from "@/components/finding-card"
 import { SegmentedControl } from "@/components/segmented-control"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -203,7 +204,7 @@ export function ProvidersCard({ groups, group, takedown }: ProvidersCardProps) {
           value={group}
           onChange={(v) => setGroup(v === "asn" ? null : v)}
           options={GROUP_OPTIONS}
-          className="max-w-full overflow-x-auto"
+          className="scroll-fade-x max-w-full overflow-x-auto"
         />
       }
       bodyClassName="px-0 sm:px-0 pb-0 sm:pb-0"
@@ -226,31 +227,23 @@ export function ProvidersCard({ groups, group, takedown }: ProvidersCardProps) {
                   {r.group === "asn" && r.country ? <CountryFlag code={r.country} /> : null}
                   <ProviderName r={r} />
                 </span>
-                <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-muted">
+                <MetaLine className="mt-1.5">
                   <span>{formatNumber(r.sent)} sent</span>
-                  <span aria-hidden>·</span>
                   <span>
                     {r.answeredPct == null
                       ? "too recent"
                       : `${formatPercent(r.answeredPct)} answered`}
                   </span>
-                  {showTd && r.td ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span>
-                        {r.td.down_48h} of {r.td.eligible_48h} down in 48 h
-                      </span>
-                      {r.td.ttd_p50_s != null ? (
-                        <>
-                          <span aria-hidden>·</span>
-                          <span>median {shortDelay(r.td.ttd_p50_s)}</span>
-                        </>
-                      ) : null}
-                    </>
+                  {showTd && r.td && r.td.eligible_48h > 0 ? (
+                    <span>
+                      {r.td.down_48h} of {r.td.eligible_48h} down in 48 h
+                    </span>
                   ) : null}
-                  <span aria-hidden>·</span>
+                  {showTd && r.td?.ttd_p50_s != null ? (
+                    <span>median {shortDelay(r.td.ttd_p50_s)}</span>
+                  ) : null}
                   <OutcomeBadge outcome={r.best} noAnswer />
-                </p>
+                </MetaLine>
               </li>
             ))}
           </ul>
@@ -309,7 +302,7 @@ export function ProvidersCard({ groups, group, takedown }: ProvidersCardProps) {
                           )}
                         </td>
                         <td className="px-2 py-2 text-right whitespace-nowrap">
-                          {r.td ? (
+                          {r.td && r.td.eligible_48h > 0 ? (
                             `${r.td.down_48h} of ${r.td.eligible_48h}`
                           ) : (
                             <span className="text-fg-subtle">—</span>

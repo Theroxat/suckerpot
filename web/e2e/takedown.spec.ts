@@ -7,7 +7,7 @@ import { h1, settle, shoot } from "./helpers"
 test("results filtered to URLs", async ({ page }, info) => {
   await page.goto("/defend/results?kind=url")
   await expect(h1(page, "Results")).toBeVisible()
-  await expect(page.getByRole("button", { name: "Remove the kind filter url" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Remove Kind filter" })).toBeVisible()
   await expect(
     page
       .getByRole("table", { name: "Tracked targets" })
@@ -19,7 +19,7 @@ test("results filtered to URLs", async ({ page }, info) => {
 
 test("results filtered to hosts", async ({ page }, info) => {
   await page.goto("/defend/results?kind=host")
-  await expect(page.getByRole("button", { name: "Remove the kind filter host" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Remove Kind filter" })).toBeVisible()
   await expect(
     page
       .getByRole("table", { name: "Tracked targets" })

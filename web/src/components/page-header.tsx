@@ -32,7 +32,7 @@ export function PageHeader({
       <div className="min-w-0 space-y-1.5">
         {eyebrow ? <div className="text-xs text-fg-muted">{eyebrow}</div> : null}
         <div className="flex items-center gap-1.5">
-          <h1 className="text-xl font-semibold tracking-tight text-fg">{title}</h1>
+          <h1 className="min-w-0 text-xl font-semibold tracking-tight text-fg">{title}</h1>
           {help ? <PageHelp id={help} /> : null}
         </div>
         {description ? (
