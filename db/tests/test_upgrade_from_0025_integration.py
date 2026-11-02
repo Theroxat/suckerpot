@@ -34,7 +34,7 @@ ENV: dict[str, str] = {
     "POSTGRES_ANALYZER_PASSWORD": "analyzer-test-password",
 }
 PRODUCTION = "0025"
-HEAD = "0028"  # 0026 and 0027 (M26, M27) and 0028 (M29 network); see the 0027 test as well
+HEAD = "0029"  # 0026, 0027 (M26, M27), 0028 (M29 network), 0029 (M30 feed); see the 0027 test as well
 M26_M27_TABLES = (
     "report_imap",
     "report_imap_state",

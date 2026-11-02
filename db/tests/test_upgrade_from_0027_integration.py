@@ -1,6 +1,7 @@
 """Production path: a database at 0027 (M26/M27, the deployed head) with data goes to head and back.
 
-The M29 node migration (0028, the opt-in network) was never deployed. This replays what the
+The M29 node migration (0028, the opt-in network) is deployed; 0029 adds the M30 feed tables.
+This replays what the
 ``migrate`` service does on an existing install (upgrade, roles, retention jobs), then the
 rollback, and checks that nothing that existed at 0027 is lost or left dangling either way, and
 that the network tables arrive with their least-privilege grants.
@@ -33,7 +34,7 @@ ENV: dict[str, str] = {
     "POSTGRES_ANALYZER_PASSWORD": "analyzer-test-password",
 }
 PRODUCTION = "0027"
-HEAD = "0028"
+HEAD = "0029"
 NETWORK_TABLES = ("network_membership", "network_submissions", "network_targets", "network_summary")
 NEW_REPORT = (
     "INSERT INTO abuse_reports (public_id, id_seed, recipient_id, kind, demo, window_start, "
