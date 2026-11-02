@@ -254,7 +254,7 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
             label="Password"
             hint={
               initial.password_set
-                ? "Set. Leave empty to keep it; type a new one to replace it. It is never shown again."
+                ? "Set. Leave empty to keep it; type a new one to replace it. It is never shown again. If you change the server, port, username or security, type the password again: the stored one is not sent to a new server."
                 : "Stored encrypted. It is never shown again."
             }
           >
