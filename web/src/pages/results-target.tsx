@@ -77,7 +77,7 @@ function StepRow({ s, last }: { s: Step; last: boolean }) {
         aria-hidden
         className="relative z-10 flex size-8 items-center justify-center rounded-full border bg-surface-raised text-fg-muted shadow-sm"
       >
-        <Icon className={cn("size-4", down && "text-status-ok", changed && "text-sev-warning")} />
+        <Icon className={cn("size-4", down && "text-status-ok", changed && "text-sev-severe")} />
       </span>
       <div className="min-w-0 space-y-0.5 pt-1">
         {s.kind === "report" ? (

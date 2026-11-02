@@ -53,6 +53,7 @@ import {
   type ReportOptions,
   type ReportStatus,
 } from "@/lib/abuse"
+import { MetaLine } from "@/components/meta-line"
 import { formatAbsolute, formatNumber, plural } from "@/lib/format"
 import { saveBlob } from "@/lib/samples"
 
@@ -246,8 +247,37 @@ function SubjectsCard({ r }: { r: ReportDetail }) {
       className="normal-nums"
       bodyClassName="px-0 sm:px-0 pb-0 sm:pb-0"
     >
-      <div className="overflow-x-auto border-t">
-        <table className="w-full text-left text-sm">
+      <ul aria-label="Addresses and hosts in this report" className="divide-y border-t sm:hidden">
+        {r.subjects.map((s) => (
+          <li key={`${s.subject_type}:${s.value}`} className="px-4 py-3">
+            {s.subject_type === "ip" ? (
+              <IPChip ip={s.value} href={s.link} />
+            ) : (
+              <Link
+                to={s.link}
+                className="font-mono text-xs break-all text-fg underline-offset-4 hover:underline"
+              >
+                {s.value}
+              </Link>
+            )}
+            <MetaLine className="mt-1.5">
+              {s.asn || s.network ? (
+                <span>
+                  {s.asn ? `AS${s.asn}` : null}
+                  {s.asn && s.network ? " " : null}
+                  {s.network}
+                </span>
+              ) : null}
+              <span>{plural(s.sessions, "session")}</span>
+              <span>
+                last <RelativeTime iso={s.last_ts} />
+              </span>
+            </MetaLine>
+          </li>
+        ))}
+      </ul>
+      <div className="overflow-x-auto sm:border-t">
+        <table className="hidden w-full text-left text-sm sm:table">
           <caption className="sr-only">Addresses and hosts in this report</caption>
           <thead className="text-xs text-fg-muted">
             <tr className="border-b">
