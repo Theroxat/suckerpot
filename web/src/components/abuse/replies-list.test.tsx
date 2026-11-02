@@ -54,7 +54,7 @@ describe("RepliesList", () => {
     expect(screen.getByText("Check it")).toBeTruthy()
     expect(screen.getByText("Ticket opened")).toBeTruthy()
     expect(screen.getByText("Bounced")).toBeTruthy()
-    expect(screen.getAllByText(/ticket_in_subject/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Ticket in subject/).length).toBeGreaterThan(0)
   })
 
   it("renders hostile text as text, never as markup or links", () => {

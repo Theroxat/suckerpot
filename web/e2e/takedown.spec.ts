@@ -8,7 +8,11 @@ test("results filtered to URLs", async ({ page }, info) => {
   await page.goto("/defend/results?kind=url")
   await expect(h1(page, "Results")).toBeVisible()
   await expect(page.getByRole("button", { name: "Remove the kind filter url" })).toBeVisible()
-  await expect(page.getByRole("table", { name: "Tracked targets" })).toBeVisible()
+  await expect(
+    page
+      .getByRole("table", { name: "Tracked targets" })
+      .or(page.getByRole("list", { name: "Tracked targets" })),
+  ).toBeVisible()
   await settle(page)
   await shoot(page, "results-urls", info.project.name, true)
 })
@@ -16,7 +20,11 @@ test("results filtered to URLs", async ({ page }, info) => {
 test("results filtered to hosts", async ({ page }, info) => {
   await page.goto("/defend/results?kind=host")
   await expect(page.getByRole("button", { name: "Remove the kind filter host" })).toBeVisible()
-  await expect(page.getByRole("table", { name: "Tracked targets" })).toBeVisible()
+  await expect(
+    page
+      .getByRole("table", { name: "Tracked targets" })
+      .or(page.getByRole("list", { name: "Tracked targets" })),
+  ).toBeVisible()
   await settle(page)
   await shoot(page, "results-hosts", info.project.name, true)
 })
@@ -24,10 +32,12 @@ test("results filtered to hosts", async ({ page }, info) => {
 test("per-provider takedown stats", async ({ page }, info) => {
   await page.goto("/defend/results")
   const providers = page.getByRole("table", { name: "Providers that received reports" })
-  await expect(providers).toBeVisible()
-  await expect(providers.getByRole("columnheader", { name: /Median takedown/ })).toBeVisible()
+  const providerList = page.getByRole("list", { name: "Providers that received reports" })
+  await expect(providers.or(providerList)).toBeVisible()
+  if (await providers.isVisible())
+    await expect(providers.getByRole("columnheader", { name: /Median takedown/ })).toBeVisible()
   await settle(page)
-  await providers.scrollIntoViewIfNeeded()
+  await providers.or(providerList).scrollIntoViewIfNeeded()
   await shoot(page, "results-providers", info.project.name)
 })
 

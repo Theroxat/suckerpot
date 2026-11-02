@@ -69,6 +69,9 @@ export function describeSentOverTime(points: readonly TimelinePoint[], now: Date
   const prevDate = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1)
   const prev = byMonth.get(keyOf(prevDate))
   const head = `You sent ${plural(n, "report")} in ${monthName.format(cursor)}`
+  const running = keyOf(cursor) === keyOf(now)
+  if (running && prev !== undefined && prev > 0)
+    return `You sent ${n} so far in ${monthName.format(cursor)} (${monthName.format(prevDate)}: ${prev}).`
   if (prev === undefined || prev === 0) return `${head}.`
   const diff = n - prev
   if (diff === 0) return `${head}, as many as in ${monthName.format(prevDate)}.`
@@ -127,7 +130,7 @@ export function describeOutcome(
   const sent = sentAt ? Date.parse(sentAt) : null
   const after = (iso: string | null) =>
     iso && sent != null
-      ? ` ${shortDelay((Date.parse(iso) - sent) / 1000)} after you sent this report`
+      ? `, ${longDelay((Date.parse(iso) - sent) / 1000)} after you sent this report`
       : ""
   if (!o || o.effective === "none") {
     if (sent == null) return "This report was not sent yet."
@@ -162,9 +165,9 @@ export function outcomeWord(o: Outcome, sentAt?: string | null, now: Date = new 
   return OUTCOME_LABEL[o]
 }
 
-/** Banner above the reports: "3 replies need your eye." */
+/** Banner above the reports: "3 replies need a look." */
 export function describeRepliesToCheck(n: number): string {
-  return `${plural(n, "reply", "replies")} ${n === 1 ? "needs" : "need"} your eye.`
+  return `${plural(n, "reply", "replies")} ${n === 1 ? "needs" : "need"} a look.`
 }
 
 // --- M27 ----------------------------------------------------------------------------
@@ -181,7 +184,7 @@ export function describeTakedownHeader(
     return "Nothing reported yet. Takedowns appear here after your first report or submission."
   if (c.tracked === 0)
     return `Since ${formatDayMonth(since ?? s.since)} you sent ${plural(s.reports.sent, "report")}; no payload URL is tracked yet.`
-  return `Since ${formatDayMonth(since ?? s.since)} you reported ${plural(c.tracked, "malware URL")}; ${c.down_48h} went down within 48 hours and ${c.down_30d} within 30 days.`
+  return `Since ${formatDayMonth(since ?? s.since)} you reported ${plural(c.tracked, "malware URL")}; ${c.down_48h} of the ${c.eligible_48h} followed for 48 hours went down within that time, and ${c.down_30d} within 30 days.`
 }
 
 /** "12 of 31 reported malware URLs went down within 48 h." */
@@ -196,7 +199,7 @@ export function describeCurve(s: TakedownSummary | undefined): string {
 /** Value and hint of the "median time to takedown" tile. */
 export function describeTtd(c: { ttd_p50_s: number | null; ttd_n: number }): string {
   if (c.ttd_p50_s == null || c.ttd_n < 5) return "Not enough data yet"
-  return `${shortDelay(c.ttd_p50_s)}, ${plural(c.ttd_n, "URL")}`
+  return `${shortDelay(c.ttd_p50_s)}, across ${plural(c.ttd_n, "URL")} taken down`
 }
 
 /** "AS64500 took down 5 of 6 URLs, the fastest median in your reports (7 h)." */
@@ -206,7 +209,7 @@ export function describeTakedownProviders(rows: readonly ProviderRow[]): string 
   const best = [...ranked].sort((a, b) => (a.ttd_p50_s ?? 0) - (b.ttd_p50_s ?? 0))[0]
   if (best?.ttd_p50_s == null)
     return `${plural(rows.length, "provider")} host reported targets; none has three taken down yet.`
-  const name = best.asn != null ? `AS${best.asn}` : best.name
+  const name = best.asn != null ? `${best.name} (AS${best.asn})` : best.name
   const down = Math.round((best.percent_30d ?? 0) * best.targets)
   return `${name} took down ${down} of ${plural(best.targets, "target")}, the fastest median in your reports (${shortDelay(best.ttd_p50_s)}).`
 }

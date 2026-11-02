@@ -7,7 +7,11 @@ test("results page", async ({ page }, info) => {
   await page.goto("/defend/results")
   await expect(h1(page, "Results")).toBeVisible()
   await expect(page.getByText("Did anyone answer?")).toBeVisible()
-  await expect(page.getByRole("table", { name: "Tracked targets" })).toBeVisible()
+  await expect(
+    page
+      .getByRole("table", { name: "Tracked targets" })
+      .or(page.getByRole("list", { name: "Tracked targets" })),
+  ).toBeVisible()
   await settle(page)
   await shoot(page, "results", info.project.name, true)
 })

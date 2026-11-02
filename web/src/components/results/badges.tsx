@@ -67,10 +67,10 @@ export function OutcomeBadge({ outcome, noAnswer = false, className }: OutcomeBa
   )
 }
 
-const STATE_WORD: Record<TargetState, string> = {
-  up: "Up",
+const PAYLOAD_WORD: Record<TargetState, string> = {
+  up: "Still serving",
   down: "Down",
-  changed: "Changed",
+  changed: "Serving a new file",
   unknown: "Unknown",
 }
 const ADDRESS_WORD: Record<TargetState, string> = {
@@ -87,13 +87,13 @@ interface StateBadgeProps {
 }
 
 /**
- * State of a tracked target, icon plus word. Red only for a payload still being served (severe);
+ * State of a tracked target, icon plus word. Red only for a payload still being served or replaced by a new file (severe);
  * attacking addresses and C2 servers never use red. Changed is the warning tone, down the ok tone.
  */
 export function TargetStateBadge({ state, role, className }: StateBadgeProps) {
   const address = role === "attack_source" || role === "c2"
-  const word = (address ? ADDRESS_WORD : STATE_WORD)[state]
-  const severe = state === "up" && !address
+  const word = (address ? ADDRESS_WORD : PAYLOAD_WORD)[state]
+  const severe = (state === "up" || state === "changed") && !address
   const Icon: LucideIcon =
     state === "down"
       ? CircleCheck
@@ -107,10 +107,10 @@ export function TargetStateBadge({ state, role, className }: StateBadgeProps) {
   const tone =
     state === "down"
       ? "text-fg"
-      : state === "changed"
-        ? "text-sev-warning"
-        : severe
-          ? "text-sev-severe"
+      : severe
+        ? "text-sev-severe"
+        : state === "changed"
+          ? "text-sev-warning"
           : "text-fg-muted"
   return (
     <span

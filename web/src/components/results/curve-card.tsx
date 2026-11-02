@@ -25,6 +25,8 @@ interface Row {
   label: string
   url?: number
   host?: number
+  nUrl?: number
+  nHost?: number
 }
 
 function Tip({ active, payload }: { active?: boolean; payload?: readonly { payload?: Row }[] }) {
@@ -37,7 +39,9 @@ function Tip({ active, payload }: { active?: boolean; payload?: readonly { paylo
         <p key={s.key} className="flex justify-between gap-4">
           <span className="text-fg-muted">{s.label}</span>
           <span className="font-medium text-fg tabular-nums">
-            {p[s.key] == null ? "no data" : formatPercent(p[s.key] ?? 0)}
+            {p[s.key] == null
+              ? "no data"
+              : `${formatPercent(p[s.key] ?? 0)} of ${s.key === "url" ? (p.nUrl ?? 0) : (p.nHost ?? 0)}`}
           </span>
         </p>
       ))}
@@ -67,6 +71,8 @@ export function CurveCard({
         rows.push(row)
       }
       row[s.kind] = p.percent ?? undefined
+      if (s.kind === "url") row.nUrl = p.eligible
+      else row.nHost = p.eligible
     }
   }
   rows.sort((a, b) => a.hours - b.hours)

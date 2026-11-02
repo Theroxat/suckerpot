@@ -58,8 +58,8 @@ export function AnswersCard({ data }: { data: OutcomesResponse | undefined }) {
 
 function Figure({ label, seconds }: { label: string; seconds: number | null }) {
   return (
-    <div className="space-y-1 rounded-lg border bg-bg p-4">
-      <p className="text-xs font-medium text-fg-muted">{label}</p>
+    <div className="flex items-baseline justify-between gap-3 rounded-lg border bg-bg p-4 sm:block sm:space-y-1">
+      <p className="text-xs font-medium text-fg-muted sm:min-h-[2lh]">{label}</p>
       <p className="text-2xl font-semibold tracking-tight text-fg tabular-nums">
         {seconds == null ? "none yet" : longDelay(seconds)}
       </p>
@@ -79,10 +79,10 @@ export function DelayCard({ data }: { data: OutcomesResponse | undefined }) {
       {!t ? (
         <Skeleton className="h-24 w-full" />
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-3">
           <Figure label="Half answered within" seconds={t.first_reply_p50_s} />
           <Figure label="Nine in ten within" seconds={t.first_reply_p90_s} />
-          <Figure label="Median time to resolved" seconds={t.resolved_p50_s} />
+          <Figure label="Median time to resolve" seconds={t.resolved_p50_s} />
         </div>
       )}
     </FindingCard>

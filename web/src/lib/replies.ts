@@ -70,6 +70,26 @@ export const MATCH_LABEL: Record<string, string> = {
 export const matchLabel = (code: string): string | null =>
   code === "none" ? null : (MATCH_LABEL[code] ?? code.replaceAll("_", " "))
 
+const RULE_LABEL: Record<string, string> = {
+  "bounce-dsn": "Delivery failure notice",
+  "bounce-daemon": "Mail system bounce",
+  "generic-ticket": "Found a ticket number",
+  "ticket-opened": "Found a ticket number",
+  "auto-ack": "Auto-reply header",
+  "resolved-action-taken": "Says the content was removed",
+  "not-our-customer": "Says it is not their customer",
+  "insufficient-evidence": "Asks for more evidence",
+  "form-required": "Asks to use their form",
+}
+
+/** A short human label for a rule id; an unknown id is spelled out, never shown raw. */
+export function ruleLabel(id: string): string {
+  const known = RULE_LABEL[id]
+  if (known) return known
+  const words = id.replace(/[^A-Za-z0-9]+/g, " ").trim()
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "A rule"
+}
+
 // --- Shapes -----------------------------------------------------------------------
 
 export interface Reply {

@@ -115,6 +115,13 @@ const seeds: Seed[] = [
   },
 ]
 
+const RULE_IDS: Record<string, string> = {
+  "A ticket number is quoted in the subject": "ticket-opened",
+  "Automatic receipt (Auto-Submitted header)": "auto-ack",
+  "The sender says the content was removed": "resolved-action-taken",
+  "A person signs the message": "generic-ticket",
+}
+
 /** Rule ids are short codes; the descriptions above are kept as the demo wording. */
 const replies: Reply[] = seeds.map(({ rule, ...x }) => ({
   source: "imap",
@@ -127,7 +134,7 @@ const replies: Reply[] = seeds.map(({ rule, ...x }) => ({
   excerpt_purged: false,
   reviewed_at: null,
   reviewed_by: null,
-  rule_id: rule ? rule.toLowerCase().split(" ").slice(0, 3).join("_") : null,
+  rule_id: rule ? (RULE_IDS[rule] ?? "ticket-opened") : null,
   ...x,
 }))
 
