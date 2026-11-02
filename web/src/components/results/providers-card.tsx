@@ -218,76 +218,125 @@ export function ProvidersCard({ groups, group, takedown }: ProvidersCardProps) {
           No report sent yet. Results appear here once you send one.
         </p>
       ) : (
-        <div className="relative overflow-x-auto border-t">
-          <table className="w-full text-left text-sm">
-            <caption className="sr-only">Providers that received reports</caption>
-            <thead className="text-xs text-fg-muted">
-              <tr className="border-b">
-                <Th label="Provider" k="name" align="left" {...th} />
-                <Th label="Sent" k="sent" {...th} />
-                <Th label="Answered" k="answered" {...th} />
-                <Th label="Median first reply" k="reply" {...th} />
-                <th scope="col" className="px-2 py-2 font-medium whitespace-nowrap">
-                  Best outcome
-                </th>
-                {showTd ? (
-                  <>
-                    <Th label="Targets" k="targets" {...th} />
-                    <Th label="Down in 48 h" k="down" {...th} />
-                    <Th label="Median takedown" k="ttd" {...th} />
-                    <Th label="Still up" k="up" {...th} />
-                  </>
-                ) : null}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {rows.map((r) => (
-                <tr key={r.key} className="hover:bg-surface-hover/50">
-                  <td className="px-4 py-2 sm:px-5">
-                    <span className="flex items-center gap-2">
-                      {r.group === "asn" && r.country ? <CountryFlag code={r.country} /> : null}
-                      <ProviderName r={r} />
-                    </span>
-                  </td>
-                  <td className="px-2 py-2 text-right">{formatNumber(r.sent)}</td>
-                  <td className="px-2 py-2 text-right">
-                    {r.answeredPct == null ? "too recent" : formatPercent(r.answeredPct)}
-                  </td>
-                  <td className="px-2 py-2 text-right whitespace-nowrap">
-                    {r.replyS == null ? (
-                      <span className="text-fg-subtle">none</span>
-                    ) : (
-                      shortDelay(r.replyS)
-                    )}
-                  </td>
-                  <td className="px-2 py-2">
-                    <OutcomeBadge outcome={r.best} noAnswer />
-                  </td>
+        <>
+          <ul aria-label="Providers that received reports" className="divide-y border-t sm:hidden">
+            {rows.map((r) => (
+              <li key={r.key} className="px-4 py-3">
+                <span className="flex flex-wrap items-center gap-2">
+                  {r.group === "asn" && r.country ? <CountryFlag code={r.country} /> : null}
+                  <ProviderName r={r} />
+                </span>
+                <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-muted">
+                  <span>{formatNumber(r.sent)} sent</span>
+                  <span aria-hidden>·</span>
+                  <span>
+                    {r.answeredPct == null
+                      ? "too recent"
+                      : `${formatPercent(r.answeredPct)} answered`}
+                  </span>
+                  {showTd && r.td ? (
+                    <>
+                      <span aria-hidden>·</span>
+                      <span>
+                        {r.td.down_48h} of {r.td.eligible_48h} down in 48 h
+                      </span>
+                      {r.td.ttd_p50_s != null ? (
+                        <>
+                          <span aria-hidden>·</span>
+                          <span>median {shortDelay(r.td.ttd_p50_s)}</span>
+                        </>
+                      ) : null}
+                    </>
+                  ) : null}
+                  <span aria-hidden>·</span>
+                  <OutcomeBadge outcome={r.best} noAnswer />
+                </p>
+              </li>
+            ))}
+          </ul>
+          <div className="relative hidden overflow-x-auto border-t sm:block">
+            <table className="w-full text-left text-sm">
+              <caption className="sr-only">Providers that received reports</caption>
+              <thead className="text-xs text-fg-muted">
+                <tr className="border-b">
+                  <Th label="Provider" k="name" align="left" {...th} />
+                  <Th label="Sent" k="sent" {...th} />
+                  <Th label="Answered" k="answered" {...th} />
+                  <Th label="Median first reply" k="reply" {...th} />
+                  <th scope="col" className="px-2 py-2 font-medium whitespace-nowrap">
+                    Best outcome
+                  </th>
                   {showTd ? (
                     <>
-                      <td className="px-2 py-2 text-right">
-                        {r.td ? formatNumber(r.td.targets) : "none"}
-                      </td>
-                      <td className="px-2 py-2 text-right whitespace-nowrap">
-                        {r.td ? `${r.td.down_48h} of ${r.td.eligible_48h}` : "none"}
-                      </td>
-                      <td className="px-2 py-2 text-right whitespace-nowrap">
-                        {r.td?.ttd_p50_s == null ? (
-                          <span className="text-fg-subtle">none</span>
-                        ) : (
-                          shortDelay(r.td.ttd_p50_s)
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-right sm:px-5">
-                        {r.td ? formatNumber(r.td.still_up) : "none"}
-                      </td>
+                      <Th label="Targets" k="targets" {...th} />
+                      <Th label="Down in 48 h" k="down" {...th} />
+                      <Th label="Median takedown" k="ttd" {...th} />
+                      <Th label="Still up" k="up" {...th} />
                     </>
                   ) : null}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y">
+                {rows.map((r) => (
+                  <tr key={r.key} className="hover:bg-surface-hover/50">
+                    <td className="px-4 py-2 sm:px-5">
+                      <span className="flex items-center gap-2">
+                        {r.group === "asn" && r.country ? <CountryFlag code={r.country} /> : null}
+                        <ProviderName r={r} />
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 text-right">{formatNumber(r.sent)}</td>
+                    <td className="px-2 py-2 text-right">
+                      {r.answeredPct == null ? "too recent" : formatPercent(r.answeredPct)}
+                    </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap">
+                      {r.replyS == null ? (
+                        <span className="text-fg-subtle">—</span>
+                      ) : (
+                        shortDelay(r.replyS)
+                      )}
+                    </td>
+                    <td className="px-2 py-2">
+                      <OutcomeBadge outcome={r.best} noAnswer />
+                    </td>
+                    {showTd ? (
+                      <>
+                        <td className="px-2 py-2 text-right">
+                          {r.td ? (
+                            formatNumber(r.td.targets)
+                          ) : (
+                            <span className="text-fg-subtle">—</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-right whitespace-nowrap">
+                          {r.td ? (
+                            `${r.td.down_48h} of ${r.td.eligible_48h}`
+                          ) : (
+                            <span className="text-fg-subtle">—</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-right whitespace-nowrap">
+                          {r.td?.ttd_p50_s == null ? (
+                            <span className="text-fg-subtle">—</span>
+                          ) : (
+                            shortDelay(r.td.ttd_p50_s)
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-right sm:px-5">
+                          {r.td ? (
+                            formatNumber(r.td.still_up)
+                          ) : (
+                            <span className="text-fg-subtle">—</span>
+                          )}
+                        </td>
+                      </>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </FindingCard>
   )
