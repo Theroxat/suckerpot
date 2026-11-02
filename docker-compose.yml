@@ -309,6 +309,13 @@ services:
       NETWORK_SUBMIT_DELAY_MIN_H: ${NETWORK_SUBMIT_DELAY_MIN_H:-2}
       NETWORK_SUBMIT_DELAY_MAX_H: ${NETWORK_SUBMIT_DELAY_MAX_H:-20}
       NETWORK_MAX_SOURCES: ${NETWORK_MAX_SOURCES:-5000}
+      # The public community blocklist feed (M30): off by default, independent of membership.
+      # Every download goes through the VPN egress gate; the signature is checked against the key.
+      NETWORK_FEED_ENABLED: ${NETWORK_FEED_ENABLED:-false}
+      NETWORK_FEED_URL: ${NETWORK_FEED_URL:-}
+      NETWORK_FEED_KEY: ${NETWORK_FEED_KEY:-}
+      NETWORK_FEED_INTERVAL_S: ${NETWORK_FEED_INTERVAL_S:-3600}
+      NETWORK_FEED_LISTS: ${NETWORK_FEED_LISTS:-inbound,outbound,outbound-domains}
       ABUSE_MAX_SUBJECTS: ${ABUSE_MAX_SUBJECTS:-100}
       ABUSE_MAX_OPEN_DRAFTS: ${ABUSE_MAX_OPEN_DRAFTS:-200}
       ABUSE_RDAP_DAILY_QUOTA: ${ABUSE_RDAP_DAILY_QUOTA:-1000}
@@ -471,6 +478,9 @@ services:
       NETWORK_ENABLED: ${NETWORK_ENABLED:-false}
       NETWORK_HUB_URL: ${NETWORK_HUB_URL:-}
       NETWORK_HUB_KEY: ${NETWORK_HUB_KEY:-}
+      # Feed (M30): the UI shows the public URLs to copy; the key stays in ingest.
+      NETWORK_FEED_ENABLED: ${NETWORK_FEED_ENABLED:-false}
+      NETWORK_FEED_URL: ${NETWORK_FEED_URL:-}
       COLLECTOR_DAILY_QUOTA: ${COLLECTOR_DAILY_QUOTA:-500}
       QUARANTINE_MAX_MB: ${QUARANTINE_MAX_MB:-2048}
       BLOCKLIST_NEVER: ${BLOCKLIST_NEVER:-}
