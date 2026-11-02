@@ -27,7 +27,6 @@ import { ReadOnlyBadge } from "@/components/read-only-badge"
 import { RelativeTime } from "@/components/relative-time"
 import { SegmentedControl } from "@/components/segmented-control"
 import { SkeletonCard } from "@/components/skeletons"
-import { TagBadge } from "@/components/tag-badge"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
@@ -241,7 +240,7 @@ function MessageCard({ r }: { r: ReportDetail }) {
 function SubjectsCard({ r }: { r: ReportDetail }) {
   return (
     <FindingCard
-      eyebrow="Subjects"
+      eyebrow="In this report"
       finding={`${r.kind === "attack_source" ? plural(r.subjects.length, "address", "addresses") : plural(r.subjects.length, "host")} in this report.`}
       detail="These links open the dashboard and exist only here: they are never part of the message."
       className="normal-nums"
@@ -249,11 +248,11 @@ function SubjectsCard({ r }: { r: ReportDetail }) {
     >
       <div className="overflow-x-auto border-t">
         <table className="w-full text-left text-sm">
-          <caption className="sr-only">Subjects of this report</caption>
+          <caption className="sr-only">Addresses and hosts in this report</caption>
           <thead className="text-xs text-fg-muted">
             <tr className="border-b">
               <th scope="col" className="px-4 py-2 font-medium sm:px-5">
-                Subject
+                {r.kind === "attack_source" ? "Address" : "Host"}
               </th>
               <th scope="col" className="px-2 py-2 font-medium">
                 Network
@@ -528,7 +527,15 @@ function Actions({
         <SendControl
           reportId={r.public_id}
           recipient={r.recipient.mailbox ?? r.recipient.name}
-          ready={!r.demo && r.guard.ok && Boolean(r.recipient.mailbox) && r.missing.length === 0}
+          // A draft is read first: "Send now" appears once it is marked reviewed, so each state
+          // has one obvious next step.
+          ready={
+            r.status === "reviewed" &&
+            !r.demo &&
+            r.guard.ok &&
+            Boolean(r.recipient.mailbox) &&
+            r.missing.length === 0
+          }
           scheduledAt={r.send_state?.scheduled_at ?? null}
           lastRequest={r.send_state?.last_request ?? null}
           revision={r.revision}
@@ -692,7 +699,7 @@ export function AbuseDetailPage() {
           </p>
         ) : null}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-fg-muted">
-          <TagBadge tag={KIND_LABEL[r.kind]} href={null} />
+          <span className="font-medium text-fg">{KIND_LABEL[r.kind]}</span>
           <span className="font-mono">{r.recipient.mailbox ?? "no mailbox yet"}</span>
           {r.recipient.shared_mailbox ? (
             <span>Replies from this contact are trusted by exact address only.</span>
