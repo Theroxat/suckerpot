@@ -270,6 +270,172 @@ When a desk replies, or a member or someone else reports a mistake:
 
 Each CLI action that changes state writes an entry to `hub_audit`, with the actor and the action. The audit holds no node data.
 
+## Public feeds
+
+The hub publishes the community blocklists on `HUB_FEEDS_DOMAIN` (for example `feeds.example.org`). They are free and public, and they are built from the same consensus as the reports. The design is in [M30](../docs/design/m30.md). The guide for people who download the lists is [Community blocklist feeds](../docs/feeds.md).
+
+Publishing is **off by default**: `HUB_FEED_MODE=off`. While it is off, the worker reads and writes nothing, and the feed site serves only its README.
+
+### The feed key
+
+The feed has its own minisign key. It is not the hub key. A leak of the feed key cannot impersonate the hub to nodes, and the other way round.
+
+Compose mounts the key file into `hub-admin` and `hub-worker`, so create the file first. Give it to uid 10001, then generate the key into it:
+
+```bash
+cd hub
+sudo touch secrets/feed_key
+sudo chown 10001 secrets/feed_key
+docker compose run --rm hub-admin gen-feed-key --out /keys/feed_key --force
+```
+
+The command prints `feed_public_key=RW...` and `feed_key_id=...`. The public key goes into `README.txt` on the feed site, and into the project documentation, so that people can check it.
+
+- The file is mode `0600`, owned by uid 10001. Keep an offline copy.
+- Set `HUB_FEED_KEY_PATH` (default `./secrets/feed_key`) and `HUB_FEED_SIGNING_KEY_FILE=/run/secrets/hub_feed_key`.
+- If the key is lost, every earlier file stops verifying for new users, and you must publish a new key with a notice. There is no silent way to rotate it.
+
+### Modes: `HUB_FEED_MODE`
+
+| Mode | What happens |
+| --- | --- |
+| `off` | Default. Nothing is read, fetched or written. |
+| `review` | Recommended for the first weeks. Any run that adds a value is **held** until you release it. Runs that only remove values are published. |
+| `auto` | Runs are published on their own. Only a breaker trip (below) holds a run. |
+
+Start with `review`. Read the held diffs for a few weeks before you move to `auto`.
+
+### The change breaker
+
+A run is held when it would change a list too much:
+
+- it adds more than `HUB_FEED_BREAKER_ADD_PCT` (50 %) of a list, or removes more than `HUB_FEED_BREAKER_REMOVE_PCT` (50 %); and
+- the absolute change is at least `HUB_FEED_BREAKER_MIN` (200).
+
+A held run publishes nothing. The previous files stay on the feed site until their `valid_until`. The run is stored as `held`, with its diff, and an audit row is written. The breaker catches poisoning bursts, consensus bugs and data loss.
+
+| Command | What it does |
+| --- | --- |
+| `feeds status` | Paused or not, the last status, and the last 10 runs with their state |
+| `feeds diff <serial>` | Shows what a held run would change |
+| `feeds release <serial>` | Lets the held run go out at the next run |
+| `feeds discard <serial>` | Drops the held run. Runs with the same change are skipped until the change is different. |
+| `feeds pause` / `feeds resume` | Stops or restarts runs. A paused feed writes nothing. |
+| `feeds rebuild` | Runs now, ignoring the interval |
+
+```bash
+docker compose run --rm hub-admin feeds diff 4813
+docker compose run --rm hub-admin feeds release 4813
+```
+
+### The allow-list
+
+The allow-list holds values that no list may carry. A value can be an address, a CIDR or a domain (suffix match). Allowing is safe, so CIDRs are fine here. They never go into a list.
+
+| Command | What it does |
+| --- | --- |
+| `allow add <value> --reason <reason> [--expires <date or days>] [--note "..."]` | Adds a value |
+| `allow remove <value>` | Removes it |
+| `allow list` | Lists the entries |
+
+Reasons: `owner_request`, `shared_infra`, `remediated`, `policy`, `false_positive`. `remediated` and `owner_request` expire after 90 days unless you give `--expires`. The other reasons do not expire.
+
+### Delisting: the operator side
+
+People ask for removals through the form at `https://feeds.example.org/v1/delist.html`, through the API, or by e-mail to `HUB_DELIST_MAILBOX`. Every request is reviewed by a person. The public target is **72 hours**, and `README.txt` says so.
+
+| Command | What it does |
+| --- | --- |
+| `delist list [--state received\|suppressed\|accepted\|rejected]` | Lists requests |
+| `delist show <id>` | Shows one request, with its evidence and contact |
+| `delist accept <id> --as false_positive\|remediated\|policy --note "..."` | Accepts it |
+| `delist reject <id> --note "..."` | Rejects it. The entry stays. |
+
+The `--note` is **public**. The requester sees it, so write it for them.
+
+| Outcome | What it does |
+| --- | --- |
+| `false_positive` | Removes the value, allows it for good, and disputes its target. Contributors still linked to the target lose a little reputation (M29 §8.3). |
+| `remediated` | Removes the value and allows it for 90 days. The target is not disputed. |
+| `policy` | Removes the value, allows it for good, and adds it to the never-list. Use it for a resolver or a CDN that should never have been listed. |
+| `rejected` | The value stays, and the note explains why. |
+
+Interim effect: an inbound value is hidden from the next run until the decision. The number of values hidden per day is capped by `HUB_DELIST_AUTO_SUPPRESS_DAILY`. Outbound values are not hidden. They are the ones attackers most want to escape, so they wait for review. A suppressed inbound value stays hidden past the SLA, because a wrongly hidden bot address costs less than a wrongly listed innocent one. Check the queue with `delist list --state received` at least once a day.
+
+### Ranges, and failing closed
+
+The hub excludes what no list may carry: reserved space, public resolvers, shared hosting names, the never-list, the allow-list, CDN front-end ranges and Tor exit relays. The CDN and Tor ranges come from fixed sources, listed in `hub/hub/data/ranges.yaml`. The hub contacts only those hosts, over HTTPS, with no redirect.
+
+| Source | Refresh | Notes |
+| --- | --- | --- |
+| `tor` | every 24 h | Tor exit relays. Excluded by default (`HUB_FEED_EXCLUDE_TOR=true`). |
+| `cdn:cloudflare`, `cdn:fastly`, `cdn:cloudfront` | every 7 days | Major CDN and cloud front ends |
+
+- A failed refresh keeps the last good copy. It retries after 6 hours.
+- A source is refused when it holds a prefix wider than /8 (IPv4) or /16 (IPv6), when it is too small, or when it shrinks by more than half.
+- A copy older than 30 days stops every feed run (`ranges_stale`). The hub does not publish without its exclusions.
+- `ranges status` shows the copies, and `ranges refresh` fetches now.
+- `HUB_EXTERNAL_RANGES_ENABLED=false` keeps every feed off, because the exclusions would be missing.
+
+Plain cloud compute (VPS providers) is not excluded. That is where malware lives. Short expiry and delisting handle address reuse.
+
+### Outside sources
+
+A single report of an address is not enough for the high tier. The hub asks AbuseIPDB and GreyNoise, when `HUB_ABUSEIPDB_KEY` or `HUB_GREYNOISE_KEY` is set, and caches the answer. Without a key there is no outside source. Then the high lists stay empty. URLhaus and ThreatFox are not used for corroboration yet.
+
+### Settings
+
+Set these in `hub/.env`. The defaults are the values in `.env.example`.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `HUB_FEED_MODE` | `off` | `off`, `review` or `auto` |
+| `HUB_FEEDS_DOMAIN` | `feeds.example.org` | Public name of the feed site. A separate Caddy site, separate from `HUB_DOMAIN`. |
+| `HUB_FEED_KEY_PATH` | `./secrets/feed_key` | Host path of the feed key |
+| `HUB_FEED_SIGNING_KEY_FILE` | `/run/secrets/hub_feed_key` | Where the worker reads the key |
+| `HUB_FEED_INTERVAL_MIN` | `60` | Minutes between runs |
+| `HUB_FEED_HOLD_HOURS` | `6` | Hours a new value waits before it is listed |
+| `HUB_FEED_VALID_DAYS` | `3` | Days a signed index stays valid |
+| `HUB_FEED_TTL_INBOUND_DAYS` / `_PAYLOAD_DAYS` / `_C2_DAYS` | `7` / `14` / `30` | Days without a new sighting before an entry leaves |
+| `HUB_FEED_MAX_INBOUND` / `_OUTBOUND` / `_DOMAINS` | `50000` / `20000` / `20000` | Size caps per list |
+| `HUB_FEED_BREAKER_ADD_PCT` / `_REMOVE_PCT` / `_MIN` | `50` / `50` / `200` | Change breaker |
+| `HUB_FEED_NEVER` | empty | Extra addresses or names that no feed may carry (comma separated, for example your own hosts) |
+| `HUB_FEED_EXCLUDE_TOR` | `true` | Keep Tor exit relays off every list |
+| `HUB_EXTERNAL_RANGES_ENABLED` | `true` | Fetch the CDN and Tor range sources. With `false` the feeds stay off. |
+| `HUB_DELIST_POW_DIFFICULTY` | `20` | Proof-of-work bits for a removal request |
+| `HUB_DELIST_DAILY_CAP` | `200` | Removal requests accepted per day |
+| `HUB_DELIST_AUTO_SUPPRESS_DAILY` | `50` | Inbound values that may be hidden per day before a decision |
+| `HUB_DELIST_MAILBOX` | empty | Mailbox named in `README.txt` for removals by e-mail. Empty means the form only. |
+
+### The feed site and its limits
+
+- **No CDN.** Static files are cheap to serve. A 50,000-line list is roughly 750 KiB, and roughly 250 KiB compressed. A CDN would see every download. If you add one, change `README.txt` to say which CDN sees the requests, and record the decision here. The privacy statement changes with it.
+- **No logs.** The feed site discards its access log, sets no cookies and honours no query string on files. The one exception is `/v1/lookup`.
+- **Connection limits.** Caddy limits the header size, the request body (64 KB on the feed site) and the timeouts for each connection. Limit each source at the host too, with nftables, and do not log it. The example below limits new connections per source address. Test it on your host before you rely on it.
+
+  ```
+  table inet feed_guard {
+    chain input {
+      type filter hook input priority filter; policy accept;
+      tcp dport { 80, 443 } ct state new meter feed_rate { ip saddr limit rate over 30/second } drop
+    }
+  }
+  ```
+
+- **Caddy and `NET_BIND_SERVICE`.** Caddy runs as uid 65532 with every capability dropped. It needs one capability back: `NET_BIND_SERVICE`, to bind ports 80 and 443. The Caddy binary carries that capability as a file capability, and the kernel refuses to run a binary with a file capability that it cannot grant. So `cap_add: [NET_BIND_SERVICE]` is the only capability added. The sysctl `net.ipv4.ip_unprivileged_port_start=0` lets the user bind the low ports. Nothing else is granted.
+
+### Feed health
+
+Add these to your checks. A held run or a failed run needs a look.
+
+| Check | Healthy when |
+| --- | --- |
+| `feeds status` | The last run is `published` or `unchanged`, or it is a `held` run you know about |
+| Feed index | `index.json` on the feed site has a `valid_until` in the future |
+| Feed key | `feed_public_key` in `README.txt` matches the key in the project documentation |
+
+Feed tests run in `just test`. The end-to-end feed test runs in `just hub-integration`, including a minisign check of the published files.
+
 ## Operator CLI
 
 ```bash
@@ -381,3 +547,5 @@ The integration run uses its own project name and its own volumes, and removes t
 - No restore script yet (see [Restoring](#restoring)).
 - Takedown votes are not sent by members yet, so no target becomes `taken_down`.
 - Command-server reports are always reviewed by hand. The hub never connects to a target itself. A confirmed target is a judgement by consensus, not a proof.
+- The community feeds are off until the project identity is set (the feed domain, the feed key and the delisting mailbox), and until a short legal review is done. `HUB_FEED_MODE` stays `off` until then.
+- The feeds corroborate with AbuseIPDB and GreyNoise only. URLhaus and ThreatFox are not used yet.

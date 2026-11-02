@@ -44,6 +44,24 @@ A firewall cannot sign in to the dashboard, so there is an optional feed. It is 
 - Set `AUTH_TRUSTED_PROXIES` when the dashboard is behind a tunnel or proxy. Without it every client looks like the proxy, so the rate limits and the failure lockout are shared by everyone (the API logs a warning at start-up).
 - If the dashboard is behind Cloudflare Access, the firewall will be turned away. Prefer a Cloudflare Access service-token policy for `/feeds/*` (the header form), or a bypass limited to your firewall's source address. An open bypass leaves only the token between the internet and the list. Cloudflare and any proxy in between can log the request path, so a path token ends up in their logs: use the header form where the tool allows it.
 
+## Community lists (Network tab)
+
+The Blocklists page has two tabs. **This sensor** is the list built from your own sensor, described above. **Network** shows the community lists of the Selfhostr network (`/defend/blocklists?tab=network`).
+
+Start with the sentence at the top of the tab. It says how many entries each list holds, and how many of them your sensor also saw. Then one card per list:
+
+- **Outbound** is marked "Start here". It blocks traffic leaving your network: malware hosts and command servers. A device that reaches one is probably infected.
+- **Inbound** blocks traffic coming in from attack sources.
+- **Outbound domains** holds the same kind of hosts by name, for DNS filters.
+
+Each card has a **Copy URL** menu with the file formats (plain text, IPv4 only, IPv6 only, nftables, ipset, MikroTik, CSV, JSON, STIX). The URLs point at the public feed, so a firewall can fetch them without this dashboard. A **How to use** drawer gives short steps for OPNsense and pfSense, and links to [Community blocklist feeds](feeds.md).
+
+The entries table lists the values. Filters are in the URL (`list`, `tier`, `seen_here`, `q`), so you can share a view. A value that your sensor also saw links to its attacker page.
+
+If the feed is off, the tab explains what the lists are, and shows the public URLs. Turn the fetch on with `NETWORK_FEED_ENABLED`, see [Configuration](configuration.md#community-lists-m30). Until then, nothing contacts the feed host.
+
+Once the feed is on, the card "Why join the network?" says it plainly. The lists are free and public. Every firewall gets the same lists, whether or not you join. Joining adds your sensor to the ones that confirm entries. You then see which entries your sensor helped confirm. No extra lists or perks are promised.
+
 ## Detections
 
 The Detections page writes Sigma rules (for log search) and Suricata rules (for network inspection) from what the honeypot recorded: request paths that attackers used, shell commands typed in tagged sessions, and the hosts, download URLs and file hashes with a high score.
@@ -77,6 +95,7 @@ The inventory is free text that is stored and shown. It is only compared with ou
 | `GET /api/v1/defend/inventory` | both roles | The inventory, paginated |
 | `POST`, `PATCH`, `DELETE /api/v1/defend/inventory` | admin | Change the inventory |
 | `GET /api/v1/defend/exposure` | both roles | Inventory against attacks |
+| `GET /api/v1/network/feed/status`, `GET /api/v1/network/feed/entries` | both roles | Community lists: state and entries ([API](api.md#community-lists-m30)) |
 | `GET /feeds/{token}/{kind}.{txt,csv}`, `GET /feeds/{kind}.{txt,csv}` | token | The subscription feed (opt in) |
 
 ## Settings

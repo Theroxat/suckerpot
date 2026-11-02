@@ -169,10 +169,13 @@ Both services are off until `COLLECTOR_ENABLED=true`. TFTP and FTP URLs are reco
 | Collector | The host in a captured download URL | `COLLECTOR_ENABLED=true` | The only caller whose destination is chosen by an attacker. Public addresses only (see [Security](SECURITY.md#the-collector-and-ssrf)), size, time, redirect and rate caps, never executed. |
 | Egress self-check | Two public "what is my address" services (`EGRESS_ECHO_URLS`) | Every `EGRESS_CHECK_INTERVAL_S` | Goes through the proxy like everything else. |
 | `vpn` | The one WireGuard endpoint (`VPN_WG_ENDPOINT_IP`, UDP) | Always, with the profile | The host firewall allows nothing else from `sp-vpn`. |
+| Community lists (node) | The feed host in `NETWORK_FEED_URL` (for example `https://feeds.example.org/v1`) | `NETWORK_FEED_ENABLED=true`, with the address and key set | `GET` only, HTTPS, no redirect, no cookie, no query string, generic client name `spn-feed/1`. Through the VPN gate. The signature and the sha256 are checked before anything is stored. |
 
 Webhook and SMTP targets are checked when they are saved and again just before each send. Private and loopback addresses are refused. Every call in this table leaves through the `vpn` proxy; no service in the stack has a direct outbound route.
 
 The public feed (`/feeds`, see [API](api.md)) is inbound only. It is served by the API on the dashboard port, and it is off until `FEEDS_ENABLED=true`.
+
+The community lists have two sides. The hub publishes them from its own server, outside this stack (see `hub/README.md`). A node only downloads them, through the row above. Nothing in this stack sends a list anywhere. The node's local mirror of the lists is served by the API, like the sensor feed, and reads only the stored, verified rows. See [Community blocklist feeds](feeds.md).
 
 ## Redis
 

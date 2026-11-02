@@ -54,7 +54,7 @@ The Styleguide page is routable everywhere but listed in the sidebar only in dev
 | Trends | `/trends` | Top usernames, passwords, commands and URLs, tags over time, a day by hour heatmap, and "new this week" (values never seen in the 90 days before). |
 | CVE watch | `/cves` | New and known-exploited vulnerabilities ranked by how much they matter to the services you emulate, with "seen in our traffic" counts. |
 | **Defend** | | |
-| Blocklists | `/defend/blocklists` | Scored blocklists with a reason for every point, overrides, and exports for firewalls. See [Defend](defend.md). |
+| Blocklists | `/defend/blocklists` | Scored blocklists with a reason for every point, overrides, and exports for firewalls. A Network tab shows the community lists. See [Defend](defend.md) and [Community blocklist feeds](feeds.md). |
 | Detections | `/defend/detections` | Sigma and Suricata rules marked "review before deploying". |
 | Your exposure | `/defend/exposure` | Your own service inventory compared with what was recorded. |
 | Abuse reports | `/defend/abuse`, `/defend/abuse/<id>` | Drafts of anonymous abuse reports to review, copy and mark sent. See [Abuse reports](#abuse-reports-m22). |
@@ -139,6 +139,19 @@ The **Abuse reports** entry is a hub with three tabs: **Reports**, **Submissions
 - **Settings > Reporting.** Two cards are added. **Replies** sets up the mailbox, with **Test connection** and **Check now**, and shows the last check or the last error. **abuse.ch** sets the mode (Off, Review each, Automatic), the ThreatFox and anonymity switches, the hold time and the daily cap, and the Auth-Key field, which is write-only.
 
 Colour follows the same rules as the rest of the dashboard. Red is used only for a payload that is still served or was replaced. Addresses and C2 servers are never red.
+
+## Blocklists: the Network tab (M30)
+
+The Blocklists page (`/defend/blocklists`) has two tabs, set in the URL with `?tab=`. **This sensor** is the page as before. **Network** (`?tab=network`) shows the community lists. The page works the same way with the feed off, and with the feed on.
+
+- **Feed off.** An empty state says what the lists are. It shows the public URLs with copy buttons, because a firewall can fetch them without this dashboard. It also says how to turn the fetch on (`NETWORK_FEED_ENABLED`). Nothing contacts the feed host until the flag is on.
+- **Feed on.** The first line is a sentence: how many entries each list holds, and how many also reached this sensor. A status line says when the lists were last updated and whether the signature was verified. Problems show as a chip with text: out of date, last fetch failed, or waiting for the first fetch. The state is never shown by colour alone.
+- **One card per list.** The outbound card says "Start here". Each card has a one-line purpose, the entry and high-tier counts, a **Copy URL** menu grouped by tier, and a link to the verified copy on this dashboard when the local mirror is on.
+- **Entries table.** Virtualised, paginated on the server. Filters live in the URL: `list`, `tier`, `seen_here` and `q`. A value that this sensor also saw has a badge, and its address opens the attacker page. Members see a "You helped" badge.
+- **How to use drawer.** Short steps for OPNsense and pfSense, with a link to [Community blocklist feeds](feeds.md).
+- **Why join the network? card.** It says the lists are free and public, and that every firewall gets the same lists. It says what joining adds, and links to the Network pages. It promises no extra lists.
+
+The tab adds no new colour. Red is kept for severe events, as in the rest of the dashboard (`web/DESIGN.md`). The tab works with the keyboard, and its text meets WCAG AA contrast.
 
 ## Sessions as stories
 

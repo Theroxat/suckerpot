@@ -1109,6 +1109,68 @@ Example `event` message:
 | `1011` | Internal error on the server |
 | `1013` | Too many clients connected (in total or from one address), or the session cannot be checked (database unavailable) |
 
+## Community lists (M30)
+
+The node reads the community lists that its ingest stored. These routes read only. Any signed-in user can call them, and they never contact the feed host. The public files are described in [Community blocklist feeds](feeds.md).
+
+### `GET /api/v1/network/feed/status`
+
+The state of the feed, and the public address of each list file. The file addresses are built as text, from the fixed file names. They exist even while fetching is off.
+
+```json
+{"enabled_env": true, "configured": true, "state": "ok", "error_code": null, "serial": 4812,
+ "generated_at": "2026-11-01T13:00:00Z", "valid_until": "2026-11-04T13:00:00Z",
+ "last_ok_at": "2026-11-01T13:02:11Z", "signature": "verified", "member": false,
+ "public_base_url": "https://feeds.example.org/v1",
+ "lists": [{"id": "outbound", "direction": "outbound", "entries": 812, "high": 301,
+            "seen_here": 3, "helped": null,
+            "files": [{"name": "outbound.txt", "format": "txt",
+                       "url": "https://feeds.example.org/v1/outbound.txt"}]}],
+ "local_mirror": {"feeds_enabled": false}}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `state` | `disabled` (fetch off), `never` (no index yet), `ok`, `stale` (past `valid_until`) or `error` (the last fetch failed; `error_code` says why) |
+| `error_code` | Set for `error` and `stale`. Codes include `not_configured`, `egress_closed`, `bad_signature`, `feed_rollback`, `feed_expired`, `feed_invalid`, `too_large` and `http_<code>` |
+| `signature` | `verified` when the stored index passed the check, otherwise `null` |
+| `lists[].seen_here` | Entries also seen by this sensor in the last 30 days (local data only) |
+| `lists[].helped` | Entries that this node helped confirm. Members only. `null` for everyone else. |
+| `local_mirror.feeds_enabled` | Whether the local mirror under `/feeds` is switched on (`FEEDS_ENABLED`) |
+
+### `GET /api/v1/network/feed/entries`
+
+Stored entries, one page at a time. Empty while the feed is off.
+
+| Query | Meaning |
+| --- | --- |
+| `list` | `inbound`, `outbound` or `outbound-domains` |
+| `tier` | `standard` or `high` |
+| `q` | Text search on the value (up to 64 characters) |
+| `seen_here` | `1` for entries this sensor also saw |
+| `cursor` | Cursor from the previous page (`next_cursor`) |
+| `limit` | 1 to 100, default 50 |
+
+Answer: `{"items": [...], "next_cursor": "..."}`. Each item has `list`, `value`, `family`, `tier`, `categories`, `services`, `tags`, `families`, `ports`, `first_seen`, `last_seen`, `expires`, `reported`, `seen_here` and `helped`. An unknown `list` or `tier` answers `422` with `invalid_filter`.
+
+### The local mirror: `/feeds/.../network/`
+
+The mirror serves the verified entries to a firewall. It is part of the feed routes, so it needs `FEEDS_ENABLED=true`. It sits outside `/api/v1` and works like the sensor feeds in [Defend](defend.md#the-subscription-feed-optional). The token must have the kind `network`.
+
+| Route | Answer |
+| --- | --- |
+| `GET /feeds/{token}/network/{list}.{txt\|csv}` | Token in the path |
+| `GET /feeds/network/{list}.{txt\|csv}` with `Authorization: Bearer <token>` | Token in a header (preferred) |
+
+`{list}` is `inbound`, `inbound-high`, `outbound`, `outbound-high` or `outbound-domains`. The text form has one value per line. The CSV form has a header and CRLF line ends. Each answer has an `ETag`, an `X-Entry-Count` header, and a `304` when the caller sends the matching `If-None-Match`.
+
+- The mirror is empty when the stored state is `stale`, `never` or `disabled`. It fails toward not blocking.
+- The administrator's always-allow overrides are removed from the answer. Your own hosts stay off the lists.
+- Every value is checked again before it is written out. Demo entries are never served.
+- A wrong or revoked token, a token without the `network` kind, and an unknown list all get the same plain `404`. Too many requests from one address or token get `429` with `Retry-After`.
+
+Create a `network` token with `POST /api/v1/defend/feed-tokens` and `"kinds": ["network"]`, as the admin, with the password again. The `min_score` field does not apply to network tokens.
+
 ## Not built yet
 
 | Feature | Milestone |

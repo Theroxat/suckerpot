@@ -94,6 +94,31 @@ Test traffic counts. If you test your sensors from an outside address that is no
 
 Nothing in the public figures can point to a single system. There is no ranking, and the member list is shuffled by the hub on every day.
 
+## The community lists
+
+The network also publishes free blocklists. They are built from the same consensus as the hub's reports. Any firewall can load them, and they cost nothing to use.
+
+| List | Blocks | Built from |
+| --- | --- | --- |
+| `outbound` | Traffic leaving your network to malware hosts and command servers | Payload hosts fetched by at least 2 nodes, with a known malware family. Command servers with high-confidence analysis and at least 2 samples from 2 nodes. |
+| `inbound` | Traffic coming in from attack sources | Addresses with login success, commands, downloads, exploits or repeated login attempts, seen over TCP by at least 5 nodes |
+| `outbound-domains` | DNS lookups of the same hosts, by name | The names behind the `outbound` evidence |
+
+The `-high` variants hold the stricter subset. The full rules, the formats and the steps for each firewall are in [Community blocklist feeds](feeds.md).
+
+The lists are published by the hub, from its own server. A member's home connection is never the source of a list. Nothing in a list names a member, a country, a sensor or a day of sighting. An entry needs at least five independent sensors before it can appear at all, and no single sensor's sighting changes a list.
+
+### Why join, and what it changes
+
+The lists are free and public. Anyone can use them, member or not. Joining does not unlock a better list.
+
+What joining does change:
+
+- Your sensor's sightings become one of the votes that confirm an entry. More sensors, faster and more accurate lists.
+- The Network tab tells you which entries your sensor also saw, and which ones it helped confirm. You can see the effect of your own sensor.
+
+Joining does not give you a private list or an early copy. Members get the same files as everyone else.
+
 ## How consensus protects against poisoning
 
 Poisoning means that someone sends false sightings to get an innocent address or site listed. The network makes this expensive. A single node can never publish anything.
@@ -278,6 +303,16 @@ It does not give away the node keys' private halves, which never leave the nodes
 ### What an attacker can learn about your sensors
 
 An attacker that probes many addresses can learn that a set of addresses runs a Selfhostr sensor. Many probe addresses over weeks make this more likely. The attacker cannot learn which member runs them. This risk exists because your sensors answer connections, and it is the same with or without the network. The Overview says so before you join.
+
+### What the community lists reveal
+
+The lists are public, so they are visible to everyone, attackers included.
+
+- **Member data:** none. Entries carry no node data. Every attribute that is published (services, tags, families, dates) needs at least five nodes behind it. One node's sighting of an address changes nothing public, not even its expiry.
+- **Timing:** the lists are regenerated on a fixed hourly schedule, and new entries wait 6 hours after confirmation. The publication time says nothing about one member.
+- **Downloads:** the feed site keeps no access log and sets no cookies. Nobody can see who fetches the lists.
+- **Poisoning:** an attacker who controls many sensors could try to list a third party. Only the hub's own confirmed targets can enter a list, after stricter rules than reports. A text typed into a honeypot command never lists an address by itself. Public resolvers, CDNs, shared hosting and Tor exit relays are never listed.
+- **Forgery:** each file is signed with a feed key that is separate from the hub's key. Your node checks the signature, the serial and the expiry before it stores anything.
 
 ### What is not protected
 
