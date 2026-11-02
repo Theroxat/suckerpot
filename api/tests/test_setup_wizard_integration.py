@@ -136,6 +136,7 @@ async def test_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SUCKERPOT_RUNNING_VERSION", "v0.8.0")
+    monkeypatch.setenv("UPDATE_CHECK_ENABLED", "true")  # off by default
     r = await admin.get("/api/v1/version")
     assert r.status_code == 200, r.text
     assert r.json()["check"] == "pending" and r.json()["update_available"] is False
@@ -158,6 +159,7 @@ async def test_setup_checklist_items(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SUCKERPOT_RUNNING_VERSION", "v0.8.0")
+    monkeypatch.setenv("UPDATE_CHECK_ENABLED", "true")  # off by default
     await put_status("update_check", latest="v0.9.0", state="ok")
     got = {i["id"]: i for i in (await admin.get("/api/v1/setup/status")).json()["items"]}
     assert got["updates"]["state"] == "warning" and "v0.9.0" in got["updates"]["detail"]
