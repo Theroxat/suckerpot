@@ -132,7 +132,6 @@
   }
   function problem(r) {
     if (r.status === 429) return "Too many requests. Please try again later.";
-    if (r.status === 409) return "A request for this value is already open.";
     return "The request was not accepted. Check the values and try again.";
   }
 
@@ -150,7 +149,7 @@
     }).then(function (r) {
       if (r.status !== 200) throw r;
       if (!r.json.listed) { show($("result"), "This value is not on any list. Nothing was stored."); return; }
-      show($("result"), "Request " + r.json.id + " received. Keep this status code, it is shown only once: " + r.json.status_token + ". We answer within " + r.json.sla_hours + " hours.");
+      show($("result"), "Request " + r.json.id + " received. Keep this status code, it is shown only once: " + r.json.status_token + ". We answer within " + r.json.sla_hours + " hours. If you already sent a request for this value, use the code you got then.");
     }).catch(function (e) { show($("result"), problem(e || {})); }).then(function () { btn.disabled = false; });
   });
 

@@ -209,9 +209,6 @@ async def submit(request: Request) -> Response:
                 {"t": today, "v": value},
             )
         ).one()
-        if counts.open:
-            await session.rollback()
-            return reply(request, ctx, 409, {"error": "request_open"})
         if counts.today >= s.delist_daily_cap:
             await session.rollback()
             raise ProtoError("rate_limited", "3600")
@@ -224,6 +221,20 @@ async def submit(request: Request) -> Response:
         request_id = "d_" + secrets.token_hex(8)
         token = secrets.token_bytes(32)
         state = "suppressed" if hide else "received"
+        answer = {
+            "id": request_id,
+            "status_token": sign.b64u_encode(token),
+            "state": state,
+            "listed": True,
+            "sla_hours": SLA_HOURS,
+        }
+        if counts.open:
+            # One open request per value. The answer looks like a new request (same shape, same
+            # state rule) and nothing is stored: whether someone else already asked for this
+            # value must not be learnable (security review L1). The id and token are unknown to
+            # the hub, so they lead nowhere; the first requester keeps their own.
+            await session.rollback()
+            return reply(request, ctx, 200, answer)
         await session.execute(
             text(
                 "INSERT INTO delist_requests (id, token_hash, value, list, scope, category, "
@@ -244,18 +255,7 @@ async def submit(request: Request) -> Response:
             },
         )
         await session.commit()
-    return reply(
-        request,
-        ctx,
-        200,
-        {
-            "id": request_id,
-            "status_token": sign.b64u_encode(token),
-            "state": state,
-            "listed": True,
-            "sla_hours": SLA_HOURS,
-        },
-    )
+    return reply(request, ctx, 200, answer)
 
 
 @router.get("/delist/{request_id}")
