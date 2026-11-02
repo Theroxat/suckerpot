@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { alertKeys, alertsApi } from "@/lib/alerts"
 import { abuseApi, abuseKeys } from "@/lib/abuse"
+import { networkApi, networkKeys } from "@/lib/network"
 import { vpnApi, vpnKeys } from "@/lib/vpn"
 
 /**
@@ -13,10 +14,16 @@ export function useStepReadiness(): Record<string, boolean> {
   const terms = useQuery({ queryKey: abuseKeys.terms(false), queryFn: () => abuseApi.terms(false) })
   const settings = useQuery({ queryKey: abuseKeys.settings, queryFn: abuseApi.settings })
   const channels = useQuery({ queryKey: alertKeys.channels, queryFn: alertsApi.channels })
+  const network = useQuery({
+    queryKey: networkKeys.status,
+    queryFn: networkApi.status,
+    retry: false,
+  })
   return {
     vpn: vpn.data?.gate.state === "open",
     self: (terms.data ?? []).some((t) => t.confirmed),
     reporting: !!settings.data?.reply_contact?.trim(),
     alerts: (channels.data ?? []).length > 0,
+    network: network.data?.state === "member" || network.data?.state === "enrolling",
   }
 }

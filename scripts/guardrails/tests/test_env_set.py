@@ -86,6 +86,34 @@ def test_set_refuses_bad_values(sandbox: Sandbox, pair: str) -> None:
     assert (sandbox.root / ".env").read_text() == BASE_ENV
 
 
+def test_set_allows_the_network_settings(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    """M29: the hub's public key is the one *_KEY name `just set` accepts."""
+    sandbox.write_env(BASE_ENV)
+    key = "A" * 42 + "Q"  # base64url, 32 bytes, documentation value
+    proc = sandbox.run(
+        "scripts/env-set.sh",
+        "set",
+        "NETWORK_ENABLED=true",
+        "NETWORK_HUB_URL=https://hub.example.org",
+        f"NETWORK_HUB_KEY={key}",
+    )
+    assert proc.returncode == 0, proc.stderr
+    env = parse_env(sandbox.root / ".env")
+    assert env["NETWORK_ENABLED"] == "true"
+    assert env["NETWORK_HUB_URL"] == "https://hub.example.org"
+    assert env["NETWORK_HUB_KEY"] == key
+    assert key not in proc.stdout
+
+
+@pytest.mark.parametrize("pair", ["NETWORK_HUB_PRIVATE_KEY=x", "NETWORK_SIGNING_KEY=x"])
+def test_set_still_refuses_other_network_keys(sandbox: Sandbox, pair: str) -> None:
+    sandbox.write_env(BASE_ENV)
+    assert sandbox.run("scripts/env-set.sh", "set", pair).returncode != 0
+    assert (sandbox.root / ".env").read_text() == BASE_ENV
+
+
 def test_set_is_all_or_nothing(sandbox: Sandbox) -> None:
     sandbox.write_env(BASE_ENV)
     proc = sandbox.run("scripts/env-set.sh", "set", "COOKIE_SECURE=false", "SESSION_SECRET=x")

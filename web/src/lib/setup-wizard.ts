@@ -64,7 +64,7 @@ export interface WizardStep {
 export const AFTER_SETUP =
   "Go to Today to watch attacks arrive, or take the tour. Settings keeps this checklist."
 
-/** Order of the steps. `network` is the slot reserved for M29 and stays hidden until it exists. */
+/** Order of the steps. `network` (M29) shows only when the network status endpoint answers. */
 export const WIZARD_STEPS: readonly WizardStep[] = [
   {
     id: "welcome",
@@ -129,7 +129,7 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
     title: "The Selfhostr network",
     sentence: "Joining the network is optional and always your choice.",
     optional: true,
-    skip: "Yes. Sharing stays off until you switch it on.",
+    skip: "Yes. Nothing is shared unless you join, and you can join or leave later in Settings, Network.",
     teaser: "Decide whether to join the Selfhostr network.",
   },
   {

@@ -198,6 +198,10 @@ export const REASON_LABELS: Record<string, { label: string; sentence: string }> 
     sentence: "Malware dropped on your decoys is said to contact this address.",
   },
   "manual-block": { label: "Blocked by you", sentence: "You chose to always block this." },
+  "network-confirmed": {
+    label: "Network confirmed",
+    sentence: "Five or more sensors in the Selfhostr network saw it too.",
+  },
 }
 
 export function reasonLabel(code: string): string {

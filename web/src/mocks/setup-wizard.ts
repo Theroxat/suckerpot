@@ -4,7 +4,7 @@
  *
  * `?wizard=new|progress|finished|skipped` picks the starting state (default: finished, so the
  * other pages are never redirected); `?update=1` shows an available update, `?update=dev` a
- * development build, `?update=off` a switched-off check. `/network/status` answers 404 until M29.
+ * development build, `?update=off` a switched-off check. `/network/status` is mocked in `network.ts`.
  */
 import { delay, http, HttpResponse, type RequestHandler } from "msw"
 import { SENSORS, SENSOR_META } from "@/lib/sensors"
@@ -133,8 +133,4 @@ export const setupWizardHandlers: RequestHandler[] = [
     await delay(LATENCY_MS)
     return HttpResponse.json(version())
   }),
-  // M29 is not built: the optional network step stays hidden while this answers 404.
-  http.get("/api/v1/network/status", () =>
-    HttpResponse.json({ detail: "Not found" }, { status: 404 }),
-  ),
 ]

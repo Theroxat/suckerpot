@@ -29,6 +29,7 @@ RECOMMENDED_SENSORS=(ssh telnet web redis docker adb)
 SETTABLE_VARS=(
   '*_ENABLED' '*_HOST_PORT' DASHBOARD_BIND DASHBOARD_PORT COOKIE_SECURE
   API_ALLOWED_HOSTS API_ALLOWED_ORIGINS INDICATORS_IGNORE 'SITE_*' 'SENSOR_*'
+  NETWORK_ENABLED NETWORK_HUB_URL NETWORK_HUB_KEY
 )
 
 # Prints "ENV_VAR:default_host_port:protocols" lines for a sensor (the single port table).
@@ -119,9 +120,11 @@ gen_for() {
 }
 
 # Succeeds when KEY may be changed by `just set` (allow-list, minus secret-looking names).
+# NETWORK_HUB_KEY is the hub's PUBLIC key (M29), the one name ending in _KEY that is not a secret.
 settable_key() {
   local key=$1 pat
   [[ $key =~ ^[A-Z][A-Z0-9_]{0,63}$ ]] || return 1
+  [ "$key" = NETWORK_HUB_KEY ] && return 0
   case $key in
     *PASSWORD* | *SECRET* | *TOKEN* | *_HASH | *_KEY | VPN_WG_*) return 1 ;;
   esac
