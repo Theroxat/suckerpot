@@ -3,6 +3,7 @@ import { CornerDownRight } from "lucide-react"
 import { useMemo } from "react"
 import { Link } from "react-router"
 import { CountryFlag } from "@/components/country-flag"
+import { MetaLine } from "@/components/meta-line"
 import { FindingCard } from "@/components/finding-card"
 import { RelativeTime } from "@/components/relative-time"
 import { SegmentedControl } from "@/components/segmented-control"
@@ -79,18 +80,17 @@ function TargetCards({ items, ids }: { items: readonly Target[]; ids: ReadonlySe
               </Link>
               <TargetStateBadge state={t.state} role={t.role} />
             </div>
-            <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-muted">
+            <MetaLine className="mt-1.5">
               <span>{ROLE_LABEL[t.role]}</span>
-              <span aria-hidden>·</span>
-              {t.country ? <CountryFlag code={t.country} /> : null}
-              <span>{t.provider_name ?? (t.asn ? `AS${t.asn}` : "unknown provider")}</span>
-              <span aria-hidden>·</span>
+              <span className="inline-flex items-center gap-1.5">
+                {t.country ? <CountryFlag code={t.country} /> : null}
+                {t.provider_name ?? (t.asn ? `AS${t.asn}` : "unknown provider")}
+              </span>
               <span>
                 reported <RelativeTime iso={t.reported_at} />
               </span>
-              <span aria-hidden>·</span>
               <span>{ttdText(t)}</span>
-            </p>
+            </MetaLine>
           </li>
         )
       })}
@@ -138,14 +138,14 @@ export function TargetsCard({ filters }: { filters: ResultFilters }) {
             value={role}
             onChange={(v) => setRole(v === "all" ? null : v)}
             options={ROLE_OPTIONS}
-            className="max-w-full overflow-x-auto"
+            className="scroll-fade-x max-w-full overflow-x-auto"
           />
           <SegmentedControl
             label="Target state"
             value={state}
             onChange={(v) => setState(v === "all" ? null : v)}
             options={STATE_OPTIONS}
-            className="max-w-full overflow-x-auto"
+            className="scroll-fade-x max-w-full overflow-x-auto"
           />
         </div>
       }

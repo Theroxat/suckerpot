@@ -204,16 +204,17 @@ function Body({ d }: { d: TargetDetail }) {
     <div className="space-y-4 normal-nums">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-fg-muted">
         <TargetStateBadge state={t.state} role={t.role} />
-        <span>{ROLE_LABEL[t.role]}</span>
-        <span>{t.channels.map((c) => CHANNEL_LABEL[c]).join(", ")}</span>
+        {/* Role and provider name are in the header line; this row adds what it does not say. */}
         {t.asn ? (
           <Link to={`/attackers?asn=${t.asn}`} className="font-mono hover:text-fg">
             AS{t.asn}
           </Link>
         ) : null}
-        <span>{t.provider_name ?? "Unknown provider"}</span>
         <span>
           Reported <RelativeTime iso={t.reported_at} />
+          {t.channels.length > 0
+            ? ` via ${t.channels.map((c) => (c === "mail" ? "email" : CHANNEL_LABEL[c])).join(", ")}`
+            : ""}
         </span>
         {!t.tracking ? <span>Tracking stopped</span> : null}
       </div>

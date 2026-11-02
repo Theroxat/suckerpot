@@ -196,10 +196,10 @@ export function describeCurve(s: TakedownSummary | undefined): string {
   return `${c.down_48h} of ${c.eligible_48h} reported malware ${c.eligible_48h === 1 ? "URL" : "URLs"} went down within 48 h.`
 }
 
-/** Value and hint of the "median time to takedown" tile. */
+/** Hint of the "median time to takedown" tile; the tile shows the value itself. */
 export function describeTtd(c: { ttd_p50_s: number | null; ttd_n: number }): string {
   if (c.ttd_p50_s == null || c.ttd_n < 5) return "Not enough data yet"
-  return `${shortDelay(c.ttd_p50_s)}, across ${plural(c.ttd_n, "URL")} taken down`
+  return `Across ${plural(c.ttd_n, "URL")} taken down`
 }
 
 /** "AS64500 took down 5 of 6 URLs, the fastest median in your reports (7 h)." */
