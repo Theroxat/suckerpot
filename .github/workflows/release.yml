@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the 19 images of the stack for linux/amd64 and linux/arm64 on native runners, publishes
+# Builds the 18 images of the stack (the analyzer service reuses the collector image) for linux/amd64 and linux/arm64 on native runners, publishes
 # them to GHCR by digest, merges the two architectures under one tag, signs each image with
 # cosign (keyless, the workflow identity), attaches an SBOM and a provenance attestation, then
 # installs the published images on a throwaway runner and checks that the stack comes up.
