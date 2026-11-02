@@ -107,7 +107,7 @@ Each reply is matched to one report by the first rule that fits. The rules run i
 
 Each report has a random reference of 12 hexadecimal characters. It is not linked to any internal id.
 
-The reference goes into the subject of the report, by default in the form `(ref 3f9a1c7b2e4d)`. You can also put it in the body. The setting is `reference_style`:
+The reference goes into the subject of the report, by default in the form `(ref 3f9a1c7b2e4d)`. You can also put it in the body. The setting is `reference_style`, a control named Reply reference in Settings, Reporting:
 
 | Value | Effect |
 | --- | --- |

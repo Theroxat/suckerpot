@@ -53,6 +53,13 @@ export const TLP_OPTIONS = [
 ] as const
 export const DEFAULT_TLP: Tlp = "green"
 
+export type ReferenceStyle = "subject" | "subject_and_body" | "off"
+export const REFERENCE_STYLE_OPTIONS = [
+  { value: "subject", label: "In the subject" },
+  { value: "subject_and_body", label: "Subject and body" },
+  { value: "off", label: "Off" },
+] as const satisfies readonly { value: ReferenceStyle; label: string }[]
+
 /** Reason codes of the identity check. They never carry the matched value. */
 export const GUARD_REASON: Record<string, string> = {
   self_address: "The text contains the public address of the monitored system.",
@@ -228,6 +235,8 @@ export interface ReportSettings {
     "defang" | "include_usernames" | "include_reply_contact" | "show_redaction_counts"
   >
   default_tlp: Tlp
+  /** Where the reply reference is printed. */
+  reference_style: ReferenceStyle
   revision: number
 }
 
