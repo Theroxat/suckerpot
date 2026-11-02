@@ -202,3 +202,25 @@ async def test_addresses_that_wrap_an_ipv4_address_are_dropped() -> None:
     wrapped = ["64:ff9b::c633:6417", "2002:c633:6417::1", "2001:0:4136:e378:8000:63bf:3fff:fdd2"]
     res = await builder(Source(sessions=[session(w) for w in wrapped]), docs=False).build(DAY)
     assert res.batch is not None and res.batch["sources"] == []
+
+
+async def test_sip_sessions_add_presence_only() -> None:
+    """Security review H2: a spoofed SIP REGISTER flood "from" an address, next to one real TCP
+    connect, must not be sent as a brute force. One source row merges every service, so SIP
+    sessions give the service and the session count, never activity, tags or attempts."""
+    src = Source(
+        sessions=[
+            session(sensor="sip", login_attempts=500, login_success=True, tags=("sip-scan",)),
+            session(sensor="ssh", sessions=1, login_attempts=0, tags=()),
+        ]
+    )
+    res = await builder(src).build(DAY)
+    assert res.batch is not None
+    (row,) = res.batch["sources"]
+    assert row["services"] == ["sip", "ssh"]
+    assert row["activity"] == ["connect"]
+    assert row["attempts"] == 0 and row["tags"] == []
+    sip_only = await builder(Source(sessions=[session(sensor="sip", tags=())])).build(DAY)
+    assert sip_only.batch is not None
+    assert sip_only.batch["sources"][0]["activity"] == ["connect"]
+    assert sip_only.batch["sources"][0]["attempts"] == 0

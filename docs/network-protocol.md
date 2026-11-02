@@ -207,7 +207,7 @@ The node records these codes itself. The hub never sends them.
 - **Families and file types.** Values outside `FAMILIES_V1` and `FILE_TYPES_V1` are refused.
 - **Reserved field.** `credentials` is reserved and refused in version 1.
 
-Activity values are `connect`, `scan`, `login`, `login_success`, `command`, `download`, `exploit` and `http`. Services are `ssh`, `telnet`, `web`, `rdp`, `redis`, `docker`, `mysql`, `adb`, `mssql`, `smb`, `sip` and `synology`. Ports are never sent.
+Activity values are `connect`, `scan`, `login`, `login_success`, `command`, `download`, `exploit` and `http`. Services are `ssh`, `telnet`, `web`, `rdp`, `redis`, `docker`, `mysql`, `adb`, `mssql`, `smb`, `sip` and `synology`. Ports are never sent. A node sends `sip` sessions (UDP, spoofable) as presence only: they add the service and the session count, never activity, tags or attempts; an address seen only on `sip` has the activity `connect`.
 
 ### Pseudonyms
 
