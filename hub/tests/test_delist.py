@@ -668,3 +668,22 @@ def test_scoped_allow_rows_only_apply_to_their_list() -> None:
     assert c("192.0.2.41", is_domain=False, list_id="outbound") == "delisted"
     assert c("192.0.2.42", is_domain=False, list_id="outbound") == "allow_list"
     assert c("dropper.example.org", is_domain=True, list_id="outbound-domains") == "delisted"
+
+
+@pytest.mark.integration
+async def test_retention_never_deletes_an_open_request(d_env: Env) -> None:
+    """Security review L3: a request still waiting for a decision survives retention, so its
+    suppression holds and it stays in the queue; decided requests go after 180 days."""
+    from hub import retention
+
+    env = d_env
+    await add_entry(env, BOTS)
+    await add_entry(env, OTHER)
+    open_id = (await ask(env, BOTS)).json()["id"]
+    done_id = (await ask(env, OTHER)).json()["id"]
+    await cli(env, "delist", "reject", done_id, "--note", "still active")
+    async with env.worker() as s:
+        later = TODAY + timedelta(days=200)
+        await retention.run_retention(s, env.settings, env.clock() + timedelta(days=200), later)
+    left = {r.id: r.state for r in await rows(env, "SELECT id, state FROM delist_requests")}
+    assert left == {open_id: "suppressed"}
