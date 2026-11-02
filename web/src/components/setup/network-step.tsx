@@ -1,5 +1,5 @@
 import { CircleCheck, Share2 } from "lucide-react"
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { Link } from "react-router"
 import { useAuth } from "@/app/auth"
 import { JoinDialog } from "@/components/network/join-dialog"
@@ -14,19 +14,29 @@ import { BENEFIT } from "@/lib/network"
  * decides where it goes and what "next" means.
  *
  * Joining is never the default. "Not now" is as prominent as "Join", does nothing and sends
- * nothing, and the step says so. The step hides itself when sharing is switched off in .env and
- * no hub is configured (there is nothing to offer), and shows a done state for a member.
+ * nothing, and the step says so. When sharing is switched off in .env and no hub is configured
+ * there is nothing to offer: the step shows `fallback` (nothing by default). A member sees a done
+ * state.
  *
  * - `onDone` is called after joining.
- * - `onSkip` is called when the person chooses "Not now".
+ * - `onSkip` is called when the person chooses "Not now". Without it there is no "Not now"
+ *   button: the setup wizard has its own "Skip for now".
  */
-export function NetworkStep({ onDone, onSkip }: { onDone?: () => void; onSkip?: () => void }) {
+export function NetworkStep({
+  onDone,
+  onSkip,
+  fallback = null,
+}: {
+  onDone?: () => void
+  onSkip?: () => void
+  fallback?: ReactNode
+}) {
   const { canWrite } = useAuth()
   const q = useNetworkStatus()
   const [open, setOpen] = useState(false)
   const s = q.data
   if (q.isPending) return <SkeletonText lines={4} />
-  if (!s || (!s.enabled_env && !s.hub_configured)) return null
+  if (!s || (!s.enabled_env && !s.hub_configured)) return <>{fallback}</>
 
   if (s.state === "member" || s.state === "enrolling") {
     return (
@@ -49,7 +59,7 @@ export function NetworkStep({ onDone, onSkip }: { onDone?: () => void; onSkip?: 
   }
 
   const blocked = !s.enabled_env
-    ? "Sharing is switched off in .env on this system. Run just set NETWORK_ENABLED=true and restart to allow it."
+    ? "Sharing is switched off on this system. To allow it, run just set NETWORK_ENABLED=true on the host: it saves the setting and restarts the services that read it."
     : !s.hub_configured
       ? "No network hub is configured yet, so there is nothing to join."
       : null
@@ -82,9 +92,11 @@ export function NetworkStep({ onDone, onSkip }: { onDone?: () => void; onSkip?: 
             Join the network
           </Button>
         ) : null}
-        <Button variant="outline" onClick={onSkip}>
-          Not now
-        </Button>
+        {onSkip ? (
+          <Button variant="outline" onClick={onSkip}>
+            Not now
+          </Button>
+        ) : null}
       </div>
       <JoinDialog open={open} onOpenChange={setOpen} {...(onDone ? { onJoined: onDone } : {})} />
     </div>

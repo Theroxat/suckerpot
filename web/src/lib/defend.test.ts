@@ -85,6 +85,7 @@ describe("reasons and scores", () => {
       "file-hash",
       "probable-c2",
       "manual-block",
+      "network-confirmed",
     ]
     for (const c of codes) expect(REASON_LABELS[c]?.label, c).toBeTruthy()
   })

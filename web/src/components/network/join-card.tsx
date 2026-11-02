@@ -29,9 +29,9 @@ function blockedBy(s: NetworkStatus): React.ReactNode {
   if (!s.enabled_env)
     return (
       <>
-        An administrator must first allow sharing on this system: run{" "}
-        <code className="font-mono text-fg">just set NETWORK_ENABLED=true</code> and restart. Until
-        then the network stays completely off.
+        An administrator must first allow sharing on this system: on the host, run{" "}
+        <code className="font-mono text-fg">just set NETWORK_ENABLED=true</code>. It saves the
+        setting and restarts the services that read it. Until then the network stays completely off.
       </>
     )
   if (!s.hub_configured)

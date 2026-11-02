@@ -49,7 +49,26 @@ const PORTS = {
   ],
 }
 
-function stub(progress: unknown) {
+const NETWORK_OFF = {
+  enabled_env: true,
+  hub_configured: true,
+  desired: "off",
+  state: "off",
+  pseudonym: null,
+  country: null,
+  show_country: false,
+  fingerprint: null,
+  enrolled_day: null,
+  eligible_from_day: null,
+  standing: null,
+  last_submit_day: null,
+  next_submit_at: null,
+  last_error_code: null,
+  waiting: null,
+}
+
+/** `network` is the M29 status answer; without it `/network/status` is a 404 and the step hides. */
+function stub(progress: unknown, network?: unknown) {
   const puts: unknown[] = []
   const json = (status: number, body?: unknown) =>
     new Response(body === undefined ? null : JSON.stringify(body), { status })
@@ -78,6 +97,8 @@ function stub(progress: unknown) {
       if (url.includes("/abuse/settings"))
         return Promise.resolve(json(200, { reply_contact: null }))
       if (url.includes("/alerts/channels")) return Promise.resolve(json(200, []))
+      if (url.includes("/network/status") && network !== undefined)
+        return Promise.resolve(json(200, network))
       return Promise.resolve(json(404, { detail: "nope" }))
     }),
   )
@@ -152,6 +173,33 @@ describe("SetupPage", () => {
     expect(screen.getByLabelText("Command to change the sensors")).toHaveTextContent(
       "just sensors telnet,sip",
     )
+  })
+
+  it("offers the network step after alerts, optional, with the wizard's own skip", async () => {
+    const puts = stub({ state: "in_progress", steps: {}, show: true }, NETWORK_OFF)
+    mount("/setup?step=network")
+    await screen.findByRole("heading", { name: /Joining the network is optional/ })
+    const nav = screen.getByRole("navigation", { name: "Setup steps" })
+    const names = within(nav)
+      .getAllByRole("button")
+      .map((b) => b.textContent)
+    const at = names.findIndex((n) => n.includes("The Selfhostr network"))
+    expect(names[at - 1]).toContain("Alerts")
+    expect(names[at + 1]).toContain("You are set")
+    expect(screen.getByText("Step 8 of 9")).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: /Join the network/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Not now" })).toBeNull()
+    await userEvent.click(screen.getByRole("button", { name: /Skip for now/ }))
+    await waitFor(() => expect(puts).toEqual([{ step: "network", status: "skipped" }]))
+  })
+
+  it("says the network is off when there is nothing to join", async () => {
+    stub(NEW, { ...NETWORK_OFF, enabled_env: false, hub_configured: false })
+    mount("/setup?step=network")
+    expect(
+      await screen.findByText(/Sharing with the network is off on this system/),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Join the network/ })).toBeNull()
   })
 
   it("skips the whole setup and leaves", async () => {

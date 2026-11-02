@@ -27,6 +27,7 @@ const TITLES: Record<string, string> = {
   abuse_worker: "Abuse report drafts",
   alerts: "Alert channel",
   provider_keys: "Reputation keys",
+  network: "Selfhostr network",
 }
 const ORDER = Object.keys(TITLES)
 

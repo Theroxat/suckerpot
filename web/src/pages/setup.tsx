@@ -20,7 +20,6 @@ import {
 import { SkeletonCard } from "@/components/skeletons"
 import { Button } from "@/components/ui/button"
 import { useUrlParam } from "@/hooks/use-url-param"
-import { getJson } from "@/lib/api"
 import {
   AFTER_SETUP,
   firstOpenStep,
@@ -32,13 +31,14 @@ import {
   type StepStatus,
   type WizardProgress,
 } from "@/lib/setup-wizard"
+import { networkApi, networkKeys } from "@/lib/network"
 import { cn } from "@/lib/utils"
 
-/** The M29 network step exists only once its status endpoint answers (it is a 404 before). */
+/** The M29 network step shows only when its status endpoint answers (a 404 hides it). */
 function useNetworkAvailable(): boolean {
   const q = useQuery({
-    queryKey: wizardKeys.network,
-    queryFn: () => getJson<unknown>("/network/status"),
+    queryKey: networkKeys.status,
+    queryFn: networkApi.status,
     retry: false,
     staleTime: 5 * 60_000,
   })

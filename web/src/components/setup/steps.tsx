@@ -31,6 +31,7 @@ import {
 } from "@/lib/setup-wizard"
 import { describeVpn, vpnApi, vpnKeys, type VpnStatus } from "@/lib/vpn"
 import { CommandBox } from "./command-box"
+import { NetworkStep as NetworkJoinStep } from "./network-step"
 import { PortsCard } from "./ports-table"
 
 /** The three warnings of docs/getting-started.md, in plain words. */
@@ -411,14 +412,23 @@ export function AlertsStep() {
   )
 }
 
-/* --- Network (M29 slot) ----------------------------------------------------- */
+/* --- Network (M29) ----------------------------------------------------------- */
 
-/** Reserved for M29. It only renders when the network status endpoint exists. */
+/**
+ * The optional network step. Joining is never forced: the wizard's own "Skip for now" is the way
+ * on, and joining only starts after the join dialog (password again, five consents). When this
+ * system has nothing to offer (sharing off in .env and no hub), the step only says so.
+ */
 export function NetworkStep() {
   return (
-    <FindingCard
-      eyebrow="The Selfhostr network"
-      finding="Sharing with the network is off, and it stays off until you switch it on."
+    <NetworkJoinStep
+      fallback={
+        <FindingCard
+          eyebrow="The Selfhostr network"
+          finding="Sharing with the network is off on this system, and nothing is shared."
+          detail="There is nothing to decide now. You can read about the network and join later in Settings, Network."
+        />
+      }
     />
   )
 }

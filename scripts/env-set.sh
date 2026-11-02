@@ -6,7 +6,8 @@
 #   scripts/env-set.sh sensors LIST            LIST = recommended | all | ssh,telnet,web,...
 #   scripts/env-set.sh set KEY=VALUE [...]     change allow-listed settings (see lib/env.sh)
 #
-# Refuses secret-looking keys (*_PASSWORD, *_SECRET, *_HASH, *_KEY, VPN_WG_*) and keys outside
+# Refuses secret-looking keys (*_PASSWORD, *_SECRET, *_HASH, *_KEY except the public
+# NETWORK_HUB_KEY, VPN_WG_*) and keys outside
 # the allow-list. Prints variable names only, never values of anything secret. The change is
 # reverted when scripts/check-ports.sh refuses the resulting port layout.
 set -euo pipefail

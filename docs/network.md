@@ -26,7 +26,7 @@ Two steps must both be true before a single byte goes to the hub:
 
 | Step | Who | Where | Default |
 | --- | --- | --- | --- |
-| 1. Allow the network on this system | You | `NETWORK_ENABLED=true` in `.env`, then restart `ingest` and `api` | `false` |
+| 1. Allow the network on this system | You | `just set NETWORK_ENABLED=true` on the host (it writes `.env` and restarts the services that read it) | `false` |
 | 2. Join the network | An administrator | Settings, Network: join, with the password typed again and five consents ticked | Not joined |
 
 If step 1 is off, the Network pages explain the situation and nothing else happens. The node worker does not contact the hub at all. If step 2 is not done, the worker stays idle.
@@ -147,7 +147,7 @@ Before you start, make sure these hold:
 
 Then:
 
-1. In `.env`, set `NETWORK_ENABLED=true`. Restart the stack so `ingest` and `api` read it: `just up`.
+1. On the host, run `just set NETWORK_ENABLED=true`. It writes `.env` and restarts `ingest` and `api` so they read it. If the project gave you a hub address and key, set them the same way: `just set NETWORK_HUB_URL=https://hub.example.org NETWORK_HUB_KEY=<key>`.
 2. Open **Settings, Network** and read the page. It lists what is shared and what is never shared.
 3. Press **Join the network**. The dialog asks for:
    - the five consents, one box each;
@@ -208,7 +208,7 @@ The same join and leave controls as on the Overview, with the node card. The "Wh
 
 ### Setup checklist
 
-The setup checklist has a Network item. It is off when this system is not a member, green when it is a member and sent a batch in the last two days, and a warning with the reason when batches are waiting. The Network step of the first-run setup hides itself when `NETWORK_ENABLED` is false and no hub is configured.
+The setup checklist has a Network item. It is off when this system is not a member, green when it is a member and sent a batch in the last two days, and a warning with the reason when batches are waiting. The first-run setup has an optional Network step after Alerts. Its own "Skip for now" moves on and shares nothing. When `NETWORK_ENABLED` is false and no hub is configured, the step only says that the network is off.
 
 ## Takedown checks
 

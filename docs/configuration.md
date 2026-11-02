@@ -651,6 +651,7 @@ Notes:
 
 - A wrong value (for example a hub URL with a path, or only one of the URL and the key) keeps the network off, and `ingest` logs an error. Check its log after you change these.
 - Storing the node key needs `SETTINGS_ENCRYPTION_KEY`. Without it, joining stops with `no_settings_key`.
+- `NETWORK_ENABLED`, `NETWORK_HUB_URL` and `NETWORK_HUB_KEY` can be changed with `just set` (for example `just set NETWORK_ENABLED=true`). `NETWORK_HUB_KEY` is the hub's public key, so it is the one `*_KEY` name that `just set` accepts.
 - Joining, the pseudonym, the country and leaving are done in the dashboard, not in `.env`. The hub's own settings are in `hub/README.md`.
 
 ## In `.env.example` but not used yet
