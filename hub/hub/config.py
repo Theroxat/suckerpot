@@ -126,6 +126,11 @@ class Settings:
     feed_never: tuple[str, ...] = ()
     feed_exclude_tor: bool = True
     external_ranges_enabled: bool = True
+    # Public delisting (design M30 section 9): proof-of-work bits, requests per day, and how many
+    # inbound values may be hidden at once, per day, before an operator has looked at them.
+    delist_pow_difficulty: int = 20
+    delist_daily_cap: int = 200
+    delist_auto_suppress_daily: int = 50
     # External corroboration (optional keys; empty disables the source).
     abuseipdb_key: str = field(default="", repr=False)
     greynoise_key: str = field(default="", repr=False)
@@ -160,6 +165,9 @@ class Settings:
             ),
             feed_exclude_tor=_bool(e, "HUB_FEED_EXCLUDE_TOR", True),
             external_ranges_enabled=_bool(e, "HUB_EXTERNAL_RANGES_ENABLED", True),
+            delist_pow_difficulty=_int(e, "HUB_DELIST_POW_DIFFICULTY", 20, 0, 32),
+            delist_daily_cap=_int(e, "HUB_DELIST_DAILY_CAP", 200, 0),
+            delist_auto_suppress_daily=_int(e, "HUB_DELIST_AUTO_SUPPRESS_DAILY", 50, 0),
             database_url=e.get("HUB_DATABASE_URL", ""),
             worker_database_url=e.get("HUB_WORKER_DATABASE_URL", ""),
             signing_key_file=e.get("HUB_SIGNING_KEY_FILE", ""),

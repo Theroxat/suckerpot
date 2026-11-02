@@ -1,8 +1,10 @@
 """Operator CLI: ``python -m hub.admin <command>``. No web admin: a smaller attack surface.
 
-Commands: gen-signing-key, show-public-key, reports list|show|approve|cancel, target dispute,
-never add|remove|list, node suspend|unsuspend, stats. Every change writes ``hub_audit`` with the
-action and counts only (no node data, no addresses).
+Commands: gen-signing-key, gen-feed-key, show-public-key, reports list|show|approve|cancel,
+target dispute, never add|remove|list, node suspend|unsuspend, stats, feeds
+status|diff|release|discard|pause|resume|rebuild, allow add|remove|list, delist
+list|show|accept|reject, ranges status|refresh. Every change writes ``hub_audit`` with the action
+and counts only (no node data, no addresses). Key generation touches no database.
 """
 
 from __future__ import annotations
@@ -13,16 +15,19 @@ import json
 import os
 import sys
 from collections.abc import Callable
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_netproto import blind, sign
+from suckerpot_netproto.feeds import minisign
 
 from . import reputation
 from .config import ConfigError, Settings, load_signing_key
-from .db import make_engine, make_sessionmaker
+from .db import make_engine, make_sessionmaker, utcnow
+from .feeds import job as feed_job
 
 Out = Callable[[str], None]
 
@@ -66,7 +71,65 @@ def _parser() -> argparse.ArgumentParser:
         nds.add_parser(name).add_argument("fingerprint")
 
     sub.add_parser("stats")
+
+    fk = sub.add_parser(
+        "gen-feed-key", help="make the feed signing key (minisign) and print its public part"
+    )
+    fk.add_argument("--out", required=True, help="file to write (mode 0600)")
+    fk.add_argument("--force", action="store_true", help="overwrite an existing file")
+
+    f = sub.add_parser("feeds")
+    fs = f.add_subparsers(dest="action", required=True)
+    for name in ("status", "pause", "resume", "rebuild"):
+        fs.add_parser(name)
+    for name in ("diff", "release", "discard"):
+        fs.add_parser(name).add_argument("serial", type=int)
+
+    a = sub.add_parser("allow")
+    als = a.add_subparsers(dest="action", required=True)
+    aa = als.add_parser("add")
+    aa.add_argument("value", help="an address, a CIDR or a domain (suffix match)")
+    aa.add_argument("--reason", required=True, choices=sorted(ALLOW_REASONS))
+    aa.add_argument("--expires", help="a date (YYYY-MM-DD) or a number of days")
+    aa.add_argument("--note", default="")
+    als.add_parser("remove").add_argument("value")
+    als.add_parser("list")
+
+    d = sub.add_parser("delist")
+    ds = d.add_subparsers(dest="action", required=True)
+    dl = ds.add_parser("list")
+    dl.add_argument("--state", choices=["received", "suppressed", "accepted", "rejected"])
+    ds.add_parser("show").add_argument("id")
+    da = ds.add_parser("accept")
+    da.add_argument("id")
+    da.add_argument(
+        "--as", dest="outcome", required=True, choices=["false_positive", "remediated", "policy"]
+    )
+    da.add_argument("--note", required=True, help="PUBLIC: shown to the requester")
+    dr = ds.add_parser("reject")
+    dr.add_argument("id")
+    dr.add_argument("--note", required=True, help="PUBLIC: shown to the requester")
+
+    rg = sub.add_parser("ranges")
+    rgs = rg.add_subparsers(dest="action", required=True)
+    rgs.add_parser("status")
+    rgs.add_parser("refresh")
     return p
+
+
+ALLOW_REASONS = frozenset(
+    {"owner_request", "shared_infra", "remediated", "policy", "false_positive"}
+)
+EXPIRING_REASONS = frozenset({"remediated", "owner_request"})
+DEFAULT_EXPIRY_DAYS = 90
+NOTE_MAX = 500
+
+
+def _safe(text_: object) -> str:
+    """Operator output: requester text is untrusted, so control characters never reach a terminal."""
+    return "".join(
+        c if c.isprintable() or c in "\n " else "?" for c in str(text_ if text_ is not None else "")
+    )
 
 
 def _kind_of(value: str) -> str:
@@ -109,16 +172,39 @@ def gen_signing_key(out_path: str, force: bool, out: Out) -> int:
     return 0
 
 
+def gen_feed_key(out_path: str, force: bool, out: Out) -> int:
+    """Write a minisign secret key (mode 0600) and print the public key only."""
+    path = Path(out_path)
+    secret = minisign.generate_keypair()
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if force else os.O_EXCL)
+    try:
+        if force and path.exists():
+            path.chmod(0o600)
+        fd = os.open(path, flags, 0o600)
+    except FileExistsError:
+        out("refusing to overwrite an existing key file (use --force)")
+        return 1
+    with os.fdopen(fd, "w", encoding="ascii") as fh:
+        fh.write(minisign.serialize_secret_key(secret))
+    path.chmod(0o600)
+    out(f"feed_public_key={secret.public.encoded}")
+    out(f"feed_key_id={secret.public.key_id_hex}")
+    return 0
+
+
 async def run(
     argv: list[str],
     *,
     sessionmaker: async_sessionmaker[AsyncSession] | None = None,
     out: Out = print,
     actor: str | None = None,
+    settings: Settings | None = None,
 ) -> int:
     args = _parser().parse_args(argv)
     if args.cmd == "gen-signing-key":
         return gen_signing_key(args.out, args.force, out)
+    if args.cmd == "gen-feed-key":
+        return gen_feed_key(args.out, args.force, out)
     if args.cmd == "show-public-key":
         try:
             seed = load_signing_key(args.key_file)
@@ -130,18 +216,33 @@ async def run(
 
     engine = None
     if sessionmaker is None:
-        engine = make_engine(Settings.from_env().worker_database_url)
+        settings = settings or Settings.from_env()
+        engine = make_engine(settings.worker_database_url)
         sessionmaker = make_sessionmaker(engine)
     who = actor or os.environ.get("HUB_ADMIN_ACTOR", "cli")
     try:
         async with sessionmaker() as session:
-            return await _dispatch(args, session, who, out)
+            return await _dispatch(args, session, who, out, settings)
     finally:
         if engine is not None:
             await engine.dispose()
 
 
-async def _dispatch(args: argparse.Namespace, session: AsyncSession, who: str, out: Out) -> int:
+async def _dispatch(
+    args: argparse.Namespace,
+    session: AsyncSession,
+    who: str,
+    out: Out,
+    settings: Settings | None = None,
+) -> int:
+    if args.cmd == "feeds":
+        return await _feeds(args, session, who, out, settings)
+    if args.cmd == "allow":
+        return await _allow(args, session, who, out)
+    if args.cmd == "delist":
+        return await _delist(args, session, who, out)
+    if args.cmd == "ranges":
+        return await _ranges(args, session, who, out)
     if args.cmd == "reports":
         return await _reports(args, session, who, out)
     if args.cmd == "target":
@@ -267,6 +368,260 @@ async def _never(args: argparse.Namespace, session: AsyncSession, who: str, out:
     await session.commit()
     out(f"removed {removed}")
     return 0 if removed else 1
+
+
+async def _state(session: AsyncSession, key: str) -> str | None:
+    row = (
+        await session.execute(text("SELECT value FROM worker_state WHERE key = :k"), {"k": key})
+    ).first()
+    return str(row[0]) if row else None
+
+
+async def _feeds(
+    args: argparse.Namespace, session: AsyncSession, who: str, out: Out, settings: Settings | None
+) -> int:
+    # release, discard, pause and resume write hub_audit themselves (feeds.job).
+    if args.action == "status":
+        out(f"paused: {await _state(session, feed_job.PAUSED_KEY) == '1'}")
+        out(f"last status: {_safe(await _state(session, feed_job.STATUS_KEY))}")
+        rows = await session.execute(
+            text(
+                "SELECT serial, state, run_at, error_code FROM feed_runs "
+                "ORDER BY serial DESC LIMIT 10"
+            )
+        )
+        for r in rows:
+            out(f"{r.serial}\t{r.state}\t{r.run_at.isoformat()}\t{r.error_code or ''}")
+        return 0
+    if args.action == "diff":
+        diff = (
+            await session.execute(
+                text("SELECT diff FROM feed_runs WHERE serial = :s AND state = 'held'"),
+                {"s": args.serial},
+            )
+        ).scalar_one_or_none()
+        if diff is None:
+            out("no held run with that serial")
+            return 1
+        out(_safe(json.dumps(diff, indent=2, sort_keys=True)))
+        return 0
+    if args.action in ("release", "discard"):
+        hook = feed_job.release if args.action == "release" else feed_job.discard
+        if not await hook(session, args.serial):
+            out("no held run with that serial")
+            return 1
+        out(f"{args.action}d {args.serial}; the next feed run applies it")
+        return 0
+    if args.action in ("pause", "resume"):
+        await feed_job.set_paused(session, args.action == "pause")
+        out(args.action + "d")
+        return 0
+    result = await feed_job.run_once(session, settings or Settings.from_env(), utcnow(), force=True)
+    await _audit(session, who, "feeds.rebuild", {"state": result.state})
+    await session.commit()
+    out(f"{result.state} serial={result.serial} error={result.error_code or ''}")
+    return 0 if result.state in ("published", "unchanged", "held") else 1
+
+
+def _parse_expiry(raw: str | None, reason: str, today: date) -> date | None:
+    if raw:
+        if raw.isdigit():
+            return today + timedelta(days=int(raw))
+        return date.fromisoformat(raw)
+    return today + timedelta(days=DEFAULT_EXPIRY_DAYS) if reason in EXPIRING_REASONS else None
+
+
+def _allow_value(raw: str) -> tuple[str, str]:
+    """``(canonical value, kind)``; CIDRs are fine here, allowing is safe."""
+    import ipaddress
+
+    value = raw.strip()
+    kind = _kind_of(value)
+    if kind == "ip":
+        net = ipaddress.ip_network(value, strict=False)
+        return (str(net.network_address) if net.num_addresses == 1 else str(net)), kind
+    if kind == "domain":
+        return blind.canonical_domain(value), kind
+    raise ValueError("an address, a CIDR or a domain is required")
+
+
+async def _allow(args: argparse.Namespace, session: AsyncSession, who: str, out: Out) -> int:
+    if args.action == "list":
+        rows = await session.execute(
+            text(
+                "SELECT value, kind, reason, source, expires_day, note FROM feed_allow "
+                "ORDER BY kind, value"
+            )
+        )
+        for r in rows:
+            out(
+                f"{r.kind}\t{_safe(r.value)}\t{r.reason}\t{r.source}\t"
+                f"{r.expires_day or 'never'}\t{_safe(r.note)}"
+            )
+        return 0
+    if args.action == "add":
+        try:
+            value, kind = _allow_value(args.value)
+            expires = _parse_expiry(args.expires, args.reason, utcnow().date())
+        except ValueError as exc:
+            out(_safe(exc))
+            return 1
+        await session.execute(
+            text(
+                "INSERT INTO feed_allow (value, kind, reason, note, added_day, expires_day, source) "
+                "VALUES (:v, :k, :r, :n, :t, :e, 'admin') ON CONFLICT (value) DO UPDATE SET "
+                "kind = EXCLUDED.kind, reason = EXCLUDED.reason, note = EXCLUDED.note, "
+                "added_day = EXCLUDED.added_day, expires_day = EXCLUDED.expires_day, "
+                "source = EXCLUDED.source"
+            ),
+            {
+                "v": value,
+                "k": kind,
+                "r": args.reason,
+                "n": args.note[:NOTE_MAX],
+                "t": utcnow().date(),
+                "e": expires,
+            },
+        )
+        await _audit(session, who, "allow.add", {"kind": kind, "reason": args.reason})
+        await session.commit()
+        out(f"allowed {kind} {value} until {expires or 'further notice'}")
+        return 0
+    try:
+        value, _kind = _allow_value(args.value)
+    except ValueError as exc:
+        out(_safe(exc))
+        return 1
+    result = await session.execute(text("DELETE FROM feed_allow WHERE value = :v"), {"v": value})
+    removed = int(getattr(result, "rowcount", 0) or 0)
+    await _audit(session, who, "allow.remove", {"removed": removed})
+    await session.commit()
+    out(f"removed {removed}")
+    return 0 if removed else 1
+
+
+async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out: Out) -> int:
+    if args.action == "list":
+        sql = "SELECT id, state, outcome, category, list, created_day, value FROM delist_requests"
+        params: dict[str, Any] = {}
+        if args.state:
+            sql += " WHERE state = :s"
+            params["s"] = args.state
+        for r in await session.execute(
+            text(sql + " ORDER BY created_day DESC, id LIMIT 200"), params
+        ):
+            out(
+                f"{r.id}\t{r.state}\t{r.outcome or ''}\t{r.category}\t{r.list or 'any'}\t"
+                f"{r.created_day}\t{_safe(r.value)}"
+            )
+        return 0
+    row = (
+        await session.execute(
+            text(
+                "SELECT id, value, list, category, evidence, contact, state, outcome, "
+                "public_note, created_day, decided_day FROM delist_requests WHERE id = :id"
+            ),
+            {"id": args.id},
+        )
+    ).first()
+    if row is None:
+        out("no such request")
+        return 1
+    if args.action == "show":
+        for key, val in row._mapping.items():
+            out(f"{key}: {_safe(val)}")
+        return 0
+    if row.state not in ("received", "suppressed"):
+        out(f"this request is already decided ({row.state})")
+        return 1
+    today = utcnow().date()
+    outcome = "rejected" if args.action == "reject" else args.outcome
+    penalised = 0
+    if args.action == "accept":
+        kind = _kind_of(row.value)
+        reason = outcome
+        expires = today + timedelta(days=DEFAULT_EXPIRY_DAYS) if reason == "remediated" else None
+        if reason == "false_positive":
+            targets = (
+                await session.execute(
+                    text(
+                        "SELECT DISTINCT target_id FROM feed_entries "
+                        "WHERE value = :v AND target_id IS NOT NULL"
+                    ),
+                    {"v": row.value},
+                )
+            ).all()
+            for (target_id,) in targets:
+                penalised += await reputation.dispute(session, target_id)
+        await session.execute(
+            text(
+                "INSERT INTO feed_allow (value, kind, reason, note, added_day, expires_day, source) "
+                "VALUES (:v, :k, :r, :n, :t, :e, 'delist') ON CONFLICT (value) DO UPDATE SET "
+                "kind = EXCLUDED.kind, reason = EXCLUDED.reason, note = EXCLUDED.note, "
+                "added_day = EXCLUDED.added_day, expires_day = EXCLUDED.expires_day, "
+                "source = EXCLUDED.source"
+            ),
+            {
+                "v": row.value,
+                "k": kind,
+                "r": reason,
+                "n": "delisting " + row.id,
+                "t": today,
+                "e": expires,
+            },
+        )
+        if outcome == "policy":
+            await session.execute(
+                text(
+                    "INSERT INTO never_list (value, kind, note) VALUES (:v, :k, :n) "
+                    "ON CONFLICT (value) DO UPDATE SET kind = EXCLUDED.kind, note = EXCLUDED.note"
+                ),
+                {"v": row.value, "k": kind, "n": "delisting " + row.id},
+            )
+    await session.execute(
+        text(
+            "UPDATE delist_requests SET state = :st, outcome = :o, public_note = :n, "
+            "decided_day = :d WHERE id = :id"
+        ),
+        {
+            "st": "rejected" if args.action == "reject" else "accepted",
+            "o": outcome,
+            "n": args.note[:NOTE_MAX],
+            "d": today,
+            "id": row.id,
+        },
+    )
+    await _audit(
+        session, who, f"delist.{args.action}", {"outcome": outcome, "penalised": penalised}
+    )
+    await session.commit()
+    out(f"{args.action}ed {row.id} ({outcome})")
+    return 0
+
+
+async def _ranges(args: argparse.Namespace, session: AsyncSession, who: str, out: Out) -> int:
+    if args.action == "status":
+        rows = await session.execute(
+            text(
+                "SELECT source, count(*) AS n, max(fetched_day) AS day FROM feed_auto_ranges "
+                "GROUP BY source ORDER BY source"
+            )
+        )
+        for r in rows:
+            out(f"{r.source}\t{r.n} prefixes\tfetched {r.day}")
+        return 0
+    import importlib
+
+    try:
+        fetcher = importlib.import_module("hub.feeds.external")
+    except ImportError:
+        out("the range fetcher is not part of this build")
+        return 1
+    count = int(await fetcher.refresh(session))
+    await _audit(session, who, "ranges.refresh", {"prefixes": count})
+    await session.commit()
+    out(f"refreshed {count} prefixes")
+    return 0
 
 
 def main() -> None:
