@@ -53,3 +53,17 @@ export function FormError({ id, message }: { id: string; message: string | null 
     </div>
   )
 }
+
+/**
+ * "Unsaved changes", next to a section's Save button while its fields differ from what was saved.
+ * A neutral dot plus words: it is a reminder, not a warning.
+ */
+export function UnsavedHint({ show }: { show: boolean }) {
+  if (!show) return null
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs text-fg-muted">
+      <span aria-hidden className="size-1.5 rounded-full bg-fg" />
+      Unsaved changes
+    </span>
+  )
+}

@@ -3,7 +3,8 @@ import { Eye, EyeOff, Trash2, TriangleAlert } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useId, useState } from "react"
 import { useSearchParams } from "react-router"
-import { Field, FormError } from "@/components/form-parts"
+import { Field, FormError, UnsavedHint } from "@/components/form-parts"
+import { useUnsaved } from "@/hooks/use-unsaved"
 import { FindingCard } from "@/components/finding-card"
 import { SegmentedControl } from "@/components/segmented-control"
 import { SkeletonText } from "@/components/skeletons"
@@ -71,6 +72,7 @@ function SettingsForm({
     err: useId(),
   }
   const [s, setS] = useState(initial)
+  const { unsaved, markSaved } = useUnsaved(s)
   const [params] = useSearchParams()
   const flagged = new Set((params.get("missing") ?? "").split(",").filter(Boolean))
   // The server names the reply contact when it is the one thing missing; it stays flagged until set.
@@ -84,6 +86,7 @@ function SettingsForm({
     mutationFn: () => abuseApi.saveSettings(s),
     onSuccess: (d) => {
       onSaved()
+      markSaved(s)
       setError(null)
       setSaved(true)
       qc.setQueryData(abuseKeys.settings, d)
@@ -276,6 +279,7 @@ function SettingsForm({
         <span role="status" className="text-sm text-fg-muted empty:hidden">
           {saved ? "Saved." : null}
         </span>
+        <UnsavedHint show={unsaved} />
       </div>
     </form>
   )
