@@ -38,7 +38,7 @@ from suckerpot_netproto.feeds.models import LIST_IDS
 from .. import consensus
 from ..config import Settings
 from ..never import split_host_port
-from . import lifecycle, publish, select
+from . import lifecycle, publish, readme, select
 from . import stats as feed_stats
 from .filter import Exclusions, RangesStale, load_exclusions
 from .lifecycle import EntryRow, Plan
@@ -602,6 +602,8 @@ async def _decide(
     other = {
         "stats.json": await feed_stats.build_stats(session, plan, serial=serial, now=now),
         "removed.json": await feed_stats.build_removed(session, now=now, excluded=excluded),
+        "readme.txt": readme.render_readme(s, secret.public.encoded),
+        "delist.html": readme.delist_page(),
     }
     await _record_run(session, serial=serial, now=now, state="published", counts=counts)
     try:

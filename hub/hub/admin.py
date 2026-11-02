@@ -242,7 +242,7 @@ async def _dispatch(
     if args.cmd == "delist":
         return await _delist(args, session, who, out)
     if args.cmd == "ranges":
-        return await _ranges(args, session, who, out)
+        return await _ranges(args, session, who, out, settings)
     if args.cmd == "reports":
         return await _reports(args, session, who, out)
     if args.cmd == "target":
@@ -599,7 +599,13 @@ async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out
     return 0
 
 
-async def _ranges(args: argparse.Namespace, session: AsyncSession, who: str, out: Out) -> int:
+async def _ranges(
+    args: argparse.Namespace,
+    session: AsyncSession,
+    who: str,
+    out: Out,
+    settings: Settings | None = None,
+) -> int:
     if args.action == "status":
         rows = await session.execute(
             text(
@@ -617,7 +623,12 @@ async def _ranges(args: argparse.Namespace, session: AsyncSession, who: str, out
     except ImportError:
         out("the range fetcher is not part of this build")
         return 1
-    count = int(await fetcher.refresh(session))
+    outcome: dict[str, str] = await fetcher.refresh(
+        session, settings or Settings.from_env(), utcnow(), force=True
+    )
+    for name, result in sorted(outcome.items()):
+        out(f"{name}\t{result}")
+    count = sum(int(v.split(":", 1)[1]) for v in outcome.values() if v.startswith("updated:"))
     await _audit(session, who, "ranges.refresh", {"prefixes": count})
     await session.commit()
     out(f"refreshed {count} prefixes")

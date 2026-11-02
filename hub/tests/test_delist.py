@@ -549,7 +549,7 @@ def test_readme_template_covers_the_required_topics() -> None:
     for needle in (
         "CC0 1.0",
         "minisign -V",
-        "feeds.example.org",
+        "@FEEDS_DOMAIN@",
         "delist.html",
         "72 hours",
         "@FEED_PUBLIC_KEY@",

@@ -153,6 +153,16 @@ async def test_feeds_through_caddy_and_upstream_minisign(env: Env, tmp_path: Pat
         stats = await web.get("/v1/stats.json")
         assert stats.headers["access-control-allow-origin"] == "*"
 
+        # The README carries the real public key; the delisting page has its pinned policy.
+        readme = await web.get("/v1/README.txt")
+        assert readme.status_code == 200 and readme.content == (root / "readme.txt").read_bytes()
+        assert (await web.get("/v1/README.txt.minisig")).status_code == 200
+        assert pub in readme.text and "@" not in readme.text.replace("@example", "")
+        page = await web.get("/v1/delist.html")
+        csp = page.headers["content-security-policy"]
+        assert "default-src 'none'" in csp and "connect-src 'self'" in csp
+        assert "content-security-policy" not in r.headers
+
         # Nothing but static files: other methods, dot files, query strings and the root.
         assert (await web.head("/v1/inbound.txt")).status_code == 200
         assert (await web.post("/v1/inbound.txt", content=b"x")).status_code == 405
@@ -167,7 +177,7 @@ async def test_feeds_through_caddy_and_upstream_minisign(env: Env, tmp_path: Pat
         # What the site serves is what the real minisign verifies.
         served = {
             n: (await web.get(f"/v1/{n}", headers={"Accept-Encoding": "identity"})).content
-            for n in ("index.json", "inbound.txt", "outbound.txt")
+            for n in ("index.json", "inbound.txt", "outbound.txt", "readme.txt", "delist.html")
         }
     stix = json.loads((root / "outbound.stix.json").read_bytes())
     assert stix["type"] == "bundle" and any(o["type"] == "indicator" for o in stix["objects"])

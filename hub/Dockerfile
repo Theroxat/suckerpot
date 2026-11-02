@@ -21,6 +21,8 @@ COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 COPY hub/alembic.ini ./alembic.ini
 COPY hub/migrations ./migrations
+# The public README template and the delisting page (published into the feeds volume).
+COPY hub/static ./static
 USER 10001:10001
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python", "-m", "hub.healthcheck"]

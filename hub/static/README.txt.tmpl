@@ -1,7 +1,7 @@
 Community blocklists from the Selfhostr network
 ===============================================
 
-Base address: https://feeds.example.org/v1/
+Base address: https://@FEEDS_DOMAIN@/v1/
 
 These are free, public lists of internet addresses and host names that several independent
 honeypot sensors saw attacking or serving malware. Anyone can download them. There is no account,
@@ -47,8 +47,8 @@ Files are signed with minisign (https://jedisct1.github.io/minisign/). The publi
 
 Check a file, then check that the hash matches the one in the signed index.json:
 
-    curl -fsSO https://feeds.example.org/v1/outbound.txt
-    curl -fsSO https://feeds.example.org/v1/outbound.txt.minisig
+    curl -fsSO https://@FEEDS_DOMAIN@/v1/outbound.txt
+    curl -fsSO https://@FEEDS_DOMAIN@/v1/outbound.txt.minisig
     minisign -Vm outbound.txt -P @FEED_PUBLIC_KEY@
 
 The signature names the file and the serial. Do not accept a file with a lower serial than one you
@@ -66,7 +66,7 @@ REMOVAL (DELISTING)
 -------------------
 If an entry is wrong, or the problem is fixed, ask for removal:
 
-  * Form: https://feeds.example.org/v1/delist.html
+  * Form: https://@FEEDS_DOMAIN@/v1/delist.html
   * Or by e-mail: @DELIST_MAILBOX@
   * Or with curl: POST /v1/delist/challenge, solve the proof of work, then POST /v1/delist.
     Documented in the project documentation.
@@ -84,5 +84,5 @@ Privacy: we do not store or log your address. A request keeps only the text you 
 and the decision. Optional details and an e-mail address are deleted 30 days after the decision.
 Requests are deleted after 180 days.
 
-Check one value: https://feeds.example.org/v1/lookup?value=192.0.2.1
+Check one value: https://@FEEDS_DOMAIN@/v1/lookup?value=192.0.2.1
 The answer is "listed", "removed" or "not_listed", nothing else.
