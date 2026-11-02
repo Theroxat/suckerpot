@@ -351,3 +351,18 @@ def test_unfinished_update_blocks_a_new_one_unless_forced(sandbox: Sandbox) -> N
     assert "never finished" in out
     rc, out = run_update(sandbox, "--yes", "--force")
     assert "never finished" not in out
+
+
+def test_rollback_releases_the_unfinished_update_lock(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    sandbox.write_env(ENV.replace("v0.8.0", "v0.9.0"))
+    write_state(sandbox)
+    state = sandbox.root / ".suckerpot-state" / "last-update.json"
+    state.write_text(
+        state.read_text().replace('"from_version"', '"completed": false,\n  "from_version"')
+    )
+    (sandbox.root / "scripts" / "restore-db.sh").write_text('echo "restore-db $*" >> "$SHIM_LOG"\n')
+    proc = sandbox.run("scripts/rollback.sh", stdin="rollback\n")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert '"completed": true' in state.read_text()
+    assert '"completed": false' not in state.read_text()
