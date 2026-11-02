@@ -550,4 +550,7 @@ The integration run uses its own project name and its own volumes, and removes t
 - Takedown votes are not sent by members yet, so no target becomes `taken_down`.
 - Command-server reports are always reviewed by hand. The hub never connects to a target itself. A confirmed target is a judgement by consensus, not a proof.
 - The community feeds are off until the project identity is set (the feed domain, the feed key and the delisting mailbox), and until a short legal review is done. `HUB_FEED_MODE` stays `off` until then.
-- The feeds corroborate with AbuseIPDB and GreyNoise only. URLhaus and ThreatFox are not used yet.
+- The feeds corroborate with AbuseIPDB and GreyNoise only. URLhaus and ThreatFox are not used yet: the abuse.ch corroboration path of the selection code exists but is never fed, so an outbound entry always needs the sample evidence of two nodes.
+- Delisting requests share one global daily cap (`HUB_DELIST_DAILY_CAP`). Someone who solves the proof of work many times can use it up for a day, and real requests then wait for the next day or go to the project mailbox. Nothing is listed or unlisted by this.
+- The feed signing key cannot be rotated yet. A node keeps refusing lists signed with any other key, so a lost or replaced key stops updates (the nodes keep their last verified copy until it expires). It never makes them accept forged lists.
+- A C2 report does not say how sure the node was. Nodes only send C2 addresses they hold with high confidence; the hub cannot check that, and relies on its own rule instead (two droppers, each named by two nodes).
