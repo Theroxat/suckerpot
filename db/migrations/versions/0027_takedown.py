@@ -1,7 +1,7 @@
 """Takedown tracking and abuse.ch submission (M27): targets, checks, submissions, roll-up.
 
-Revision ID: 0024
-Revises: 0022
+Revision ID: 0027
+Revises: 0026
 
 * ``takedown_targets``: one row per reported target (attacking address, payload host, payload URL,
   C2). Ingest owns the state columns, the collector owns the HTTP re-check columns, the API may
@@ -22,8 +22,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0024"
-down_revision: str | None = "0023"
+revision: str = "0027"
+down_revision: str | None = "0026"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -1,7 +1,7 @@
 """Report outcomes (M26): the reply token, the IMAP profile, replies and outcomes.
 
-Revision ID: 0023
-Revises: 0022
+Revision ID: 0026
+Revises: 0025
 
 * ``abuse_reports.reply_token``: 12 random hex digits, unique, immutable, independent of every
   internal id (O6). Existing rows get a distinct value from the volatile default.
@@ -20,8 +20,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0023"
-down_revision: str | None = "0022"
+revision: str = "0026"
+down_revision: str | None = "0025"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
