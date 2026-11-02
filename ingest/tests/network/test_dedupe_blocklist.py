@@ -65,3 +65,12 @@ async def test_a_merely_confirmed_target_does_not_cancel_the_local_report() -> N
     await without_network(session, [seed("198.51.100.23")])  # type: ignore[arg-type]
     assert "'reported'" in session.sql and "'taken_down'" in session.sql
     assert "'confirmed'" not in session.sql
+
+
+async def test_the_window_runs_on_the_report_or_takedown_date() -> None:
+    session = FakeSession([])
+    await without_network(session, [seed("198.51.100.23")])  # type: ignore[arg-type]
+    assert "t.reported_day IS NOT NULL" in session.sql
+    assert "coalesce(t.taken_down_day, t.reported_day)" in session.sql
+    assert "last_day" not in session.sql
+    assert ":days" in session.sql  # still a bound parameter
