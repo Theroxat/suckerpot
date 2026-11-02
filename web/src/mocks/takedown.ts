@@ -475,7 +475,11 @@ export const takedownHandlers: RequestHandler[] = [
       const v = q.get(k)
       if (v)
         items = items.filter((t) =>
-          k === "channel" ? t.channels.includes(v as Channel) : t[k] === v,
+          k === "channel"
+            ? t.channels.includes(v as Channel)
+            : k === "kind" && v === "host"
+              ? t.kind === "ip" || t.kind === "domain"
+              : t[k] === v,
         )
     }
     const provider = q.get("provider")

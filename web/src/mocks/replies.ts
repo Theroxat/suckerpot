@@ -103,7 +103,7 @@ const seeds: Seed[] = [
     report: CLOSED,
     received_at: iso(30 * HOUR),
     from_domain: "example.net",
-    from_address: "abuse@example.net",
+    from_address: null,
     classification: "unknown",
     classification_source: "rule",
     rule: null,
@@ -235,6 +235,14 @@ const imap: ImapConfig = {
   },
 }
 
+/**
+ * `?imap=` on the page URL picks a demo state for screenshots: `shared` (free or shared mailbox,
+ * no provider name yet, last check failed), `password` (the server asks for the mailbox password
+ * again when saving).
+ */
+const demoState = (): string | null =>
+  typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("imap")
+
 const requests = new Map<number, ImapRequest>()
 let requestId = 300
 let importId = 700
@@ -266,12 +274,31 @@ function settle(id: number, result: ImapRequest["result"], error: string | null 
 export const repliesHandlers: RequestHandler[] = [
   http.get("/api/v1/abuse/imap", async () => {
     await delay(LATENCY_MS)
+    if (demoState() === "shared")
+      return HttpResponse.json({
+        ...imap,
+        host: "imap.example.com",
+        username: "reports.example@example.com",
+        trusted_authserv_id: null,
+        shared_mailbox: true,
+        state: {
+          ...imap.state,
+          last_error: "tls_failed",
+          last_ok_at: iso(26 * HOUR),
+          counters: {},
+        },
+      })
     return HttpResponse.json(imap)
   }),
   http.put("/api/v1/abuse/imap", async ({ request }) => {
     await delay(LATENCY_MS)
     const b = await body(request)
     if (!passwordOk(b)) return reauthFailed()
+    if (demoState() === "password" && typeof b.password !== "string")
+      return HttpResponse.json(
+        { detail: "password required", code: "password_required" },
+        { status: 422 },
+      )
     Object.assign(imap, {
       enabled: Boolean(b.enabled),
       configured: true,
@@ -370,6 +397,8 @@ export const repliesHandlers: RequestHandler[] = [
       r.classification_source = "manual"
     }
     if (typeof b.verified === "boolean") r.verified = b.verified
+    if (b.trust_domain === true && !r.from_address)
+      return HttpResponse.json({ detail: "no address", code: "no_address" }, { status: 422 })
     if (b.trust_domain === true) r.verified = true
     r.needs_review = !r.report || !r.verified
     return HttpResponse.json(r)

@@ -33,7 +33,11 @@ test("settings reporting", async ({ page }, info) => {
   await page.goto("/settings?tab=reporting")
   await expect(page.getByRole("textbox", { name: "Reply contact" })).toBeVisible()
   await expect(page.getByText("Never in a report", { exact: true })).toBeVisible()
-  await expect(page.getByText("Optional", { exact: true })).toHaveCount(6)
+  // The wording form has six optional texts; the mailbox card has its own two (see results.spec.ts).
+  const wording = page.locator("form", {
+    has: page.getByRole("textbox", { name: "Reply contact" }),
+  })
+  await expect(wording.getByText("Optional", { exact: true })).toHaveCount(6)
   await settle(page)
   await shoot(page, "settings-reporting", info.project.name, true)
 })
