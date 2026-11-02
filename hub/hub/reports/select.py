@@ -43,6 +43,8 @@ REPORT_KIND = {
     "c2_ip": "c2",
     "c2_domain": "c2",
     "url": "malware_host",
+    # A payload host given as an address (hub-internal kind, migration h0005).
+    "payload_ip": "malware_host",
     "domain": "malware_host",
 }
 
@@ -94,6 +96,11 @@ async def reportable_ids(
                         WHERE o.kind = 'ip' AND o.value = t.value AND o.day >= :since
                           AND o.node_id = ANY(:eligible)
                           AND o.attempts >= 3) >= :min_nodes))
+                OR (t.kind = 'payload_ip' AND t.activity && CAST(:severe AS text[])
+                    AND (SELECT count(DISTINCT o.node_id) FROM observations o
+                         WHERE o.kind = 'payload_ip' AND o.value = t.value AND o.day >= :since
+                           AND o.node_id = ANY(:eligible)
+                           AND o.activity && CAST(:severe AS text[])) >= :min_nodes)
                 OR (t.kind IN ('url', 'domain') AND (
                       SELECT count(DISTINCT o.node_id) FROM observations o
                        WHERE o.kind = t.kind AND o.value = coalesce(t.value_b, t.value)

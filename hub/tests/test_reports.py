@@ -120,6 +120,36 @@ async def test_severity_rules(env: Env) -> None:
 
 
 @pytest.mark.integration
+async def test_payload_hosts_are_still_reported_as_malware_hosts(env: Env) -> None:
+    """Security review H3 moved payload hosts out of the ``ip`` kind. M29 keeps reporting them,
+    now under their own kind and as a malware download location, not as an attack source."""
+    nodes = await add_nodes(
+        env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
+    )
+    host = "192.0.2.120"
+    await observe(
+        env.worker,
+        nodes,
+        "payload_ip",
+        host,
+        [D1, D2],
+        services=[],
+        activity=["download"],
+        tags=[],
+        attempts=None,
+    )
+    async with env.worker() as s:
+        await consensus.run_consensus(s, env.settings, TODAY, never=Never(), corroborate=None)
+        ids = await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env))
+        assert ids == {(await target(env.worker, "payload_ip", host))["id"]}
+        res = await sel.queue_reports(s, env.settings, TODAY, resolver=_resolver, never=Never())
+    assert res.queued == 1
+    async with env.worker() as s:
+        row = (await s.execute(text("SELECT kind, body_text FROM reports"))).one()
+    assert row.kind == "malware_host" and "192[.]0[.]2[.]120" in row.body_text
+
+
+@pytest.mark.integration
 async def test_url_needs_two_fetching_nodes_and_a_revealed_value(env: Env) -> None:
     nodes = await add_nodes(
         env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]

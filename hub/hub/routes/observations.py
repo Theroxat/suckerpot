@@ -97,15 +97,10 @@ def build_rows(
         )
         if p.host_ip is not None:
             if not never.has_ip(p.host_ip):
-                put(
-                    "ip",
-                    p.host_ip,
-                    activity=["download"],
-                    tags=["malware-drop"],
-                    families=fam,
-                    fetched=p.fetched,
-                )
-                # Hub-internal kind for the feeds: the host as a payload host (never sent to nodes).
+                # The host as a payload host, a hub-internal kind (never sent to nodes). It is NOT
+                # folded into the ``ip`` row of the same address: that row is the address as an
+                # attack source, and a URL typed into a honeypot says nothing about what its host
+                # did (security review H3). M29 reports payload hosts from this kind.
                 put(
                     "payload_ip",
                     p.host_ip,

@@ -230,7 +230,9 @@ def _src(ip: str, **kw: object) -> dict[str, object]:
     }
 
 
-def test_build_rows_merges_a_source_and_a_payload_host() -> None:
+def test_build_rows_keeps_a_source_and_a_payload_host_apart() -> None:
+    """Security review H3: a payload host is recorded as ``payload_ip`` only. The ``ip`` row of
+    the same address carries what it did as a source, nothing that was typed about it."""
     parsed = _batch(
         sources=[_src("192.0.2.4", tags=["mirai"], sessions=2, attempts=0)],
         payloads=[{"url_b": H1, "host_ip": "192.0.2.4", "sha256": H2, "fetched": True}],
@@ -239,9 +241,12 @@ def test_build_rows_merges_a_source_and_a_payload_host() -> None:
     out, accepted, rejected = build_rows(parsed, Never())
     by_key = {(r["kind"], r["value"]): r for r in out}
     assert len(out) == 4 and not rejected  # ip, url, sha256 and the hub-internal payload_ip
-    assert by_key[("ip", "192.0.2.4")]["activity"] == ["download", "login"]
-    assert by_key[("ip", "192.0.2.4")]["tags"] == ["malware-drop", "mirai"]
+    assert by_key[("ip", "192.0.2.4")]["activity"] == ["login"]
+    assert by_key[("ip", "192.0.2.4")]["tags"] == ["mirai"]
+    assert by_key[("ip", "192.0.2.4")]["fetched"] is False
     assert by_key[("ip", "192.0.2.4")]["sessions"] == 2
+    assert by_key[("payload_ip", "192.0.2.4")]["activity"] == ["download"]
+    assert by_key[("payload_ip", "192.0.2.4")]["fetched"] is True
     assert (
         by_key[("sha256", H2)]["families"] == ["mirai"]
         and by_key[("sha256", H2)]["fetched"] is True
@@ -328,3 +333,38 @@ def test_never_list_parses_bracketed_ipv6_c2_values() -> None:
     assert split_host_port("[2001:db8::1]:53") == ("2001:db8::1", 53)
     assert split_host_port("2001:db8::1") == ("2001:db8::1", None)
     assert split_host_port("198.51.100.1:23") == ("198.51.100.1", 23)
+
+
+def test_a_scanner_named_in_wget_commands_is_never_listed_inbound() -> None:
+    """Security review H3: an address that only scans over TCP, and that attackers type into
+    honeypots as a wget host, must not reach ``inbound`` as a malware dropper."""
+    import uuid
+    from datetime import date
+
+    from hub.feeds import select
+
+    nodes = [uuid.UUID(int=i + 1) for i in range(10)]
+    days = [date(2026, 10, 30), date(2026, 10, 31)]
+    obs: list[select.Obs] = []
+    for n in nodes:
+        for d in days:
+            parsed = _batch(
+                sources=[_src("192.0.2.4", services=["ssh"], activity=["scan"], attempts=0)],
+                payloads=[{"url_b": H1, "host_ip": "192.0.2.4"}],
+            )
+            out, _, _ = build_rows(parsed, Never())
+            ip = next(r for r in out if r["kind"] == "ip")
+            assert "download" not in ip["activity"] and "malware-drop" not in ip["tags"]
+            obs.append(
+                select.Obs(
+                    node=n,
+                    day=d,
+                    services=tuple(ip["services"]),
+                    activity=tuple(ip["activity"]),
+                    tags=tuple(ip["tags"]),
+                    attempts=ip["attempts"],
+                )
+            )
+    t = select.TargetInput("t_000000000001", "ip", "192.0.2.4", "confirmed", days[0], False, obs)
+    ctx = select.SelectContext(k=5, today=date(2026, 11, 1), cohort_of={})
+    assert select.evaluate(t, ctx, True).candidate is None
