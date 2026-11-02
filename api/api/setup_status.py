@@ -356,6 +356,31 @@ async def _network(db: AsyncSession, now: datetime) -> SetupItem:
     )
 
 
+# Words for the fetch error codes of the community lists (the web UI uses the same wording). An
+# unknown code is not shown: a raw code means nothing to the reader.
+FEED_ERROR_WORDS: dict[str, str] = {
+    "not_configured": "The address or the key of the lists is not set.",
+    "egress_closed": "Outbound access is closed, so the lists could not be fetched.",
+    "bad_signature": "The signature did not verify, so the new lists were refused.",
+    "feed_rollback": "The lists offered were older than the ones already stored, so they were "
+    "refused.",
+    "feed_expired": "No fresh copy has been published.",
+    "feed_invalid": "The lists failed a check and were refused.",
+    "too_large": "The lists were larger than allowed and were refused.",
+    "unreachable": "The list server could not be reached.",
+}
+
+
+def _feed_error_words(code: str | None) -> str | None:
+    if not code:
+        return None
+    if code in FEED_ERROR_WORDS:
+        return FEED_ERROR_WORDS[code]
+    if code.startswith("http_") and code[5:].isdigit():
+        return f"The list server answered with an error ({code[5:]})."
+    return None
+
+
 async def _network_feed(db: AsyncSession, now: datetime) -> SetupItem:
     """The community lists (M30): off unless fetching is on; then fresh, or the reason it is not."""
     href = "/defend/blocklists?tab=network"
@@ -371,11 +396,14 @@ async def _network_feed(db: AsyncSession, now: datetime) -> SetupItem:
     if info.state == "never":
         return _item("network_feed", "ok", "Waiting for the first fetch of the lists.", href)
     if info.state == "stale":
-        detail = "The community lists have expired; nothing is served to firewalls."
+        detail = (
+            "The community lists have expired; this dashboard stopped serving its copy to "
+            "firewalls."
+        )
     else:
         detail = "The last fetch of the community lists failed."
-    if info.error_code:
-        detail = f"{detail} ({info.error_code})"
+    if (words := _feed_error_words(info.error_code)) is not None:
+        detail = f"{detail} {words}"
     return _item("network_feed", "warning", detail, href)
 
 
