@@ -544,6 +544,44 @@ Details in [Architecture](ARCHITECTURE.md#anonymous-reporting-m22), [Deployment]
 
 The reply contact, signature and all wording are not environment variables. The owner types them in Settings > Reporting. Only the reply contact is required. To keep the identity guard accurate, the `api` service also reads the sensor host name variables, `API_ALLOWED_ORIGINS`, `ALERTS_DASHBOARD_URL`, `INDICATORS_IGNORE`, `BLOCKLIST_NEVER`, `AUTH_TRUSTED_PROXIES` and `VPN_WG_ENDPOINT_IP`. These are used only to build the list of terms a report must never contain.
 
+## Replies to reports (M26)
+
+Details in [Replies to reports](replies.md). The worker is off by default. Mail is read only through the VPN, and only when `ABUSE_REPLIES_ENABLED` is `true` **and** you save and enable a mailbox in Settings > Reporting > Replies. The mailbox (server, user name, password, folder, trusted provider name) is never an environment variable. Pasted replies work without any of this.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ABUSE_REPLIES_ENABLED` | `false` | Run the replies worker in `ingest`. It also processes pasted replies. |
+| `ABUSE_REPLY_MAX_BYTES` | `262144` | Largest mail read, in bytes (65,536 to 1,048,576). Larger mail is cut and marked as truncated. |
+| `ABUSE_REPLY_MAX_PER_POLL` | `50` | Mails read in one poll (1 to 500). The rest waits for the next poll. |
+| `ABUSE_REPLY_DAILY_CAP` | `500` | Mails read per UTC day (1 to 10,000). |
+| `ABUSE_REPLY_POLL_DEADLINE_S` | `120` | Seconds one poll may take in total (30 to 600). |
+| `ABUSE_REPLY_EXCERPT_CHARS` | `2000` | Characters of a reply kept as an excerpt (0 to 2,000). `0` keeps none. |
+| `ABUSE_REPLY_EXCERPT_DAYS` | `180` | Days an excerpt is kept (1 to 3,650). Read by `migrate` for the retention job. |
+| `ABUSE_REPLY_MATCH_DAYS` | `120` | A reply is matched to reports sent in the last N days (1 to 730). |
+| `ABUSE_NO_ANSWER_DAYS` | `14` | Days without an answer before a sent report shows **No answer**. Read by `api`. |
+
+The check interval of the mailbox is set in Settings (5 to 1440 minutes, 15 by default), not here.
+
+## Takedown tracking and abuse.ch submission (M27)
+
+Details in [Takedowns](takedowns.md). Everything is off by default. The collector re-checks a payload URL only with `TAKEDOWN_ENABLED=true` **and** `COLLECTOR_ENABLED=true`, through the VPN. Re-checks are one bounded GET of a URL that already served a sample. C2 servers and attacking addresses are never contacted.
+
+abuse.ch submission needs three things: `ABUSECH_SUBMIT_ENABLED=true`, a mode other than **Off** in Settings > Reporting > abuse.ch, and an Auth-Key saved there. The key is never an environment variable.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TAKEDOWN_ENABLED` | `false` | Run the takedown worker in `ingest` and the HTTP re-checks in `collector` (the latter also needs `COLLECTOR_ENABLED=true`). |
+| `TAKEDOWN_TRACK_DAYS` | `30` | Days a target is followed after it was reported (7 to 90). |
+| `TAKEDOWN_HTTP_DAILY_QUOTA` | `200` | Re-checks per day, read by `collector` (at least 1). |
+| `TAKEDOWN_INTEL_DAILY_QUOTA` | `100` | Lookups per day (URLhaus and ThreatFox) that takedown tracking may make. Each one also counts against `ABUSECH_DAILY_QUOTA`. |
+| `TAKEDOWN_ABUSEIPDB_DAILY_QUOTA` | `50` | AbuseIPDB reads per day that takedown tracking may make. Each one also counts against `ABUSEIPDB_DAILY_QUOTA`. Selfhostr never reports to AbuseIPDB. |
+| `TAKEDOWN_QUIET_DAYS` | `7` | Days without a sighting before an attacking address counts as quiet (1 to 90). |
+| `TAKEDOWN_CHECK_RETENTION_DAYS` | `400` | Days to keep individual checks (30 to 3,650). Read by `migrate`. The monthly roll-up is kept forever. |
+| `TAKEDOWN_INTERVAL_S` | `600` | Seconds between two takedown cycles in `ingest` (30 to 86,400). Read by the worker; not listed in `.env.example`. |
+| `ABUSECH_SUBMIT_ENABLED` | `false` | Server switch for submitting captured malware URLs to URLhaus, and C2 addresses to ThreatFox. Read by `ingest` and `api`. When it is `false`, the Settings card shows the switch as disabled. |
+
+The abuse.ch lookup key (used to check whether a value is already listed) is the same as before: `ABUSECH_AUTH_KEY`, or the key on the Settings page. The submission Auth-Key is separate and is entered only in Settings > Reporting > abuse.ch.
+
 ## In `.env.example` but not used yet
 
 These names are in the template. The code does not read them, so setting them has no effect today.

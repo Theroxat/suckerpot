@@ -21,6 +21,8 @@ deployment
 demo-data
 ui
 defend
+replies
+takedowns
 api-keys
 ```
 
