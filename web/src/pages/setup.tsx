@@ -118,6 +118,8 @@ function Stepper() {
   useEffect(() => {
     document
       .querySelector<HTMLElement>('[aria-label="Setup steps"] [aria-current="step"]')
+      // jsdom (vitest) has no scrollIntoView.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       ?.scrollIntoView?.({ inline: "center", block: "nearest" })
   }, [index, progress])
 
