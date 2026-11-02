@@ -1,0 +1,176 @@
+<!doctype html>
+<!-- Suggested policy for the web server (inline script and style are pinned by hash, nothing else
+     is allowed; the worker-src entry is optional, the page falls back to its own thread):
+     default-src 'none'; script-src 'sha256-<hash of the script>'; style-src 'sha256-<hash of the style>';
+     connect-src 'self'; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none' -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Ask to remove an entry from the blocklists</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; color: #1b1b1b; background: #fff; }
+  h1 { font-size: 1.4rem; }
+  label { display: block; margin-top: 1rem; font-weight: 600; }
+  input, select, textarea, button { font: inherit; width: 100%; box-sizing: border-box; padding: .5rem; margin-top: .25rem; }
+  button { width: auto; padding: .5rem 1.25rem; cursor: pointer; }
+  textarea { min-height: 7rem; }
+  .hint { font-weight: 400; color: #555; font-size: .9rem; }
+  #result { margin-top: 1.5rem; padding: 1rem; border: 1px solid #888; border-radius: 4px; }
+  #result[hidden] { display: none; }
+  code { word-break: break-all; }
+  @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } input, select, textarea, button { background: #222; color: #eee; border: 1px solid #666; } .hint { color: #aaa; } }
+</style>
+</head>
+<body>
+<h1>Ask to remove an entry from the blocklists</h1>
+<p>These public lists name addresses and host names that several independent sensors saw attacking or serving malware. If one of yours is listed by mistake, or you have cleaned it up, tell us here. A person reviews every request and answers within 72 hours.</p>
+<p>We do not store your address, set cookies or load anything from other sites. Optional text you type is kept only until 30 days after the decision.</p>
+
+<form id="form" autocomplete="off">
+  <label for="value">IP address or host name
+    <span class="hint">One value, for example 192.0.2.10 or host.example.org</span></label>
+  <input id="value" name="value" required maxlength="253" spellcheck="false">
+
+  <label for="category">Why should it be removed?</label>
+  <select id="category" name="category" required>
+    <option value="i_operate_this">I operate this and it was not attacking anyone</option>
+    <option value="shared_infrastructure">It is shared infrastructure (CDN, proxy, resolver)</option>
+    <option value="cleaned_up">The problem is fixed or cleaned up</option>
+    <option value="address_reassigned">The address now belongs to someone else</option>
+    <option value="other">Something else</option>
+  </select>
+
+  <label for="evidence">Details <span class="hint">(optional, plain text, at most 2000 characters)</span></label>
+  <textarea id="evidence" name="evidence" maxlength="2000"></textarea>
+
+  <label for="contact">E-mail for the answer <span class="hint">(optional; you can also check the status below)</span></label>
+  <input id="contact" name="contact" type="email" maxlength="254" spellcheck="false">
+
+  <p><button id="send" type="submit">Send request</button></p>
+</form>
+
+<div id="result" role="status" aria-live="polite" hidden></div>
+
+<h2>Check a request</h2>
+<form id="check" autocomplete="off">
+  <label for="rid">Request number</label>
+  <input id="rid" required maxlength="18" spellcheck="false">
+  <label for="rtoken">Status code <span class="hint">(shown once when you sent the request)</span></label>
+  <input id="rtoken" required maxlength="64" spellcheck="false">
+  <p><button type="submit">Check</button></p>
+</form>
+<div id="status" role="status" aria-live="polite" hidden></div>
+
+<h2>Is it listed?</h2>
+<form id="look" autocomplete="off">
+  <label for="lv">IP address or host name</label>
+  <input id="lv" required maxlength="253" spellcheck="false">
+  <p><button type="submit">Look up</button></p>
+</form>
+<div id="lookup" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var show = function (box, text) { box.textContent = text; box.hidden = false; if (box.id !== "lookup") { box.style.border = "1px solid #888"; box.style.padding = "1rem"; } };
+  var enc = new TextEncoder();
+
+  function b64uDecode(s) {
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) s += "=";
+    var bin = atob(s), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function b64uEncode(bytes) {
+    var s = "";
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  // The proof of work runs in a Web Worker built from a Blob. If the browser blocks that (a strict
+  // policy without worker-src blob:), it falls back to the page thread in small slices.
+  var WORKER_SRC =
+    "self.onmessage=async function(e){var c=e.data.c,d=e.data.d,n=0;" +
+    "var buf=new Uint8Array(c.length+8);buf.set(c,0);var dv=new DataView(buf.buffer);" +
+    "for(;;){dv.setUint32(c.length,Math.floor(n/4294967296));dv.setUint32(c.length+4,n>>>0);" +
+    "var h=new Uint8Array(await crypto.subtle.digest('SHA-256',buf));" +
+    "var bits=0;for(var i=0;i<h.length;i++){if(h[i]===0){bits+=8;continue}bits+=Math.clz32(h[i])-24;break}" +
+    "if(bits>=d){self.postMessage(buf.slice(c.length));return}n++;}};";
+
+  function solve(challenge, difficulty) {
+    return new Promise(function (resolve, reject) {
+      var c = b64uDecode(challenge);
+      try {
+        var url = URL.createObjectURL(new Blob([WORKER_SRC], { type: "text/javascript" }));
+        var w = new Worker(url);
+        w.onmessage = function (e) { w.terminate(); URL.revokeObjectURL(url); resolve(e.data); };
+        w.onerror = function () { w.terminate(); solveHere(c, difficulty).then(resolve, reject); };
+        w.postMessage({ c: c, d: difficulty });
+      } catch (err) { solveHere(c, difficulty).then(resolve, reject); }
+    });
+  }
+  async function solveHere(c, d) {
+    var buf = new Uint8Array(c.length + 8); buf.set(c, 0);
+    var dv = new DataView(buf.buffer);
+    for (var n = 0; ; n++) {
+      dv.setUint32(c.length, Math.floor(n / 4294967296)); dv.setUint32(c.length + 4, n >>> 0);
+      var h = new Uint8Array(await crypto.subtle.digest("SHA-256", buf));
+      var bits = 0;
+      for (var i = 0; i < h.length; i++) { if (h[i] === 0) { bits += 8; continue; } bits += Math.clz32(h[i]) - 24; break; }
+      if (bits >= d) return buf.slice(c.length);
+    }
+  }
+
+  function call(method, path, body, headers) {
+    var init = { method: method, headers: headers || {}, credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store" };
+    if (body !== undefined) { init.body = JSON.stringify(body); init.headers["Content-Type"] = "application/json"; }
+    return fetch(path, init).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, json: j }; }); });
+  }
+  function problem(r) {
+    if (r.status === 429) return "Too many requests. Please try again later.";
+    if (r.status === 409) return "A request for this value is already open.";
+    return "The request was not accepted. Check the values and try again.";
+  }
+
+  $("form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var btn = $("send"); btn.disabled = true; show($("result"), "Working... this takes a few seconds.");
+    call("POST", "/v1/delist/challenge", {}).then(function (ch) {
+      if (ch.status !== 200) throw ch;
+      return solve(ch.json.challenge, ch.json.difficulty).then(function (nonce) {
+        var body = { challenge: ch.json.challenge, pow_nonce: b64uEncode(nonce), value: $("value").value.trim(), category: $("category").value };
+        if ($("evidence").value.trim()) body.evidence = $("evidence").value;
+        if ($("contact").value.trim()) body.contact = $("contact").value.trim();
+        return call("POST", "/v1/delist", body);
+      });
+    }).then(function (r) {
+      if (r.status !== 200) throw r;
+      if (!r.json.listed) { show($("result"), "This value is not on any list. Nothing was stored."); return; }
+      show($("result"), "Request " + r.json.id + " received. Keep this status code, it is shown only once: " + r.json.status_token + ". We answer within " + r.json.sla_hours + " hours.");
+    }).catch(function (e) { show($("result"), problem(e || {})); }).then(function () { btn.disabled = false; });
+  });
+
+  $("check").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    call("GET", "/v1/delist/" + encodeURIComponent($("rid").value.trim()), undefined, { Authorization: "Bearer " + $("rtoken").value.trim() }).then(function (r) {
+      if (r.status !== 200) { show($("status"), "No request matches that number and code."); return; }
+      var j = r.json;
+      show($("status"), "State: " + j.state + (j.outcome ? " (" + j.outcome + ")" : "") + (j.public_note ? ". Note: " + j.public_note : "") + ". Received " + j.created_day + (j.decided_day ? ", decided " + j.decided_day : "") + ".");
+    });
+  });
+
+  $("look").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    call("GET", "/v1/lookup?value=" + encodeURIComponent($("lv").value.trim())).then(function (r) {
+      var words = { listed: "is listed", removed: "was removed recently", not_listed: "is not listed" };
+      show($("lookup"), r.status === 200 ? r.json.value + " " + (words[r.json.status] || "is not listed") + "." : problem(r));
+    });
+  });
+})();
+</script>
+</body>
+</html>

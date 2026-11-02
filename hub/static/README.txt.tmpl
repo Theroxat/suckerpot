@@ -1,0 +1,88 @@
+Community blocklists from the Selfhostr network
+===============================================
+
+Base address: https://feeds.example.org/v1/
+
+These are free, public lists of internet addresses and host names that several independent
+honeypot sensors saw attacking or serving malware. Anyone can download them. There is no account,
+no key and no tracking. The same files are served to everyone.
+
+THE LISTS
+---------
+inbound           Addresses seen attacking sensors (scans, brute force, exploit attempts).
+inbound-high      A smaller, stricter set of the same, seen by more sensors for longer.
+outbound          Addresses that served or controlled malware seen by sensors.
+outbound-high     A smaller, stricter set of the same.
+outbound-domains  Exact host names (no wildcards) that served or controlled malware.
+
+An entry stays on a list for a limited time after it was last seen (days to a few weeks) and then
+expires by itself. Shared infrastructure (public resolvers, CDNs, Tor exit nodes) is kept off.
+
+FILES
+-----
+index.json            The manifest: serial, validity, and the SHA-256 and size of every file.
+<list>.txt            One value per line. <list>.v4.txt and <list>.v6.txt split by family.
+<list>.nft            nftables set, load with: nft -f
+<list>.ipset          ipset restore file with an atomic swap
+<list>.rsc            MikroTik RouterOS v7 script
+<list>.csv / .json    Same values with details (first seen, last seen, expiry, categories)
+outbound.stix.json    STIX 2.1 bundle (TLP:CLEAR)
+stats.json            Public statistics, including the delisting figures
+removed.json          Values that expired or were taken down in the last 30 days
+delist.html           The delisting form
+Every file has a .minisig signature, and a .gz copy for clients that ask for compression.
+
+LICENCE
+-------
+CC0 1.0 Universal. To the extent possible under law, the data and these files are dedicated to
+the public domain: copy, change, mix and redistribute them for any purpose, with no permission
+needed. See LICENSE.txt and https://creativecommons.org/publicdomain/zero/1.0/legalcode
+If it is convenient, please credit the Selfhostr network. This is a request, not a condition.
+
+VERIFY WHAT YOU DOWNLOAD
+------------------------
+Files are signed with minisign (https://jedisct1.github.io/minisign/). The public key is:
+
+    @FEED_PUBLIC_KEY@
+
+Check a file, then check that the hash matches the one in the signed index.json:
+
+    curl -fsSO https://feeds.example.org/v1/outbound.txt
+    curl -fsSO https://feeds.example.org/v1/outbound.txt.minisig
+    minisign -Vm outbound.txt -P @FEED_PUBLIC_KEY@
+
+The signature names the file and the serial. Do not accept a file with a lower serial than one you
+already have, and do not use a file after "valid_until" in index.json. Check the key from a second
+source (the project documentation) before you rely on it.
+
+ACCURACY AND NO WARRANTY
+------------------------
+An entry means: "observed by at least five independent sensors". It does not mean the owner is
+guilty of anything. Addresses change hands and hosts get cleaned up. The lists are provided "as
+is", without warranty of any kind, and the operators accept no liability for blocking decisions
+you make with them. Use them as one input, not as proof. Do not use them to harass anyone.
+
+REMOVAL (DELISTING)
+-------------------
+If an entry is wrong, or the problem is fixed, ask for removal:
+
+  * Form: https://feeds.example.org/v1/delist.html
+  * Or by e-mail: @DELIST_MAILBOX@
+  * Or with curl: POST /v1/delist/challenge, solve the proof of work, then POST /v1/delist.
+    Documented in the project documentation.
+
+What happens:
+  * A person reviews every request. We aim to decide within 72 hours.
+  * For the inbound lists the entry is hidden at once, until we decide (within a daily limit).
+    For the outbound lists the request is reviewed first.
+  * You get a request number and a status code, shown once. Use them to check the decision.
+  * Outcomes: removed because it was a mistake; removed because it was cleaned up or reassigned;
+    removed because it should never be listed; or kept, with a short public reason.
+  * Removed values are never repeated in removed.json. Only counts are published.
+
+Privacy: we do not store or log your address. A request keeps only the text you send, the day,
+and the decision. Optional details and an e-mail address are deleted 30 days after the decision.
+Requests are deleted after 180 days.
+
+Check one value: https://feeds.example.org/v1/lookup?value=192.0.2.1
+The answer is "listed", "removed" or "not_listed", nothing else.
