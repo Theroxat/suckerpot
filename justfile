@@ -199,6 +199,10 @@ update *args: _need-project
 rollback: _need-project
     bash scripts/rollback.sh
 
+# Verify the signatures of a release's images (cosign): just verify-images [--pull] [--only "api ingest"] [vX.Y.Z]
+verify-images *args:
+    bash scripts/verify-images.sh "$@"
+
 # Choose the sensors: just sensors ssh,telnet,web | recommended | all (no argument: show the selection).
 sensors *list: _need-project
     #!/usr/bin/env bash
