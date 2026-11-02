@@ -58,6 +58,11 @@ REVISIONS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, str], ...]]] = {
     "0016": (("indicator_contacts", "indicator_contact_checks"), ()),
     "0017": ((), ()),
 }
+
+# The newest revision: the files are numbered and chained in order.
+HEAD = max(
+    f.name[:4] for f in (DB_DIR / "migrations" / "versions").glob("[0-9][0-9][0-9][0-9]_*.py")
+)
 ORDER = ["0011", "0012", "0013", "0014", "0015", "0016", "0017"]
 PRUNE_JOBS = {
     "0011": "suckerpot_campaign_prune",
@@ -122,7 +127,7 @@ async def assert_state(engine: AsyncEngine, applied: list[str]) -> None:
 
 
 async def test_each_revision_goes_down_and_up(engine: AsyncEngine) -> None:
-    assert await current(engine) == "0027"
+    assert await current(engine) == HEAD
     await assert_state(engine, ORDER)
 
     # Back to 0010 one revision at a time; then raw events with a compressed chunk.
@@ -182,7 +187,7 @@ async def test_each_revision_goes_down_and_up(engine: AsyncEngine) -> None:
         assert await conn.scalar(text("SELECT count(*) FROM events")) == 4
 
     _migrate()  # upgrade head + roles + retention again
-    assert await current(engine) == "0027"
+    assert await current(engine) == HEAD
     await assert_state(engine, ORDER)
     async with engine.connect() as conn:
         jobs = {

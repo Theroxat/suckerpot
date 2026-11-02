@@ -74,6 +74,57 @@ The template uses `change-me` as a placeholder. It is too short for the policy, 
 | `SYNOLOGY_HTTPS_HOST_PORT` | `5001` | `.env` | Host port of the Synology sensor's HTTPS listener (IPv4 only) |
 | `SUCKERPOT_ALLOW_DEFAULT_SECRETS` | `0` | `.env` | `1` turns off the secret length and uniqueness checks. CI and throwaway tests only. |
 
+## Install, updates and sensor switches (M28)
+
+These variables are written by the installer, or changed by the update and sensor commands. The install guide explains them in context: [Install Selfhostr](install.md) and [Updates and rollback](updates.md).
+
+### Sensor switches
+
+Each sensor has a switch. `1` turns it on, `0` turns it off. A sensor that is off is not started and publishes no port. Change them with `just sensors`, or by editing `.env` and running `just up`. The default is `1`, so an older `.env` without these lines keeps every sensor.
+
+| Variable | Sensor | Default | Standard port |
+| --- | --- | --- | --- |
+| `SENSOR_SSH` | SSH | `1` | 22 |
+| `SENSOR_TELNET` | Telnet | `1` | 23 |
+| `SENSOR_WEB` | Web (HTTP and HTTPS) | `1` | 80, 443 |
+| `SENSOR_RDP` | RDP | `1` | 3389 |
+| `SENSOR_REDIS` | Redis | `1` | 6379 |
+| `SENSOR_DOCKER` | Docker API | `1` | 2375 |
+| `SENSOR_MYSQL` | MySQL | `1` | 3306 |
+| `SENSOR_MSSQL` | MSSQL | `1` | 1433 |
+| `SENSOR_ADB` | ADB | `1` | 5555 |
+| `SENSOR_SMB` | SMB | `1` | 445 |
+| `SENSOR_SIP` | SIP | `1` | 5060 (UDP and TCP) |
+| `SENSOR_SYNOLOGY` | Synology DSM | `1` | 5000, 5001 |
+
+The port guard (`scripts/check-ports.sh`) accepts only `0` or `1`. Host ports are in [Ports to forward](install.md#ports-to-forward).
+
+### Install mode and images
+
+| Variable | Default | Source | Description |
+| --- | --- | --- | --- |
+| `SUCKERPOT_INSTALL_MODE` | `source` | `.env`, written by the installer | `images` runs the signed release images. `source` builds them from the checkout. `just up` and the update scripts read it. |
+| `SUCKERPOT_IMAGE_PREFIX` | unset | `.env`, written in images mode | Registry and name prefix of the release images, `ghcr.io/<owner>/suckerpot`. Unset, the images are built locally and named `local/<project>-<service>`. The installer uses the project registry unless you set this variable before you run it. The owner in this name is also the repository whose release signatures are checked. |
+| `SUCKERPOT_VERSION` | `dev` | `.env`, written by the installer and by `just update` | Release tag of the images to run, such as `vX.Y.Z`. Every image name ends with it. |
+| `SUCKERPOT_VOLUME_PREFIX` | none, required | `.env`, written by the installer | Prefix of the external data volumes, such as `suckerpot_db-data`. Compose refuses to start without it. |
+| `SUCKERPOT_BUILD_VERSION` | `dev` | Set by `just up` and `just update` | Version baked into images built from the checkout. Leave it unset for a plain build. |
+| `SUCKERPOT_BUILD_COMMIT` | `unknown` | Set by `just up` and `just update` | Commit baked into images built from the checkout. |
+
+### Updates
+
+| Variable | Default | Source | Description |
+| --- | --- | --- | --- |
+| `UPDATE_CHECK_ENABLED` | `false` | `.env`, or `just set UPDATE_CHECK_ENABLED=true` | Once a day, ask GitHub for the latest release, through the VPN only. Never installs anything. See [the update check](updates.md#the-optional-update-check). |
+| `UPDATE_CHECK_REPO` | the project repository, `owner/name` | `.env` | The repository the check reads. A fork sets its own. Any value that is not `owner/name` falls back to the default. `just set` does not accept this variable. |
+
+### Low memory and Redis
+
+| Variable | Default | Source | Description |
+| --- | --- | --- | --- |
+| `COMPOSE_FILE` | unset | `.env`, written by the installer for low memory | Set to `docker-compose.yml:docker-compose.lowmem.yml` to use the lower memory limits. See [low-memory hosts](install.md#low-memory-hosts). `just set` does not change it. |
+| `REDIS_MAXMEMORY_MB` | `192` (`96` in low-memory mode) | `.env` | Memory ceiling of Redis in MiB, from 32 to 4096. |
+| `COMPOSE_PROFILES` | unset (the installer writes `egress`) | `.env` | `egress` runs `vpn`, `collector` and `analyzer`. The installer always sets it. Without a VPN configuration, `vpn` waits in idle mode. See [the VPN before a WireGuard file is uploaded](install.md#the-vpn-before-a-wireguard-file-is-uploaded). |
+
 ## Database
 
 | Variable | Default | Source | Description |

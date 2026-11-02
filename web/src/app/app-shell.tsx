@@ -5,6 +5,8 @@ import { LiveIndicator } from "@/components/live-indicator"
 import { MaskToggle } from "@/components/mask-toggle"
 import { ReadOnlyBadge } from "@/components/read-only-badge"
 import { ScannerToggle } from "@/components/scanner-toggle"
+import { SetupRedirect } from "@/components/setup/redirect"
+import { VersionLabel } from "@/components/setup/version-label"
 import { SearchPaletteProvider, SearchTrigger } from "@/components/search/search-palette"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { TourButton } from "@/components/tour/tour-button"
@@ -100,7 +102,13 @@ function MockBadge() {
  * Desktop: theme, masking and the account (live status and the scanner switch sit in the header,
  * so the navigation keeps its height). The phone drawer carries everything.
  */
-function StatusFooter({ drawer = false }: { drawer?: boolean }) {
+function StatusFooter({
+  drawer = false,
+  onNavigate,
+}: {
+  drawer?: boolean
+  onNavigate?: () => void
+}) {
   const { status, detail } = useLiveStatus()
   return (
     <div className="flex flex-col gap-3 border-t px-3 pt-4">
@@ -120,6 +128,7 @@ function StatusFooter({ drawer = false }: { drawer?: boolean }) {
         <ReadOnlyBadge className="mx-1 self-start" />
         <AccountMenu />
       </div>
+      <VersionLabel onNavigate={onNavigate} />
     </div>
   )
 }
@@ -140,6 +149,7 @@ export function AppShell() {
   return (
     <SearchPaletteProvider>
       <TourProvider>
+        <SetupRedirect />
         <div className="min-h-dvh bg-bg">
           <a
             href="#main"
@@ -183,7 +193,7 @@ export function AppShell() {
                 <div className="flex-1 overflow-y-auto px-3">
                   <NavList onNavigate={() => setOpen(false)} />
                 </div>
-                <StatusFooter drawer />
+                <StatusFooter drawer onNavigate={() => setOpen(false)} />
               </SheetContent>
             </Sheet>
             {/* Mark only: the name does not fit next to five controls at 390 px. */}

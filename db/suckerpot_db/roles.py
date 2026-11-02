@@ -144,9 +144,9 @@ DECLARE
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
                   'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
-                  'abuse_send_requests', 'report_imap', 'report_imap_state',
-                  'report_imap_requests', 'abuse_replies', 'abuse_reply_imports',
-                  'abuse_report_outcomes',
+                  'abuse_send_requests', 'setup_progress', 'report_imap',
+                  'report_imap_state', 'report_imap_requests', 'abuse_replies',
+                  'abuse_reply_imports', 'abuse_report_outcomes',
                   'takedown_targets', 'takedown_checks',
                   'takedown_target_links', 'abusech_submission', 'abusech_submissions',
                   'outcome_rollup_monthly']
@@ -380,9 +380,9 @@ DECLARE
                   'abuse_recipients', 'abuse_reports', 'abuse_report_subjects',
                   'abuse_report_requests', 'report_settings', 'report_self_terms',
                   'egress_trusted_exits', 'egress_check_requests', 'report_smtp',
-                  'abuse_send_requests', 'report_imap', 'report_imap_state',
-                  'report_imap_requests', 'abuse_replies', 'abuse_reply_imports',
-                  'abuse_report_outcomes',
+                  'abuse_send_requests', 'setup_progress', 'report_imap',
+                  'report_imap_state', 'report_imap_requests', 'abuse_replies',
+                  'abuse_reply_imports', 'abuse_report_outcomes',
                   'takedown_targets', 'takedown_checks',
                   'takedown_target_links', 'abusech_submission', 'abusech_submissions',
                   'outcome_rollup_monthly']
@@ -548,6 +548,10 @@ BEGIN
         EXECUTE format(
             'GRANT USAGE ON SEQUENCE %s TO %I',
             pg_get_serial_sequence('public.egress_trusted_exits', 'id'), r);
+    END IF;
+    IF to_regclass('public.setup_progress') IS NOT NULL THEN
+        -- M28: the first-run setup keeps its one row here; ingest never reads it.
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE ON setup_progress TO %I', r);
     END IF;
     IF to_regclass('public.egress_check_requests') IS NOT NULL THEN
         -- M24: "Check now" inserts a request; the table trims itself (SECURITY DEFINER trigger).

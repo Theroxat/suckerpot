@@ -27,6 +27,7 @@ pytestmark = [
 URL = "/api/v1/setup/status"
 ORDER = [
     "sensors",
+    "ports",
     "vpn",
     "collector",
     "reporting_settings",
@@ -37,6 +38,7 @@ ORDER = [
     "provider_keys",
     "takedown",
     "abusech_submit",
+    "updates",
 ]
 SQL_RESET = (
     "DELETE FROM events",
