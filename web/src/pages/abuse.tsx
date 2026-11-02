@@ -122,9 +122,9 @@ function MailboxForm({ w, onDone }: { w: WaitingRecipient; onDone: () => void })
         id={id}
         type="email"
         value={value}
-        placeholder="abuse@example.net"
+        placeholder="abuse@provider.tld"
         onChange={(e) => setValue(e.target.value)}
-        className="h-8 w-56 font-mono text-xs"
+        className="h-8 w-56 font-mono text-xs placeholder:text-fg-subtle"
       />
       <Button type="submit" size="sm" variant="outline" disabled={save.isPending}>
         Add mailbox
@@ -210,7 +210,14 @@ export function AbusePage() {
       <PageHeader
         help="abuse"
         title="Abuse reports"
-        description={<span className="normal-nums">{describeReports(st.data)}</span>}
+        description={
+          <span className="normal-nums">
+            {describeReports(st.data, {
+              toSend: queue.data?.items.length,
+              replies: canWrite ? repliesToCheck : 0,
+            })}
+          </span>
+        }
         actions={
           <>
             <ReadOnlyBadge />
