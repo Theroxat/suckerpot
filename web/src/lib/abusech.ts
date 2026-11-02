@@ -79,7 +79,7 @@ export const STATUS_LABEL: Record<SubmissionStatus, string> = {
   rejected: "Rejected by abuse.ch",
   failed: "Failed",
   cancelled: "Cancelled",
-  skipped_known: "Already known",
+  skipped_known: "Already on URLhaus",
   skipped_never_list: "Not shared (safe list)",
   guard_failed: "Blocked by the identity check",
 }
@@ -168,7 +168,7 @@ export function describeSchedule(s: Submission): string | null {
 
 export function describeLookup(s: Submission): string {
   if (s.lookup === "pending") return "Lookup pending"
-  return s.lookup === "known" ? "Already known" : "Not known yet"
+  return s.lookup === "known" ? "Already on URLhaus" : "New to URLhaus"
 }
 
 export function describeSelection(n: number): string {

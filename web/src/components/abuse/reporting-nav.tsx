@@ -1,0 +1,31 @@
+const SECTIONS = [
+  { id: "reporting-message", label: "Message" },
+  { id: "reporting-never", label: "Never in a report" },
+  { id: "reporting-sending", label: "Sending" },
+  { id: "reporting-replies", label: "Replies" },
+  { id: "reporting-abusech", label: "abuse.ch" },
+] as const
+
+/** Jump links to the sections of Settings, Reporting. Scrolls on small screens, sticks on wide ones. */
+export function ReportingNav() {
+  return (
+    <nav
+      aria-label="Reporting sections"
+      className="sticky top-0 z-10 -mx-1 flex gap-1 overflow-x-auto bg-bg/95 px-1 py-2 backdrop-blur-sm"
+    >
+      {SECTIONS.map((s) => (
+        <a
+          key={s.id}
+          href={`#${s.id}`}
+          onClick={(e) => {
+            e.preventDefault()
+            document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }}
+          className="flex-none rounded-md px-3 py-1.5 text-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          {s.label}
+        </a>
+      ))}
+    </nav>
+  )
+}
