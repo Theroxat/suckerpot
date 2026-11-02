@@ -269,10 +269,12 @@ async def test_the_api_role_cannot_mark_a_row_submitted(world: httpx.AsyncClient
 
 async def test_the_list_carries_the_evidence_of_each_url(world: httpx.AsyncClient) -> None:
     url = "http://files.example.net/evidence.sh"
+    async with owner_engine() as owner, owner.begin() as conn:
+        # Before the seeds: the cascade reaches abusech_submissions through fetch_targets.
+        await conn.execute(text("TRUNCATE indicator_sessions, indicators CASCADE"))
     await seed(url)
     await seed("http://files.example.net/none.sh")
     async with owner_engine() as owner, owner.begin() as conn:
-        await conn.execute(text("TRUNCATE indicator_sessions, indicators CASCADE"))
         iid = int(
             await conn.scalar(
                 text(
