@@ -434,7 +434,7 @@ The same steps work from a script:
 
 The puzzle: take the 32 challenge bytes (base64url-decoded). Add your nonce (1 to 16 bytes, base64url-encoded in the request). The SHA-256 of the two must start with `difficulty` zero bits. At difficulty 20, about a million tries are needed. The form does this in a Web Worker.
 
-If the value is not on any list, step 3 answers `"listed": false`, and nothing is stored. A value with an open request answers `409`. Requests are rate limited. A `429` answer carries the wait time.
+If the value is not on any list, step 3 answers `"listed": false`, and nothing is stored. A second request for a value that already has an open one gets the same answer as a new request, but nothing is stored and its id and token lead nowhere: keep the token of your first request. Requests are rate limited. A `429` answer carries the wait time.
 
 ### What happens while the request is open
 

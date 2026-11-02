@@ -209,10 +209,21 @@ async def test_invalid_input_is_refused(d_env: Env) -> None:
 async def test_one_open_request_per_value(d_env: Env) -> None:
     env = d_env
     await add_entry(env, BOTS)
-    assert (await ask(env, BOTS)).status_code == 200
+    first = await ask(env, BOTS)
+    assert first.status_code == 200
+    # Security review L1: a second request answers like a new one (no 409 oracle) and stores
+    # nothing; its id and token lead nowhere.
     second = await ask(env, BOTS)
-    assert second.status_code == 409 and second.json() == {"error": "request_open"}
+    assert second.status_code == 200
+    assert set(second.json()) == set(first.json())
+    assert second.json()["state"] == first.json()["state"] and second.json()["listed"] is True
+    assert second.json()["id"] != first.json()["id"]
     assert len(await rows(env, "SELECT 1 FROM delist_requests")) == 1
+    out = second.json()
+    lost = await env.http.get(
+        f"/v1/delist/{out['id']}", headers={"Authorization": f"Bearer {out['status_token']}"}
+    )
+    assert lost.status_code == 404
 
 
 @pytest.mark.integration
@@ -223,6 +234,8 @@ async def test_daily_cap(env_factory: Any) -> None:
     assert (await ask(env, "192.0.2.20")).status_code == 200
     assert (await ask(env, "192.0.2.21")).status_code == 200
     assert (await ask(env, "192.0.2.22")).status_code == 429
+    # The cap is checked first: a value with an open request answers the same 429 (L1).
+    assert (await ask(env, "192.0.2.20")).status_code == 429
     env.clock.advance(days=1)
     assert (await ask(env, "192.0.2.22")).status_code == 200
 
