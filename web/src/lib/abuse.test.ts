@@ -26,7 +26,12 @@ const status = (over: Partial<AbuseStatus> = {}): AbuseStatus => ({
 
 describe("describeReports", () => {
   it("says how many reports are ready", () => {
-    expect(describeReports(status())).toBe("4 reports are ready for review.")
+    expect(describeReports(status())).toBe("4 drafts to review.")
+  })
+  it("counts the same things as the tabs", () => {
+    expect(describeReports(status(), { toSend: 3, replies: 2 })).toBe(
+      "4 drafts to review, 3 reports ready to send, 2 replies to check.",
+    )
   })
   it("says when there is nothing to report", () => {
     const s = status({ counts: { ...status().counts, draft: 0 } })

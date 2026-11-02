@@ -32,6 +32,7 @@ from suckerpot_db.secretbox import SecretBox, SecretError
 from suckerpot_reporting import (
     Evidence,
     GuardContext,
+    ReferenceStyle,
     RenderedMessage,
     RenderUnavailable,
     ReportSettings,
@@ -52,6 +53,7 @@ from ingest.reportmail.outgoing import (
     build_test_message,
     check_message,
     deliver,
+    new_message_id,
 )
 
 log = logging.getLogger(__name__)
@@ -88,6 +90,7 @@ class Prepared:
     raw: bytes
     rcpt: str
     report: dict[str, Any] | None
+    message_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +102,7 @@ class Request:
     requested_by: str
     requested_at: datetime
     scheduled_at: datetime | None
+    message_id: str | None = None
 
 
 class ReportSender:
@@ -244,16 +248,19 @@ class ReportSender:
             {"s": status, "c": code, "i": rid},
         )
 
-    async def _claim(self, rid: int) -> bool:
+    async def _claim(self, rid: int, message_id: str | None = None) -> bool:
         """``sending`` is committed on its own BEFORE anything is connected. From here on the
-        request is never picked again: a crash leaves it ``sending`` and the sweep fails it."""
+        request is never picked again: a crash leaves it ``sending`` and the sweep fails it.
+        The Message-ID of the mail is stored in the same update (once; the database refuses a
+        change), so a reply can be matched to this request later (M26)."""
         async with self.factory() as session, session.begin():
             claimed = await session.execute(
                 text(
-                    "UPDATE abuse_send_requests SET status = 'sending', started_at = now() "
+                    "UPDATE abuse_send_requests SET status = 'sending', started_at = now(), "
+                    "message_id = COALESCE(message_id, CAST(:m AS text)) "
                     "WHERE id = :i AND status = 'pending'"
                 ),
-                {"i": rid},
+                {"i": rid, "m": message_id},
             )
             return claimed.rowcount == 1  # type: ignore[attr-defined,no-any-return]
 
@@ -270,7 +277,7 @@ class ReportSender:
                 await session.execute(
                     text(
                         "SELECT id, report_id, kind, auto, requested_by, requested_at, "
-                        "scheduled_at FROM abuse_send_requests "
+                        "scheduled_at, message_id FROM abuse_send_requests "
                         "WHERE id = :i AND status = 'pending'"
                     ),
                     {"i": rid},
@@ -309,7 +316,7 @@ class ReportSender:
                 log.warning("abuse mail request %s failed (%s)", rid, type(exc).__name__)
                 await self._finish(session, rid, "failed", "internal")
                 return
-            if not await self._claim(rid):
+            if not await self._claim(rid, prepared.message_id):
                 return  # the owner cancelled it in the meantime
             await self._deliver_and_record(session, req, profile, prepared)
 
@@ -374,9 +381,10 @@ class ReportSender:
         if report is None:
             raise SendFailure("not_ready")
         rendered, ctx = await self._render(session, report)
-        raw = build_message(profile, rendered, now=now)
+        message_id = req.message_id or new_message_id(profile)  # kept when a request is retried
+        raw = build_message(profile, rendered, now=now, message_id=message_id)
         check_message(raw, profile, rendered.to, terms, ctx=ctx, rendered=rendered)
-        return Prepared(raw, rendered.to, report)
+        return Prepared(raw, rendered.to, report, message_id)
 
     async def _deliver(self, profile: Profile, raw: bytes, rcpt: str) -> None:
         try:
@@ -398,6 +406,7 @@ class ReportSender:
             await session.execute(
                 text(
                     "SELECT r.id, r.status, r.demo, r.kind, r.guard_ok, r.evidence, r.options, "
+                    "r.reply_token, r.id_seed, "
                     "r.window_start, r.window_end, rec.muted, rec.mailbox, rec.override_mailbox "
                     "FROM abuse_reports r JOIN abuse_recipients rec ON rec.id = r.recipient_id "
                     "WHERE r.id = :i"
@@ -427,11 +436,12 @@ class ReportSender:
             await session.execute(
                 text(
                     "SELECT reply_contact, signature, intro, outro, note, subject_template, "
-                    "xarf_user_agent, defaults FROM report_settings WHERE id = 1"
+                    "xarf_user_agent, defaults, reference_style FROM report_settings WHERE id = 1"
                 )
             )
         ).first()
         settings = ReportSettings()
+        style: ReferenceStyle = "subject"
         defaults: dict[str, Any] = {}
         if settings_row is not None:
             settings = ReportSettings(
@@ -444,6 +454,8 @@ class ReportSender:
                 xarf_user_agent=settings_row.xarf_user_agent,
             )
             defaults = dict(settings_row.defaults or {})
+            if settings_row.reference_style in ("subject", "subject_and_body", "off"):
+                style = settings_row.reference_style
         options = options_of(report["options"], default_options(self.abuse, defaults))
         data = dict(report["evidence"])
         data.update(
@@ -456,13 +468,16 @@ class ReportSender:
         )
         try:
             evidence = Evidence.model_validate(data)
-            rendered = await asyncio.to_thread(_render_mail, evidence, settings)
+            rendered = await asyncio.to_thread(
+                _render_mail, evidence, settings, report["reply_token"], style
+            )
         except RenderUnavailable as exc:
             raise SendFailure("guard_failed", reasons=(exc.code,)) from None
         except ValueError:
             raise SendFailure("not_ready") from None
         ips = [s.value for s in evidence.subjects if s.type == "ip"]
-        ids: set[str] = set()
+        # The seed never leaves: a token built from it (or the seed itself) is caught (M26).
+        ids: set[str] = {report["id_seed"].hex}
         if ips:
             found = await session.execute(
                 text(
@@ -478,10 +493,16 @@ class ReportSender:
         )
 
 
-def _render_mail(evidence: Evidence, settings: ReportSettings) -> RenderedMessage:
-    """What the owner would paste: the X-ARF message when possible, else text and evidence CSV."""
+def _render_mail(
+    evidence: Evidence,
+    settings: ReportSettings,
+    reply_token: str | None = None,
+    style: ReferenceStyle = "subject",
+) -> RenderedMessage:
+    """What the owner would paste: the X-ARF message when possible, else text and evidence CSV.
+    The reply token goes into the subject (and the body for ``subject_and_body``) only."""
     try:
-        return render_xarf(evidence, settings)
+        return render_xarf(evidence, settings, reply_token=reply_token, reference_style=style)
     except RenderUnavailable:
-        body = render_text(evidence, settings)
+        body = render_text(evidence, settings, reply_token=reply_token, reference_style=style)
         return replace(body, attachments=(render_csv(evidence),))

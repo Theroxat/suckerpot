@@ -300,3 +300,60 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Scroll fades: a box that scrolls fades its content out at the edge that hides more, so a cut
+ * tab or a cut line reads as "there is more", not as a bug. Driven by the box's own scroll
+ * position (a scroll timeline): no fade when the content fits, no fade at the edge already
+ * reached. Browsers without scroll timelines show the plain box. The mask also fades borders and
+ * backgrounds, so put it on the scrolling element inside a framed box, never on the frame.
+ */
+@property --scroll-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --scroll-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes scroll-fade {
+  0% {
+    --scroll-fade-start: 0px;
+    --scroll-fade-end: var(--scroll-fade-size);
+  }
+  10% {
+    --scroll-fade-start: var(--scroll-fade-size);
+  }
+  90% {
+    --scroll-fade-end: var(--scroll-fade-size);
+  }
+  100% {
+    --scroll-fade-start: var(--scroll-fade-size);
+    --scroll-fade-end: 0px;
+  }
+}
+@supports (animation-timeline: scroll()) {
+  @layer utilities {
+    .scroll-fade-x,
+    .scroll-fade-y {
+      --scroll-fade-size: 2rem;
+      --scroll-fade-dir: to right;
+      mask-image: linear-gradient(
+        var(--scroll-fade-dir),
+        transparent 0,
+        #000 var(--scroll-fade-start),
+        #000 calc(100% - var(--scroll-fade-end)),
+        transparent 100%
+      );
+      animation: scroll-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+    .scroll-fade-y {
+      --scroll-fade-size: 2.5rem;
+      --scroll-fade-dir: to bottom;
+      animation-timeline: scroll(self block);
+    }
+  }
+}

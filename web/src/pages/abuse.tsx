@@ -1,8 +1,9 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { MailWarning, Settings2 } from "lucide-react"
+import { Mailbox, MailWarning, Settings2 } from "lucide-react"
 import { useId, useMemo, useState } from "react"
 import { Link } from "react-router"
 import { useAuth } from "@/app/auth"
+import { RepliesToCheck } from "@/components/abuse/replies-list"
 import { ReportRow } from "@/components/abuse/report-row"
 import { SendQueue } from "@/components/abuse/send-queue"
 import { useSendQueue } from "@/components/abuse/send-hooks"
@@ -28,6 +29,7 @@ import {
   type WaitingRecipient,
 } from "@/lib/abuse"
 import { plural } from "@/lib/format"
+import { describeRepliesToCheck } from "@/lib/results-sentences"
 
 interface Group {
   id: number
@@ -120,9 +122,9 @@ function MailboxForm({ w, onDone }: { w: WaitingRecipient; onDone: () => void })
         id={id}
         type="email"
         value={value}
-        placeholder="abuse@example.net"
+        placeholder="abuse@provider.tld"
         onChange={(e) => setValue(e.target.value)}
-        className="h-8 w-56 font-mono text-xs"
+        className="h-8 w-56 font-mono text-xs placeholder:text-fg-subtle"
       />
       <Button type="submit" size="sm" variant="outline" disabled={save.isPending}>
         Add mailbox
@@ -180,12 +182,16 @@ export function AbusePage() {
   const { canWrite } = useAuth()
   const [param, setParam] = useUrlParam("status")
   const queueView = canWrite && param === "queue"
+  const repliesView = canWrite && param === "replies"
+  const [recipientParam] = useUrlParam("recipient")
+  const recipient =
+    recipientParam && /^\d+$/.test(recipientParam) ? Number(recipientParam) : undefined
   const status: ListStatus = LIST_STATUSES.find((s) => s === param) ?? "draft"
   const queue = useSendQueue()
   const st = useQuery({ queryKey: abuseKeys.status, queryFn: abuseApi.status })
-  const filters = { status }
+  const filters = recipient === undefined ? { status } : { status, recipient }
   const list = useInfiniteQuery({
-    enabled: !queueView,
+    enabled: !queueView && !repliesView,
     queryKey: abuseKeys.list(filters),
     queryFn: ({ pageParam }) => abuseApi.list(filters, pageParam),
     initialPageParam: null as string | null,
@@ -195,13 +201,23 @@ export function AbusePage() {
   const groups = useMemo(() => groupByProvider(items), [items])
   const blocked = blockedReason(st.data)
   const counts = st.data?.counts
+  const repliesToCheck = st.data?.replies
+    ? Math.max(st.data.replies.unmatched, st.data.replies.needs_review)
+    : 0
 
   return (
     <>
       <PageHeader
         help="abuse"
         title="Abuse reports"
-        description={<span className="normal-nums">{describeReports(st.data)}</span>}
+        description={
+          <span className="normal-nums">
+            {describeReports(st.data, {
+              toSend: queue.data?.items.length,
+              replies: canWrite ? repliesToCheck : 0,
+            })}
+          </span>
+        }
         actions={
           <>
             <ReadOnlyBadge />
@@ -232,14 +248,30 @@ export function AbusePage() {
         />
       ) : null}
 
+      {canWrite && !repliesView && repliesToCheck > 0 ? (
+        <p
+          role="status"
+          className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border-strong bg-surface-raised px-3 py-2 text-sm text-fg"
+        >
+          <Mailbox aria-hidden className="size-4 text-fg-muted" />
+          {describeRepliesToCheck(repliesToCheck)}
+          <Link
+            to="/defend/abuse?status=replies"
+            className="font-medium underline underline-offset-4"
+          >
+            Check the replies
+          </Link>
+        </p>
+      ) : null}
+
       <Tabs
-        value={queueView ? "queue" : status}
+        value={queueView ? "queue" : repliesView ? "replies" : status}
         onValueChange={(v) => setParam(v === "draft" ? null : v)}
       >
         <TabsList
           variant="line"
           aria-label="Report status"
-          className="mb-4 max-w-full justify-start overflow-x-auto"
+          className="scroll-fade-x mb-4 max-w-full justify-start overflow-x-auto"
         >
           {canWrite ? (
             <TabsTrigger value="queue" className="flex-none px-3">
@@ -249,6 +281,12 @@ export function AbusePage() {
                   {queue.data.items.length}
                 </span>
               ) : null}
+            </TabsTrigger>
+          ) : null}
+          {canWrite && repliesToCheck > 0 ? (
+            <TabsTrigger value="replies" className="flex-none px-3">
+              Replies to check
+              <span className="ml-1.5 text-xs text-fg-subtle tabular-nums">{repliesToCheck}</span>
             </TabsTrigger>
           ) : null}
           {LIST_STATUSES.map((s) => (
@@ -262,7 +300,9 @@ export function AbusePage() {
         </TabsList>
       </Tabs>
 
-      {queueView ? (
+      {repliesView ? (
+        <RepliesToCheck />
+      ) : queueView ? (
         <SendQueue />
       ) : (
         <div className="space-y-4 normal-nums">

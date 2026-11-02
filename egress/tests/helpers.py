@@ -163,3 +163,37 @@ class FakeSmtp:
 
 
 # VPN_IP is a real public address on purpose: documentation ranges are not "global" for Python.
+
+
+class FakeImap:
+    """A tiny IMAP server: greets, answers CAPABILITY/NOOP/LOGOUT."""
+
+    def __init__(self, *, long_line: int = 0) -> None:
+        self.lines: list[str] = []
+        outer = self
+
+        class Handler(socketserver.StreamRequestHandler):
+            def handle(self) -> None:
+                self.wfile.write(b"* OK IMAP4rev1 ready\r\n")
+                if long_line:
+                    self.wfile.write(b"* " + b"A" * long_line + b"\r\n")
+                while line := self.rfile.readline():
+                    text = line.decode().strip()
+                    outer.lines.append(text)
+                    tag, _, cmd = text.partition(" ")
+                    name = cmd.split(" ")[0].upper()
+                    if name == "LOGOUT":
+                        self.wfile.write(b"* BYE bye\r\n" + tag.encode() + b" OK done\r\n")
+                        return
+                    if name == "CAPABILITY":
+                        self.wfile.write(b"* CAPABILITY IMAP4rev1 MOVE\r\n")
+                    self.wfile.write(tag.encode() + b" OK " + name.encode() + b" done\r\n")
+
+        self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()

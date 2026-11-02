@@ -1,0 +1,331 @@
+name: Release
+
+# Builds the 18 images of the stack (the analyzer service reuses the collector image) for linux/amd64 and linux/arm64 on native runners, publishes
+# them to GHCR by digest, merges the two architectures under one tag, signs each image with
+# cosign (keyless, the workflow identity), attaches an SBOM and a provenance attestation, then
+# installs the published images on a throwaway runner and checks that the stack comes up.
+#
+# NOTHING IS PUBLISHED unless this workflow runs on a version tag (vX.Y.Z) that the owner pushed.
+# A manual run from a branch is a dry run: it builds every image for both architectures and
+# pushes nothing, signs nothing and logs in nowhere.
+#
+# Verify a release on your own machine with `just verify-images` (scripts/verify-images.sh).
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version label for a dry run, vX.Y.Z (nothing is published from a branch)"
+        required: true
+        default: "v0.0.0"
+
+# Read-only by default; each job asks for what it needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Pinned build tooling. buildkit and cosign are pinned by tag and digest; the cosign binary is
+  # pinned by SHA-256 (per architecture of the runner that signs).
+  BUILDKIT_IMAGE: moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+  COSIGN_VERSION: "v3.1.4"
+  COSIGN_AMD64_SHA256: "424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      minor: ${{ steps.v.outputs.minor }}
+      publish: ${{ steps.v.outputs.publish }}
+      prefix: ${{ steps.v.outputs.prefix }}
+    steps:
+      - name: Work out the version and whether to publish
+        id: v
+        env:
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -eu
+          publish=false
+          # Only a pushed version tag publishes: never a manual run, even one started on a tag.
+          if [ "$EVENT" = push ]; then
+            case "$REF" in
+              refs/tags/v*) version=$REF_NAME; publish=true ;;
+              *) echo "A push that is not a version tag does not publish." >&2; exit 1 ;;
+            esac
+          else
+            version=$INPUT_TAG
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
+            echo "The version must look like v1.2.3 (got a different shape)." >&2
+            exit 1
+          fi
+          minor=$(printf '%s' "$version" | cut -d. -f1,2)
+          # GHCR wants a lower-case owner. The image name matches the compose default.
+          prefix="ghcr.io/$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')/suckerpot"
+          {
+            echo "version=$version"
+            echo "minor=${minor#v}"
+            echo "publish=$publish"
+            echo "prefix=$prefix"
+          } >> "$GITHUB_OUTPUT"
+          echo "version=$version publish=$publish event=$EVENT"
+
+  build:
+    needs: prepare
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+        image:
+          - redis
+          - migrate
+          - ingest
+          - api
+          - collector
+          - demo
+          - sensor-ssh
+          - sensor-rdp
+          - sensor-telnet
+          - sensor-web
+          - sensor-redis
+          - sensor-docker
+          - sensor-mysql
+          - sensor-mssql
+          - sensor-adb
+          - sensor-smb
+          - sensor-sip
+          - sensor-synology
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Select the build context
+        id: ctx
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -eu
+          case "$IMAGE" in
+            redis) context=redis; file=redis/Dockerfile ;;
+            migrate) context=.; file=db/Dockerfile ;;
+            ingest | api | collector) context=.; file="$IMAGE/Dockerfile" ;;
+            demo) context=.; file=scripts/demo/Dockerfile ;;
+            sensor-*) context=.; file="sensors/${IMAGE#sensor-}/Dockerfile" ;;
+            *) echo "unknown image" >&2; exit 1 ;;
+          esac
+          test -f "$file"
+          echo "context=$context" >> "$GITHUB_OUTPUT"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+      - name: Set up buildx (docker-container driver, needed for SBOM and provenance)
+        run: docker buildx create --name release --driver docker-container --driver-opt "image=$BUILDKIT_IMAGE" --use
+      - name: Log in to GHCR
+        if: needs.prepare.outputs.publish == 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+      - name: Build (and push by digest when publishing)
+        id: build
+        env:
+          PUBLISH: ${{ needs.prepare.outputs.publish }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          NAME: ${{ needs.prepare.outputs.prefix }}-${{ matrix.image }}
+          ARCH: ${{ matrix.platform.arch }}
+          CONTEXT: ${{ steps.ctx.outputs.context }}
+          FILE: ${{ steps.ctx.outputs.file }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -eu
+          if [ "$PUBLISH" = true ]; then
+            output="type=image,name=$NAME,push-by-digest=true,name-canonical=true,push=true"
+          else
+            output="type=image,name=$NAME,push=false"
+          fi
+          docker buildx build \
+            --platform "linux/$ARCH" \
+            --file "$FILE" \
+            --build-arg "VERSION=$VERSION" \
+            --build-arg BUILD_KIND=image \
+            --build-arg "COMMIT=$COMMIT" \
+            --provenance=mode=max \
+            --sbom=true \
+            --metadata-file meta.json \
+            --output "$output" \
+            "$CONTEXT"
+          mkdir -p digests
+          if [ "$PUBLISH" = true ]; then
+            jq -r '."containerimage.digest"' meta.json | tee "digests/digest"
+            grep -Eq '^sha256:[0-9a-f]{64}$' digests/digest
+          else
+            echo dry-run > digests/digest
+          fi
+      - name: Keep the digest for the merge job
+        if: needs.prepare.outputs.publish == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.platform.arch }}
+          path: digests/digest
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    # Publishing only: one multi-arch tag per image, then a keyless signature on its digest.
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless signing (OIDC), nothing else
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - redis
+          - migrate
+          - ingest
+          - api
+          - collector
+          - demo
+          - sensor-ssh
+          - sensor-rdp
+          - sensor-telnet
+          - sensor-web
+          - sensor-redis
+          - sensor-docker
+          - sensor-mysql
+          - sensor-mssql
+          - sensor-adb
+          - sensor-smb
+          - sensor-sip
+          - sensor-synology
+    steps:
+      - name: Fetch the digests of both architectures
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: digest-${{ matrix.image }}-*
+      - name: Install cosign (pinned release, checked against its SHA-256)
+        run: |
+          set -eu
+          curl -fsSL -o cosign "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/cosign-linux-amd64"
+          echo "$COSIGN_AMD64_SHA256  cosign" | sha256sum -c -
+          sudo install -m 0755 cosign /usr/local/bin/cosign
+      - name: Set up buildx
+        run: docker buildx create --name release --driver docker-container --driver-opt "image=$BUILDKIT_IMAGE" --use
+      - name: Log in to GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+      - name: Merge the two architectures under a scratch tag
+        id: tags
+        env:
+          NAME: ${{ needs.prepare.outputs.prefix }}-${{ matrix.image }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          MINOR: ${{ needs.prepare.outputs.minor }}
+          IMAGE: ${{ matrix.image }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -eu
+          amd64=$(cat "digest-$IMAGE-amd64/digest")
+          arm64=$(cat "digest-$IMAGE-arm64/digest")
+          for d in "$amd64" "$arm64"; do
+            printf '%s' "$d" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          done
+          # A scratch tag (named after the commit, never a version) holds the merged manifest until
+          # it is signed: no version tag points at an unsigned image.
+          docker buildx imagetools create --tag "$NAME:build-$COMMIT" "$NAME@$amd64" "$NAME@$arm64"
+          digest=$(docker buildx imagetools inspect "$NAME:build-$COMMIT" --format '{{.Manifest.Digest}}')
+          printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Sign the image (keyless, bound to this workflow)
+        env:
+          NAME: ${{ needs.prepare.outputs.prefix }}-${{ matrix.image }}
+          DIGEST: ${{ steps.tags.outputs.digest }}
+        run: cosign sign --yes "$NAME@$DIGEST"
+      - name: Point the version tags at the signed digest (never "latest")
+        env:
+          NAME: ${{ needs.prepare.outputs.prefix }}-${{ matrix.image }}
+          DIGEST: ${{ steps.tags.outputs.digest }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          MINOR: ${{ needs.prepare.outputs.minor }}
+        run: |
+          set -eu
+          cosign verify --certificate-identity-regexp '^https://github\.com/.+/\.github/workflows/release\.yml@refs/tags/v' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$NAME@$DIGEST" > /dev/null
+          docker buildx imagetools create --tag "$NAME:$VERSION" --tag "$NAME:${MINOR}" "$NAME@$DIGEST"
+
+  smoke:
+    # Installs the published images exactly as a new owner would, on a throwaway runner.
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, merge]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      PROJECT: sp-release-smoke
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Log in to GHCR (the packages may still be private)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+      - name: Install with the published images
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -eu
+          password=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)
+          echo "::add-mask::$password"
+          echo "SMOKE_PASSWORD=$password" >> "$GITHUB_ENV"
+          printf '%s\n' "$password" | scripts/install.sh --yes --images --version "$VERSION" \
+            --project "$PROJECT" --prefix "$PROJECT" --sensors ssh,web --admin-password-stdin
+      - name: Check the health endpoint and the running version
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -eu
+          # "localhost" so curl accepts the Secure session cookie over plain http
+          base=http://localhost:8443
+          curl -fsS "$base/healthz"
+          jq -n --arg p "$SMOKE_PASSWORD" '{username: "admin", password: $p}' > login.json
+          curl -fsS -c jar -H "Origin: $base" -H 'Content-Type: application/json' \
+            --data @login.json "$base/api/v1/auth/login"
+          rm -f login.json
+          running=$(curl -fsS -b jar "$base/api/v1/version" | jq -r .version)
+          echo "running version: $running"
+          test "${running#v}" = "${VERSION#v}"
+      - name: Show the stack on failure
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=200
+      - name: Remove the throwaway stack
+        if: always()
+        run: |
+          docker compose down || true
+          docker volume ls -q --filter "name=^${PROJECT}_" | xargs -r docker volume rm

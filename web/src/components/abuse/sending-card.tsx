@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Info, TriangleAlert } from "lucide-react"
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react"
-import { Field } from "@/components/form-parts"
+import { Field, UnsavedHint } from "@/components/form-parts"
+import { useUnsaved } from "@/hooks/use-unsaved"
 import { FindingCard } from "@/components/finding-card"
 import { SegmentedControl } from "@/components/segmented-control"
 import { SkeletonText } from "@/components/skeletons"
@@ -86,6 +87,7 @@ function SendingForm({
     cap: useId(),
   }
   const [f, setF] = useState<SmtpForm>(() => toForm(initial))
+  const { unsaved, markSaved } = useUnsaved(f)
   const [action, setAction] = useState<Action | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [preset, setPreset] = useState(false)
@@ -318,6 +320,7 @@ function SendingForm({
 
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit">Save sending settings</Button>
+          <UnsavedHint show={unsaved} />
           {initial.configured ? (
             <>
               <Button type="button" variant="outline" onClick={() => setAction("test")}>
@@ -350,6 +353,7 @@ function SendingForm({
         onSave={async (pw) => {
           await reauth(() => save.mutateAsync(pw))
           setSaved("Saved.")
+          markSaved(f)
           refresh()
         }}
         onTest={async (pw) => {

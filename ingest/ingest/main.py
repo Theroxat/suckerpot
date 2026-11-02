@@ -16,6 +16,8 @@ from suckerpot_db.trusted_exits import self_networks_provider, trusted_exit_prov
 
 from ingest.abuse import AbuseWorker
 from ingest.abuse.selfterms import TermsCache
+from ingest.abusech import AbusechSubmitWorker
+from ingest.abusech.body import load_malpedia
 from ingest.alerts import AlertWorker
 from ingest.alerts.config import AlertSettings
 from ingest.attack import AttackCatalogWorker, load_attack
@@ -41,10 +43,13 @@ from ingest.llm import ExplainerWorker
 from ingest.network import BatchBuilder, NetworkSettings, NetworkWorker
 from ingest.network.source import SqlSource
 from ingest.network.store import SqlStore
+from ingest.replies import ReplyWorker
 from ingest.reports import ReportWorker
 from ingest.scanners import load_scanners
 from ingest.scripts import ScriptWorker, load_annotations
 from ingest.tagging import load_rules
+from ingest.takedown import TakedownWorker
+from ingest.updatecheck import UpdateChecker
 
 log = logging.getLogger(__name__)
 
@@ -181,6 +186,7 @@ async def run() -> None:
     except ValueError as exc:
         log.error("alert e-mail settings are invalid (%s): e-mail alerts are off", exc)
         alert_settings = AlertSettings()
+    malpedia = load_malpedia(enrich.rules_dir)  # fail fast on a broken mapping
     feature_workers: list[FeatureWorker] = [
         AttackCatalogWorker(features, factory, attack),
         CampaignWorker(features, factory, attack),
@@ -196,6 +202,21 @@ async def run() -> None:
         ),
         ReportWorker(features, factory),
         AbuseWorker(features, factory, box=load_secret_box()),
+        ReplyWorker(
+            features, factory, box=load_secret_box(), rules_dir=enrich.rules_dir / "replies"
+        ),
+        # M27: both off until their *_ENABLED flags; the abuse.ch worker also needs the owner's
+        # mode in Settings. Lookups reuse the intel and reputation clients (same gate, same quotas).
+        TakedownWorker(features, factory, intel=intel, reputation=reputation, asn_lookup=exit_asn),
+        AbusechSubmitWorker(
+            features,
+            factory,
+            TermsCache(factory),
+            get_gate(),
+            load_secret_box(),
+            intel=intel,
+            malpedia=malpedia,
+        ),
         build_network_worker(features, factory),
     ]
     for worker in feature_workers:
@@ -238,6 +259,7 @@ async def run() -> None:
             },
         )
 
+    update_checker = UpdateChecker(factory, gate=gate)
     background = [
         asyncio.create_task(gate.run(egress_status), name="egress-gate"),
         asyncio.create_task(run_check_requests(factory, gate.request_check), name="egress-checks"),
@@ -246,6 +268,7 @@ async def run() -> None:
         asyncio.create_task(cve_watch.run(cve_status), name="cve-watch"),
         asyncio.create_task(intel.run(rep_status), name="intel"),
         asyncio.create_task(sync.run(), name="credentials"),
+        asyncio.create_task(update_checker.run(), name="update-check"),
         *(
             asyncio.create_task(w.run(feature_status), name=f"feature-{w.name}")
             for w in feature_workers

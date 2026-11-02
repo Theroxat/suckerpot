@@ -10,6 +10,9 @@ import {
 import { useEffect, useRef } from "react"
 import { Link } from "react-router"
 import { ReportingCard } from "@/components/abuse/reporting-card"
+import { ReportingNav } from "@/components/abuse/reporting-nav"
+import { AbusechCard } from "@/components/abuse/abusech-card"
+import { ImapCard } from "@/components/abuse/imap-card"
 import { SendingCard } from "@/components/abuse/sending-card"
 import { ChannelsCard } from "@/components/alerts/channels-card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -19,6 +22,9 @@ import { FeedsTab } from "@/components/feeds/feeds-tab"
 import { FindingCard } from "@/components/finding-card"
 import { Meter } from "@/components/meter"
 import { PageHeader } from "@/components/page-header"
+import { PortsCard } from "@/components/setup/ports-table"
+import { SetupResumeCard } from "@/components/setup/resume-card"
+import { UpdatesCard } from "@/components/setup/updates-card"
 import { SetupChecklistCard } from "@/components/setup-checklist"
 import { NetworkTab } from "@/components/network/network-tab"
 import { VpnTab } from "@/components/vpn/vpn-tab"
@@ -348,6 +354,7 @@ const TABS = [
   { id: "keys", label: "Keys", adminOnly: false },
   { id: "users", label: "Users", adminOnly: true },
   { id: "audit", label: "Audit", adminOnly: true },
+  { id: "ports", label: "Sensors & ports", adminOnly: true },
   { id: "alerts", label: "Alert channels", adminOnly: false },
   { id: "feeds", label: "Feeds", adminOnly: true },
   { id: "reporting", label: "Reporting", adminOnly: true },
@@ -391,7 +398,13 @@ export function SettingsPage() {
 
       <div className="mb-6 flex items-start gap-2.5 rounded-lg border border-dashed px-4 py-3 text-sm text-fg-muted">
         <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-        {canWrite ? (
+        {canWrite && tab === "reporting" ? (
+          <p>
+            Reporting settings are saved here. Only the server switches, such as{" "}
+            <code className="font-mono text-fg">ABUSE_REPORTS_ENABLED</code>, live in{" "}
+            <code className="font-mono text-fg">.env</code>.
+          </p>
+        ) : canWrite ? (
           <p>
             The enrichment API keys, the users and the alert channels can be edited below.
             Everything else lives in <code className="font-mono text-fg">.env</code>: change it
@@ -411,7 +424,7 @@ export function SettingsPage() {
           ref={tabsRef}
           variant="line"
           aria-label="Settings sections"
-          className="mb-2 max-w-full justify-start overflow-x-auto"
+          className="scroll-fade-x mb-2 max-w-full justify-start overflow-x-auto"
         >
           {tabs.map((t) => (
             <TabsTrigger key={t.id} value={t.id} className="flex-none px-3">
@@ -421,7 +434,9 @@ export function SettingsPage() {
         </TabsList>
 
         <TabsContent value="general" className="grid grid-cols-1 gap-4">
+          <SetupResumeCard />
           <SetupChecklistCard />
+          <UpdatesCard />
           <SensorsCard data={q.data} loading={q.isPending} />
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <StorageCard data={q.data} loading={q.isPending} />
@@ -442,6 +457,11 @@ export function SettingsPage() {
             </TabsContent>
           </>
         ) : null}
+        {canWrite ? (
+          <TabsContent value="ports" className="grid grid-cols-1 gap-4">
+            <PortsCard />
+          </TabsContent>
+        ) : null}
         <TabsContent value="alerts" className="grid grid-cols-1 gap-4">
           <ChannelsCard />
         </TabsContent>
@@ -452,8 +472,17 @@ export function SettingsPage() {
         ) : null}
         {canWrite ? (
           <TabsContent value="reporting" className="grid grid-cols-1 gap-4">
+            <ReportingNav />
             <ReportingCard />
-            <SendingCard />
+            <section id="reporting-sending" className="scroll-mt-16">
+              <SendingCard />
+            </section>
+            <section id="reporting-replies" className="scroll-mt-16">
+              <ImapCard />
+            </section>
+            <section id="reporting-abusech" className="scroll-mt-16">
+              <AbusechCard />
+            </section>
           </TabsContent>
         ) : null}
         {canWrite ? (

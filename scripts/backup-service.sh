@@ -3,6 +3,10 @@
 #
 #   backup-service.sh          loop: dump when the newest dump is older than 24 h, check hourly
 #   backup-service.sh now      dump once, right now, then exit (used by `just backup`)
+#   backup-service.sh now preupdate
+#                              same, but the file is named suckerpot-preupdate-<ts>.dump and is
+#                              protected from the normal retention (the newest PREKEEP, default 2,
+#                              are kept): `just update` takes it so `just rollback` always has it
 #
 # Dumps are custom-format pg_dump files (TimescaleDB data included) in /backups, mode 0600.
 # Retention: the newest BACKUP_KEEP dumps (default 7), plus the newest dump of each of the last
@@ -18,10 +22,23 @@ KEEP=${BACKUP_KEEP:-7}
 WEEKS=4
 MONTHS=3
 LOCK=/tmp/backup.lock
+PREKEEP=${BACKUP_PREUPDATE_KEEP:-2}
 case $KEEP in '' | *[!0-9]* | 0) echo "backup: BACKUP_KEEP must be a positive number" >&2; exit 2 ;; esac
 umask 077
 
-list() { ls -1 "$DIR"/suckerpot-*.dump 2>/dev/null | sort -r || true; }
+# Regular dumps only (suckerpot-<digits>T<digits>Z.dump): the pre-update dumps follow their own rule.
+list() { ls -1 "$DIR"/suckerpot-[0-9]*.dump 2>/dev/null | sort -r || true; }
+list_pre() { ls -1 "$DIR"/suckerpot-preupdate-*.dump 2>/dev/null | sort -r || true; }
+prune_pre() {
+  n=0
+  for f in $(list_pre); do
+    n=$((n + 1))
+    if [ "$n" -gt "$PREKEEP" ]; then
+      rm -f -- "$f"
+      echo "backup: removed old pre-update dump ${f##*/}"
+    fi
+  done
+}
 newest() { list | head -n 1; }
 size() { stat -c %s "$1"; }
 
@@ -75,7 +92,12 @@ make_room() {
 }
 
 dump() {
-  name="suckerpot-$(date -u +%Y%m%dT%H%M%SZ).dump"
+  kind=${1:-regular}
+  if [ "$kind" = preupdate ]; then
+    name="suckerpot-preupdate-$(date -u +%Y%m%dT%H%M%SZ).dump"
+  else
+    name="suckerpot-$(date -u +%Y%m%dT%H%M%SZ).dump"
+  fi
   tmp="$DIR/.$name.partial"
   make_room || return 1
   if ! PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" \
@@ -101,6 +123,10 @@ dump() {
   fi
   new=$(size "$DIR/$name")
   echo "backup: wrote $name ($new bytes)"
+  if [ "$kind" = preupdate ]; then
+    prune_pre
+    return 0
+  fi
   if [ "$((new * 2))" -lt "$previous" ]; then
     : > "$DIR/.shrunk"
     echo "backup: WARNING the new dump is under half of the previous one ($previous bytes): nothing pruned, marker $DIR/.shrunk set (remove it once checked)" >&2
@@ -129,13 +155,14 @@ locked_dump() {
     return 1
   fi
   rc=0
-  dump || rc=$?
+  dump "${1:-regular}" || rc=$?
   unlock
   return "$rc"
 }
 
 if [ "${1:-}" = "now" ]; then
-  locked_dump
+  case ${2:-} in '' | preupdate) ;; *) echo "backup: unknown option ${2}" >&2; exit 2 ;; esac
+  locked_dump "${2:-regular}"
   exit $?
 fi
 

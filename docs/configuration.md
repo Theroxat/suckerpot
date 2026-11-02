@@ -74,6 +74,57 @@ The template uses `change-me` as a placeholder. It is too short for the policy, 
 | `SYNOLOGY_HTTPS_HOST_PORT` | `5001` | `.env` | Host port of the Synology sensor's HTTPS listener (IPv4 only) |
 | `SUCKERPOT_ALLOW_DEFAULT_SECRETS` | `0` | `.env` | `1` turns off the secret length and uniqueness checks. CI and throwaway tests only. |
 
+## Install, updates and sensor switches (M28)
+
+These variables are written by the installer, or changed by the update and sensor commands. The install guide explains them in context: [Install Selfhostr](install.md) and [Updates and rollback](updates.md).
+
+### Sensor switches
+
+Each sensor has a switch. `1` turns it on, `0` turns it off. A sensor that is off is not started and publishes no port. Change them with `just sensors`, or by editing `.env` and running `just up`. The default is `1`, so an older `.env` without these lines keeps every sensor.
+
+| Variable | Sensor | Default | Standard port |
+| --- | --- | --- | --- |
+| `SENSOR_SSH` | SSH | `1` | 22 |
+| `SENSOR_TELNET` | Telnet | `1` | 23 |
+| `SENSOR_WEB` | Web (HTTP and HTTPS) | `1` | 80, 443 |
+| `SENSOR_RDP` | RDP | `1` | 3389 |
+| `SENSOR_REDIS` | Redis | `1` | 6379 |
+| `SENSOR_DOCKER` | Docker API | `1` | 2375 |
+| `SENSOR_MYSQL` | MySQL | `1` | 3306 |
+| `SENSOR_MSSQL` | MSSQL | `1` | 1433 |
+| `SENSOR_ADB` | ADB | `1` | 5555 |
+| `SENSOR_SMB` | SMB | `1` | 445 |
+| `SENSOR_SIP` | SIP | `1` | 5060 (UDP and TCP) |
+| `SENSOR_SYNOLOGY` | Synology DSM | `1` | 5000, 5001 |
+
+The port guard (`scripts/check-ports.sh`) accepts only `0` or `1`. Host ports are in [Ports to forward](install.md#ports-to-forward).
+
+### Install mode and images
+
+| Variable | Default | Source | Description |
+| --- | --- | --- | --- |
+| `SUCKERPOT_INSTALL_MODE` | `source` | `.env`, written by the installer | `images` runs the signed release images. `source` builds them from the checkout. `just up` and the update scripts read it. |
+| `SUCKERPOT_IMAGE_PREFIX` | unset | `.env`, written in images mode | Registry and name prefix of the release images, `ghcr.io/<owner>/suckerpot`. Unset, the images are built locally and named `local/<project>-<service>`. The installer uses the project registry unless you set this variable before you run it. The owner in this name is also the repository whose release signatures are checked. |
+| `SUCKERPOT_VERSION` | `dev` | `.env`, written by the installer and by `just update` | Release tag of the images to run, such as `vX.Y.Z`. Every image name ends with it. |
+| `SUCKERPOT_VOLUME_PREFIX` | none, required | `.env`, written by the installer | Prefix of the external data volumes, such as `suckerpot_db-data`. Compose refuses to start without it. |
+| `SUCKERPOT_BUILD_VERSION` | `dev` | Set by `just up` and `just update` | Version baked into images built from the checkout. Leave it unset for a plain build. |
+| `SUCKERPOT_BUILD_COMMIT` | `unknown` | Set by `just up` and `just update` | Commit baked into images built from the checkout. |
+
+### Updates
+
+| Variable | Default | Source | Description |
+| --- | --- | --- | --- |
+| `UPDATE_CHECK_ENABLED` | `false` | `.env`, or `just set UPDATE_CHECK_ENABLED=true` | Once a day, ask GitHub for the latest release, through the VPN only. Never installs anything. See [the update check](updates.md#the-optional-update-check). |
+| `UPDATE_CHECK_REPO` | the project repository, `owner/name` | `.env` | The repository the check reads. A fork sets its own. Any value that is not `owner/name` falls back to the default. `just set` does not accept this variable. |
+
+### Low memory and Redis
+
+| Variable | Default | Source | Description |
+| --- | --- | --- | --- |
+| `COMPOSE_FILE` | unset | `.env`, written by the installer for low memory | Set to `docker-compose.yml:docker-compose.lowmem.yml` to use the lower memory limits. See [low-memory hosts](install.md#low-memory-hosts). `just set` does not change it. |
+| `REDIS_MAXMEMORY_MB` | `192` (`96` in low-memory mode) | `.env` | Memory ceiling of Redis in MiB, from 32 to 4096. |
+| `COMPOSE_PROFILES` | unset (the installer writes `egress`) | `.env` | `egress` runs `vpn`, `collector` and `analyzer`. The installer always sets it. Without a VPN configuration, `vpn` waits in idle mode. See [the VPN before a WireGuard file is uploaded](install.md#the-vpn-before-a-wireguard-file-is-uploaded). |
+
 ## Database
 
 | Variable | Default | Source | Description |
@@ -543,6 +594,44 @@ Details in [Architecture](ARCHITECTURE.md#anonymous-reporting-m22), [Deployment]
 | `ABUSE_REPORT_RETENTION_DAYS` | `730` | Days to keep reports marked sent or closed (the duplicate check needs the history). Discarded drafts are removed after 90 days. |
 
 The reply contact, signature and all wording are not environment variables. The owner types them in Settings > Reporting. Only the reply contact is required. To keep the identity guard accurate, the `api` service also reads the sensor host name variables, `API_ALLOWED_ORIGINS`, `ALERTS_DASHBOARD_URL`, `INDICATORS_IGNORE`, `BLOCKLIST_NEVER`, `AUTH_TRUSTED_PROXIES` and `VPN_WG_ENDPOINT_IP`. These are used only to build the list of terms a report must never contain.
+
+## Replies to reports (M26)
+
+Details in [Replies to reports](replies.md). The worker is off by default. Mail is read only through the VPN, and only when `ABUSE_REPLIES_ENABLED` is `true` **and** you save and enable a mailbox in Settings > Reporting > Replies. The mailbox (server, user name, password, folder, trusted provider name) is never an environment variable. Pasted replies work without any of this.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ABUSE_REPLIES_ENABLED` | `false` | Run the replies worker in `ingest`. It also processes pasted replies. |
+| `ABUSE_REPLY_MAX_BYTES` | `262144` | Largest mail read, in bytes (65,536 to 1,048,576). Larger mail is cut and marked as truncated. |
+| `ABUSE_REPLY_MAX_PER_POLL` | `50` | Mails read in one poll (1 to 500). The rest waits for the next poll. |
+| `ABUSE_REPLY_DAILY_CAP` | `500` | Mails read per UTC day (1 to 10,000). |
+| `ABUSE_REPLY_POLL_DEADLINE_S` | `120` | Seconds one poll may take in total (30 to 600). |
+| `ABUSE_REPLY_EXCERPT_CHARS` | `2000` | Characters of a reply kept as an excerpt (0 to 2,000). `0` keeps none. |
+| `ABUSE_REPLY_EXCERPT_DAYS` | `180` | Days an excerpt is kept (1 to 3,650). Read by `migrate` for the retention job. |
+| `ABUSE_REPLY_MATCH_DAYS` | `120` | A reply is matched to reports sent in the last N days (1 to 730). |
+| `ABUSE_NO_ANSWER_DAYS` | `14` | Days without an answer before a sent report shows **No answer** (1 to 365). Read by `api`. |
+
+The check interval of the mailbox is set in Settings (5 to 1440 minutes, 15 by default), not here.
+
+## Takedown tracking and abuse.ch submission (M27)
+
+Details in [Takedowns](takedowns.md). Everything is off by default. The collector re-checks a payload URL only with `TAKEDOWN_ENABLED=true` **and** `COLLECTOR_ENABLED=true`, through the VPN. Re-checks are one bounded GET of a URL that already served a sample. C2 servers and attacking addresses are never contacted.
+
+abuse.ch submission needs three things: `ABUSECH_SUBMIT_ENABLED=true`, a mode other than **Off** in Settings > Reporting > abuse.ch, and an Auth-Key saved there. The key is never an environment variable.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TAKEDOWN_ENABLED` | `false` | Run the takedown worker in `ingest` and the HTTP re-checks in `collector` (the latter also needs `COLLECTOR_ENABLED=true`). |
+| `TAKEDOWN_TRACK_DAYS` | `30` | Days a target is followed after it was reported (7 to 90). |
+| `TAKEDOWN_HTTP_DAILY_QUOTA` | `200` | Re-checks per day, read by `collector` (at least 1). |
+| `TAKEDOWN_INTEL_DAILY_QUOTA` | `100` | Lookups per day (URLhaus and ThreatFox) that takedown tracking may make. Each one also counts against `ABUSECH_DAILY_QUOTA`. |
+| `TAKEDOWN_ABUSEIPDB_DAILY_QUOTA` | `50` | AbuseIPDB reads per day that takedown tracking may make. Each one also counts against `ABUSEIPDB_DAILY_QUOTA`. Selfhostr never reports to AbuseIPDB. |
+| `TAKEDOWN_QUIET_DAYS` | `7` | Days without a sighting before an attacking address counts as quiet (1 to 90). |
+| `TAKEDOWN_CHECK_RETENTION_DAYS` | `400` | Days to keep individual checks (30 to 3,650). Read by `migrate`. The monthly roll-up is kept forever. |
+| `TAKEDOWN_INTERVAL_S` | `600` | Seconds between two takedown cycles in `ingest` (30 to 86,400). Read by the worker. |
+| `ABUSECH_SUBMIT_ENABLED` | `false` | Server switch for submitting captured malware URLs to URLhaus, and C2 addresses to ThreatFox. Read by `ingest` and `api`. When it is `false`, the Settings card shows the switch as disabled. |
+
+The abuse.ch lookup key (used to check whether a value is already listed) is the same as before: `ABUSECH_AUTH_KEY`, or the key on the Settings page. The submission Auth-Key is separate and is entered only in Settings > Reporting > abuse.ch.
 
 ## Selfhostr network (M29)
 

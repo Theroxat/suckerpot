@@ -164,6 +164,18 @@ Ingest labels sessions from known, harmless crawlers (Censys, Shodan...; the lis
 
 Read-only by design: a dashed note says settings live in `.env`. Four cards, each with a finding sentence: Sensors (Active / Quiet / Silent with icon and label; silent is a warning, never red), Enrichment (GeoIP provider, age, the required attribution text, quota meters), Data retention, Storage (database against its ceiling; red only when the disk guard is critical).
 
+Tabs whose forms save to the server (Reporting) say so in the note instead. Each section with its own Save button shows `UnsavedHint` next to it while its fields differ from what was last saved, so a long tab never loses an edit silently.
+
+## First-run setup
+
+The audience is someone installing Selfhostr for the first time, so every step answers three questions in the same places:
+
+- **What it is for**: the step title (`h2`) is one plain sentence (`WIZARD_STEPS[].sentence`).
+- **Can I skip it?** and **What happens next**: a two-column `StepGuide` (`dl`, subtle labels, muted answers) sits right above the sticky action bar. The skip answer is `WIZARD_STEPS[].skip` (null hides it, as on the last step); "what happens next" is the next step's `teaser`, or `AFTER_SETUP` on the last step, so it stays right when the M29 network step appears.
+- **Action bar**: Back on the left; "Finish later" and Next (or "Skip for now" while an optional step is not satisfied) on the right. The last step puts its own actions there instead ("Take the tour", "Go to Today"), never a second row of buttons in the body.
+- **Never forward** (`NeverForward` in `setup/ports-table.tsx`): the one rule that must not be missed sits above the ports table, in both the setup step and Settings: a `role="note"` box with a `border-sev-warning/40` outline, a `ShieldAlert` icon in `sev-warning` and the dashboard port in mono. It covers the dashboard port, the admin SSH port and the DMZ. Never red: nothing has gone wrong.
+- **VPN idle**: with the gate closed and nothing to trust, the step says "No VPN yet, so nothing leaves this machine.", shows a neutral `CircleDashed` "Idle" (not a warning: it is the expected first-run state), three numbered steps, and the upload card in its `first` mode ("Set up the tunnel"). `?vpn=none` in the mocks shows it.
+
 ## CVE watch
 
 A ranked list of vulnerabilities under one plain-English finding ("3 new critical CVEs this week affect services we emulate"). Severity is a word plus a number: a filled orange triangle and a stronger word for critical, an outlined orange triangle for high, a neutral dot for medium and low (never red: red is for severe events). Feed prose (titles, descriptions, dates) uses `normal-nums`, because Inter's tabular figures also widen the hyphen ("pre - auth"). KEV is a small outlined badge with a tooltip, relevance is three dots plus a word, and matched services are neutral chips. The detail panel shows the description, the CISA entry, the sessions of ours that match (links to the filtered Attacks view) and a "Propose a trap" button that copies a plain-text sheet: nothing is built from it. Feed status and the optional NVD and GitHub keys sit under the list. Everything fetched from the feeds is rendered as text.
@@ -211,7 +223,7 @@ Heavy pages (Overview, Live, Attackers, attacker profile, session detail, styleg
 
 ## Scrolling
 
-Lists scroll with the window. The desktop sidebar scrolls as one block when the window is too short (nav items are 28 px tall from `lg`, so every group fits at 1440 × 900), never one group cut in half. A tab strip that scrolls sideways starts at the left and keeps the open tab in view. The Live page has no scrolling list: its ticker and rankings are bounded (ten chips, six rows), and the full history is the Attacks list.
+Lists scroll with the window. The desktop sidebar scrolls as one block when the window is too short (nav items are 28 px tall from `lg`, so every group fits at 1440 × 900), never one group cut in half. A tab strip that scrolls sideways starts at the left and keeps the open tab in view. A box that scrolls (tab strips, segmented controls, a capped message body) takes `scroll-fade-x` or `scroll-fade-y`: its content fades out over 2 rem (2.5 rem vertically) at the edge that hides more, only while there is more, driven by its own scroll timeline (no JavaScript; browsers without scroll timelines show the plain box). The mask also fades borders and fills, so a framed box puts the class on the scrolling element inside the frame, never on the frame. The Live page has no scrolling list: its ticker and rankings are bounded (ten chips, six rows), and the full history is the Attacks list.
 
 ## Components
 
@@ -238,7 +250,9 @@ Lists scroll with the window. The desktop sidebar scrolls as one block when the 
 | SessionStory               | `session-story.tsx`                      | IP chip + flag + origin + predicate, `inline` or `block`                                                                                        |
 | SessionRow                 | `session-row.tsx`                        | one line on desktop, two on mobile, stretched link                                                                                              |
 | FilterBar, SensorFilter    | `filter-bar.tsx`                         | URL-synced segmented control and removable chips                                                                                                |
-| PageHeader                 | `page-header.tsx`                        | title + one sentence + actions                                                                                                                  |
+| PageHeader                 | `page-header.tsx`                        | title (text, or a node such as a mono address that wraps) + one sentence + actions                                                              |
+| MetaLine                   | `meta-line.tsx`                          | facts joined by middle dots that wrap cleanly: no dot ever ends or starts a line (phone rows of tables)                                         |
+| UnsavedHint                | `form-parts.tsx`                         | "Unsaved changes" with a neutral dot next to a section's Save button; pair with `useUnsaved(value)`                                             |
 | EmptyState                 | `empty-state.tsx`                        | icon, optional "Coming in Mx" badge, text, action                                                                                               |
 | Skeletons                  | `skeletons.tsx`                          | text, row, list, tile, card                                                                                                                     |
 | LiveEventRow               | `live-event-row.tsx`                     | one live event: sensor badge, summary (text only), tags, IP, flag, time; whole row opens the session                                            |

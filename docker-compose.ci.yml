@@ -12,9 +12,48 @@ services:
   backup:
     profiles: ["backup"]
   api:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-api:test"
     environment:
       API_AUTH_DISABLED: "true"
       SUCKERPOT_DEMO: "1"
+  # Built images get a name scoped to the throwaway project, so a test run can never retag the
+  # images of the live stack.
+  redis:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-redis:test"
+  migrate:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-migrate:test"
+  ingest:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-ingest:test"
+  sensor-ssh:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-ssh:test"
+  sensor-rdp:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-rdp:test"
+  sensor-telnet:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-telnet:test"
+  sensor-web:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-web:test"
+  sensor-redis:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-redis:test"
+  sensor-docker:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-docker:test"
+  sensor-mysql:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-mysql:test"
+  sensor-mssql:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-mssql:test"
+  sensor-adb:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-adb:test"
+  sensor-smb:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-smb:test"
+  sensor-sip:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-sip:test"
+  sensor-synology:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-synology:test"
+  collector:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-collector:test"
+  analyzer:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-collector:test"
+  demo:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-demo:test"
 
 # Project-local volumes with an explicit "test-" name. The base file declares every data volume as
 # external and named <prefix>_<volume>; a test run must never mount those, and a plain

@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Eye, EyeOff, Trash2 } from "lucide-react"
+import { Eye, EyeOff, Trash2, TriangleAlert } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useId, useState } from "react"
 import { useSearchParams } from "react-router"
-import { Field, FormError } from "@/components/form-parts"
+import { Field, FormError, UnsavedHint } from "@/components/form-parts"
+import { useUnsaved } from "@/hooks/use-unsaved"
 import { FindingCard } from "@/components/finding-card"
 import { SegmentedControl } from "@/components/segmented-control"
 import { SkeletonText } from "@/components/skeletons"
@@ -17,7 +19,9 @@ import {
   guardReason,
   guardReasonsOf,
   isStale,
+  REFERENCE_STYLE_OPTIONS,
   TLP_OPTIONS,
+  type ReferenceStyle,
   type ReportSettings,
   type SelfTerm,
   type Tlp,
@@ -70,6 +74,7 @@ function SettingsForm({
     err: useId(),
   }
   const [s, setS] = useState(initial)
+  const { unsaved, markSaved } = useUnsaved(s)
   const [params] = useSearchParams()
   const flagged = new Set((params.get("missing") ?? "").split(",").filter(Boolean))
   // The server names the reply contact when it is the one thing missing; it stays flagged until set.
@@ -83,6 +88,7 @@ function SettingsForm({
     mutationFn: () => abuseApi.saveSettings(s),
     onSuccess: (d) => {
       onSaved()
+      markSaved(s)
       setError(null)
       setSaved(true)
       qc.setQueryData(abuseKeys.settings, d)
@@ -229,6 +235,19 @@ function SettingsForm({
             className="self-start"
           />
         </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-fg">Reply reference</span>
+          <SegmentedControl
+            label="Reply reference"
+            value={s.reference_style}
+            onChange={(v: ReferenceStyle) => set("reference_style", v)}
+            options={REFERENCE_STYLE_OPTIONS}
+            className="scroll-fade-x max-w-full self-start overflow-x-auto"
+          />
+          <span className="text-xs text-fg-muted">
+            A random code that lets a reply find its report. Off means only SMTP sends can match.
+          </span>
+        </div>
       </div>
       <fieldset className="grid gap-3">
         <legend className="mb-1 text-sm font-medium text-fg">Defaults for new drafts</legend>
@@ -275,13 +294,14 @@ function SettingsForm({
         <span role="status" className="text-sm text-fg-muted empty:hidden">
           {saved ? "Saved." : null}
         </span>
+        <UnsavedHint show={unsaved} />
       </div>
     </form>
   )
 }
 
 /** Text the reports must never contain: learned from traffic, or added by hand. */
-function NeverInReport() {
+export function NeverInReport() {
   const qc = useQueryClient()
   const [reveal, setReveal] = useState(false)
   const [kind, setKind] = useState<SelfTerm["kind"]>("address")
@@ -306,7 +326,7 @@ function NeverInReport() {
     onError: fail,
   })
   const del = useMutation({ mutationFn: abuseApi.deleteTerm, onSuccess: refresh, onError: fail })
-  const terms = q.data ?? []
+  const terms = [...(q.data ?? [])].sort((a, b) => Number(a.confirmed) - Number(b.confirmed))
   return (
     <FindingCard
       eyebrow="Never in a report"
@@ -339,8 +359,17 @@ function NeverInReport() {
             {terms.map((t) => (
               <li
                 key={t.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 sm:px-5"
+                className={cn(
+                  "flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 sm:px-5",
+                  !t.confirmed && "tint-warning",
+                )}
               >
+                {!t.confirmed ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-sev-warning">
+                    <TriangleAlert aria-hidden className="size-3.5" />
+                    Needs confirmation
+                  </span>
+                ) : null}
                 <code className="font-mono text-xs text-fg">{t.value}</code>
                 <span className="text-xs text-fg-muted">
                   {t.kind} ·{" "}
@@ -428,42 +457,46 @@ export function ReportingCard() {
   const [stale, setStale] = useState(false)
   return (
     <>
-      <FindingCard
-        eyebrow="Reporting"
-        finding={
-          q.isPending
-            ? "Loading the reporting settings…"
-            : q.isError
-              ? "The reporting settings could not be loaded."
-              : q.data.reply_contact
-                ? "Reports are ready to write. The texts around the facts are optional."
-                : "Set a reply contact so reports can be answered. The texts are optional."
-        }
-        detail="Saving these words sends nothing. By default you copy a draft into your own mailbox; SMTP sending is optional, further down."
-      >
-        {q.isPending ? (
-          <SkeletonText lines={4} />
-        ) : q.data ? (
-          <>
-            {stale ? (
-              <p role="alert" className="mb-4 text-sm text-fg">
-                The settings were changed somewhere else, so they were reloaded. Read them again,
-                then save your edit.
-              </p>
-            ) : null}
-            <SettingsForm
-              key={q.data.revision}
-              initial={q.data}
-              onSaved={() => setStale(false)}
-              onStale={() => {
-                setStale(true)
-                void q.refetch()
-              }}
-            />
-          </>
-        ) : null}
-      </FindingCard>
-      <NeverInReport />
+      <section id="reporting-message" className="scroll-mt-16">
+        <FindingCard
+          eyebrow="Reporting"
+          finding={
+            q.isPending
+              ? "Loading the reporting settings…"
+              : q.isError
+                ? "The reporting settings could not be loaded."
+                : q.data.reply_contact
+                  ? "Reports are ready to write. The texts around the facts are optional."
+                  : "Set a reply contact so reports can be answered. The texts are optional."
+          }
+          detail="Saving these words sends nothing. By default you copy a draft into your own mailbox; SMTP sending is optional, further down."
+        >
+          {q.isPending ? (
+            <SkeletonText lines={4} />
+          ) : q.data ? (
+            <>
+              {stale ? (
+                <p role="alert" className="mb-4 text-sm text-fg">
+                  The settings were changed somewhere else, so they were reloaded. Read them again,
+                  then save your edit.
+                </p>
+              ) : null}
+              <SettingsForm
+                key={q.data.revision}
+                initial={q.data}
+                onSaved={() => setStale(false)}
+                onStale={() => {
+                  setStale(true)
+                  void q.refetch()
+                }}
+              />
+            </>
+          ) : null}
+        </FindingCard>
+      </section>
+      <section id="reporting-never" className="scroll-mt-16">
+        <NeverInReport />
+      </section>
     </>
   )
 }

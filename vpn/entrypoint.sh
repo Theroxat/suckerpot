@@ -11,6 +11,14 @@
 #    It also watches $VPN_CONFIG_DIR/restart (written by the API for "Reconnect"): only its
 #    checksum is used, its content is never read or parsed and never affects the settings.
 #
+# 4. Idle mode (M28): with no uploaded wg.env AND no WireGuard key variable (private/public key, addresses, endpoint) set in the environment, the
+#    install simply has no VPN configuration yet. gluetun is NOT started (it would fail in a loop):
+#    the container creates the marker $IDLE_MARKER (read by /vpn/health.sh), logs one line and
+#    waits for wg.env to appear, then exits 0 so the container restarts on it. Idle means no
+#    tunnel, no proxy and no process that opens a connection: no route out at all, so every
+#    consumer sees the gate closed ("no_vpn"). A configuration that is present but incomplete is
+#    NOT idle: it still reaches gluetun, which refuses to start (fail closed).
+#
 # Log lines never contain a value from the file.
 
 CONF_DIR=${VPN_CONFIG_DIR:-/vpn-config}
@@ -20,6 +28,8 @@ LIVE_ENV="$CONF_DIR/wg.env"
 RESTART_FILE="$CONF_DIR/restart"
 SNAPSHOT=${VPN_SNAPSHOT:-/tmp/wg.env.snapshot}
 WG_ENV=$SNAPSHOT # parsed copy of LIVE_ENV
+IDLE_MARKER=${VPN_IDLE_MARKER:-/tmp/vpn-idle}
+IDLE_INTERVAL=${VPN_IDLE_INTERVAL:-5}
 
 log() { printf 'vpn-entrypoint: %s\n' "$1" >&2; }
 
@@ -96,6 +106,35 @@ load_uploaded() {
   done
   log "using the VPN configuration uploaded from the dashboard"
 }
+
+# Idle mode: nothing is configured yet. Only the absence of BOTH sources triggers it.
+# ANY non-empty key variable (private/public key, addresses, endpoint) means "configured" (possibly half-configured):
+# that goes on to gluetun, which refuses an incomplete set (fail closed).
+configured_in_env=0
+env_lines=$(env)
+while IFS='=' read -r name value; do
+  case $name in
+    # Key variables only: compose sets WIREGUARD_IMPLEMENTATION and the keepalive, and the gluetun
+    # image bakes WIREGUARD_MTU and WIREGUARD_*_SECRETFILE defaults, none of which mean "configured".
+    WIREGUARD_PRIVATE_KEY | WIREGUARD_PUBLIC_KEY | WIREGUARD_ADDRESSES | WIREGUARD_ENDPOINT_IP | WIREGUARD_ENDPOINT_PORT | \
+      VPN_WG_PRIVATE_KEY | VPN_WG_PEER_PUBLIC_KEY | VPN_WG_PUBLIC_KEY | VPN_WG_ADDRESSES | VPN_WG_ENDPOINT_IP | VPN_WG_ENDPOINT_PORT)
+      [ -n "$value" ] && configured_in_env=1 ;;
+  esac
+done <<EOF
+$env_lines
+EOF
+if [ ! -e "$LIVE_ENV" ] && [ "$configured_in_env" = 0 ]; then
+  trap 'rm -f "$IDLE_MARKER"; exit 0' TERM INT
+  trap 'rm -f "$IDLE_MARKER"' EXIT
+  (umask 077 && : >"$IDLE_MARKER") || { log "cannot create the idle marker; refusing to start"; exit 1; }
+  log "no VPN configuration yet; waiting"
+  while [ ! -e "$LIVE_ENV" ]; do
+    sleep "$IDLE_INTERVAL" &
+    wait $!
+  done
+  log "VPN configuration found, restarting"
+  exit 0
+fi
 
 initial=absent
 if [ -e "$LIVE_ENV" ]; then

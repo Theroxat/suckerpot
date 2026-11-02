@@ -681,3 +681,34 @@ async def test_a_future_schedule_is_not_picked(world: World) -> None:
     await s.run(NOW)
     await s.run(NOW + timedelta(minutes=30))
     assert FakeSMTP.instances == []
+
+
+async def test_the_message_id_and_the_reply_token_are_recorded(world: World) -> None:
+    """M26: a reply can be matched to a mail by our Message-ID or by the token in the subject."""
+    await world.self_address()
+    await world.profile()
+    report = await world.report(status="reviewed")
+    rid = await world.ask(report)
+    await world.sender().run(NOW)
+    (conn,) = FakeSMTP.instances
+    mail = parsed(conn)
+    req, row = await world.request(rid), await world.report_row(report)
+    assert req.status == "sent" and req.message_id == mail["Message-ID"]
+    assert mail["Subject"].endswith(f"(ref {row.reply_token})")
+    assert (
+        conn.sent is not None and conn.sent[2].decode().count(row.reply_token) == 1
+    )  # subject only
+    assert row.reply_token not in row.id_seed.hex and row.reply_token != str(row.public_id)[:12]
+
+
+async def test_the_reference_style_off_prints_no_token(world: World) -> None:
+    await world.self_address()
+    await world.profile()
+    async with world.owner.begin() as conn:
+        await conn.execute(text("UPDATE report_settings SET reference_style = 'off'"))
+    report = await world.report(status="reviewed")
+    await world.ask(report)
+    await world.sender().run(NOW)
+    (sent_conn,) = FakeSMTP.instances
+    row = await world.report_row(report)
+    assert sent_conn.sent is not None and row.reply_token not in sent_conn.sent[2].decode()

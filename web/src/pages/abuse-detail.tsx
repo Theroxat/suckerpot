@@ -5,7 +5,7 @@ import {
   FileSearch,
   FlaskConical,
   Info,
-  OctagonAlert,
+  TriangleAlert,
   RefreshCw,
 } from "lucide-react"
 import { useId, useState } from "react"
@@ -13,8 +13,10 @@ import { Link, useParams } from "react-router"
 import { useAuth } from "@/app/auth"
 import { CopyField } from "@/components/abuse/copy-field"
 import { ExportMenu } from "@/components/abuse/export-menu"
+import { OutcomeCard } from "@/components/abuse/outcome-card"
 import { StatusStepper } from "@/components/abuse/status-stepper"
 import { SendControl } from "@/components/abuse/send-control"
+import { useSendMode } from "@/components/abuse/send-hooks"
 import { inFlight } from "@/lib/abuse-send"
 import { ConfirmDialog, MarkSentDialog } from "@/components/abuse/status-dialogs"
 import { EmptyState } from "@/components/empty-state"
@@ -25,7 +27,6 @@ import { ReadOnlyBadge } from "@/components/read-only-badge"
 import { RelativeTime } from "@/components/relative-time"
 import { SegmentedControl } from "@/components/segmented-control"
 import { SkeletonCard } from "@/components/skeletons"
-import { TagBadge } from "@/components/tag-badge"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
@@ -52,6 +53,7 @@ import {
   type ReportOptions,
   type ReportStatus,
 } from "@/lib/abuse"
+import { MetaLine } from "@/components/meta-line"
 import { formatAbsolute, formatNumber, plural } from "@/lib/format"
 import { saveBlob } from "@/lib/samples"
 
@@ -75,10 +77,10 @@ function IdentityCard({ r }: { r: ReportDetail }) {
       finding={describeGuard(r.guard, r.redaction)}
       detail={
         ok
-          ? "Run on every view and download. It looks for anything that could point back to you."
+          ? "Runs on every view and download. It looks for anything that could point back to you."
           : undefined
       }
-      className={ok ? "normal-nums" : "border-sev-severe/40 normal-nums"}
+      className={ok ? "normal-nums" : "border-sev-warning/40 normal-nums"}
     >
       <div className="flex items-start gap-2.5 text-sm">
         {ok ? (
@@ -88,7 +90,7 @@ function IdentityCard({ r }: { r: ReportDetail }) {
           </>
         ) : (
           <>
-            <OctagonAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-sev-severe" />
+            <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-sev-warning" />
             <div className="space-y-2">
               <span className="font-medium text-fg">Blocked</span>
               <ul className="list-disc space-y-1 pl-5 text-fg-muted">
@@ -97,7 +99,15 @@ function IdentityCard({ r }: { r: ReportDetail }) {
                 ))}
               </ul>
               <p className="text-fg-muted">
-                Regenerate the draft after fixing the cause, or discard it.
+                Regenerate the draft after fixing the cause, or discard it. The words it looks for
+                are listed in{" "}
+                <Link
+                  to="/settings?tab=reporting#reporting-never"
+                  className="font-medium text-fg underline underline-offset-4"
+                >
+                  Settings, Reporting, Never in a report
+                </Link>
+                .
               </p>
             </div>
           </>
@@ -231,19 +241,48 @@ function MessageCard({ r }: { r: ReportDetail }) {
 function SubjectsCard({ r }: { r: ReportDetail }) {
   return (
     <FindingCard
-      eyebrow="Subjects"
-      finding={`${plural(r.subjects.length, "subject")} in this report.`}
+      eyebrow="In this report"
+      finding={`${r.kind === "attack_source" ? plural(r.subjects.length, "address", "addresses") : plural(r.subjects.length, "host")} in this report.`}
       detail="These links open the dashboard and exist only here: they are never part of the message."
       className="normal-nums"
       bodyClassName="px-0 sm:px-0 pb-0 sm:pb-0"
     >
-      <div className="overflow-x-auto border-t">
-        <table className="w-full text-left text-sm">
-          <caption className="sr-only">Subjects of this report</caption>
+      <ul aria-label="Addresses and hosts in this report" className="divide-y border-t sm:hidden">
+        {r.subjects.map((s) => (
+          <li key={`${s.subject_type}:${s.value}`} className="px-4 py-3">
+            {s.subject_type === "ip" ? (
+              <IPChip ip={s.value} href={s.link} />
+            ) : (
+              <Link
+                to={s.link}
+                className="font-mono text-xs break-all text-fg underline-offset-4 hover:underline"
+              >
+                {s.value}
+              </Link>
+            )}
+            <MetaLine className="mt-1.5">
+              {s.asn || s.network ? (
+                <span>
+                  {s.asn ? `AS${s.asn}` : null}
+                  {s.asn && s.network ? " " : null}
+                  {s.network}
+                </span>
+              ) : null}
+              <span>{plural(s.sessions, "session")}</span>
+              <span>
+                last <RelativeTime iso={s.last_ts} />
+              </span>
+            </MetaLine>
+          </li>
+        ))}
+      </ul>
+      <div className="overflow-x-auto sm:border-t">
+        <table className="hidden w-full text-left text-sm sm:table">
+          <caption className="sr-only">Addresses and hosts in this report</caption>
           <thead className="text-xs text-fg-muted">
             <tr className="border-b">
               <th scope="col" className="px-4 py-2 font-medium sm:px-5">
-                Subject
+                {r.kind === "attack_source" ? "Address" : "Host"}
               </th>
               <th scope="col" className="px-2 py-2 font-medium">
                 Network
@@ -414,7 +453,7 @@ function HistoryCard({ r }: { r: ReportDetail }) {
   return (
     <FindingCard
       eyebrow="History"
-      finding={`Last change: ${STATUS_LABEL[r.status].toLowerCase()}, ${formatAbsolute(r.updated_at)}.`}
+      finding={`Last change: ${STATUS_LABEL[r.status].toLowerCase()}.`}
       bodyClassName="px-0 sm:px-0 pb-1 sm:pb-1"
     >
       <ol className="divide-y border-t">
@@ -428,7 +467,9 @@ function HistoryCard({ r }: { r: ReportDetail }) {
                 ? `${STATUS_LABEL[h.from]} to ${STATUS_LABEL[h.to]}`
                 : `${STATUS_LABEL[h.to]} written`}
             </span>
-            <span className="text-fg-muted">by {h.actor}</span>
+            <span className="text-fg-muted">
+              {h.actor === "ingest" ? "automatically" : `by ${h.actor}`}
+            </span>
             <RelativeTime iso={h.ts} className="ml-auto" />
           </li>
         ))}
@@ -447,6 +488,7 @@ function Actions({
   onChanged: (d: ReportDetail | null, message?: string) => void
 }) {
   const { canWrite } = useAuth()
+  const mode = useSendMode()
   const [sentOpen, setSentOpen] = useState(false)
   const [confirm, setConfirm] = useState<"discarded" | "draft" | "regenerate" | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -482,13 +524,17 @@ function Actions({
           </Button>
         ) : null}
         {next.includes("sent") && !r.demo ? (
-          <Button size="sm" onClick={() => setSentOpen(true)}>
+          <Button
+            size="sm"
+            variant={mode === "click" ? "outline" : "default"}
+            onClick={() => setSentOpen(true)}
+          >
             Mark sent
           </Button>
         ) : null}
         {next.includes("closed") ? (
           <Button size="sm" onClick={() => go("closed")}>
-            Close
+            Mark as closed
           </Button>
         ) : null}
         {next.includes("draft") ? (
@@ -511,10 +557,19 @@ function Actions({
         <SendControl
           reportId={r.public_id}
           recipient={r.recipient.mailbox ?? r.recipient.name}
-          ready={!r.demo && r.guard.ok && Boolean(r.recipient.mailbox) && r.missing.length === 0}
+          // A draft is read first: "Send now" appears once it is marked reviewed, so each state
+          // has one obvious next step.
+          ready={
+            r.status === "reviewed" &&
+            !r.demo &&
+            r.guard.ok &&
+            Boolean(r.recipient.mailbox) &&
+            r.missing.length === 0
+          }
           scheduledAt={r.send_state?.scheduled_at ?? null}
           lastRequest={r.send_state?.last_request ?? null}
           revision={r.revision}
+          primary={r.status !== "draft"}
         />
       ) : null}
       {r.status === "draft" && blocker ? (
@@ -644,7 +699,14 @@ export function AbuseDetailPage() {
         actions={
           <>
             <ReadOnlyBadge />
-            <ExportMenu scope={{ report: r.public_id }} />
+            <ExportMenu
+              scope={{ report: r.public_id }}
+              blockedReason={
+                r.guard.ok
+                  ? undefined
+                  : "The identity check blocked this report, so it cannot be exported."
+              }
+            />
           </>
         }
       />
@@ -667,8 +729,11 @@ export function AbuseDetailPage() {
           </p>
         ) : null}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-fg-muted">
-          <TagBadge tag={KIND_LABEL[r.kind]} href={null} />
+          <span className="font-medium text-fg">{KIND_LABEL[r.kind]}</span>
           <span className="font-mono">{r.recipient.mailbox ?? "no mailbox yet"}</span>
+          {r.recipient.shared_mailbox ? (
+            <span>Replies from this contact are trusted by exact address only.</span>
+          ) : null}
           {r.previously_reported ? (
             <span>Previously reported on {formatAbsolute(r.previously_reported)}</span>
           ) : null}
@@ -680,6 +745,7 @@ export function AbuseDetailPage() {
           </p>
         )}
         <Actions r={r} onChanged={refresh} />
+        {r.status === "sent" || r.status === "closed" ? <OutcomeCard r={r} /> : null}
         <IdentityCard r={r} />
         <MessageCard r={r} />
         <SubjectsCard r={r} />

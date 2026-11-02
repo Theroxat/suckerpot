@@ -216,7 +216,7 @@ export function TrendsPage() {
         finding={fresh.isPending ? "Comparing with the last 90 days…" : newFinding.finding}
         detail="Compared with the 90 days before the period. Not affected by the sensor filter."
       >
-        <div className="-mx-1 mb-3 overflow-x-auto px-1 pb-1">
+        <div className="scroll-fade-x -mx-1 mb-3 overflow-x-auto px-1 pb-1">
           <SegmentedControl
             label="Kind of value"
             value={field}
