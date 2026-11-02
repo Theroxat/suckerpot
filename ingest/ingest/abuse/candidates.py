@@ -74,6 +74,8 @@ NETWORK_WINDOW_DAYS = 30
 async def network_covered(session: AsyncSession) -> set[str]:
     """Hosts the Selfhostr network reported or got taken down in the last 30 days (M29 dedupe).
 
+    The window runs on the report or takedown date, never on the last sighting.
+
     Empty unless this node is a member: the network sends one strong report per target, so the
     local workflow must not send a second, weaker one to the same desk. A merely ``confirmed``
     target is not covered: the hub may never report it, so the local candidate stays. Network
@@ -87,7 +89,9 @@ async def network_covered(session: AsyncSession) -> set[str]:
             JOIN network_membership m ON m.id = 1 AND m.state = 'member'
             WHERE t.state IN ('reported', 'taken_down') AND t.value IS NOT NULL
               AND t.kind IN ('ip', 'domain', 'c2_ip', 'c2_domain')
-              AND t.last_day >= (now() AT TIME ZONE 'UTC')::date - CAST(:days AS integer)
+              AND t.reported_day IS NOT NULL
+              AND coalesce(t.taken_down_day, t.reported_day)
+                  >= (now() AT TIME ZONE 'UTC')::date - CAST(:days AS integer)
             """
         ),
         {"days": NETWORK_WINDOW_DAYS},
