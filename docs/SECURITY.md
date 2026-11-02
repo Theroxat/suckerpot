@@ -404,7 +404,7 @@ The community blocklist feeds ([Community blocklist feeds](feeds.md)) add three 
 | Feed flood (A10) | Static files, precompressed, `ETag` and `304`, one write an hour. Feed host separate from the API paths. Delisting and lookup rate limited, plus proof of work. Lists stay valid for 3 days without the hub. |
 | Forged or rolled-back list (A11) | minisign (Ed25519) signature on the index and on every file. The signed comment must name the file and the serial. The node checks the sha256, the serial (no rollback) and `valid_until`. The feed key is separate from the hub key. |
 | A compromised hub publishes a huge list | Single addresses only, never a prefix shorter than /32 or /128. Caps per list. A change breaker holds big jumps. Renderers and the node parser reject prefixes and oversized files. |
-| Tor exit relays and shared CDN addresses listed by mistake | Excluded from every list by default (`HUB_FEED_EXCLUDE_TOR`). CDN and Tor ranges are fetched from a fixed list of hosts, with size checks and a refusal to publish when the ranges are stale (fail closed). |
+| Tor exit relays and shared CDN addresses listed by mistake | Always excluded from every list; there is no switch to publish Tor exits. CDN and Tor ranges are fetched from a fixed list of hosts, with size checks and a refusal to publish when the ranges are stale (fail closed). |
 
 ### Invariants
 

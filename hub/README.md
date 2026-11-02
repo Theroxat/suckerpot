@@ -368,7 +368,7 @@ The hub excludes what no list may carry: reserved space, public resolvers, share
 
 | Source | Refresh | Notes |
 | --- | --- | --- |
-| `tor` | every 24 h | Tor exit relays. Excluded by default (`HUB_FEED_EXCLUDE_TOR=true`). |
+| `tor` | every 24 h | Tor exit relays. Always excluded from every list (there is no switch). |
 | `cdn:cloudflare`, `cdn:fastly`, `cdn:cloudfront` | every 7 days | Major CDN and cloud front ends |
 
 - A failed refresh keeps the last good copy. It retries after 6 hours.
@@ -400,7 +400,6 @@ Set these in `hub/.env`. The defaults are the values in `.env.example`.
 | `HUB_FEED_MAX_INBOUND` / `_OUTBOUND` / `_DOMAINS` | `50000` / `20000` / `20000` | Size caps per list |
 | `HUB_FEED_BREAKER_ADD_PCT` / `_REMOVE_PCT` / `_MIN` | `50` / `50` / `200` | Change breaker |
 | `HUB_FEED_NEVER` | empty | Extra addresses or names that no feed may carry (comma separated, for example your own hosts) |
-| `HUB_FEED_EXCLUDE_TOR` | `true` | Keep Tor exit relays off every list |
 | `HUB_EXTERNAL_RANGES_ENABLED` | `true` | Fetch the CDN and Tor range sources. With `false` the feeds stay off. |
 | `HUB_DELIST_POW_DIFFICULTY` | `20` | Proof-of-work bits for a removal request |
 | `HUB_DELIST_DAILY_CAP` | `200` | Removal requests accepted per day |

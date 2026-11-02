@@ -12,8 +12,8 @@ Sources, in this order:
   ``never_list`` table and ``HUB_FEED_NEVER``;
 * ``allow_list`` / ``delisted``: the operator allow-list (``feed_allow``), which may hold CIDRs
   (allowing is safe, listing a prefix is not);
-* ``cdn`` and ``tor``: address ranges kept in ``feed_auto_ranges`` by the range fetcher. Tor is a
-  list source that is excluded by default (``HUB_FEED_EXCLUDE_TOR``).
+* ``cdn`` and ``tor``: address ranges kept in ``feed_auto_ranges`` by the range fetcher. Tor exits
+  are always excluded; there is no switch.
 """
 
 from __future__ import annotations
@@ -111,7 +111,6 @@ class Exclusions:
     delisted_domains: set[str] = field(default_factory=set)
     cdn_nets: NetSet = field(default_factory=NetSet)
     tor_nets: NetSet = field(default_factory=NetSet)
-    exclude_tor: bool = True
     allow_documentation: bool = False
 
     def classify(self, value: str, *, is_domain: bool) -> str | None:
@@ -137,7 +136,8 @@ class Exclusions:
             return NEVER
         if addr in self.cdn_nets:
             return CDN
-        if self.exclude_tor and addr in self.tor_nets:
+        # Tor exits are always excluded (no switch): the attacker is not the exit.
+        if addr in self.tor_nets:
             return TOR
         return None
 
@@ -203,7 +203,6 @@ def build_exclusions(
         delisted_domains=delisted_domains,
         cdn_nets=NetSet(cdn),
         tor_nets=NetSet(tor),
-        exclude_tor=s.feed_exclude_tor,
         allow_documentation=s.allow_documentation,
     )
 
