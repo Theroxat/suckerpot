@@ -96,6 +96,20 @@ def test_udp_only_evidence_never_lists_an_address() -> None:
     assert select.evaluate(target("ip", IP, five), ctx(ids), True).candidate is not None
 
 
+def test_a_row_mixing_sip_and_tcp_is_never_evidence() -> None:
+    """Security review H2: spoofed SIP REGISTER floods "from" a victim, plus one TCP connect by
+    the victim, give each node a row with services sip+ssh, activity login and attempts >= 2.
+    The protocol does not say which service carried the logins, so the row proves nothing."""
+    ids = nodes(10)
+    spoofed = rows(ids, D[:3], services=("sip", "ssh"), activity=("connect", "login"), attempts=3)
+    assert select.evaluate(target("ip", IP, spoofed), ctx(ids), True).candidate is None
+    strong = rows(ids, D[:3], services=("sip", "ssh"), activity=("login_success",), attempts=3)
+    assert select.evaluate(target("ip", IP, strong), ctx(ids), True).candidate is None
+    # The same activity on rows that name TCP services only does list.
+    tcp = rows(ids, D[:3], services=("ssh",), activity=("connect", "login"), attempts=3)
+    assert select.evaluate(target("ip", IP, tcp), ctx(ids), True).candidate is not None
+
+
 def test_login_needs_a_heavy_attempts_bucket() -> None:
     ids = nodes(5)
     light = rows(ids, services=("ssh",), activity=("login",), attempts=1)
