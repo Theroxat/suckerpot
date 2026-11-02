@@ -7,8 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Installable Selfhostr (M28). Install with one command from a release tag: `./scripts/install.sh` (also `just install`). The installer checks the machine, asks a few questions, creates every secret on the host, writes `.env` (mode `0600`), creates the data volumes and starts the stack. It never overwrites `.env`, never adopts existing volumes and never looks up the public address. Guide: `docs/install.md`.
+- Two install modes: signed release images (default) and a build from the checkout (`--source`).
+- Sensor switches `SENSOR_<NAME>` (default `1`). Choose the sensors with `just sensors`, or change any allowed setting with `just set`. The port guard follows the selection.
+- First-run setup in the dashboard (`/setup`, migration `0025`): welcome, sensors, ports, VPN, own address, abuse reports, alerts and a checklist. It can be skipped, finished later and opened again from Settings. Settings has a new "Sensors & ports" tab with the router port and the state of each sensor.
+- Safe updates: `just update` takes a database dump first, records how to roll back and checks the health of the new version. An update that did not finish blocks the next one until `--force` or a rollback. `just rollback` restores the previous code, images and database after confirmation. Guide: `docs/updates.md`.
+- Signed images: the release workflow publishes amd64 and arm64 images on version tags, signs them with cosign (keyless) and runs an install smoke test. `scripts/verify-images.sh` checks the signatures, and the installer and the updater refuse to run an image that does not verify (fail closed).
+- Low-memory mode (`docker-compose.lowmem.yml`) for machines of about 2 GiB.
+- The running version is shown in the dashboard. An optional daily update check (`UPDATE_CHECK_ENABLED`, off by default) asks GitHub through the VPN only, sends no version or identifier, and never installs anything.
+- VPN idle mode: the egress profile starts before a WireGuard file is uploaded. The tunnel stays closed, with no route out, until a configuration is uploaded or passed to the installer.
+
 ### Changed
 
+- `docs/deployment.md` "Upgrading" now points to `just update`. The old `git pull` and `docker compose up` steps are replaced.
 - Abuse report wording is now optional (owner decision of 2026-11-01). Only the reply contact is required. An empty introduction, closing, note or signature is left out of every rendering (text, X-ARF, `.eml`), an empty subject template gives `Abuse report for <address>`, and an empty X-ARF user agent gives `Mozilla/5.0`. The `custom_intro_required` gate on marking a report reviewed is gone, and the report detail answers `missing` instead of `custom_intro`. The setup checklist item is green once the reply contact is set. The `default_wording` identity check still refuses text that equals wording published earlier.
 
 ## [0.5.0] - 2026-11-01
