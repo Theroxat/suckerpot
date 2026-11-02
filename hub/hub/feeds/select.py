@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import ipaddress
 import uuid
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -49,6 +49,7 @@ MIN_FETCHERS = 2
 MIN_DROPPERS = 2
 HIGH_DAYS = 3
 HIGH_COHORTS = 3
+HIGH_COHORT_NODES = 2  # nodes an enrolment week needs before it counts towards HIGH_COHORTS
 GOOD_STATES = frozenset({"confirmed", "reported"})
 
 KIND_LIST = {
@@ -146,11 +147,17 @@ def _published_fields(rows: Sequence[Obs], k: int) -> tuple[set[str], set[str], 
     return services, tags, families
 
 
-def _high(
-    rows: Sequence[Obs], ctx: SelectContext, days: set[date], corroborated: bool | None
-) -> bool:
+def _high(rows: Sequence[Obs], ctx: SelectContext, corroborated: bool | None) -> bool:
+    """The high tier (design 4.3). One node can never supply a day or a cohort by itself
+    (security review M2): a day counts only when at least ``k`` nodes saw the value on it, and
+    an enrolment week only when at least ``HIGH_COHORT_NODES`` of the nodes belong to it."""
     nodes = {r.node for r in rows}
-    cohorts = {ctx.cohort_of[n] for n in nodes if n in ctx.cohort_of}
+    per_day: dict[date, set[uuid.UUID]] = defaultdict(set)
+    for r in rows:
+        per_day[r.day].add(r.node)
+    days = [d for d, seen in per_day.items() if len(seen) >= ctx.k]
+    per_cohort = Counter(ctx.cohort_of[n] for n in nodes if n in ctx.cohort_of)
+    cohorts = [c for c, count in per_cohort.items() if count >= HIGH_COHORT_NODES]
     return (
         len(nodes) >= 2 * ctx.k
         and len(days) >= HIGH_DAYS
@@ -216,9 +223,8 @@ def _evaluate_inbound(t: TargetInput, ctx: SelectContext, corroborated: bool | N
     if expires < ctx.today:
         return Evaluation(None)
     services, tags, _ = _published_fields(rows, ctx.k)
-    all_days = {r.day for r in evidence}
-    needs = corroborated is None and _high(evidence, ctx, all_days, True)
-    tier = "high" if _high(evidence, ctx, all_days, corroborated) else "standard"
+    needs = corroborated is None and _high(evidence, ctx, True)
+    tier = "high" if _high(evidence, ctx, corroborated) else "standard"
     family = ipaddress.ip_address(t.value).version
     return Evaluation(
         Candidate(
@@ -281,9 +287,8 @@ def _evaluate_outbound(
         value, port = split_host_port(t.value)
         if port is not None:
             ports.add(port)
-    all_days = {r.day for r in rows}
-    needs = corroborated is None and _high(rows, ctx, all_days, True)
-    tier = "high" if _high(rows, ctx, all_days, corroborated) else "standard"
+    needs = corroborated is None and _high(rows, ctx, True)
+    tier = "high" if _high(rows, ctx, corroborated) else "standard"
     is_domain = t.kind in ("domain", "c2_domain")
     family: int | str = "dns" if is_domain else ipaddress.ip_address(value).version
     return Evaluation(
