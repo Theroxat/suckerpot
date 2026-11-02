@@ -206,6 +206,44 @@ def test_env_values_present_do_not_trigger_idle_mode(tmp_path: Path) -> None:
         proc.kill()
 
 
+COMPOSE_AND_IMAGE_DEFAULTS = {
+    "VPN_SERVICE_PROVIDER": "custom",
+    "VPN_TYPE": "wireguard",
+    "WIREGUARD_IMPLEMENTATION": "userspace",
+    "WIREGUARD_PERSISTENT_KEEPALIVE_INTERVAL": "25s",
+    "WIREGUARD_PRIVATE_KEY": "",
+    "WIREGUARD_PUBLIC_KEY": "",
+    "WIREGUARD_ADDRESSES": "",
+    "WIREGUARD_ENDPOINT_IP": "",
+    "WIREGUARD_ENDPOINT_PORT": "",
+    "WIREGUARD_MTU": "1400",
+    "WIREGUARD_PRIVATE_KEY_SECRETFILE": "/run/secrets/wireguard_private_key",
+    "WIREGUARD_PRESHARED_KEY_SECRETFILE": "/run/secrets/wireguard_preshared_key",
+    "WIREGUARD_ADDRESSES_SECRETFILE": "/run/secrets/wireguard_addresses",
+}
+
+
+def test_compose_env_and_image_defaults_still_go_idle(tmp_path: Path) -> None:
+    proc = _entrypoint(tmp_path, **COMPOSE_AND_IMAGE_DEFAULTS)
+    try:
+        assert _wait_for(tmp_path / "idle")
+        time.sleep(1.2)
+        assert proc.poll() is None
+        assert not (tmp_path / "started").exists()
+    finally:
+        proc.kill()
+
+
+def test_compose_env_with_keys_set_is_not_idle(tmp_path: Path) -> None:
+    env = {**COMPOSE_AND_IMAGE_DEFAULTS, "WIREGUARD_PRIVATE_KEY": "k" * 43 + "="}
+    proc = _entrypoint(tmp_path, **env)
+    try:
+        assert _wait_for(tmp_path / "started")
+        assert not (tmp_path / "idle").exists()
+    finally:
+        proc.kill()
+
+
 def test_invalid_uploaded_file_is_not_idle_and_fails_closed(tmp_path: Path) -> None:
     conf = tmp_path / "conf"
     conf.mkdir()
