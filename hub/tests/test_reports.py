@@ -120,24 +120,17 @@ async def test_severity_rules(env: Env) -> None:
 
 
 @pytest.mark.integration
-async def test_payload_hosts_are_still_reported_as_malware_hosts(env: Env) -> None:
-    """Security review H3 moved payload hosts out of the ``ip`` kind. M29 keeps reporting them,
-    now under their own kind and as a malware download location, not as an attack source."""
+async def test_payload_hosts_are_reported_only_with_fetched_evidence(env: Env) -> None:
+    """Payload hosts left the ``ip`` kind (security review H3). M29 reports them as malware
+    download locations, under the url/domain rule: a file fetched from the host by at least
+    two eligible nodes (security re-review H1)."""
     nodes = await add_nodes(
         env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
     )
     host = "192.0.2.120"
-    await observe(
-        env.worker,
-        nodes,
-        "payload_ip",
-        host,
-        [D1, D2],
-        services=[],
-        activity=["download"],
-        tags=[],
-        attempts=None,
-    )
+    common: dict[str, Any] = {"services": [], "activity": ["download"], "tags": [], "attempts": None}
+    await observe(env.worker, nodes[:2], "payload_ip", host, [D1, D2], fetched=True, **common)
+    await observe(env.worker, nodes[2:], "payload_ip", host, [D1, D2], **common)
     async with env.worker() as s:
         await consensus.run_consensus(s, env.settings, TODAY, never=Never(), corroborate=None)
         ids = await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env))
@@ -147,6 +140,33 @@ async def test_payload_hosts_are_still_reported_as_malware_hosts(env: Env) -> No
     async with env.worker() as s:
         row = (await s.execute(text("SELECT kind, body_text FROM reports"))).one()
     assert row.kind == "malware_host" and "192[.]0[.]2[.]120" in row.body_text
+
+
+@pytest.mark.integration
+async def test_a_host_typed_into_honeypots_is_never_reported(env: Env) -> None:
+    """Security re-review H1: `wget http://<victim>/x.sh` typed into ten member honeypots gives
+    ten unfetched payload_ip sightings. That must not mail the victim's abuse contact."""
+    nodes = await add_nodes(
+        env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
+    )
+    host = "192.0.2.121"
+    await observe(
+        env.worker, nodes, "payload_ip", host, [D1, D2],
+        services=[], activity=["download"], tags=[], attempts=None, fetched=False,
+    )  # fmt: skip
+    async with env.worker() as s:
+        await consensus.run_consensus(s, env.settings, TODAY, never=Never(), corroborate=None)
+        assert (await target(env.worker, "payload_ip", host))["state"] == "confirmed"
+        assert await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env)) == set()
+        res = await sel.queue_reports(s, env.settings, TODAY, resolver=_resolver, never=Never())
+    assert res.queued == 0
+    # One fetching node is not enough either.
+    await observe(
+        env.worker, nodes[:1], "payload_ip", host, [TODAY - timedelta(days=3)],
+        services=[], activity=["download"], tags=[], attempts=None, fetched=True,
+    )  # fmt: skip
+    async with env.worker() as s:
+        assert await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env)) == set()
 
 
 @pytest.mark.integration

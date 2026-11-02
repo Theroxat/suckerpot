@@ -96,11 +96,17 @@ async def reportable_ids(
                         WHERE o.kind = 'ip' AND o.value = t.value AND o.day >= :since
                           AND o.node_id = ANY(:eligible)
                           AND o.attempts >= 3) >= :min_nodes))
-                OR (t.kind = 'payload_ip' AND t.activity && CAST(:severe AS text[])
+                -- A payload host given as an address follows the url/domain rule: a file fetched
+                -- from it by at least two eligible nodes. A URL typed into honeypots names a
+                -- host but proves nothing about it (security re-review H1). It also needs k
+                -- eligible nodes in all, like every confirmed target.
+                OR (t.kind = 'payload_ip'
                     AND (SELECT count(DISTINCT o.node_id) FROM observations o
                          WHERE o.kind = 'payload_ip' AND o.value = t.value AND o.day >= :since
-                           AND o.node_id = ANY(:eligible)
-                           AND o.activity && CAST(:severe AS text[])) >= :min_nodes)
+                           AND o.node_id = ANY(:eligible) AND o.fetched) >= :fetched
+                    AND (SELECT count(DISTINCT o.node_id) FROM observations o
+                         WHERE o.kind = 'payload_ip' AND o.value = t.value AND o.day >= :since
+                           AND o.node_id = ANY(:eligible)) >= :min_nodes)
                 OR (t.kind IN ('url', 'domain') AND (
                       SELECT count(DISTINCT o.node_id) FROM observations o
                        WHERE o.kind = t.kind AND o.value = coalesce(t.value_b, t.value)
