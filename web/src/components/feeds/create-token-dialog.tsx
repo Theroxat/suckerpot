@@ -135,7 +135,7 @@ function CreateForm({
           {TOKEN_KINDS.map((k) => (
             <label
               key={k}
-              className={`flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm text-fg has-[:checked]:border-border-strong has-[:checked]:bg-surface-raised${k === "network" ? "col-span-2" : ""}`}
+              className={`flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm text-fg has-[:checked]:border-border-strong has-[:checked]:bg-surface-raised${k === "network" ? " col-span-2" : ""}`}
             >
               <input
                 type="checkbox"
