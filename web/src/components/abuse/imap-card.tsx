@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Info } from "lucide-react"
 import { useId, useState } from "react"
-import { Field } from "@/components/form-parts"
+import { Field, UnsavedHint } from "@/components/form-parts"
+import { useUnsaved } from "@/hooks/use-unsaved"
 import { FindingCard } from "@/components/finding-card"
 import { RelativeTime } from "@/components/relative-time"
 import { SegmentedControl } from "@/components/segmented-control"
@@ -102,6 +103,7 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
     folders: useId(),
   }
   const [f, setF] = useState<ImapForm>(() => toForm(initial))
+  const { unsaved, markSaved } = useUnsaved(f)
   const [action, setAction] = useState<Action | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
@@ -344,7 +346,11 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
           <Field
             id={ids.since}
             label="Ignore mail before"
-            hint="Older mail in the mailbox is never read."
+            hint={
+              f.since
+                ? `Mail received before ${new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(`${f.since}T00:00:00`))} is never read.`
+                : "Older mail in the mailbox is never read."
+            }
             optional
           >
             <Input
@@ -353,20 +359,12 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
               value={f.since}
               onChange={(e) => set("since", e.target.value)}
             />
-            {f.since ? (
-              <p className="mt-1 text-xs text-fg-muted">
-                Mail received before{" "}
-                {new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(
-                  new Date(`${f.since}T00:00:00`),
-                )}{" "}
-                is never read.
-              </p>
-            ) : null}
           </Field>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit">Save mailbox settings</Button>
+          <UnsavedHint show={unsaved} />
           {initial.configured ? (
             <>
               <Button
@@ -426,6 +424,7 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
         run={async (pw) => {
           await reauth(() => save.mutateAsync(pw))
           setSaved("Saved.")
+          markSaved(f)
           refresh()
         }}
       />

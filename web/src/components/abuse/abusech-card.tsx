@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { TriangleAlert } from "lucide-react"
 import { useId, useState } from "react"
-import { Field } from "@/components/form-parts"
+import { Field, UnsavedHint } from "@/components/form-parts"
+import { useUnsaved } from "@/hooks/use-unsaved"
 import { FindingCard } from "@/components/finding-card"
 import { SegmentedControl } from "@/components/segmented-control"
 import { SkeletonText } from "@/components/skeletons"
@@ -63,6 +64,7 @@ function AbusechSettingsForm({ initial }: { initial: AbusechSettings }) {
     anon: useId(),
   }
   const [f, setF] = useState<AbusechForm>(() => toForm(initial))
+  const { unsaved, markSaved } = useUnsaved(f)
   const [action, setAction] = useState<Action | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
@@ -203,6 +205,7 @@ function AbusechSettingsForm({ initial }: { initial: AbusechSettings }) {
           <Button type="submit" disabled={disabled}>
             Save abuse.ch settings
           </Button>
+          <UnsavedHint show={unsaved} />
           {initial.key_set ? (
             <Button type="button" variant="ghost" onClick={() => setAction("remove")}>
               Remove the key
@@ -229,6 +232,7 @@ function AbusechSettingsForm({ initial }: { initial: AbusechSettings }) {
         run={async (pw) => {
           await reauth(() => save.mutateAsync(pw))
           setSaved("Saved.")
+          markSaved(f)
           refresh()
         }}
       />
