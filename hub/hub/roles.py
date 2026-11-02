@@ -60,6 +60,7 @@ API_GRANTS = (
     # Feeds: the API records which URLs a payload host served and answers lookups and delisting
     # requests; it never writes feed entries and cannot read the allow-list.
     "SELECT, INSERT ON payload_links",
+    "UPDATE (nodes) ON payload_links",
     "SELECT ON feed_entries",
     "SELECT, INSERT, DELETE ON delist_challenges",
     "SELECT, INSERT ON delist_requests",

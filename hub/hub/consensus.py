@@ -81,30 +81,40 @@ def cohort_of(enrolled: date) -> date:
     return enrolled - timedelta(days=enrolled.weekday())
 
 
+_ELIGIBLE = """
+    SELECT n.id, n.reputation, n.enrolled_day, n.country FROM nodes n
+    WHERE n.standing = 'active'
+      AND n.enrolled_day <= :oldest
+      AND n.reputation >= CAST(:min_rep AS real)
+      AND (SELECT count(*) FROM batches b
+           WHERE b.node_id = n.id AND b.items > 0
+             AND b.day >= :since AND b.day < :today) >= :min_days
+"""
+
+
+def _eligible_params(s: Settings, today: date) -> dict[str, object]:
+    return {
+        "oldest": today - timedelta(days=s.node_min_age_days),
+        "min_rep": s.min_reputation,
+        "since": today - timedelta(days=14),
+        "today": today,
+        "min_days": s.node_min_active_days,
+    }
+
+
+async def is_eligible(session: AsyncSession, s: Settings, today: date, node: uuid.UUID) -> bool:
+    """Whether one node's observations count today (same rule as ``eligible_nodes``)."""
+    row = await session.execute(
+        text(_ELIGIBLE + " AND n.id = :node"), {**_eligible_params(s, today), "node": node}
+    )
+    return row.first() is not None
+
+
 async def eligible_nodes(
     session: AsyncSession, s: Settings, today: date
 ) -> dict[uuid.UUID, EligibleNode]:
     """Nodes whose observations count (section 8.1)."""
-    rows = await session.execute(
-        text(
-            """
-            SELECT n.id, n.reputation, n.enrolled_day, n.country FROM nodes n
-            WHERE n.standing = 'active'
-              AND n.enrolled_day <= :oldest
-              AND n.reputation >= CAST(:min_rep AS real)
-              AND (SELECT count(*) FROM batches b
-                   WHERE b.node_id = n.id AND b.items > 0
-                     AND b.day >= :since AND b.day < :today) >= :min_days
-            """
-        ),
-        {
-            "oldest": today - timedelta(days=s.node_min_age_days),
-            "min_rep": s.min_reputation,
-            "since": today - timedelta(days=14),
-            "today": today,
-            "min_days": s.node_min_active_days,
-        },
-    )
+    rows = await session.execute(text(_ELIGIBLE), _eligible_params(s, today))
     return {
         r.id: EligibleNode(r.id, float(r.reputation), cohort_of(r.enrolled_day), r.country)
         for r in rows

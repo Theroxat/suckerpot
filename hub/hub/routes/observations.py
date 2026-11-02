@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from starlette.responses import Response
 from suckerpot_netproto import ProtoError, buckets, models, sign
 
+from .. import consensus
 from ..auth import MAX_BODY_OBSERVATIONS, authenticate, reply
 from ..context import get_ctx
 from ..models import Batch, Observation, PayloadLink
@@ -180,6 +181,11 @@ async def observations(request: Request) -> Response:
                     },
                 )
             raise ProtoError("invalid_payload", "day already submitted")
+        # Payload links count only from eligible nodes (security review M3), checked before
+        # this batch is stored so that it cannot make its own sender eligible.
+        link_ok = not caller.suspended and await consensus.is_eligible(
+            session, ctx.settings, ctx.today(), caller.node_id
+        )
         never = await ctx.never.get(session)
         links: set[tuple[str, str, str]] = set()
         rows, accepted, rejected = build_rows(batch, never, links)
@@ -200,18 +206,21 @@ async def observations(request: Request) -> Response:
                     await session.execute(
                         pg_insert(Observation).values(chunk).on_conflict_do_nothing()
                     )
-                # Which URLs a payload host served (no node reference): the feeds drop a host
-                # once every URL it served is down.
-                if links:
+                # Which URLs a payload host served, and how many eligible nodes said so that day
+                # (no node reference; one batch per node and day): the feeds drop a host once
+                # every URL it served is down, acting only on links that k nodes asserted.
+                if links and link_ok:
+                    stmt = pg_insert(PayloadLink).values(
+                        [
+                            {"day": day, "kind": k, "value": h, "url_b": u, "nodes": 1}
+                            for k, h, u in sorted(links)
+                        ]
+                    )
                     await session.execute(
-                        pg_insert(PayloadLink)
-                        .values(
-                            [
-                                {"day": day, "kind": k, "value": h, "url_b": u}
-                                for k, h, u in sorted(links)
-                            ]
+                        stmt.on_conflict_do_update(
+                            index_elements=["day", "kind", "value", "url_b"],
+                            set_={"nodes": PayloadLink.nodes + 1},
                         )
-                        .on_conflict_do_nothing()
                     )
             await session.commit()
         except IntegrityError:

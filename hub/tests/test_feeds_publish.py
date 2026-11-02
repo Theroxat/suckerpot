@@ -450,7 +450,7 @@ async def test_taken_down_hosts_leave_at_the_next_run(
             {"d": D1},
         )
         await ses.execute(
-            text("INSERT INTO payload_links VALUES (:d, 'payload_ip', :h, 'urlblind')"),
+            text("INSERT INTO payload_links VALUES (:d, 'payload_ip', :h, 'urlblind', 5)"),
             {"d": D1, "h": host},
         )
         await ses.commit()
@@ -467,6 +467,98 @@ async def test_taken_down_hosts_leave_at_the_next_run(
     row = (await entries(env))[("outbound", host)]
     assert (row.state, row.removed_reason) == ("removed", "taken_down")
     assert host in read(feed_dir / "removed.json")
+
+
+async def _listed_payload_host(env: Env, s: Any, host: str) -> None:
+    from sqlalchemy import text
+
+    ids = await add_nodes(env.worker, 10)
+    await observe(
+        env.worker,
+        ids,
+        "payload_ip",
+        host,
+        [D1, D2],
+        activity=["download"],
+        families=["mirai"],
+        fetched=True,
+        services=[],
+        tags=[],
+    )
+    await confirm(env, s)
+    async with env.worker() as ses:
+        for tid, state in (("t_0000000000aa", "confirmed"), ("t_0000000000ab", "confirmed")):
+            await ses.execute(
+                text(
+                    "INSERT INTO targets (id, kind, value_b, state, first_day, last_day, "
+                    "confirmed_day) VALUES (:i, 'url', :v, :s, :d, :d, :d)"
+                ),
+                {"i": tid, "v": "url-" + tid, "s": state, "d": D1},
+            )
+        await ses.commit()
+
+
+@pytest.mark.integration
+async def test_one_node_cannot_force_a_takedown_removal(
+    env: Env, feed_dir: Path, key_file: Path
+) -> None:
+    """Security review M3: a single member links a listed malware host to a URL that is taken
+    down. The host must stay listed: the link is not k-supported."""
+    from sqlalchemy import text
+
+    s = feed_settings(feed_dir, key_file)
+    await add_ranges(env)
+    host = "198.51.100.7"
+    await _listed_payload_host(env, s, host)
+    async with env.worker() as ses:
+        await ses.execute(
+            text(
+                "INSERT INTO payload_links VALUES (:d, 'payload_ip', :h, 'url-t_0000000000aa', 1)"
+            ),
+            {"d": D1, "h": host},
+        )
+        await ses.execute(
+            text("UPDATE targets SET state = 'taken_down' WHERE id = 't_0000000000aa'")
+        )
+        await ses.commit()
+    await run_job(env, s, T0)
+    await run_job(env, s, T0 + timedelta(hours=7))
+    assert host in read(feed_dir / "outbound.txt")
+    assert (await entries(env))[("outbound", host)].state == "listed"
+
+
+@pytest.mark.integration
+async def test_one_node_cannot_block_a_takedown_removal(
+    env: Env, feed_dir: Path, key_file: Path
+) -> None:
+    """Security review M3: k nodes link the host to a URL that is now down; one member links it
+    to another URL that is still up. That lone link must not keep the host listed."""
+    from sqlalchemy import text
+
+    s = feed_settings(feed_dir, key_file)
+    await add_ranges(env)
+    host = "198.51.100.7"
+    await _listed_payload_host(env, s, host)
+    async with env.worker() as ses:
+        await ses.execute(
+            text(
+                "INSERT INTO payload_links VALUES (:d, 'payload_ip', :h, 'url-t_0000000000aa', 5), "
+                "(:d, 'payload_ip', :h, 'url-t_0000000000ab', 1)"
+            ),
+            {"d": D1, "h": host},
+        )
+        await ses.commit()
+    await run_job(env, s, T0)
+    await run_job(env, s, T0 + timedelta(hours=7))
+    assert host in read(feed_dir / "outbound.txt")
+    async with env.worker() as ses:
+        await ses.execute(
+            text("UPDATE targets SET state = 'taken_down' WHERE id = 't_0000000000aa'")
+        )
+        await ses.commit()
+    await run_job(env, s, T0 + timedelta(hours=8))
+    row = (await entries(env))[("outbound", host)]
+    assert (row.state, row.removed_reason) == ("removed", "taken_down")
 
 
 @pytest.mark.integration
@@ -491,6 +583,44 @@ def test_documentation_flag_is_needed_for_example_addresses() -> None:
     assert date.fromisoformat("2026-11-01")
 
 
+async def _make_eligible(env: Env, node_id: Any) -> None:
+    """Age an enrolled node and give it a week of past batches, so that its observations count."""
+    from sqlalchemy import text
+
+    async with env.worker() as ses:
+        await ses.execute(
+            text("UPDATE nodes SET enrolled_day = :d WHERE id = :n"),
+            {"d": D1 - timedelta(days=40), "n": node_id},
+        )
+        for back in range(2, 9):
+            await ses.execute(
+                text("INSERT INTO batches (node_id, day, batch_id, items) VALUES (:n, :d, :b, 1)"),
+                {"n": node_id, "d": D1 - timedelta(days=back), "b": os.urandom(16)},
+            )
+        await ses.commit()
+
+
+@pytest.mark.integration
+async def test_payload_links_count_eligible_nodes_only(env: Env) -> None:
+    """Security review M3: every eligible node's batch adds one to a link, a fresh node adds
+    nothing, and no node id is stored."""
+    from sqlalchemy import text
+
+    from .helpers import batch
+
+    fresh, old_a, old_b = await env.enrolled(3)
+    await _make_eligible(env, old_a.node_id)
+    await _make_eligible(env, old_b.node_id)
+    payload = {"url_b": "ab" * 32, "host_ip": "192.0.2.1"}
+    for node in (fresh, old_a, old_b):
+        reply = await node.call("POST", "/v1/observations", batch("2026-10-31", payloads=[payload]))
+        assert reply.status == 200, reply.json
+    async with env.worker() as ses:
+        links = (await ses.execute(text("SELECT * FROM payload_links"))).all()
+    assert [(r.kind, r.value, r.nodes) for r in links] == [("payload_ip", "192.0.2.1", 2)]
+    assert set(links[0]._mapping) == {"day", "kind", "value", "url_b", "nodes"}
+
+
 @pytest.mark.integration
 async def test_payload_hosts_are_recorded_without_a_node_and_hidden_from_nodes(env: Env) -> None:
     from sqlalchemy import text
@@ -498,6 +628,7 @@ async def test_payload_hosts_are_recorded_without_a_node_and_hidden_from_nodes(e
     from .helpers import batch
 
     (node,) = await env.enrolled()
+    await _make_eligible(env, node.node_id)
     body = batch(
         "2026-10-31",
         payloads=[
