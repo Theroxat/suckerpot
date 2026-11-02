@@ -77,15 +77,18 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0024() -> None:
+def test_the_chain_is_linear_up_to_0027() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0024"}
+    assert heads == {"0027"}
     for n in range(11, 23):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
-    assert revs["0023"][0] == "0022"
-    assert revs["0024"][0] == "0023"
+    # 0023 and 0024 were never released; 0025 (M28) is chained on 0022.
+    assert "0023" not in revs and "0024" not in revs
+    assert revs["0025"][0] == "0022"
+    assert revs["0026"][0] == "0025"
+    assert revs["0027"][0] == "0026"
 
 
 def test_every_new_revision_has_a_downgrade() -> None:
@@ -373,8 +376,8 @@ def test_m26_reply_excerpt_setting() -> None:
 
 
 def test_m26_migration_text() -> None:
-    src = (VERSIONS / "0023_report_outcomes.py").read_text()
-    assert 'down_revision: str | None = "0022"' in src
+    src = (VERSIONS / "0026_report_outcomes.py").read_text()
+    assert 'down_revision: str | None = "0025"' in src
     assert "NEW.reply_token <> OLD.reply_token" in src
     assert "PROCEDURE suckerpot_abuse_prune" in src
     assert "excerpt_days" in src
@@ -400,7 +403,7 @@ def test_models_and_role_scripts_cover_the_m27_tables() -> None:
 def test_m27_prune_procedure_and_setting() -> None:
     from suckerpot_db.retention import TAKEDOWN_PRUNE_PROC, takedown_check_retention_days
 
-    src = (VERSIONS / "0024_takedown.py").read_text()
+    src = (VERSIONS / "0027_takedown.py").read_text()
     assert f"PROCEDURE {TAKEDOWN_PRUNE_PROC}(" in src
     assert "DELETE FROM outcome_rollup_monthly" not in src  # the roll-up is kept forever
     assert takedown_check_retention_days({}) == 400
