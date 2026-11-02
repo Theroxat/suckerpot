@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- the provider and its hook belong together. */
 import { createContext, use, useCallback, useEffect, useMemo, useState } from "react"
+import { useWizardProgress } from "@/hooks/use-wizard-progress"
 import { TourDialog } from "@/components/tour/tour-dialog"
 import { hasSeenTour, markTourSeen } from "@/lib/tour"
 import { useAuth } from "./auth"
@@ -24,14 +25,18 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const username = user && !user.must_change_password ? user.username : null
+  // An administrator with an unfinished setup is offered the tour at the end of the setup instead.
+  const { canWrite } = useAuth()
+  const wizard = useWizardProgress()
+  const holdForSetup = canWrite && (wizard.isPending || wizard.data?.show === true)
 
   useEffect(() => {
-    if (!username || hasSeenTour(username)) return
+    if (!username || holdForSetup || hasSeenTour(username)) return
     markTourSeen(username)
     // localStorage is the external system here: its answer is only known after mounting.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setOpen(true)
-  }, [username])
+  }, [username, holdForSetup])
 
   const start = useCallback(() => setOpen(true), [])
   const value = useMemo(() => ({ open, start }), [open, start])

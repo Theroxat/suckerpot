@@ -7,6 +7,10 @@ COPY entrypoint.sh /usr/local/bin/suckerpot-redis-entrypoint
 # Files are copied as root and must stay world-readable and not writable.
 RUN chmod 0444 /etc/redis/redis.conf && chmod 0555 /usr/local/bin/suckerpot-redis-entrypoint
 
+# Build metadata (M28): passed by compose or the release workflow, read by the api and ingest.
+ARG VERSION=dev BUILD_KIND=source COMMIT=unknown
+ENV SUCKERPOT_RUNNING_VERSION=$VERSION SUCKERPOT_BUILD_KIND=$BUILD_KIND SUCKERPOT_COMMIT=$COMMIT
+LABEL org.opencontainers.image.version=$VERSION org.opencontainers.image.revision=$COMMIT
 # 999 is the uid/gid of the "redis" user of the official image; /data is already owned by it.
 USER 999:999
 

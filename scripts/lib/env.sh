@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# Shared helpers for the Selfhostr host scripts (install.sh, env-set.sh, env-migrate.sh,
+# update.sh, rollback.sh). Source this file; it defines functions and constants only and runs
+# nothing. It never prints a secret value.
+
+# Every secret of .env. The installer generates them all; env-migrate.sh adds the missing ones.
+SECRET_VARS=(
+  POSTGRES_PASSWORD POSTGRES_INGEST_PASSWORD POSTGRES_API_PASSWORD
+  POSTGRES_COLLECTOR_PASSWORD POSTGRES_ANALYZER_PASSWORD
+  REDIS_PASSWORD REDIS_HEALTH_PASSWORD REDIS_INGEST_PASSWORD REDIS_DEMO_PASSWORD
+  REDIS_SENSOR_SSH_PASSWORD REDIS_SENSOR_RDP_PASSWORD REDIS_SENSOR_TELNET_PASSWORD
+  REDIS_SENSOR_WEB_PASSWORD REDIS_SENSOR_REDIS_PASSWORD REDIS_SENSOR_DOCKER_PASSWORD
+  REDIS_SENSOR_MYSQL_PASSWORD REDIS_SENSOR_MSSQL_PASSWORD REDIS_SENSOR_ADB_PASSWORD
+  REDIS_SENSOR_SMB_PASSWORD REDIS_SENSOR_SIP_PASSWORD REDIS_SENSOR_SYNOLOGY_PASSWORD
+  EGRESS_PROXY_PASSWORD SESSION_SECRET SETTINGS_ENCRYPTION_KEY
+)
+
+# Secrets that env-migrate.sh must never invent for an existing install: the database owner
+# password lives inside the data volume, so a new value would lock the owner out.
+NO_MIGRATE_SECRET_VARS=(POSTGRES_PASSWORD)
+
+# Non-secret variables env-migrate.sh adds (with this default) to an .env that lacks them.
+MIGRATE_DEFAULTS=(SUCKERPOT_INSTALL_MODE=source)
+
+SENSORS=(ssh telnet web rdp redis docker mysql adb mssql smb sip synology)
+RECOMMENDED_SENSORS=(ssh telnet web redis docker adb)
+
+# Variables that `just set` may change. Patterns are shell globs.
+SETTABLE_VARS=(
+  '*_ENABLED' '*_HOST_PORT' DASHBOARD_BIND DASHBOARD_PORT COOKIE_SECURE
+  API_ALLOWED_HOSTS API_ALLOWED_ORIGINS INDICATORS_IGNORE 'SITE_*' 'SENSOR_*'
+)
+
+# Prints "ENV_VAR:default_host_port:protocols" lines for a sensor (the single port table).
+sensor_ports() {
+  case $1 in
+    ssh) echo "SSH_HOST_PORT:22:tcp" ;;
+    telnet) echo "TELNET_HOST_PORT:23:tcp" ;;
+    web) echo "HTTP_HOST_PORT:80:tcp"; echo "HTTPS_HOST_PORT:443:tcp" ;;
+    rdp) echo "RDP_HOST_PORT:3389:tcp" ;;
+    redis) echo "REDIS_HOST_PORT:6379:tcp" ;;
+    docker) echo "DOCKER_HOST_PORT:2375:tcp" ;;
+    mysql) echo "MYSQL_HOST_PORT:3306:tcp" ;;
+    adb) echo "ADB_HOST_PORT:5555:tcp" ;;
+    mssql) echo "MSSQL_HOST_PORT:1433:tcp" ;;
+    smb) echo "SMB_HOST_PORT:445:tcp" ;;
+    sip) echo "SIP_HOST_PORT:5060:udp,tcp" ;;
+    synology) echo "SYNOLOGY_HTTP_HOST_PORT:5000:tcp"; echo "SYNOLOGY_HTTPS_HOST_PORT:5001:tcp" ;;
+    *) return 1 ;;
+  esac
+}
+
+# True when $1 is a known sensor name.
+is_sensor() {
+  local s
+  for s in "${SENSORS[@]}"; do [ "$s" = "$1" ] && return 0; done
+  return 1
+}
+
+# Name of the SENSOR_<NAME> variable of a sensor.
+sensor_var() { printf 'SENSOR_%s' "$(printf %s "$1" | tr '[:lower:]' '[:upper:]')"; }
+
+# Reads NAME from ${ENV_FILE:-.env}: last assignment wins, quotes and blanks removed.
+# Prints $2 (default empty) when missing or empty.
+env_get() {
+  local file=${ENV_FILE:-.env} val=""
+  if [ -f "$file" ]; then
+    val=$(sed -n "s/^$1=//p" "$file" | tail -n 1 | tr -d "\"' \r")
+  fi
+  printf '%s' "${val:-${2:-}}"
+}
+
+# True when NAME has an active (uncommented) assignment in FILE.
+env_has() { grep -qE "^$2=" "$1" 2>/dev/null; }
+
+# Sets NAME=VALUE in FILE without touching other lines. The first active assignment is
+# replaced (further duplicates are dropped); otherwise the first commented "# NAME=" line is
+# replaced; otherwise the line is appended. The value goes through the environment, never
+# through awk's escape processing or argv.
+env_set_line() {
+  local file=$1 name=$2 value=$3 tmp
+  tmp=$(mktemp "${file}.XXXXXX")
+  NAME="$name" VALUE="$value" awk '
+    BEGIN { name = ENVIRON["NAME"]; value = ENVIRON["VALUE"]; pre = name "="; cpre = "# " name "=" }
+    { lines[NR] = $0 }
+    END {
+      target = 0
+      for (i = 1; i <= NR; i++) if (index(lines[i], pre) == 1) { target = i; break }
+      if (!target) for (i = 1; i <= NR; i++) if (index(lines[i], cpre) == 1) { target = i; break }
+      seen = 0
+      for (i = 1; i <= NR; i++) {
+        if (i == target) { print pre value; seen = 1; continue }
+        if (seen && index(lines[i], pre) == 1) continue
+        print lines[i]
+      }
+      if (!target) print pre value
+    }' "$file" > "$tmp"
+  chmod --reference="$file" "$tmp" 2>/dev/null || chmod 600 "$tmp"
+  mv "$tmp" "$file"
+}
+
+# Prints a random alphanumeric secret of LEN characters.
+gen_secret() {
+  ( set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$1" )
+}
+
+# Prints a base64 key made of 32 random bytes (44 characters).
+gen_key() {
+  head -c 32 /dev/urandom | base64 -w0
+}
+
+# Prints a new value for a secret variable (SESSION_SECRET is longer).
+gen_for() {
+  case $1 in
+    SESSION_SECRET) gen_secret 64 ;;
+    SETTINGS_ENCRYPTION_KEY) gen_key ;;
+    *) gen_secret 40 ;;
+  esac
+}
+
+# Succeeds when KEY may be changed by `just set` (allow-list, minus secret-looking names).
+settable_key() {
+  local key=$1 pat
+  [[ $key =~ ^[A-Z][A-Z0-9_]{0,63}$ ]] || return 1
+  case $key in
+    *PASSWORD* | *SECRET* | *TOKEN* | *_HASH | *_KEY | VPN_WG_*) return 1 ;;
+  esac
+  for pat in "${SETTABLE_VARS[@]}"; do
+    # shellcheck disable=SC2254
+    case $key in $pat) return 0 ;; esac
+  done
+  return 1
+}
+
+# Succeeds when VALUE is safe to write unquoted into .env.
+settable_value() { [[ $1 =~ ^[A-Za-z0-9._,:/@+-]{0,512}$ ]]; }
+
+# Version comparison: succeeds when $1 >= $2 (dotted numbers).
+ver_ge() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$2" ]; }
+
+# Succeeds inside a linked git worktree (a scratch checkout: never act on a live stack there).
+in_linked_worktree() {
+  git rev-parse --git-dir > /dev/null 2>&1 || return 1
+  [ "$(git rev-parse --absolute-git-dir)" != "$(git rev-parse --path-format=absolute --git-common-dir)" ]
+}
+
+# Succeeds for a name that is allowed as compose project or volume prefix.
+valid_project_name() {
+  [[ $1 =~ ^[a-z0-9][a-z0-9_-]{0,40}$ ]] || return 1
+  case $1 in sp-it-* | sp-test | sp-ci) return 1 ;; esac
+  return 0
+}
+
+# Stops (exit 1) unless .env names the compose project and the volume prefix, they are valid and
+# not throwaway names, and this is not a linked git worktree. Mirrors the justfile _need-project.
+need_project() {
+  local p x
+  p=$(env_get COMPOSE_PROJECT_NAME)
+  x=$(env_get SUCKERPOT_VOLUME_PREFIX)
+  if [ -z "$p" ] || [ -z "$x" ]; then
+    echo "COMPOSE_PROJECT_NAME and SUCKERPOT_VOLUME_PREFIX must both be set in .env (live install only)." >&2
+    exit 1
+  fi
+  if ! valid_project_name "$p" || ! valid_project_name "$x"; then
+    echo "COMPOSE_PROJECT_NAME / SUCKERPOT_VOLUME_PREFIX are invalid or throwaway names." >&2
+    exit 1
+  fi
+  if in_linked_worktree; then
+    echo "Refusing to run from a linked git worktree. Use the main checkout." >&2
+    exit 1
+  fi
+}
+
+# Reads a string field written by update.sh from the state file (one field per line).
+state_get() {
+  sed -n "s/^  \"$2\": \"\\(.*\\)\",\\{0,1\\}\$/\\1/p" "$1" | head -n 1
+}
+
+# Unsets every variable that .env defines. `just` loads .env into the environment before a recipe
+# runs, and the shell environment beats .env for docker compose and for check-ports.sh: after a
+# script changed .env, the old values would still win. Call this once .env is final (and again
+# after changing it); compose then reads the new file itself.
+env_drop_loaded() {
+  local file=${ENV_FILE:-.env} name
+  [ -f "$file" ] || return 0
+  while IFS= read -r name; do
+    case $name in PATH | HOME | PWD | SHELL | USER | LANG | TERM | BASH_ENV | ENV | IFS | ENV_FILE) continue ;; esac
+    unset "$name" 2> /dev/null || true
+  done < <(sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' "$file")
+}

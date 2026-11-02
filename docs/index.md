@@ -17,6 +17,8 @@ Selfhostr is built to be attacked. Deploy it only on a dedicated, isolated machi
 :caption: User guide
 
 getting-started
+install
+updates
 deployment
 demo-data
 ui

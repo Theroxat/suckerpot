@@ -325,16 +325,16 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M28 — Installable by anyone
 
-- [ ] `scripts/install.sh`: checks Docker and Compose, RAM, disk and ports, asks a few questions, generates every secret and the admin password hash, writes `.env` (mode 0600) with `COMPOSE_PROJECT_NAME` and `SUCKERPOT_VOLUME_PREFIX`, creates the volumes, starts the stack and prints the URL and next steps. It never overwrites an `.env`, never adopts existing volumes and never looks up the public address.
-- [ ] Sensor choice: each sensor can be switched off (`SENSOR_<NAME>=0`, default on, so existing installs keep every sensor); `just sensors` and `just set` change `.env` from the host, and the port guard and the setup checklist follow the selection.
-- [ ] First-run setup in the dashboard (migration `0025`): welcome, sensors, ports, VPN upload, own address, reporting, alerts, then the M24 checklist and tour; can be skipped and reopened.
-- [ ] A "Sensors & ports" page listing what to open on the router, the port on this machine, and whether each sensor already receives traffic.
-- [ ] `just update` (backup, code, `.env` migration, pull or build, migrate, health check, rollback hint) and `just rollback` (restores the pre-update dump after confirmation).
-- [ ] Low-memory overlay (`docker-compose.lowmem.yml`) for 2 GiB machines, checked by the guardrails.
-- [ ] Version shown in the dashboard; a daily update check through the VPN only (no version or identifier sent, can be switched off).
-- [ ] Signed multi-arch images (amd64, arm64) on GHCR from a release workflow, with an install smoke test; build from source stays supported.
-- [ ] VPN idle mode, so the egress profile can start before a WireGuard file is uploaded.
-- [ ] Install guide, configuration and deployment updates; security review and UI review.
+- [x] `scripts/install.sh`: checks Docker and Compose, RAM, disk and ports, asks a few questions, generates every secret and the admin password hash, writes `.env` (mode 0600) with `COMPOSE_PROJECT_NAME` and `SUCKERPOT_VOLUME_PREFIX`, creates the volumes, starts the stack and prints the URL and next steps. It never overwrites an `.env`, never adopts existing volumes and never looks up the public address.
+- [x] Sensor choice: each sensor can be switched off (`SENSOR_<NAME>=0`, default on, so existing installs keep every sensor); `just sensors` and `just set` change `.env` from the host, and the port guard and the setup checklist follow the selection.
+- [x] First-run setup in the dashboard (migration `0025`): welcome, sensors, ports, VPN upload, own address, reporting, alerts, then the M24 checklist and tour; can be skipped and reopened.
+- [x] A "Sensors & ports" page listing what to open on the router, the port on this machine, and whether each sensor already receives traffic.
+- [x] `just update` (backup, code, `.env` migration, pull or build, migrate, health check, rollback hint) and `just rollback` (restores the pre-update dump after confirmation).
+- [x] Low-memory overlay (`docker-compose.lowmem.yml`) for 2 GiB machines, checked by the guardrails.
+- [x] Version shown in the dashboard; a daily update check through the VPN only (no version or identifier sent, can be switched off).
+- [x] Signed multi-arch images (amd64, arm64) on GHCR from a release workflow, with an install smoke test; build from source stays supported.
+- [x] VPN idle mode, so the egress profile can start before a WireGuard file is uploaded.
+- [x] Install guide, configuration and deployment updates; security review and UI review.
 
 **Acceptance:** on a fresh Linux VM with Docker, `scripts/install.sh` brings a healthy stack from published images on amd64 and arm64 in one command, and the dashboard walks the owner through the rest; `just update` from the previous release keeps the data and a failed update prints a working rollback; the update check never leaves outside the tunnel and never sends the running version; guardrails and security review PASS.
 
@@ -344,7 +344,7 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - [ ] Hub service in `hub/` (own Dockerfile, compose file and migrations, deployed separately): enrol, signed daily observation batches, targets and network summary, reveals, takedown re-checks, leave and delete. No client address stored or logged, no analytics, 14-day observation retention, size caps and rate limits.
 - [ ] Consensus and anti-poisoning: at least 5 eligible nodes (14 days old, active, with reputation), 2 distinct days, a cap per enrolment cohort, external corroboration or twice the nodes, a never-list, and reputation that drops on disputes.
 - [ ] Grouped abuse reports sent by the hub from the project mailbox, deduplicated per recipient and target, under daily caps, reviewed by the hub operator in the first release; members' own M22 reports skip targets the network has reported.
-- [ ] Node worker in ingest (off by default, `NETWORK_ENABLED` plus an admin opt-in with re-authentication): VPN egress gate only, allow-listed aggregates (day buckets, count buckets, services and tags; URLs and domains blinded until consensus), the identity guard on every item and batch, a random delay after each day, never raw events or credentials. Migration `0026`.
+- [ ] Node worker in ingest (off by default, `NETWORK_ENABLED` plus an admin opt-in with re-authentication): VPN egress gate only, allow-listed aggregates (day buckets, count buckets, services and tags; URLs and domains blinded until consensus), the identity guard on every item and batch, a random delay after each day, never raw events or credentials. Migration `0028`.
 - [ ] Leaving is one click: the hub deletes the node and its data, the node deletes its key and every network row.
 - [ ] Network pages: overview (totals, weekly takedowns, k-anonymous country map, what the node helped confirm), members (pseudonyms, country only when 3 or more share it, coarse weekly activity), Settings > Network, the setup step, and figures for the M27 Impact page.
 - [ ] Threat model, user guide and hub operator guide; security review and UI review.
@@ -359,7 +359,7 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - [ ] Exclusions at render time: reserved and documentation ranges, public resolvers and shared hosts (kept in sync with M16 by a test), CDN front-end ranges, Tor exits, research scanners, an operator allow-list.
 - [ ] Public static feed site (`feeds.example.org/v1/`, Caddy): no account, no cookies, no logs of downloaders, no CDN by default, ETag/Last-Modified/304, precompressed gzip, atomic hourly publish that keeps unchanged files untouched, data under CC0 1.0, `stats.json` for the project site, `removed.json` (expired and taken-down entries only).
 - [ ] Delisting: a static form and an API with proof of work, per-day caps and a status token; inbound entries suppressed at once pending review (capped per day), outbound ones reviewed first; outcomes false positive, remediated, policy or rejected, with a reputation penalty only for false positives; 72 h decision target; requester data deleted on schedule.
-- [ ] Node consumer (`NETWORK_FEED_ENABLED`, off by default, members and non-members): VPN egress gate only, fetch from the feed host only, signature, sha256, rollback and expiry checks, strict parsing, migration `0027`. A verified local mirror under the M16 feed tokens where the always-allow overrides win; the local M16 lists stay unchanged.
+- [ ] Node consumer (`NETWORK_FEED_ENABLED`, off by default, members and non-members): VPN egress gate only, fetch from the feed host only, signature, sha256, rollback and expiry checks, strict parsing, migration `0029`. A verified local mirror under the M16 feed tokens where the always-allow overrides win; the local M16 lists stay unchanged.
 - [ ] Blocklists page tab "Network": a finding sentence, one card per list with copyable URLs per format, "seen here" and "you helped" badges, firewall setup help, and an honest card saying the lists are the same for everyone and joining makes them better.
 - [ ] `docs/feeds.md` with exact OPNsense, pfSense and pfBlockerNG steps, nftables, ipset, MikroTik, MISP and DNS filter recipes, signature verification, licence, accuracy statement and delisting; operator guide; threat model additions; M29 amendments (k-support on `/v1/targets`, `payload_ip`, Tor exits); security review and UI review.
 

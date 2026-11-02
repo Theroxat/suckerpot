@@ -3,15 +3,24 @@
 #   - the dashboard port is a sensor service port (22, 23, 80, 443, 3389, 6379, 2375, 3306,
 #     1433, 5555, 445, 5060, 5000, 5001);
 #   - two of DASHBOARD_PORT / *_HOST_PORT are the same;
-#   - one of them equals the optional ADMIN_SSH_PORT (the host's own admin SSH port).
-# Values come from the environment, then from .env, then from the compose defaults.
+#   - one of them equals the optional ADMIN_SSH_PORT (the host's own admin SSH port);
+#   - a SENSOR_<NAME> switch is neither 0 nor 1.
+# A sensor switched off (SENSOR_<NAME>=0) publishes nothing, so its port takes no part in the
+# clash and admin-port checks; the dashboard port is still refused on any sensor's default port.
+# Values come from the environment, then from .env, then from the compose defaults. With
+# --dotenv-only the environment is ignored: use it right after a script changed .env, because a
+# stale exported value (just loads .env before the recipe) would otherwise be checked instead.
 set -eu
+
+dotenv_only=0
+[ "${1:-}" = "--dotenv-only" ] && dotenv_only=1
 
 cd "$(dirname "$0")/.."
 
 # Reads VAR from the environment or from .env (last assignment wins; quotes removed).
 get() {
-  eval "val=\${$1:-}"
+  val=""
+  [ "$dotenv_only" = 1 ] || eval "val=\${$1:-}"
   if [ -z "$val" ] && [ -f .env ]; then
     val=$(sed -n "s/^$1=//p" .env | tail -n 1 | tr -d "\"' \r")
   fi
@@ -21,10 +30,22 @@ get() {
 fail=0
 err() { echo "check-ports: $*" >&2; fail=1; }
 
+for sensor in SSH TELNET WEB RDP REDIS DOCKER MYSQL MSSQL ADB SMB SIP SYNOLOGY; do
+  case $(get "SENSOR_$sensor" 1) in
+    0 | 1) ;;
+    *) err "SENSOR_$sensor must be 0 or 1" ;;
+  esac
+done
+
 list=""
-for spec in DASHBOARD_PORT:8443 SSH_HOST_PORT:22 TELNET_HOST_PORT:23 HTTP_HOST_PORT:80 HTTPS_HOST_PORT:443 RDP_HOST_PORT:3389 REDIS_HOST_PORT:6379 DOCKER_HOST_PORT:2375 MYSQL_HOST_PORT:3306 MSSQL_HOST_PORT:1433 ADB_HOST_PORT:5555 SMB_HOST_PORT:445 SIP_HOST_PORT:5060 SYNOLOGY_HTTP_HOST_PORT:5000 SYNOLOGY_HTTPS_HOST_PORT:5001; do
+for spec in DASHBOARD_PORT:8443: SSH_HOST_PORT:22:SSH TELNET_HOST_PORT:23:TELNET HTTP_HOST_PORT:80:WEB HTTPS_HOST_PORT:443:WEB RDP_HOST_PORT:3389:RDP REDIS_HOST_PORT:6379:REDIS DOCKER_HOST_PORT:2375:DOCKER MYSQL_HOST_PORT:3306:MYSQL MSSQL_HOST_PORT:1433:MSSQL ADB_HOST_PORT:5555:ADB SMB_HOST_PORT:445:SMB SIP_HOST_PORT:5060:SIP SYNOLOGY_HTTP_HOST_PORT:5000:SYNOLOGY SYNOLOGY_HTTPS_HOST_PORT:5001:SYNOLOGY; do
   name=${spec%%:*}
-  port=$(get "$name" "${spec#*:}")
+  rest=${spec#*:}
+  sensor=${rest#*:}
+  if [ -n "$sensor" ] && [ "$(get "SENSOR_$sensor" 1)" = 0 ]; then
+    continue
+  fi
+  port=$(get "$name" "${rest%%:*}")
   case $port in
     '' | *[!0-9]*) err "$name='$port' is not a port number"; continue ;;
   esac

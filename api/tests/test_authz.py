@@ -43,6 +43,8 @@ ADMIN_ONLY_GETS = {
     "/api/v1/abuse/send-queue",
     "/api/v1/settings/vpn",
     "/api/v1/setup/status",
+    "/api/v1/setup/progress",
+    "/api/v1/setup/ports",
 }
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 

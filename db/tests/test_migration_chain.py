@@ -461,3 +461,9 @@ def test_role_scripts_have_balanced_if_blocks() -> None:
         opened = len(re.findall(r"^\s*IF\b.*\bTHEN\s*$", script, re.M))
         closed = len(re.findall(r"^\s*END IF;", script, re.M))
         assert opened == closed
+
+
+def test_m28_setup_progress_grants() -> None:
+    assert _grants(_GRANTS_API)["setup_progress"] == {"SELECT", "INSERT", "UPDATE"}
+    assert "setup_progress" not in _grants(_GRANTS_INGEST)
+    assert "setup_progress" not in _grants(_GRANTS_COLLECTOR)

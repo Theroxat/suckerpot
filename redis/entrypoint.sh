@@ -72,4 +72,14 @@ chmod 0600 "$ACL_FILE"
 # Do not leak secrets to the server process environment beyond what it needs.
 unset $VARS
 
-exec "$@"
+# Memory cap (MiB). The low-memory overlay lowers it; command-line options win over redis.conf.
+MAXMEMORY_MB=${REDIS_MAXMEMORY_MB:-192}
+case $MAXMEMORY_MB in
+  '' | *[!0-9]*) echo "FATAL: REDIS_MAXMEMORY_MB must be a whole number of MiB" >&2; exit 1 ;;
+esac
+if [ "$MAXMEMORY_MB" -lt 32 ] || [ "$MAXMEMORY_MB" -gt 4096 ]; then
+  echo "FATAL: REDIS_MAXMEMORY_MB must be between 32 and 4096" >&2
+  exit 1
+fi
+
+exec "$@" --maxmemory "${MAXMEMORY_MB}mb"
