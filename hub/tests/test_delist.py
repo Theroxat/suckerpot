@@ -684,6 +684,40 @@ async def test_retention_never_deletes_an_open_request(d_env: Env) -> None:
     assert left == {open_id: "suppressed"}
 
 
+@pytest.mark.integration
+async def test_an_open_request_loses_contact_and_evidence_after_180_days(d_env: Env) -> None:
+    """Security re-review L2: an undecided request kept the requester's contact forever."""
+    from hub import retention
+
+    env = d_env
+    await add_entry(env, BOTS)
+    await ask(env, BOTS, evidence="my server", contact="ops@example.org")
+    async with env.worker() as s:
+        soon = TODAY + timedelta(days=100)
+        await retention.run_retention(s, env.settings, env.clock() + timedelta(days=100), soon)
+    row = (await rows(env, "SELECT evidence, contact FROM delist_requests"))[0]
+    assert (row.evidence, row.contact) == ("my server", "ops@example.org")
+    async with env.worker() as s:
+        later = TODAY + timedelta(days=181)
+        await retention.run_retention(s, env.settings, env.clock() + timedelta(days=181), later)
+    row = (await rows(env, "SELECT evidence, contact, state FROM delist_requests"))[0]
+    assert (row.evidence, row.contact, row.state) == (None, None, "suppressed")
+
+
+@pytest.mark.integration
+async def test_status_and_list_warn_about_requests_past_the_sla(d_env: Env) -> None:
+    env = d_env
+    await add_entry(env, BOTS)
+    await ask(env, BOTS)
+    assert not any("WARNING" in line for line in (await cli(env, "feeds", "status"))[1])
+    env.clock.advance(days=4)
+    for argv in (("feeds", "status"), ("delist", "list")):
+        code, lines = await cli(env, *argv)
+        warn = [line for line in lines if line.startswith("WARNING")]
+        assert code == 0 and len(warn) == 1 and "past the 72 h SLA" in warn[0], argv
+        assert BOTS not in warn[0]
+
+
 async def _target(env: Env, kind: str, value: str, tid: str) -> None:
     async with env.worker() as s:
         await s.execute(
