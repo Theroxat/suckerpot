@@ -17,6 +17,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_netproto import models as wire
 
+from . import demo
+
 # Columns the worker may set (never an arbitrary name from outside this module).
 MEMBERSHIP_COLUMNS = (
     "desired", "state", "pseudonym", "country", "show_country", "node_id", "fingerprint",
@@ -77,6 +79,7 @@ class Store(Protocol):
         payload: dict[str, Any] | None,
         sent_at: datetime | None,
     ) -> None: ...
+    async def drop_payload(self, day: date) -> None: ...
     async def upsert_targets(self, targets: list[wire.Target]) -> None: ...
     async def revealable(self, value_bs: set[str]) -> set[str]: ...
     async def reveal_values(self, kind: str) -> list[str]: ...
@@ -183,6 +186,14 @@ class SqlStore:
                 },
             )
 
+    async def drop_payload(self, day: date) -> None:
+        """Forget the stored body of a day (a batch the guard refused is never kept)."""
+        async with self.factory() as session, session.begin():
+            await session.execute(
+                text("UPDATE network_submissions SET payload = NULL WHERE day = :day"),
+                {"day": day},
+            )
+
     async def upsert_targets(self, targets: list[wire.Target]) -> None:
         if not targets:
             return
@@ -230,6 +241,7 @@ class SqlStore:
     async def refresh_mine(self) -> None:
         """Flag the targets this sensor saw in the last 14 days (clear values, then blinded)."""
         window = f"{MINE_DAYS} days"
+        real = demo.not_demo("s", f"now() - interval '{window}'", "now() + interval '1 day'")
         async with self.factory() as session, session.begin():
             await session.execute(
                 text(
@@ -239,7 +251,8 @@ class SqlStore:
                       (t.kind = 'ip' AND EXISTS (
                          SELECT 1 FROM sessions s WHERE host(s.src_ip) = t.value
                            AND NOT s.benign AND s.scanner_name IS NULL
-                           AND s.started_at >= now() - interval '{window}'))
+                           AND s.started_at >= now() - interval '{window}'
+                           AND {real}))
                       OR (t.kind = 'sha256' AND EXISTS (
                          SELECT 1 FROM samples sm WHERE sm.sha256 = t.value
                            AND sm.last_seen >= now() - interval '{window}'))

@@ -88,3 +88,15 @@ def test_the_batch_has_no_credential_field() -> None:
 
     for model in (models.SourceObs, models.PayloadObs, models.C2Obs, models.FileObs):
         assert not {"password", "username", "credentials", "command"} & set(model.model_fields)
+
+
+def test_the_demo_fragment_is_the_only_event_read_and_takes_the_demo_flag_alone() -> None:
+    tree = ast.parse((PACKAGE / "demo.py").read_text())
+    text = " ".join(_strings(tree))
+    assert len(re.findall(r"\bFROM events\b", text)) == 1
+    assert re.findall(r"\be\.data\b[^']*'(\w+)'", text) == ["demo"]
+    assert not re.search(r"\b(password|username|credential|command_text)\w*\b", text)
+    for path in FILES:  # nobody else reads events
+        if path.name not in {"demo.py", *READ_ONLY_SQL}:
+            for node in _strings(ast.parse(path.read_text())):
+                assert not re.search(r"\b(FROM|JOIN)\s+events\b", node, re.IGNORECASE), path.name

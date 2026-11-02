@@ -101,6 +101,10 @@ class MemoryStore:
         payload = kw.pop("payload", None) or old.get("payload")
         self.subs[day] = {**kw, "payload": payload}
 
+    async def drop_payload(self, day: date) -> None:
+        if day in self.subs:
+            self.subs[day]["payload"] = None
+
     async def upsert_targets(self, targets: list[wire.Target]) -> None:
         for t in targets:
             self.targets[t.id] = t
