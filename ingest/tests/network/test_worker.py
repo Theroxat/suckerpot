@@ -10,6 +10,7 @@ import pytest
 from suckerpot_db.secretbox import SecretBox
 from suckerpot_netproto import blind
 from suckerpot_netproto import models as wire
+from suckerpot_reporting import SelfTermRow, load_self_terms
 
 from ingest.features import FeatureSettings
 from ingest.network import identity as ident
@@ -305,6 +306,49 @@ async def test_a_lost_answer_resends_the_same_batch_id() -> None:
     assert rig.hub.bodies[1]["batch_id"] == first and rig.hub.bodies[1]["day"] == "2026-11-01"
 
 
+async def _pending_rig() -> tuple[Rig, MemoryStore]:
+    store = member_store()
+    rig = Rig(store)
+    rig.hub.fail["POST /v1/observations"] = (500, "server_error")
+    await rig.cycle()
+    del rig.hub.fail["POST /v1/observations"]
+    assert store.subs[date(2026, 11, 1)]["payload"] is not None
+    return rig, store
+
+
+async def test_a_stored_batch_is_guarded_again_before_the_resend() -> None:
+    rig, store = await _pending_rig()
+    sent = len(rig.hub.bodies)
+    # The owner adds the address of a stored source to the self terms after the batch was built.
+    rig.worker.terms = FakeTerms(
+        load_self_terms([SelfTermRow(kind="address", value="198.51.100.23", source="manual")], {})
+    )
+    await rig.cycle()
+    assert len(rig.hub.bodies) == sent  # nothing went out
+    row = store.subs[date(2026, 11, 1)]
+    assert row["error_code"] == "guard_failed" and row["payload"] is None
+    assert store.m.last_error_code == "guard_failed"
+
+
+async def test_a_stored_batch_is_not_resent_without_a_self_address() -> None:
+    rig, store = await _pending_rig()
+    sent = len(rig.hub.bodies)
+    rig.worker.terms = FakeTerms(make_terms(False))
+    await rig.cycle()
+    assert len(rig.hub.bodies) == sent
+    assert store.m.last_error_code == "waiting_self_address"
+    assert store.subs[date(2026, 11, 1)]["payload"] is not None  # kept for later
+
+
+async def test_a_malformed_stored_batch_is_dropped_not_sent() -> None:
+    rig, store = await _pending_rig()
+    sent = len(rig.hub.bodies)
+    store.subs[date(2026, 11, 1)]["payload"] = {**store.subs[date(2026, 11, 1)]["payload"], "x": 1}
+    await rig.cycle()
+    assert len(rig.hub.bodies) == sent
+    assert store.subs[date(2026, 11, 1)]["payload"] is None
+
+
 # -- leaving (N8) --------------------------------------------------------------------------
 
 
@@ -406,9 +450,23 @@ async def test_pull_stores_targets_and_answers_only_requested_reveals() -> None:
     assert len(reveals) == 1
     assert [i["value"] for i in reveals[0]["items"]] == [url]  # the guard kept our name out
     assert SELF_NAME not in str(reveals)
-    # M27 is not merged: every state is unknown, so no recheck leaves
+    # the M27 adapter is a documented limit: every state is unknown, so no recheck leaves
     assert [c for c in rig.hub.calls if c[1] == "/v1/rechecks"] == []
     assert store.summary is not None and store.m.standing == "good"
+
+
+async def test_nothing_is_revealed_without_a_known_own_address() -> None:
+    url = "http://dropper.example.org/a.sh"
+    asked_b = blind.blind_url(url)
+    store = member_store(last_pull_at=None, last_summary_at=None)
+    store.values["url"] = [url]
+    rig = Rig(store, terms=False)
+    rig.hub.targets = {
+        "cursor": "c_2", "targets": [target("t_00000000000a", "url", None, asked_b)],
+        "reveal": [{"kind": "url", "value_b": asked_b}], "recheck": [],
+    }  # fmt: skip
+    await rig.cycle()
+    assert [c for c in rig.hub.calls if c[1] == "/v1/reveals"] == []
 
 
 async def test_a_hash_the_hub_asks_for_without_a_confirmed_target_is_not_revealed() -> None:

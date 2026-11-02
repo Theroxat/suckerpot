@@ -26,6 +26,7 @@ import httpx
 from suckerpot_db.network_names import pseudonym_problem
 from suckerpot_db.secretbox import SecretBox
 from suckerpot_netproto import ProtoError, sign
+from suckerpot_netproto import models as wire
 from suckerpot_reporting import GuardContext, SelfTerms, guard
 
 from ingest.egress import EgressClosed, EgressGate, gate_open
@@ -396,6 +397,19 @@ class NetworkWorker(FeatureWorker):
                 batch: dict[str, Any] = existing["payload"]  # resend the same batch id
                 counts: dict[str, int] = {}
                 dropped: dict[str, int] = {}
+                # The stored body goes through today's guard and wire models first: the owner
+                # terms may have changed since it was built.
+                verdict = await self._recheck_stored(batch)
+                if verdict != "ok":
+                    if verdict == "guard_failed":
+                        await store.record_submission(
+                            day, batch_id="-", status="failed", counts={}, dropped={},
+                            error_code="guard_failed", payload=None, sent_at=None,
+                        )  # fmt: skip
+                        await store.drop_payload(day)
+                    errors.append(verdict)
+                    blocked = True
+                    break
             else:
                 built = await builder.build(day)
                 if built.status != "ok" or built.batch is None:
@@ -458,6 +472,24 @@ class NetworkWorker(FeatureWorker):
                     now, self.network.delay_min_h, self.network.delay_max_h, self._rng
                 )
             )
+
+    async def _recheck_stored(self, batch: dict[str, Any]) -> str:
+        """``ok``, or the error code that stops a stored batch from being resent."""
+        terms = await self.terms.get() if self.terms is not None else None
+        if terms is None:
+            return "self_terms_unavailable"
+        if not terms.has_self_address:
+            return "waiting_self_address"
+        ctx = GuardContext(allow_documentation=self._allow_doc)
+        if not set(guard(batch, terms, fmt="json", ctx=ctx).codes) <= {"no_self_address"}:
+            return "guard_failed"
+        try:
+            wire.ObservationBatch.model_validate(
+                batch, context={"allow_documentation": self._allow_doc}
+            )
+        except Exception:  # a malformed stored batch is never sent
+            return "guard_failed"
+        return "ok"
 
     async def _pull(self, m: Membership, hub: HubClient) -> None:
         store = self.store

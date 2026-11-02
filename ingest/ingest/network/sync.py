@@ -81,8 +81,8 @@ async def answer_reveals(
     allow_documentation: bool = False,
 ) -> int:
     """Send the clear value of requested hashes this node holds. Returns how many were sent."""
-    if not asked or terms is None:
-        return 0
+    if not asked or terms is None or not terms.has_self_address:
+        return 0  # without a known own address the guard cannot vouch for anything
     # Only a hash we hold as a confirmed, blinded network target is ever revealed (a hub asking
     # for any other hash learns nothing), at most MAX_REVEALS per pull.
     allowed = await store.revealable({r.value_b for r in asked[:PAGE]})
