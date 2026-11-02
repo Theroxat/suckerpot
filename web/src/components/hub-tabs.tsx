@@ -20,7 +20,7 @@ export function HubTabs({ hub, pathname, className }: HubTabsProps) {
   return (
     <nav
       aria-label={`${hub.label} pages`}
-      className={cn("mb-6 overflow-x-auto border-b", className)}
+      className={cn("scroll-fade-x mb-6 overflow-x-auto border-b", className)}
     >
       <ul className="flex gap-1">
         {hub.tabs.map((t) => {
