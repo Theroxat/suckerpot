@@ -293,3 +293,30 @@ def test_addresses_that_embed_an_ipv4_address_are_refused(ip: str) -> None:
     bad(mutated("sources.0.ip", ip))
     bad(mutated("c2.0.ip", ip), allow_documentation=True)
     assert models.parse_global_ip("2606:4700:4700::1111") == "2606:4700:4700::1111"
+
+
+def _target(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "id": "t_0123456789ab", "kind": "ip", "value": "198.51.100.23", "value_b": None,
+        "state": "confirmed", "nodes": 2, "countries": 3, "first_day": "2026-10-30",
+        "last_day": "2026-11-02", "services": ["ssh"], "activity": ["login"],
+        "tags": ["mirai"], "families": ["mirai"], "reported_day": None, "taken_down_day": None,
+    }  # fmt: skip
+    return {**base, **kw}
+
+
+def test_target_fields_are_bounded() -> None:
+    models.Target.model_validate(_target())
+    for bad in (
+        {"value": "a" * 2049},
+        {"services": ["ssh"] * 40},
+        {"services": ["not-a-service"]},
+        {"activity": ["nope"]},
+        {"families": ["not-a-family"]},
+        {"families": ["mirai"] * 33},
+    ):
+        with pytest.raises(ValueError):
+            models.Target.model_validate(_target(**bad))
+    assert models.Target.model_validate(_target(value="a" * 2048)).value == "a" * 2048
+    kept = models.Target.model_validate(_target(tags=["mirai", "x" * 5000, "mirai"]))
+    assert kept.tags == ["mirai"]  # unknown tags are dropped, never stored
