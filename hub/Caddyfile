@@ -79,7 +79,7 @@
 		# The delisting page: inline script and style pinned by hash (tests/test_feeds_privacy.py
 		# recomputes both from static/delist.html), nothing else may load or run.
 		@page path /v1/delist.html
-		header @page Content-Security-Policy "default-src 'none'; script-src 'sha256-NYOlIacvHkRC8Qt1ZBYF5Ry19Wga8cQGxJyNrD6HP34='; style-src 'sha256-vTVC0cS3214e7DOUbc/X6p6MV78OWzfhcKo5DhngLhY='; connect-src 'self'; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		header @page Content-Security-Policy "default-src 'none'; script-src 'sha256-Zp2mLyxOAn1EMFrIZjQnA9PcHojINbKic2Hjw1GrkSY='; style-src 'sha256-vTVC0cS3214e7DOUbc/X6p6MV78OWzfhcKo5DhngLhY='; connect-src 'self'; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 		@project path /v1/stats.json /v1/index.json
 		header @project Access-Control-Allow-Origin "*"
 

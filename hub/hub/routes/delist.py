@@ -231,12 +231,17 @@ async def submit(request: Request) -> Response:
             "sla_hours": SLA_HOURS,
         }
         if counts.open:
-            # One open request per value. The answer looks like a new request (same shape, same
-            # state rule) and nothing is stored: whether someone else already asked for this
-            # value must not be learnable (security review L1). The id and token are unknown to
-            # the hub, so they lead nowhere; the first requester keeps their own.
+            # One open request per value. Say so plainly (the value is public, so is the fact that
+            # someone asked about it) and issue no token: a token that leads nowhere would only
+            # mislead, and polling it would count as failed authentication (security re-review
+            # L1). Nothing is stored. The daily cap was checked first.
             await session.rollback()
-            return reply(request, ctx, 200, answer)
+            return reply(
+                request,
+                ctx,
+                200,
+                {"listed": True, "state": "already_open", "sla_hours": SLA_HOURS},
+            )
         await session.execute(
             text(
                 "INSERT INTO delist_requests (id, token_hash, value, list, scope, category, "
