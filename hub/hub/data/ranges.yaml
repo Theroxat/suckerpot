@@ -1,0 +1,71 @@
+# Address ranges that no public feed may ever carry (design M30 section 5.3).
+#
+# The hub worker fetches these into the feed_auto_ranges table (hub/feeds/external.py):
+#   * "cdn:<name>"  large CDN and cloud front-end ranges. One such address serves thousands of
+#                   sites, so listing it would block innocents.
+#   * "tor"         Tor exit relays. An exit relays thousands of users; the attacker is not the
+#                   exit.
+# Plain cloud compute (VPS providers) is NOT excluded on purpose: that is where malware lives.
+# Research scanners are handled by the never-list (scanner ASNs), not by address ranges.
+#
+# This is the ONLY list of hosts the hub contacts for ranges. A hub test fails when external.py
+# names a host that is missing here. Every URL must be https on the default port, with no
+# credentials and no redirect.
+#
+# Per source:
+#   name         feed_auto_ranges.source ("tor" or "cdn:<name>"; other names are never read)
+#   urls         one or more https URLs, merged
+#   format       "lines" (one prefix per line, "#" comments allowed) or "json"
+#   json         for "json": where the prefixes are. Each item has
+#                  path   top-level key holding a list
+#                  key    field of each list item that holds the prefix (omit for a list of strings)
+#                  where  optional field=value filters on list items
+#   every_hours  how often to refresh (a failure is retried after 6 hours; the last good copy is kept)
+#   max_bytes    download cap (after decompression)
+#   min_count    fewer prefixes than this means the answer is broken and is refused
+#
+# A prefix wider than /8 (IPv4) or /16 (IPv6), or a line that is not an address or network,
+# refuses the whole source. A source that shrinks by more than half is refused too.
+sources:
+  - name: tor
+    urls:
+      - https://check.torproject.org/torbulkexitlist
+    format: lines
+    every_hours: 24
+    max_bytes: 2097152
+    min_count: 100
+
+  - name: "cdn:cloudflare"
+    urls:
+      - https://www.cloudflare.com/ips-v4
+      - https://www.cloudflare.com/ips-v6
+    format: lines
+    every_hours: 168
+    max_bytes: 65536
+    min_count: 5
+
+  - name: "cdn:fastly"
+    urls:
+      - https://api.fastly.com/public-ip-list
+    format: json
+    json:
+      - path: addresses
+      - path: ipv6_addresses
+    every_hours: 168
+    max_bytes: 262144
+    min_count: 5
+
+  - name: "cdn:cloudfront"
+    urls:
+      - https://ip-ranges.amazonaws.com/ip-ranges.json
+    format: json
+    json:
+      - path: prefixes
+        key: ip_prefix
+        where: { service: CLOUDFRONT }
+      - path: ipv6_prefixes
+        key: ipv6_prefix
+        where: { service: CLOUDFRONT }
+    every_hours: 168
+    max_bytes: 16777216
+    min_count: 20

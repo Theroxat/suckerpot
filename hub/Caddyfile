@@ -39,3 +39,56 @@
 		respond "Not Found" 404
 	}
 }
+
+# The public feed site: static files only, the same for everyone. No access log, no cookies, no
+# CDN, no query handling. The feeds volume is mounted read-only. Design M30 sections 6.1 and 8.
+{$HUB_FEEDS_DOMAIN} {
+	log {
+		output discard
+	}
+	request_body {
+		max_size 64KB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Cache-Control "public, max-age=900"
+		-Server
+	}
+
+	# Delisting and lookup are the only dynamic paths; hub-api answers them.
+	@api path /v1/delist /v1/delist/* /v1/lookup
+	handle @api {
+		@apibad not method GET HEAD POST
+		respond @apibad "Method Not Allowed" 405
+		header Cache-Control "no-store"
+		reverse_proxy hub-api:8080
+	}
+
+	handle /v1/* {
+		@readonly not method GET HEAD
+		respond @readonly "Method Not Allowed" 405
+
+		# Never serve temporary publication directories or any dot file.
+		@hidden path /v1/.* /v1/*/.*
+		respond @hidden "Not Found" 404
+
+		@plain path *.txt *.nft *.ipset *.rsc *.minisig
+		header @plain Content-Type "text/plain; charset=utf-8"
+		@project path /v1/stats.json /v1/index.json
+		header @project Access-Control-Allow-Origin "*"
+
+		uri strip_prefix /v1
+		root * /srv/feeds
+		file_server {
+			precompressed gzip
+			index off
+			hide .tmp-* .*
+		}
+	}
+
+	handle {
+		respond "Not Found" 404
+	}
+}

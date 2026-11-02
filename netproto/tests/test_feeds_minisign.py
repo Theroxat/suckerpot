@@ -191,6 +191,15 @@ def test_secret_key_file_roundtrip_and_refusals() -> None:
         minisign.parse_secret_key("garbage")
 
 
+def test_upstream_unencrypted_key_has_a_zero_checksum() -> None:
+    """`minisign -G -W` writes 32 zero bytes where the checksum would be (found against 0.11)."""
+    text = minisign.serialize_secret_key(SECRET)
+    raw = bytearray(base64.b64decode(text.split("\n")[1]))
+    raw[126:] = bytes(32)
+    upstream = text.split("\n")[0] + "\n" + base64.b64encode(bytes(raw)).decode()
+    assert minisign.parse_secret_key(upstream) == SECRET
+
+
 def test_generate_keypair_is_usable() -> None:
     key = minisign.generate_keypair()
     assert len(key.seed) == 32 and len(key.key_id) == 8

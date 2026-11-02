@@ -165,7 +165,8 @@ def parse_secret_key(text: str) -> SecretKey:
         raise FeedError("bad_format", "encrypted secret keys are not supported")
     key_id, sk, checksum = raw[54:62], raw[62:126], raw[126:]
     expect = hashlib.blake2b(ALG_LEGACY + key_id + sk, digest_size=32).digest()
-    if checksum != expect or sk[32:] != _public_raw(sk[:32]):
+    # Upstream writes an all-zero checksum for the unencrypted keys of `minisign -G -W`.
+    if checksum not in (expect, bytes(32)) or sk[32:] != _public_raw(sk[:32]):
         raise FeedError("bad_format", "secret key checksum")
     return SecretKey(sk[:32], key_id)
 
