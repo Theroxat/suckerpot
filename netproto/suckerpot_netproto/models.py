@@ -158,6 +158,16 @@ Activities = Annotated[
     AfterValidator(_members_of(ACTIVITIES)),
 ]
 Tags = Annotated[list[str], BeforeValidator(_filter_tags), Field(max_length=32)]
+# Target lists come from the hub: bounded and held to the same closed vocabularies (may be empty).
+TargetServices = Annotated[
+    list[str], Field(max_length=len(SERVICES)), AfterValidator(_members_of(SERVICES))
+]
+TargetActivities = Annotated[
+    list[str], Field(max_length=len(ACTIVITIES)), AfterValidator(_members_of(ACTIVITIES))
+]
+TargetFamilies = Annotated[
+    list[str], Field(max_length=32), AfterValidator(_members_of(FAMILIES_V1))
+]
 Bucket = Annotated[int, Field(ge=0, le=4)]
 Port = Annotated[int, Field(ge=1, le=65535)]
 Nonce16 = Annotated[str, Field(min_length=22, max_length=22), AfterValidator(_validate_b64u(16))]
@@ -380,17 +390,17 @@ class BatchAccepted(ProtoModel):
 class Target(ProtoModel):
     id: Annotated[str, Field(pattern=_TARGET_ID.pattern)]
     kind: Literal["ip", "url", "domain", "sha256", "c2_ip", "c2_domain"]
-    value: str | None
+    value: Annotated[str, Field(max_length=2048)] | None
     value_b: Hex64 | None
     state: Literal["confirmed", "reported", "taken_down", "disputed", "expired"]
     nodes: Annotated[int, Field(ge=0, le=2)]
     countries: Annotated[int, Field(ge=3)] | None
     first_day: Day
     last_day: Day
-    services: list[str]
-    activity: list[str]
-    tags: list[str]
-    families: list[str]
+    services: TargetServices
+    activity: TargetActivities
+    tags: Tags
+    families: TargetFamilies
     reported_day: Day | None
     taken_down_day: Day | None
 

@@ -79,9 +79,9 @@
       "value_b": "0ae7d77bca7d18c61aa83f93a06d06f228b0e124cf7308e458a9e4c9f4680700"
     },
     {
-      "input": "https://example.org:8443/x",
-      "canonical": "https://example.org:8443/x",
-      "value_b": "0fa0c011c7b4a57db2d9e2b191e2e05f17e0cfaa44e17930c519451b927ab8fc"
+      "input": "https://example.org:9443/x",
+      "canonical": "https://example.org:9443/x",
+      "value_b": "5977996e665c3f196626dcb791bcb04868e1e492dcaba823745aaf0109a41928"
     },
     {
       "input": "http://b\u00fccher.example.org/p",
