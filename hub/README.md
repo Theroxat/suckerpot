@@ -362,6 +362,8 @@ The `--note` is **public**. The requester sees it, so write it for them.
 
 Interim effect: an inbound value is hidden from the next run until the decision. The number of values hidden per day is capped by `HUB_DELIST_AUTO_SUPPRESS_DAILY`. Outbound values are not hidden. They are the ones attackers most want to escape, so they wait for review. A suppressed inbound value stays hidden past the SLA, because a wrongly hidden bot address costs less than a wrongly listed innocent one. Check the queue with `delist list --state received` at least once a day.
 
+Scope: a value is hidden only when `inbound` is the only list that holds it, whatever list the request names, and it is hidden from `inbound` only. An accepted request applies to the list it named, or to `inbound` when that was the only list holding the value; it never takes a malware host or a C2 off `outbound` because the same address was also a bot. `allow list` shows the scope of every row.
+
 ### Ranges, and failing closed
 
 The hub excludes what no list may carry: reserved space, public resolvers, shared hosting names, the never-list, the allow-list, CDN front-end ranges and Tor exit relays. The CDN and Tor ranges come from fixed sources, listed in `hub/hub/data/ranges.yaml`. The hub contacts only those hosts, over HTTPS, with no redirect.

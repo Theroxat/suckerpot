@@ -14,6 +14,9 @@ Sources, in this order:
   (allowing is safe, listing a prefix is not);
 * ``cdn`` and ``tor``: address ranges kept in ``feed_auto_ranges`` by the range fetcher. Tor exits
   are always excluded; there is no switch.
+
+Delisting decisions and suppressions are scoped per list: a request about ``inbound`` never
+removes the same value from ``outbound`` (a bot address that also serves malware).
 """
 
 from __future__ import annotations
@@ -46,6 +49,7 @@ ALLOW = "allow_list"
 DELISTED = "delisted"
 CDN = "cdn"
 TOR = "tor"
+SUPPRESSIBLE = "inbound"  # the only list a pending delisting request may hide a value from
 
 
 class RangesStale(RuntimeError):
@@ -101,22 +105,34 @@ def load_never_file(path: Path = NEVER_FILE) -> tuple[list[IPNet], set[str]]:
     return nets, domains
 
 
+ANY_LIST = "*"
+
+
 @dataclass
 class Exclusions:
     never_nets: NetSet = field(default_factory=NetSet)
     never_domains: set[str] = field(default_factory=set)
     allow_nets: NetSet = field(default_factory=NetSet)
     allow_domains: set[str] = field(default_factory=set)
-    delisted_nets: NetSet = field(default_factory=NetSet)
-    delisted_domains: set[str] = field(default_factory=set)
+    # Delisting decisions and suppressions, per list they apply to (``ANY_LIST`` for every list).
+    # A request about ``inbound`` never takes a value off ``outbound`` (security review H1).
+    delisted_nets: dict[str, NetSet] = field(default_factory=dict)
+    delisted_domains: dict[str, set[str]] = field(default_factory=dict)
     cdn_nets: NetSet = field(default_factory=NetSet)
     tor_nets: NetSet = field(default_factory=NetSet)
     allow_documentation: bool = False
 
-    def classify(self, value: str, *, is_domain: bool) -> str | None:
-        """The reason ``value`` may not be listed, or ``None``."""
+    def _scopes(self, list_id: str | None) -> list[str]:
+        """The scopes that apply to ``list_id``; ``None`` (no list known) means all of them."""
+        if list_id is None:
+            return sorted(set(self.delisted_nets) | set(self.delisted_domains))
+        return [ANY_LIST, list_id]
+
+    def classify(self, value: str, *, is_domain: bool, list_id: str | None = None) -> str | None:
+        """The reason ``value`` may not be listed on ``list_id``, or ``None``."""
+        scopes = self._scopes(list_id)
         if is_domain:
-            if _suffix_hit(value, self.delisted_domains):
+            if any(_suffix_hit(value, self.delisted_domains.get(sc, set())) for sc in scopes):
                 return DELISTED
             if _suffix_hit(value, self.allow_domains):
                 return ALLOW
@@ -128,7 +144,7 @@ class Exclusions:
             addr = ipaddress.ip_address(value)
         except ValueError:
             return RESERVED
-        if addr in self.delisted_nets:
+        if any(addr in self.delisted_nets[sc] for sc in scopes if sc in self.delisted_nets):
             return DELISTED
         if addr in self.allow_nets:
             return ALLOW
@@ -146,14 +162,14 @@ def build_exclusions(
     s: Settings,
     *,
     never_rows: list[tuple[str, str]],
-    allow_rows: list[tuple[str, str, str]],
+    allow_rows: list[tuple[str, str, str, str | None]],
     range_rows: list[tuple[str, str]],
 ) -> Exclusions:
     """Assemble the exclusion sets from loaded rows.
 
     ``never_rows``: ``(value, kind)`` of ``never_list``; ``allow_rows``: ``(value, kind,
-    source)`` of live ``feed_allow`` rows; ``range_rows``: ``(source, prefix)`` of
-    ``feed_auto_ranges``.
+    source, list)`` of live ``feed_allow`` rows (``list`` NULL for every list; only rows from a
+    delisting carry one); ``range_rows``: ``(source, prefix)`` of ``feed_auto_ranges``.
     """
     nets, domains = load_never_file()
     for value, kind in never_rows:
@@ -174,17 +190,27 @@ def build_exclusions(
                 continue
     allow_nets: list[IPNet] = []
     allow_domains: set[str] = set()
-    delisted_nets: list[IPNet] = []
-    delisted_domains: set[str] = set()
-    for value, kind, source in allow_rows:
+    delisted_nets: dict[str, list[IPNet]] = {}
+    delisted_domains: dict[str, set[str]] = {}
+    for value, kind, source, scope in allow_rows:
+        # A delisting decision (or any row scoped to one list) is kept per list; an operator row
+        # without a list applies everywhere.
+        delisted = source == "delist" or scope is not None
+        key = scope or ANY_LIST
         if kind == "ip" and (n := parse_network(value)) is not None:
-            (delisted_nets if source == "delist" else allow_nets).append(n)
+            if delisted:
+                delisted_nets.setdefault(key, []).append(n)
+            else:
+                allow_nets.append(n)
         elif kind == "domain":
             try:
                 name = canonical_domain(value)
             except ValueError:
                 continue
-            (delisted_domains if source == "delist" else allow_domains).add(name)
+            if delisted:
+                delisted_domains.setdefault(key, set()).add(name)
+            else:
+                allow_domains.add(name)
     cdn: list[IPNet] = []
     tor: list[IPNet] = []
     for source, prefix in range_rows:
@@ -199,7 +225,7 @@ def build_exclusions(
         never_domains=domains,
         allow_nets=NetSet(allow_nets),
         allow_domains=allow_domains,
-        delisted_nets=NetSet(delisted_nets),
+        delisted_nets={k: NetSet(v) for k, v in delisted_nets.items()},
         delisted_domains=delisted_domains,
         cdn_nets=NetSet(cdn),
         tor_nets=NetSet(tor),
@@ -212,23 +238,26 @@ async def load_exclusions(session: AsyncSession, s: Settings, today: date) -> Ex
     never_rows = [
         (r[0], r[1]) for r in (await session.execute(text("SELECT value, kind FROM never_list")))
     ]
-    allow_rows = [
-        (r[0], r[1], r[2])
+    allow_rows: list[tuple[str, str, str, str | None]] = [
+        (r[0], r[1], r[2], r[3])
         for r in (
             await session.execute(
                 text(
-                    "SELECT value, kind, source FROM feed_allow "
+                    "SELECT value, kind, source, list FROM feed_allow "
                     "WHERE expires_day IS NULL OR expires_day >= :today"
                 ),
                 {"today": today},
             )
         )
     ]
-    # A value hidden by a delisting request stays out of the lists until an operator decides.
+    # A value hidden by a delisting request stays out of ``inbound`` until an operator decides.
+    # Only ``inbound`` is ever suppressed (design 9.2): the outbound lists keep the value.
     for (hidden,) in await session.execute(
         text("SELECT value FROM delist_requests WHERE state = 'suppressed'")
     ):
-        allow_rows.append((hidden, "ip" if parse_network(hidden) else "domain", "delist"))
+        allow_rows.append(
+            (hidden, "ip" if parse_network(hidden) else "domain", "delist", SUPPRESSIBLE)
+        )
     ranges = (
         await session.execute(text("SELECT source, prefix, fetched_day FROM feed_auto_ranges"))
     ).all()

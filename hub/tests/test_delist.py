@@ -566,3 +566,99 @@ def test_delist_routes_never_touch_the_client_address() -> None:
         src = (HERE / "hub" / "routes" / name).read_text()
         assert "request.client" not in src and "x-forwarded" not in src.lower()
         assert "logging" not in src and "log." not in src
+
+
+# --- security review H1: a request about inbound never touches outbound ---------------------
+
+
+@pytest.mark.integration
+async def test_inbound_request_never_unlists_the_same_value_from_outbound(
+    d_env: Env, feed_dir: Path, key_file: Path
+) -> None:
+    from .seed import observe
+    from .test_feeds_select import D, NOW, add_ranges, confirm, entries, feed_settings, run_job
+
+    env = d_env
+    s = feed_settings(feed_dir, key_file, delist_pow_difficulty=DIFFICULTY)
+    await add_ranges(env)
+    ids = await add_nodes(env.worker, 10)
+    both = "198.51.100.7"  # a bot address that also serves malware
+    await observe(
+        env.worker, ids, "ip", both, D[:2], services=["ssh"], activity=["login", "login_success"]
+    )
+    await observe(
+        env.worker,
+        ids,
+        "payload_ip",
+        both,
+        D[:2],
+        activity=["download"],
+        families=["mirai"],
+        fetched=True,
+        services=[],
+        tags=[],
+    )
+    await confirm(env, s)
+    await run_job(env, s)
+    await run_job(env, s, NOW + timedelta(hours=7))
+    got = await entries(env)
+    assert got[("inbound", both)].state == got[("outbound", both)].state == "listed"
+
+    # The requester names inbound only. The value is on outbound too: nothing is hidden.
+    out = (await ask(env, both, list="inbound")).json()
+    assert out["state"] == "received"
+    stored = (await rows(env, "SELECT scope FROM delist_requests"))[0]
+    assert stored.scope == "inbound"
+    await run_job(env, s, NOW + timedelta(hours=8))
+    assert (await entries(env))[("outbound", both)].state == "listed"
+
+    # Accepted, the decision applies to inbound only: the malware host stays on outbound.
+    assert (await cli(env, "delist", "accept", out["id"], "--as", "remediated", "--note", "ok"))[
+        0
+    ] == 0
+    allow = (await rows(env, "SELECT list FROM feed_allow WHERE value = :v", v=both))[0]
+    assert allow.list == "inbound"
+    await run_job(env, s, NOW + timedelta(hours=9))
+    got = await entries(env)
+    assert got[("outbound", both)].state == "listed"
+    assert got[("inbound", both)].state == "removed"
+    assert both in (feed_dir / "outbound.txt").read_text().split()
+
+
+@pytest.mark.integration
+async def test_a_suppressed_inbound_value_is_not_hidden_from_outbound(d_env: Env) -> None:
+    env = d_env
+    await add_entry(env, BOTS)
+    assert (await ask(env, BOTS)).json()["state"] == "suppressed"
+    await add_entry(env, BOTS, "outbound")  # later, the same address serves malware
+    async with env.worker() as s:
+        await s.execute(
+            text("INSERT INTO feed_auto_ranges VALUES ('tor', '203.0.113.64/28', :d)"), {"d": TODAY}
+        )
+        await s.commit()
+        excl = await feed_filter.load_exclusions(s, env.settings, TODAY)
+    assert excl.classify(BOTS, is_domain=False, list_id="inbound") == "delisted"
+    assert excl.classify(BOTS, is_domain=False, list_id="outbound") is None
+
+
+def test_scoped_allow_rows_only_apply_to_their_list() -> None:
+    from hub.config import Settings
+
+    s = Settings.from_env({"HUB_ALLOW_DOCUMENTATION": "1"})
+    excl = feed_filter.build_exclusions(
+        s,
+        never_rows=[],
+        allow_rows=[
+            ("192.0.2.40", "ip", "delist", "inbound"),
+            ("192.0.2.41", "ip", "delist", None),
+            ("192.0.2.42", "ip", "admin", None),
+            ("dropper.example.org", "domain", "delist", "outbound-domains"),
+        ],
+        range_rows=[],
+    )
+    c = excl.classify
+    assert c("192.0.2.40", is_domain=False, list_id="inbound") == "delisted"
+    assert c("192.0.2.40", is_domain=False, list_id="outbound") is None
+    assert c("192.0.2.41", is_domain=False, list_id="outbound") == "delisted"
+    assert c("192.0.2.42", is_domain=False, list_id="outbound") == "allow_list"
+    assert c("dropper.example.org", is_domain=True, list_id="outbound-domains") == "delisted"
