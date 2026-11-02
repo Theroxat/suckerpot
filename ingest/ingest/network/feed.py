@@ -225,12 +225,22 @@ class SqlFeedStore:
             return int(getattr(result, "rowcount", 0) or 0)
 
     async def wipe(self) -> bool:
+        """Delete the stored lists and everything about the last fetch, except the last accepted
+        ``serial`` and its ``key_id``: rollback protection must survive turning the feed off and
+        on again (security review L8). Answers whether anything was deleted."""
         async with self.factory() as session, session.begin():
             row = (
                 await session.execute(
                     text(
                         "WITH a AS (DELETE FROM network_feed_entries RETURNING 1), "
-                        "b AS (DELETE FROM network_feed_state RETURNING 1) "
+                        "b AS (UPDATE network_feed_state SET generated_at = NULL, "
+                        "valid_until = NULL, index_sha256 = NULL, files = '{}'::jsonb, "
+                        "last_fetch_at = NULL, last_ok_at = NULL, error_code = NULL, "
+                        "updated_at = now() "
+                        "WHERE generated_at IS NOT NULL OR valid_until IS NOT NULL "
+                        "OR index_sha256 IS NOT NULL OR files <> '{}'::jsonb "
+                        "OR last_fetch_at IS NOT NULL OR last_ok_at IS NOT NULL "
+                        "OR error_code IS NOT NULL RETURNING 1) "
                         "SELECT (SELECT count(*) FROM a) + (SELECT count(*) FROM b)"
                     )
                 )
@@ -348,8 +358,11 @@ class FeedWorker(FeatureWorker):
             return
 
         sig = await client.get_text(f"{INDEX}.minisig")
+        # The serial space belongs to the key: a new key (another hub) starts afresh, the same
+        # key never goes back, even across a disable that wiped the lists.
+        same_key = old is not None and old.key_id == public.key_id_hex
         index = fp.verify_index(
-            resp.body, sig, public, now=now, last_serial=old.serial if old else None
+            resp.body, sig, public, now=now, last_serial=old.serial if old and same_key else None
         )
 
         new_files: dict[str, dict[str, Any]] = {

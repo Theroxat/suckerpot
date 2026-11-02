@@ -54,6 +54,9 @@ def test_the_feed_state_follows_the_flag_the_data_and_the_clock() -> None:
     assert d(True, None, NOW).state == "never"
     assert d(True, state_row(serial=None), NOW).state == "never"
     assert d(True, state_row(serial=None, error_code="egress_closed"), NOW).state == "error"
+    # After a disable, only the last serial is kept (rollback protection): no lists yet.
+    wiped = state_row(generated_at=None, valid_until=None, last_ok_at=None)
+    assert d(True, wiped, NOW).state == "never"
     assert d(True, state_row(), NOW).state == "ok"
     ok = d(True, state_row(error_code="http_503"), NOW)
     assert (ok.state, ok.error_code) == ("error", "http_503")
