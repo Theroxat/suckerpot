@@ -1,13 +1,12 @@
-import { ArrowRight, CircleCheck, FlaskConical, OctagonAlert } from "lucide-react"
+import { ArrowRight, CircleCheck, FlaskConical, TriangleAlert } from "lucide-react"
 import { Link } from "react-router"
 import { OutcomeBadge } from "@/components/results/badges"
 import { RelativeTime } from "@/components/relative-time"
-import { TagBadge } from "@/components/tag-badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { browserTimeZone, formatWindow, plural } from "@/lib/format"
 import { KIND_LABEL, type ReportItem } from "@/lib/abuse"
 
-/** Identity check state as icon plus word: red only when it is blocked. */
+/** Identity check state as icon plus word: amber when it is blocked. */
 export function GuardState({ ok }: { ok: boolean }) {
   return ok ? (
     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-fg-muted">
@@ -16,7 +15,7 @@ export function GuardState({ ok }: { ok: boolean }) {
     </span>
   ) : (
     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-fg">
-      <OctagonAlert aria-hidden className="size-3.5 text-sev-severe" />
+      <TriangleAlert aria-hidden className="size-3.5 text-sev-warning" />
       Blocked
     </span>
   )
@@ -31,15 +30,15 @@ export function ReportRow({ r }: { r: ReportItem }) {
         className="group grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3 transition-colors hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none sm:grid-cols-[10rem_1fr_auto_auto_1rem] sm:px-5"
       >
         <span className="flex items-center gap-2">
-          <TagBadge tag={KIND_LABEL[r.kind]} href={null} />
+          <span className="text-xs font-medium text-fg-muted">{KIND_LABEL[r.kind]}</span>
         </span>
         <span className="order-3 col-span-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg-muted sm:order-none sm:col-span-1">
           <span className="text-fg">
-            {plural(
-              r.subject_count,
-              r.kind === "attack_source" ? "address" : "subject",
-              r.kind === "attack_source" ? "addresses" : "subjects",
-            )}
+            {r.kind === "attack_source"
+              ? plural(r.subject_count, "address", "addresses")
+              : r.kind === "payload_host"
+                ? plural(r.subject_count, "host")
+                : plural(r.subject_count, "server")}
           </span>
           <Tooltip>
             <TooltipTrigger asChild>
