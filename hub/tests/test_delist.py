@@ -689,3 +689,66 @@ async def test_retention_never_deletes_an_open_request(d_env: Env) -> None:
         await retention.run_retention(s, env.settings, env.clock() + timedelta(days=200), later)
     left = {r.id: r.state for r in await rows(env, "SELECT id, state FROM delist_requests")}
     assert left == {open_id: "suppressed"}
+
+
+async def _target(env: Env, kind: str, value: str, tid: str) -> None:
+    async with env.worker() as s:
+        await s.execute(
+            text(
+                "INSERT INTO targets (id, kind, value, state, confirmed_day, first_day, last_day) "
+                "VALUES (:i, :k, :v, 'confirmed', :d, :d, :d)"
+            ),
+            {"i": tid, "k": kind, "v": value, "d": TODAY},
+        )
+        await s.commit()
+
+
+@pytest.mark.integration
+async def test_an_inbound_false_positive_never_disputes_the_outbound_target(d_env: Env) -> None:
+    """Security re-review M1: accepting an inbound-scoped false positive disputed every target
+    behind the value, the malware host on outbound included."""
+    env = d_env
+    await _target(env, "ip", BOTS, "t_0000000000c1")
+    await _target(env, "payload_ip", BOTS, "t_0000000000c2")
+    await add_entry(env, BOTS, target_id="t_0000000000c1")
+    await add_entry(env, BOTS, "outbound", target_id="t_0000000000c2")
+    request = (await ask(env, BOTS, list="inbound")).json()["id"]
+    assert (
+        await cli(env, "delist", "accept", request, "--as", "false_positive", "--note", "spoofed")
+    )[0] == 0
+    states = {r.id: r.state for r in await rows(env, "SELECT id, state FROM targets")}
+    assert states == {"t_0000000000c1": "disputed", "t_0000000000c2": "confirmed"}
+
+
+@pytest.mark.integration
+async def test_accept_list_narrows_a_request_that_covers_every_list(d_env: Env) -> None:
+    env = d_env
+    await _target(env, "ip", OTHER, "t_0000000000d1")
+    await _target(env, "payload_ip", OTHER, "t_0000000000d2")
+    await add_entry(env, OTHER, target_id="t_0000000000d1")
+    await add_entry(env, OTHER, "outbound", target_id="t_0000000000d2")
+    request = (await ask(env, OTHER)).json()["id"]  # no list named: every list
+    assert (await rows(env, "SELECT scope FROM delist_requests"))[0].scope is None
+    code, _ = await cli(
+        env, "delist", "accept", request, "--as", "false_positive", "--note", "x",
+        "--list", "inbound",
+    )  # fmt: skip
+    assert code == 0
+    allow = (await rows(env, "SELECT list FROM feed_allow WHERE value = :v", v=OTHER))[0]
+    assert allow.list == "inbound"
+    assert (await rows(env, "SELECT scope FROM delist_requests"))[0].scope == "inbound"
+    states = {r.id: r.state for r in await rows(env, "SELECT id, state FROM targets")}
+    assert states == {"t_0000000000d1": "disputed", "t_0000000000d2": "confirmed"}
+
+
+@pytest.mark.integration
+async def test_accept_list_cannot_widen_or_move_a_scoped_request(d_env: Env) -> None:
+    env = d_env
+    await add_entry(env, BOTS)
+    request = (await ask(env, BOTS)).json()["id"]  # inbound only: scope inbound
+    code, lines = await cli(
+        env, "delist", "accept", request, "--as", "remediated", "--note", "x",
+        "--list", "outbound",
+    )  # fmt: skip
+    assert code == 1 and lines == ["this request concerns inbound only"]
+    assert (await rows(env, "SELECT state FROM delist_requests"))[0].state == "suppressed"

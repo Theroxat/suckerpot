@@ -348,7 +348,7 @@ People ask for removals through the form at `https://feeds.example.org/v1/delist
 | --- | --- |
 | `delist list [--state received\|suppressed\|accepted\|rejected]` | Lists requests |
 | `delist show <id>` | Shows one request, with its evidence and contact |
-| `delist accept <id> --as false_positive\|remediated\|policy --note "..."` | Accepts it |
+| `delist accept <id> --as false_positive\|remediated\|policy --note "..." [--list inbound\|outbound\|outbound-domains]` | Accepts it, for the request's scope or the narrower `--list` |
 | `delist reject <id> --note "..."` | Rejects it. The entry stays. |
 
 The `--note` is **public**. The requester sees it, so write it for them.
@@ -362,7 +362,7 @@ The `--note` is **public**. The requester sees it, so write it for them.
 
 Interim effect: an inbound value is hidden from the next run until the decision. The number of values hidden per day is capped by `HUB_DELIST_AUTO_SUPPRESS_DAILY`. Outbound values are not hidden. They are the ones attackers most want to escape, so they wait for review. A suppressed inbound value stays hidden past the SLA, because a wrongly hidden bot address costs less than a wrongly listed innocent one. Check the queue with `delist list --state received` at least once a day.
 
-Scope: a value is hidden only when `inbound` is the only list that holds it, whatever list the request names, and it is hidden from `inbound` only. An accepted request applies to the list it named, or to `inbound` when that was the only list holding the value; it never takes a malware host or a C2 off `outbound` because the same address was also a bot. `allow list` shows the scope of every row.
+Scope: a value is hidden only when `inbound` is the only list that holds it, whatever list the request names, and it is hidden from `inbound` only. An accepted request applies to the list it named, or to `inbound` when that was the only list holding the value. Such a decision, a false positive included, never touches the same address on `outbound`. A request that named no list for a value that is on an outbound list too covers every list: narrow it with `delist accept ... --list inbound` (or another list) unless you mean to take the value off every list. `--list` can only narrow, never widen or move, a request's scope. `allow list` shows the scope of every row.
 
 ### Ranges, and failing closed
 
