@@ -3,7 +3,7 @@ import type { HelpId } from "@/lib/help"
 import { cn } from "@/lib/utils"
 
 interface PageHeaderProps {
-  title: string
+  title: React.ReactNode
   /** One sentence that says what this page shows right now. */
   description?: React.ReactNode
   actions?: React.ReactNode

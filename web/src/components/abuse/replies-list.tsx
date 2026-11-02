@@ -20,6 +20,7 @@ import {
   matchLabel,
   repliesApi,
   repliesKeys,
+  ruleLabel,
   type Reply,
 } from "@/lib/replies"
 import { cn } from "@/lib/utils"
@@ -54,11 +55,11 @@ export function ReplyView({ r, actions }: { r: Reply; actions?: React.ReactNode 
         </span>
         <RelativeTime iso={r.received_at} className="ml-auto text-xs" />
       </div>
-      <p className="text-xs text-fg-muted">
+      <p className="text-xs text-fg-muted" title={r.rule_id ?? undefined}>
         {r.classification_source === "manual"
           ? "Classified by you."
           : r.rule_id
-            ? `Rule: ${r.rule_id}.`
+            ? `${ruleLabel(r.rule_id)}.`
             : "No rule matched."}
         {matchLabel(r.match_method)
           ? ` Linked by: ${matchLabel(r.match_method)?.toLowerCase()}.`

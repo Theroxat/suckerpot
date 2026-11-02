@@ -14,7 +14,7 @@ import { describeSentOverTime } from "@/lib/results-sentences"
 const KINDS: { key: ReportKind; fill: string }[] = [
   { key: "attack_source", fill: "var(--fg)" },
   { key: "payload_host", fill: "var(--fg-muted)" },
-  { key: "c2", fill: "var(--fg-subtle)" },
+  { key: "c2", fill: "var(--border-strong)" },
 ]
 
 const dayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" })

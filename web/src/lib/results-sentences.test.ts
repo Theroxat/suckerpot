@@ -110,14 +110,12 @@ describe("describeSentOverTime", () => {
       point("2026-10-05T00:00:00", 6),
       point("2026-10-12T00:00:00", 8),
     ]
-    expect(describeSentOverTime(pts, now)).toBe(
-      "You sent 14 reports in October, 5 more than in September.",
-    )
+    expect(describeSentOverTime(pts, now)).toBe("You sent 14 so far in October (September: 9).")
   })
   it("says fewer and handles no previous month", () => {
     expect(
       describeSentOverTime([point("2026-09-07T00:00:00", 9), point("2026-10-05T00:00:00", 2)], now),
-    ).toBe("You sent 2 reports in October, 7 fewer than in September.")
+    ).toBe("You sent 2 so far in October (September: 9).")
     expect(describeSentOverTime([point("2026-10-05T00:00:00", 1)], now)).toBe(
       "You sent 1 report in October.",
     )
@@ -187,7 +185,7 @@ describe("describeOutcome", () => {
   }
   it("names the ticket and the delay", () => {
     expect(describeOutcome(base, sentAt)).toBe(
-      "The provider opened ticket 48213 2 h after you sent this report.",
+      "The provider opened ticket 48213, 2 hours after you sent this report.",
     )
   })
   it("says how long nothing came back", () => {
@@ -199,21 +197,21 @@ describe("describeOutcome", () => {
   })
   it("explains a bounce", () => {
     const b = { ...base, effective: "bounce" as const, bounced_at: "2026-10-20T10:05:00Z" }
-    expect(describeOutcome(b, sentAt)).toMatch(/^Your report bounced 5 min after/)
+    expect(describeOutcome(b, sentAt)).toMatch(/^Your report bounced, 5 minutes after/)
   })
 })
 
 describe("describeRepliesToCheck", () => {
   it("agrees in number", () => {
-    expect(describeRepliesToCheck(3)).toBe("3 replies need your eye.")
-    expect(describeRepliesToCheck(1)).toBe("1 reply needs your eye.")
+    expect(describeRepliesToCheck(3)).toBe("3 replies need a look.")
+    expect(describeRepliesToCheck(1)).toBe("1 reply needs a look.")
   })
 })
 
 describe("takedown sentences", () => {
   it("opens the page with the headline", () => {
     expect(describeTakedownHeader(summary(), null)).toMatch(
-      /^Since .+ you reported 31 malware URLs; 12 went down within 48 hours and 19 within 30 days\.$/,
+      /^Since .+ you reported 31 malware URLs; 12 of the \d+ followed for 48 hours went down within that time, and 19 within 30 days\.$/,
     )
   })
   it("covers disabled and empty", () => {
@@ -234,7 +232,7 @@ describe("takedown sentences", () => {
     expect(describeCurve(summary({ urls: counts({ eligible_48h: 0 }) }))).toMatch(/too early/)
   })
   it("needs five values for a median", () => {
-    expect(describeTtd({ ttd_p50_s: 19 * H, ttd_n: 12 })).toBe("19 h, 12 URLs")
+    expect(describeTtd({ ttd_p50_s: 19 * H, ttd_n: 12 })).toBe("19 h, across 12 URLs taken down")
     expect(describeTtd({ ttd_p50_s: 19 * H, ttd_n: 3 })).toBe("Not enough data yet")
   })
   it("names the fastest provider", () => {
@@ -259,7 +257,7 @@ describe("takedown sentences", () => {
       first_reply_p50_s: 2 * H,
     }
     expect(describeTakedownProviders([row])).toBe(
-      "AS64500 took down 5 of 6 targets, the fastest median in your reports (7 h).",
+      "EXAMPLE-NET (AS64500) took down 5 of 6 targets, the fastest median in your reports (7 h).",
     )
   })
   it("sums up abuse.ch", () => {
