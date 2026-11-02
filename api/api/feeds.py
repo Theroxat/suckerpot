@@ -10,6 +10,11 @@ authenticates with a bearer token created in Settings:
 * ``GET /feeds/{kind}.{txt|csv}`` with ``Authorization: Bearer <token>`` for tools that can send
   a header (preferred).
 
+With a token of kind ``network`` it also serves the verified local mirror of the community
+lists (design M30): ``GET /feeds/{token}/network/{list}.{txt|csv}`` and
+``GET /feeds/network/{list}.{txt|csv}`` with the bearer header (``{list}`` is ``inbound``,
+``inbound-high``, ``outbound``, ``outbound-high`` or ``outbound-domains``).
+
 A token has 256 random bits and is stored only as a hash; it can be revoked at any time or given
 an expiry; it limits which kinds, which minimum score and whether research scanners are listed.
 Requests are rate limited per client address and per token, wrong tokens count against the
@@ -30,7 +35,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from suckerpot_db.models import FeedTokenRow
 
-from api import blocklist_rows, exports, feed_tokens
+from api import blocklist_rows, exports, feed_tokens, network_feed
 from api.deps import DbSession
 
 log = logging.getLogger(__name__)
@@ -109,15 +114,17 @@ def _parse_name(name: str) -> tuple[str, str] | None:
     return kind, ext
 
 
-async def _serve_checked(request: Request, db: DbSession, token: str, name: str) -> Response:
+async def _authenticate(
+    request: Request, db: DbSession, token: str
+) -> tuple[FeedTokenRow | None, str, Response | None]:
+    """The token row, the client address, or the response to send instead (404 or 429)."""
     limits = _limits(request)
     now = time.monotonic()
     client = request.app.state.auth.client_ip(request)[:64] or "unknown"
     wait = limits.per_ip.retry_after(client, now) or limits.failures.retry_after(client, now)
     if wait is not None:
-        return _too_many(wait)
+        return None, client, _too_many(wait)
     limits.per_ip.add(client, now)
-    parsed = _parse_name(name)
     digest = feed_tokens.hash_token(token)
     row: FeedTokenRow | None = None
     if digest is not None:
@@ -134,14 +141,35 @@ async def _serve_checked(request: Request, db: DbSession, token: str, name: str)
             ).scalar_one_or_none()
         except SQLAlchemyError:
             log.warning("feed lookup failed: database unavailable")
-            return _not_found()
+            return None, client, _not_found()
     if row is None:
         limits.failures.add(client, now)
-        return _not_found()
+        return None, client, _not_found()
     wait = limits.per_token.retry_after(str(row.id), now)
     if wait is not None:
-        return _too_many(wait)
+        return None, client, _too_many(wait)
     limits.per_token.add(str(row.id), now)
+    return row, client, None
+
+
+async def _touch(db: DbSession, row: FeedTokenRow, client: str) -> None:
+    await db.execute(
+        update(FeedTokenRow)
+        .where(FeedTokenRow.id == row.id)
+        .values(
+            last_used_at=datetime.now(UTC),
+            last_used_ip=client,
+            use_count=FeedTokenRow.use_count + 1,
+        )
+    )
+    await db.commit()
+
+
+async def _serve_checked(request: Request, db: DbSession, token: str, name: str) -> Response:
+    row, client, early = await _authenticate(request, db, token)
+    if early is not None or row is None:
+        return early or _not_found()
+    parsed = _parse_name(name)
     if parsed is None or parsed[0] not in row.kinds:
         return _not_found()
     kind, ext = parsed
@@ -155,16 +183,7 @@ async def _serve_checked(request: Request, db: DbSession, token: str, name: str)
     )
     tag = f"{await blocklist_rows.version(db)}-{kind}-{ext}-{row.min_score}-{row.include_benign:d}"
     etag = f'W/"{tag}"'
-    await db.execute(
-        update(FeedTokenRow)
-        .where(FeedTokenRow.id == row.id)
-        .values(
-            last_used_at=datetime.now(UTC),
-            last_used_ip=client,
-            use_count=FeedTokenRow.use_count + 1,
-        )
-    )
-    await db.commit()
+    await _touch(db, row, client)
     headers = {
         "Cache-Control": "private, max-age=300",
         "ETag": etag,
@@ -176,13 +195,60 @@ async def _serve_checked(request: Request, db: DbSession, token: str, name: str)
     return Response(body, media_type=media, headers={**headers, "X-Entry-Count": str(len(rows))})
 
 
-async def _serve(request: Request, db: DbSession, token: str, name: str) -> Response:
+async def _serve_network_checked(
+    request: Request, db: DbSession, token: str, name: str
+) -> Response:
+    """The verified local mirror of the community lists, for a token of kind ``network``.
+
+    Same token checks, rate limits and uniform 404 as the sensor feeds. It reads the entries the
+    ingest worker verified and stored; it never contacts the hub or the feed host.
+    """
+    row, client, early = await _authenticate(request, db, token)
+    if early is not None or row is None:
+        return early or _not_found()
+    parsed = network_feed.parse_mirror_name(name)
+    if parsed is None or "network" not in row.kinds:
+        return _not_found()
+    list_name, tier, kind, ext = parsed
+    entries = await network_feed.mirror_entries(db, list_name, tier, kind)
+    body, media = network_feed.render_mirror(ext, entries)
+    etag = network_feed.mirror_etag(ext, name, body)
+    await _touch(db, row, client)
+    headers = {
+        "Cache-Control": "private, max-age=300",
+        "ETag": etag,
+        "X-Content-Type-Options": "nosniff",
+    }
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(body, media_type=media, headers={**headers, "X-Entry-Count": str(len(entries))})
+
+
+async def _serve(
+    request: Request, db: DbSession, token: str, name: str, *, network: bool = False
+) -> Response:
     """Whatever goes wrong, the caller sees the same plain 404 (and the cause is logged)."""
     try:
+        if network:
+            return await _serve_network_checked(request, db, token, name[:64])
         return await _serve_checked(request, db, token, name[:64])
     except Exception:
         log.warning("feed request failed", exc_info=True)
         return _not_found()
+
+
+# The network mirror routes come first: "/feeds/network/x.txt" must not read "network" as a token.
+@router.get("/network/{name}", include_in_schema=False)
+async def network_by_header(name: str, request: Request, db: DbSession) -> Response:
+    scheme, _, token = request.headers.get("authorization", "")[:200].partition(" ")
+    return await _serve(
+        request, db, token.strip() if scheme.lower() == "bearer" else "", name, network=True
+    )
+
+
+@router.get("/{token}/network/{name}", include_in_schema=False)
+async def network_by_path(token: str, name: str, request: Request, db: DbSession) -> Response:
+    return await _serve(request, db, token, name, network=True)
 
 
 @router.get("/{token}/{name}", include_in_schema=False)
