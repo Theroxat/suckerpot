@@ -331,3 +331,77 @@ Its signature is `6SmwSsSm-sIfEpE7-Wrhp7An2EATs7mFefPStH8OO6Nicc6x3CSiIYUX-aG9Ez
 The unsigned `POST /v1/enrol/challenge` answer with status 429 is bound to the request by the body hash of the request. Its canonical string has `-` where a signed request has the node key.
 
 To regenerate the file, run `python tests/gen_vectors.py` in `netproto/`. Regenerate only when the spec changes, and review the diff. The test module is `netproto/tests/test_vectors.py`.
+
+## Feeds
+
+The public blocklist feeds are not part of `spn/1`: they are files the hub publishes over plain HTTPS, and anyone can read them. The library is `suckerpot_netproto.feeds` (`models`, `render`, `minisign`, `parse`); the hub renders and signs with it, a node verifies and parses with it. The design is `docs/design/m30.md`.
+
+### Lists and URLs
+
+Base URL `https://<feeds domain>/v1/`. `/v1/` is the format version; a breaking change is `/v2/`, served next to it for at least 6 months. The lists are `inbound`, `inbound-high`, `outbound`, `outbound-high` and `outbound-domains`. `*-high` holds the high tier only; the base file holds both tiers.
+
+| File | Content |
+| --- | --- |
+| `index.json`, `index.json.minisig` | Signed manifest |
+| `<list>.txt` | One value per line, IPv4 then IPv6, sorted numerically, `\n` line ends, no comments, no blank lines |
+| `<list>.v4.txt`, `<list>.v6.txt` | The same, one address family |
+| `<list>.nft`, `<list>.ipset`, `<list>.rsc` | nftables, `ipset restore`, MikroTik RouterOS v7 |
+| `<list>.csv`, `<list>.json` | Metadata |
+| `outbound.stix.json`, `outbound-high.stix.json` | STIX 2.1 bundle, outbound lists only |
+| `<file>.minisig` | minisign signature of that file |
+
+`outbound-domains` has `.txt`, `.csv` and `.json` only. Every IP list has all the other formats, and the STIX files exist for `outbound` and `outbound-high`.
+
+### What may be listed
+
+- An address: a single, global unicast, canonical text (IPv4 dotted, IPv6 compressed and lower case). No prefix, no range, no scope id, no IPv4-mapped or embedded form. Documentation ranges are accepted only when a test flag is set.
+- A name: an exact host in lower case ASCII (IDNA), at least two labels, not a private top-level name (`local`, `internal`, `lan`, ...). No wildcard, no leading or trailing dot.
+- Every renderer re-validates each entry from scratch. A value that fails is dropped and counted (`Rendered.dropped`), so no newline, quote, space or script character can reach firewall syntax. More than the list cap (50,000 inbound, 20,000 outbound and domains) raises `too_large`, and so does a file over 8 MiB.
+
+### Firewall shapes
+
+The three files start with `# selfhostr <list> serial <n> generated <UTC> licence CC0-1.0`; the MikroTik file has `# selfhostr <list> serial <n>`.
+
+- **nft**: a `table inet selfhostr` with sets `<list>_v4` and `<list>_v6` (dashes become underscores; `flags interval; auto-merge`), a `flush set` for each, then one `add element` line per non-empty set. `nft -f` applies the file as one transaction.
+- **ipset**: for each family `create` the live set and a `-new` twin with `-exist`, `flush` the twin, `add` the elements, `swap`, `destroy` the twin. The type is `hash:net`. `maxelem` is the list cap rounded up to a power of two (65536 for the inbound lists, 32768 for the outbound lists) and never depends on the content, because `create -exist` fails when an existing set has other parameters. `hashsize` is 4096 for IPv4 and 1024 for IPv6.
+- **rsc**: `:local t 1d6h`, then one `:do { add ... timeout=$t } on-error={ set [find ...] timeout=$t }` per address under `/ip firewall address-list` or `/ipv6 firewall address-list` (IPv6 as `/128`). A section with no address is omitted. Entries lapse on their own, so removed values leave the router.
+- **csv**: RFC 4180, CRLF, one header row, columns `value, family, list, tier, categories, services, tags, families, ports, first_seen, last_seen, expires, reported`. Lists are joined with `;`. A cell that starts with `=`, `+`, `-`, `@`, tab or CR gets a leading `'`; control characters are removed.
+- **json**: `selfhostr-feed/1` as in the design (section 6.3). The entry keys are fixed: inbound entries have `services` and `tags`; outbound entries have `tags`, `families` and `ports`. Consumers ignore unknown fields. The bytes are compact ASCII JSON with one trailing newline.
+- **stix**: a bundle with the core TLP marking definition (the 2.1 standard calls TLP:CLEAR `TLP:WHITE`), and one `indicator` per entry with a `[ipv4-addr:value = '...']`, `[ipv6-addr:...]` or `[domain-name:...]` pattern. No identity, no `created_by_ref`. Ids are UUIDv5 of list and value, and `created` / `modified` / `valid_from` / `valid_until` come from `first_seen` / `last_seen` / `expires`, so an unchanged list renders to identical bytes.
+
+All output is deterministic: sorted, with no clock read. The only moving parts are the `serial` and `generated_at` of the headers.
+
+### `index.json`
+
+`selfhostr-feeds/1` with `serial` (monotonic), `generated_at`, `valid_until`, `licence`, `key_id`, `next_key_id`, `lists[]` (id, direction, tier, entries, v4, v6, files with name, format, bytes, sha256, modified) and `other[]` (name, bytes, sha256). `format` is one of `txt`, `txt-v4`, `txt-v6`, `nft`, `ipset`, `rsc`, `csv`, `json`, `stix`. File names match `^[a-z0-9][a-z0-9._-]{0,63}$`, so a name can never be a path. `render_index` writes the exact bytes that are signed.
+
+### Signatures
+
+minisign, algorithm `ED` (Ed25519 over BLAKE2b-512 of the file), implemented with `cryptography` and `hashlib.blake2b`, no shell-out.
+
+```
+untrusted comment: signature from minisign secret key
+base64( "ED" || key_id[8] || ed25519(blake2b512(file))[64] )
+trusted comment: timestamp:<unix> file:<name> serial:<serial>
+base64( ed25519( signature[64] || trusted_comment ) )
+```
+
+- The public key is the `RW...` string: `base64("Ed" || key_id[8] || public[32])`. The key id prints as upper case hex of its 8 bytes in reverse order (the form used in `index.json`). `parse_public_key` takes the bare string or the two-line file.
+- The legacy `Ed` algorithm (whole-file signature) is refused. `Ed` is only the public-key marker.
+- The trusted comment is signed, so a verifier checks that `file` is the name it fetched and `serial` is the index serial. A valid signature of another file or an older serial is refused.
+- Secret keys are read and written unencrypted (the file is a Docker secret); an encrypted key file is refused.
+- During a rotation `signature_key_id` tells which key made a `.minisig`, and a file has two signatures (`<file>.minisig`, `<file>.next.minisig`).
+
+The upstream example public key `RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3` parses to key id `E7620F1842B4E81F`, which is how the key-id byte order was checked. The structure was re-derived in the tests with plain `cryptography` calls. A cross-check with the upstream `minisign` binary belongs to the hub integration job.
+
+### Parsers and the node check
+
+Parsers are size capped (default 16 MiB per file, 256 KiB for the index), refuse malformed input and never raise anything but `FeedError` (`code` is one of `bad_format`, `bad_value`, `too_large`, `too_many_invalid`, `bad_signature`, `wrong_key`, `wrong_file`, `wrong_serial`, `hash_mismatch`, `expired`, `rollback`).
+
+1. `verify_index(index_bytes, sig_text, public_key, now=, last_serial=)`: signature, signed file name is `index.json`, signed serial equals the index serial, `key_id` equals the key used, `valid_until` is in the future, serial is not lower than the last accepted one.
+2. `verify_file_against_index(index, name, data, sig_text, public_key)`: the file is listed, size and sha256 match, signature names this file and this serial.
+3. `parse_txt` / `parse_list_json`: every value is re-validated (prefix, private, wildcard, non-canonical, duplicate and wrong-kind values are invalid). Invalid entries are dropped and counted; more than 1 % invalid rejects the file. JSON nesting is limited and `NaN` is refused.
+
+### Golden vectors
+
+`netproto/tests/feed_vectors/` holds `keys.json` (a fixed test key, never used anywhere else) and `golden/`: every file of three lists (`outbound`, `inbound`, `outbound-domains`), `index.json` with its signature, and signatures of three files. Ed25519 is deterministic, so another implementation must reproduce every byte. To regenerate, run `python -m tests.test_feeds_common` in `netproto/` and review the diff; only do it when the spec changes.

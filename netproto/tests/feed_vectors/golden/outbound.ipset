@@ -1,0 +1,15 @@
+# selfhostr outbound serial 4812 generated 2026-11-01T13:00:00Z licence CC0-1.0
+create selfhostr-outbound-v4 hash:net family inet hashsize 4096 maxelem 32768 -exist
+create selfhostr-outbound-v4-new hash:net family inet hashsize 4096 maxelem 32768 -exist
+flush selfhostr-outbound-v4-new
+add selfhostr-outbound-v4-new 192.0.2.77
+add selfhostr-outbound-v4-new 198.51.100.9
+add selfhostr-outbound-v4-new 203.0.113.50
+swap selfhostr-outbound-v4-new selfhostr-outbound-v4
+destroy selfhostr-outbound-v4-new
+create selfhostr-outbound-v6 hash:net family inet6 hashsize 1024 maxelem 32768 -exist
+create selfhostr-outbound-v6-new hash:net family inet6 hashsize 1024 maxelem 32768 -exist
+flush selfhostr-outbound-v6-new
+add selfhostr-outbound-v6-new 2001:db8::50
+swap selfhostr-outbound-v6-new selfhostr-outbound-v6
+destroy selfhostr-outbound-v6-new
