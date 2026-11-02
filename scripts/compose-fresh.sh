@@ -11,6 +11,15 @@ cd "$(dirname "$0")/.."
 . scripts/lib/env.sh
 
 env_drop_loaded
+# A sensor switched off (SENSOR_<NAME>=0) gets deploy.replicas 0, but compose does not reliably
+# remove a container that is already running. Remove it explicitly before `up`.
+if [ "${1:-}" = up ]; then
+  for s in "${SENSORS[@]}"; do
+    if [ "$(env_get "SENSOR_${s^^}" 1)" = 0 ]; then
+      docker compose rm -sf "sensor-$s" > /dev/null
+    fi
+  done
+fi
 # Images mode runs only images that the installer or updater verified: never build or pull here.
 if [ "$(env_get SUCKERPOT_INSTALL_MODE source)" = images ] && [ "${1:-}" = up ]; then
   shift

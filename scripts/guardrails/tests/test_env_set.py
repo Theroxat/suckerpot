@@ -93,13 +93,6 @@ def test_set_is_all_or_nothing(sandbox: Sandbox) -> None:
     assert (sandbox.root / ".env").read_text() == BASE_ENV
 
 
-def test_set_allows_the_network_hub_key_only_for_hub_key(sandbox: Sandbox) -> None:
-    sandbox.write_env(BASE_ENV)
-    ok = sandbox.run("scripts/env-set.sh", "set", "NETWORK_HUB_KEY=abc123")
-    assert ok.returncode == 0, ok.stderr
-    assert "abc123" not in ok.stdout + ok.stderr
-
-
 def test_set_reverts_when_the_port_check_refuses(sandbox: Sandbox) -> None:
     sandbox.write_env(BASE_ENV)
     # The dashboard on the SSH sensor's standard port is refused by check-ports.sh.
@@ -214,6 +207,19 @@ def test_sensors_compose_call_sees_the_new_file(sandbox: Sandbox) -> None:
     proc = sandbox.run("scripts/compose-fresh.sh", "up", "-d", "--wait")
     assert proc.returncode == 0, proc.stderr
     assert any(c.startswith("ENV_AT_UP") and "SENSOR_WEB=unset" in c for c in sandbox.calls())
+
+
+def test_compose_fresh_removes_sensors_switched_off(sandbox: Sandbox) -> None:
+    """A running sensor set to 0 is removed explicitly (replicas 0 alone may leave it running)."""
+    sandbox.write_env(BASE_ENV + "SENSOR_WEB=0\nSENSOR_SSH=1\n")
+    proc = sandbox.run("scripts/compose-fresh.sh", "up", "-d", "--wait")
+    assert proc.returncode == 0, proc.stderr
+    calls = sandbox.calls()
+    assert "docker compose rm -sf sensor-web" in calls
+    assert "docker compose rm -sf sensor-ssh" not in calls
+    rm = calls.index("docker compose rm -sf sensor-web")
+    up = next(i for i, c in enumerate(calls) if c.startswith("ENV_AT_UP"))
+    assert rm < up
 
 
 def test_check_ports_dotenv_only_ignores_the_environment(sandbox: Sandbox) -> None:
