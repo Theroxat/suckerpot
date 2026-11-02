@@ -63,7 +63,8 @@ async def test_batch_is_stored_by_kind(env: Env) -> None:
     }
     got = {(r["kind"], r["value"]): r for r in await rows(env)}
     assert set(got) == {
-        ("ip", "192.0.2.4"), ("ip", "192.0.2.1"), ("url", H1), ("sha256", H2),
+        ("ip", "192.0.2.4"), ("ip", "192.0.2.1"), ("payload_ip", "192.0.2.1"), ("url", H1),
+        ("sha256", H2),
         ("c2_ip", "192.0.2.9:23"), ("c2_domain", H3),
     }  # fmt: skip
     ip = got[("ip", "192.0.2.4")]

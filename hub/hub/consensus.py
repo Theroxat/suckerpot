@@ -35,8 +35,8 @@ RE_REPORT_DAYS = 30
 BLINDED = frozenset({"url", "domain", "c2_domain"})
 # Kinds that need twice the nodes unless an external source knows them. Only an address can be
 # looked up; a blinded value never can, so it always needs twice the nodes.
-DOUBLE_KINDS = frozenset({"ip", "c2_ip", "url", "domain", "c2_domain"})
-LOOKUP_KINDS = frozenset({"ip", "c2_ip"})
+DOUBLE_KINDS = frozenset({"ip", "payload_ip", "c2_ip", "url", "domain", "c2_domain"})
+LOOKUP_KINDS = frozenset({"ip", "payload_ip", "c2_ip"})
 C2_KINDS = frozenset({"c2_ip", "c2_domain"})
 MIN_FETCHED_NODES = 2
 

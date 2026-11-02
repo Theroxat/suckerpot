@@ -107,6 +107,25 @@ class Settings:
     smtp_starttls: bool = True
     report_reply_to: str = ""
     report_template_file: str = ""
+    # Public blocklist feeds (design M30, section 7.6). Off until the owner turns them on.
+    feed_mode: str = "off"
+    feed_dir: str = "/srv/feeds"
+    feed_signing_key_file: str = ""
+    feed_interval_min: int = 60
+    feed_hold_hours: int = 6
+    feed_valid_days: int = 3
+    feed_ttl_inbound_days: int = 7
+    feed_ttl_payload_days: int = 14
+    feed_ttl_c2_days: int = 30
+    feed_max_inbound: int = 50_000
+    feed_max_outbound: int = 20_000
+    feed_max_domains: int = 20_000
+    feed_breaker_add_pct: int = 50
+    feed_breaker_remove_pct: int = 50
+    feed_breaker_min: int = 200
+    feed_never: tuple[str, ...] = ()
+    feed_exclude_tor: bool = True
+    external_ranges_enabled: bool = True
     # External corroboration (optional keys; empty disables the source).
     abuseipdb_key: str = field(default="", repr=False)
     greynoise_key: str = field(default="", repr=False)
@@ -117,7 +136,30 @@ class Settings:
         mode = e.get("HUB_REPORT_MODE", "review") or "review"
         if mode not in {"review", "auto", "off"}:
             raise ConfigError("HUB_REPORT_MODE must be review, auto or off")
+        feed_mode = e.get("HUB_FEED_MODE", "off") or "off"
+        if feed_mode not in {"off", "review", "auto"}:
+            raise ConfigError("HUB_FEED_MODE must be off, review or auto")
         return cls(
+            feed_mode=feed_mode,
+            feed_dir=e.get("HUB_FEED_DIR", "/srv/feeds") or "/srv/feeds",
+            feed_signing_key_file=e.get("HUB_FEED_SIGNING_KEY_FILE", ""),
+            feed_interval_min=_int(e, "HUB_FEED_INTERVAL_MIN", 60, 1),
+            feed_hold_hours=_int(e, "HUB_FEED_HOLD_HOURS", 6, 0),
+            feed_valid_days=_int(e, "HUB_FEED_VALID_DAYS", 3, 1, 30),
+            feed_ttl_inbound_days=_int(e, "HUB_FEED_TTL_INBOUND_DAYS", 7, 1, 365),
+            feed_ttl_payload_days=_int(e, "HUB_FEED_TTL_PAYLOAD_DAYS", 14, 1, 365),
+            feed_ttl_c2_days=_int(e, "HUB_FEED_TTL_C2_DAYS", 30, 1, 365),
+            feed_max_inbound=_int(e, "HUB_FEED_MAX_INBOUND", 50_000, 1, 50_000),
+            feed_max_outbound=_int(e, "HUB_FEED_MAX_OUTBOUND", 20_000, 1, 20_000),
+            feed_max_domains=_int(e, "HUB_FEED_MAX_DOMAINS", 20_000, 1, 20_000),
+            feed_breaker_add_pct=_int(e, "HUB_FEED_BREAKER_ADD_PCT", 50, 0),
+            feed_breaker_remove_pct=_int(e, "HUB_FEED_BREAKER_REMOVE_PCT", 50, 0),
+            feed_breaker_min=_int(e, "HUB_FEED_BREAKER_MIN", 200, 0),
+            feed_never=tuple(
+                v.strip() for v in e.get("HUB_FEED_NEVER", "").split(",") if v.strip()
+            ),
+            feed_exclude_tor=_bool(e, "HUB_FEED_EXCLUDE_TOR", True),
+            external_ranges_enabled=_bool(e, "HUB_EXTERNAL_RANGES_ENABLED", True),
             database_url=e.get("HUB_DATABASE_URL", ""),
             worker_database_url=e.get("HUB_WORKER_DATABASE_URL", ""),
             signing_key_file=e.get("HUB_SIGNING_KEY_FILE", ""),

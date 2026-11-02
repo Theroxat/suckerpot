@@ -250,3 +250,124 @@ class WorkerState(Base):
 
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     value: Mapped[str] = mapped_column(Text)
+
+
+class PayloadLink(Base):
+    """A payload host and a URL it served on a day (migration h0005). No node reference."""
+
+    __tablename__ = "payload_links"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)  # payload_ip | domain
+    value: Mapped[str] = mapped_column(Text, primary_key=True)  # the host, as in observations
+    url_b: Mapped[str] = mapped_column(Text, primary_key=True)
+
+
+class TargetHost(Base):
+    __tablename__ = "target_hosts"
+
+    url_target_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("targets.id", ondelete="CASCADE"), primary_key=True
+    )
+    payload_target_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("targets.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class FeedEntry(Base):
+    """One value of a published list and its lifecycle (pending, listed, removed)."""
+
+    __tablename__ = "feed_entries"
+
+    list_id: Mapped[str] = mapped_column("list", Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, primary_key=True)
+    family: Mapped[int | None] = mapped_column(SmallInteger)
+    tier: Mapped[str] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(Text)
+    categories: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    services: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    tags: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    families: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    ports: Mapped[list[int]] = mapped_column(ARRAY(Integer), server_default=text("'{}'"))
+    first_seen: Mapped[date] = mapped_column(Date)
+    last_seen: Mapped[date] = mapped_column(Date)
+    expires: Mapped[date] = mapped_column(Date)
+    reported: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    eligible_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    listed_day: Mapped[date | None] = mapped_column(Date)
+    removed_day: Mapped[date | None] = mapped_column(Date)
+    removed_reason: Mapped[str | None] = mapped_column(Text)
+    corroborated: Mapped[bool | None] = mapped_column(Boolean)
+    corroborated_day: Mapped[date | None] = mapped_column(Date)
+    target_id: Mapped[str | None] = mapped_column(
+        Text, ForeignKey("targets.id", ondelete="SET NULL")
+    )
+
+
+class FeedRun(Base):
+    __tablename__ = "feed_runs"
+
+    serial: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    state: Mapped[str] = mapped_column(Text)  # published|held|discarded|failed|unchanged
+    counts: Mapped[dict[str, object]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    diff: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    error_code: Mapped[str | None] = mapped_column(Text)
+
+
+class FeedDaily(Base):
+    __tablename__ = "feed_daily"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    list_id: Mapped[str] = mapped_column("list", Text, primary_key=True)
+    entries: Mapped[int] = mapped_column(Integer)
+    added: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    removed_expired: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    removed_taken_down: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    removed_delisted: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    removed_excluded: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+
+
+class FeedAllow(Base):
+    __tablename__ = "feed_allow"
+
+    value: Mapped[str] = mapped_column(Text, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)  # ip (address or cidr) | domain
+    reason: Mapped[str] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    added_day: Mapped[date] = mapped_column(Date)
+    expires_day: Mapped[date | None] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(Text)  # admin | delist
+
+
+class FeedAutoRange(Base):
+    __tablename__ = "feed_auto_ranges"
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    prefix: Mapped[str] = mapped_column(Text, primary_key=True)
+    fetched_day: Mapped[date] = mapped_column(Date)
+
+
+class DelistChallenge(Base):
+    __tablename__ = "delist_challenges"
+
+    challenge: Mapped[bytes] = mapped_column(LargeBinary, primary_key=True)
+    difficulty: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class DelistRequest(Base):
+    __tablename__ = "delist_requests"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary)
+    value: Mapped[str] = mapped_column(Text)
+    list_id: Mapped[str | None] = mapped_column("list", Text)
+    category: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[str | None] = mapped_column(Text)
+    contact: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(Text)
+    outcome: Mapped[str | None] = mapped_column(Text)
+    public_note: Mapped[str | None] = mapped_column(Text)
+    created_day: Mapped[date] = mapped_column(Date)
+    decided_day: Mapped[date | None] = mapped_column(Date)

@@ -42,7 +42,8 @@ WORKER_PASSWORD = "hubtest-worker-password-0003"
 TABLES = (
     "hub_audit, never_list, network_summary, network_daily, node_stats_weekly, recipient_log, "
     "reports, takedown_votes, target_contributors, targets, observations, batches, nonces, "
-    "enrol_challenges, nodes, worker_state"
+    "enrol_challenges, nodes, worker_state, payload_links, target_hosts, feed_entries, feed_runs, "
+    "feed_daily, feed_allow, feed_auto_ranges, delist_challenges, delist_requests"
 )
 
 
@@ -196,3 +197,19 @@ async def env_factory(tmp_path: Path) -> AsyncIterator[Any]:
 async def env(env_factory: Any) -> Env:
     built: Env = await env_factory()
     return built
+
+
+@pytest.fixture
+def feed_dir(tmp_path: Path) -> Path:
+    """Where a test's feed files are published (not created until the first publish)."""
+    return tmp_path / "feeds"
+
+
+@pytest.fixture
+def key_file(tmp_path: Path) -> Path:
+    """A fresh minisign secret key file for the feed signer."""
+    from suckerpot_netproto.feeds import minisign
+
+    path = tmp_path / "feed.key"
+    path.write_text(minisign.serialize_secret_key(minisign.generate_keypair()), encoding="ascii")
+    return path
