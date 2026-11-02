@@ -1,8 +1,10 @@
 """Production path: a database at 0025 (M28, the deployed head) with data goes to head and back.
 
-The M26 and M27 migrations (0026, 0027) were never deployed. This replays what the ``migrate``
-service does on an existing install (upgrade, roles, retention jobs), then the rollback, and
-checks that nothing that existed at 0025 is lost or left dangling either way.
+The M26 and M27 migrations (0026, 0027) were not deployed when this was written; M29 (0028) adds
+the network tables on top, and ``test_upgrade_from_0027_integration`` covers today's deployed
+head. This replays what the ``migrate`` service does on an existing install (upgrade, roles,
+retention jobs), then the rollback, and checks that nothing that existed at 0025 is lost or left
+dangling either way.
 """
 
 import os
@@ -32,6 +34,7 @@ ENV: dict[str, str] = {
     "POSTGRES_ANALYZER_PASSWORD": "analyzer-test-password",
 }
 PRODUCTION = "0025"
+HEAD = "0028"  # 0026 and 0027 (M26, M27) and 0028 (M29 network); see the 0027 test as well
 M26_M27_TABLES = (
     "report_imap",
     "report_imap_state",
@@ -230,7 +233,7 @@ async def test_production_0025_upgrades_to_head_and_rolls_back(owner: AsyncEngin
     # 2. The update: upgrade head, then roles and jobs again.
     _alembic("upgrade", "head")
     await _roles_and_jobs()
-    assert await _scalar(owner, "SELECT version_num FROM alembic_version") == "0027"
+    assert await _scalar(owner, "SELECT version_num FROM alembic_version") == HEAD
     assert await _snapshot(owner) == before
     for table in M26_M27_TABLES:
         assert await _has_table(owner, table), table
