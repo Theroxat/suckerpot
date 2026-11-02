@@ -149,7 +149,8 @@
     }).then(function (r) {
       if (r.status !== 200) throw r;
       if (!r.json.listed) { show($("result"), "This value is not on any list. Nothing was stored."); return; }
-      show($("result"), "Request " + r.json.id + " received. Keep this status code, it is shown only once: " + r.json.status_token + ". We answer within " + r.json.sla_hours + " hours. If you already sent a request for this value, use the code you got then.");
+      if (r.json.state === "already_open") { show($("result"), "A request for this value is already open. We answer within " + r.json.sla_hours + " hours. If you sent it, use the number and code you got then."); return; }
+      show($("result"), "Request " + r.json.id + " received. Keep this status code, it is shown only once: " + r.json.status_token + ". We answer within " + r.json.sla_hours + " hours.");
     }).catch(function (e) { show($("result"), problem(e || {})); }).then(function () { btn.disabled = false; });
   });
 

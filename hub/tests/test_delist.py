@@ -211,19 +211,12 @@ async def test_one_open_request_per_value(d_env: Env) -> None:
     await add_entry(env, BOTS)
     first = await ask(env, BOTS)
     assert first.status_code == 200
-    # Security review L1: a second request answers like a new one (no 409 oracle) and stores
-    # nothing; its id and token lead nowhere.
+    # Security re-review L1: a second request is told plainly that one is open. It gets no token
+    # (a token leading nowhere would be polled and counted as failed authentication).
     second = await ask(env, BOTS)
     assert second.status_code == 200
-    assert set(second.json()) == set(first.json())
-    assert second.json()["state"] == first.json()["state"] and second.json()["listed"] is True
-    assert second.json()["id"] != first.json()["id"]
+    assert second.json() == {"listed": True, "state": "already_open", "sla_hours": 72}
     assert len(await rows(env, "SELECT 1 FROM delist_requests")) == 1
-    out = second.json()
-    lost = await env.http.get(
-        f"/v1/delist/{out['id']}", headers={"Authorization": f"Bearer {out['status_token']}"}
-    )
-    assert lost.status_code == 404
 
 
 @pytest.mark.integration
