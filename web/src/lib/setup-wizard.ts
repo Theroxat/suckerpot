@@ -54,7 +54,15 @@ export interface WizardStep {
   sentence: string
   /** Optional steps offer "Skip for now" until they are done. */
   optional: boolean
+  /** What skipping this step means, in plain words. Null when there is nothing to skip. */
+  skip: string | null
+  /** What this step does, phrased for the step before it ("What happens next"). */
+  teaser: string
 }
+
+/** "What happens next" on the last step, where there is no next step to announce. */
+export const AFTER_SETUP =
+  "Go to Today to watch attacks arrive, or take the tour. Settings keeps this checklist."
 
 /** Order of the steps. `network` is the slot reserved for M29 and stays hidden until it exists. */
 export const WIZARD_STEPS: readonly WizardStep[] = [
@@ -63,18 +71,24 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
     title: "Welcome",
     sentence: "Selfhostr is a trap: fake servers that attackers find on the internet.",
     optional: false,
+    skip: "Yes. Nothing is set here: this step only explains what Selfhostr is.",
+    teaser: "Read the three rules that keep your network safe.",
   },
   {
     id: "sensors",
     title: "Your sensors",
     sentence: "Each sensor pretends to be one service, so pick the ones you want to catch.",
     optional: false,
+    skip: "Yes. The sensors already switched on keep running.",
+    teaser: "Pick which fake services to run.",
   },
   {
     id: "ports",
     title: "Open the ports",
     sentence: "Attackers only reach a sensor once your router forwards its port to this machine.",
     optional: false,
+    skip: "Yes, but attackers cannot reach a sensor until its port is forwarded. The same table stays under Settings, Sensors & ports.",
+    teaser: "Forward the sensor ports on your router, and only those.",
   },
   {
     id: "vpn",
@@ -82,12 +96,16 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
     sentence:
       "Every lookup and download leaves through a VPN, so none of them uses your home address.",
     optional: true,
+    skip: "Yes. The sensors keep recording attacks, and nothing leaves this machine: lookups, payload fetching and alerts wait for a VPN.",
+    teaser: "Set up the VPN, so nothing ever leaves from your home address.",
   },
   {
     id: "self",
     title: "Your own address",
     sentence: "Selfhostr must know your own address so it never ends up in a report or an alert.",
     optional: true,
+    skip: "Yes. Abuse reports and alerts stay locked until one address is confirmed.",
+    teaser: "Confirm your own address, so it never ends up in a report or an alert.",
   },
   {
     id: "reporting",
@@ -95,24 +113,32 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
     sentence:
       "Abuse reports are drafts you send yourself, and they need one thing: a reply contact.",
     optional: true,
+    skip: "Yes. Reports are optional, and nothing is sent without you.",
+    teaser: "Choose where abuse desks can answer you, if you want to send reports.",
   },
   {
     id: "alerts",
     title: "Alerts",
     sentence: "Alerts tell you when something matters, by Discord, Teams or email.",
     optional: true,
+    skip: "Yes. Attacks still show on the dashboard; no message is sent.",
+    teaser: "Choose where alerts reach you: Discord, Teams or email.",
   },
   {
     id: "network",
     title: "The Selfhostr network",
     sentence: "Joining the network is optional and always your choice.",
     optional: true,
+    skip: "Yes. Sharing stays off until you switch it on.",
+    teaser: "Decide whether to join the Selfhostr network.",
   },
   {
     id: "done",
     title: "You are set",
     sentence: "That is everything: here is what is left, and the tour if you want it.",
     optional: false,
+    skip: null,
+    teaser: "See what is done and what is left, then open the dashboard.",
   },
 ]
 

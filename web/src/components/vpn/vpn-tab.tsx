@@ -533,9 +533,12 @@ function TrustedExitsCard({
 export function UploadCard({
   onUploaded,
   disabled,
+  first = false,
 }: {
   onUploaded: () => void
   disabled: boolean
+  /** No tunnel yet (first run): the card sets one up instead of replacing it. */
+  first?: boolean
 }) {
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -575,8 +578,12 @@ export function UploadCard({
 
   return (
     <FindingCard
-      eyebrow="Replace the tunnel"
-      finding="Upload the WireGuard file from your VPN provider to change where traffic leaves."
+      eyebrow={first ? "Set up the tunnel" : "Replace the tunnel"}
+      finding={
+        first
+          ? "Upload the WireGuard file from your VPN provider to start the tunnel."
+          : "Upload the WireGuard file from your VPN provider to change where traffic leaves."
+      }
       detail="The file is checked strictly, the private key is never shown again, and the new exit stays untrusted until you trust it."
     >
       <div className="space-y-4">

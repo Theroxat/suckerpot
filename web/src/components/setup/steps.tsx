@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CircleCheck, TriangleAlert } from "lucide-react"
+import { CircleCheck, CircleDashed, TriangleAlert } from "lucide-react"
 import { useId, useState } from "react"
 import { Link } from "react-router"
 import { AddChannelDialog } from "@/components/alerts/channel-dialogs"
@@ -29,7 +29,7 @@ import {
   wizardKeys,
   type PortItem,
 } from "@/lib/setup-wizard"
-import { describeVpn, vpnApi, vpnKeys } from "@/lib/vpn"
+import { describeVpn, vpnApi, vpnKeys, type VpnStatus } from "@/lib/vpn"
 import { CommandBox } from "./command-box"
 import { PortsCard } from "./ports-table"
 
@@ -53,8 +53,8 @@ export function WelcomeStep() {
   return (
     <div className="space-y-4">
       <p className="max-w-2xl text-sm text-fg-muted">
-        This setup takes a few minutes. Every step can be skipped and reopened later from Settings.
-        Three things to know before you start:
+        Selfhostr runs fake services and records everything attackers try against them. Three rules
+        keep the rest of your network safe:
       </p>
       <ol className="grid gap-3 sm:grid-cols-3">
         {WARNINGS.map((w, i) => (
@@ -180,31 +180,48 @@ export function PortsStep() {
 
 /* --- VPN -------------------------------------------------------------------- */
 
+/** True when no tunnel is up and there is nothing to trust: the first-run state. */
+function vpnIdle(v: VpnStatus): boolean {
+  return v.gate.state === "closed" && !v.trust_candidate && !v.trust_blocked
+}
+
 export function VpnStep() {
   const qc = useQueryClient()
   const q = useQuery({ queryKey: vpnKeys.status, queryFn: vpnApi.status, refetchInterval: 5_000 })
   const v = q.data
   const open = v?.gate.state === "open"
+  const idle = v ? vpnIdle(v) : false
   return (
     <div className="space-y-4">
       <FindingCard
         eyebrow="Outbound gate"
         finding={
-          v ? describeVpn(v) : q.isError ? "The VPN status is not available." : "Checking the VPN…"
+          v
+            ? idle
+              ? "No VPN yet, so nothing leaves this machine."
+              : describeVpn(v)
+            : q.isError
+              ? "The VPN status is not available."
+              : "Checking the VPN…"
         }
-        detail="Without a VPN, enrichment, payload fetching and alerts stay paused, so nothing is ever sent from your home address."
+        detail="The VPN stays idle until a WireGuard file is uploaded. Until then nothing leaves this machine: enrichment, payload fetching and alerts wait, and the sensors keep recording attacks."
         action={
           open ? (
             <span className="inline-flex items-center gap-1.5 text-sm font-medium text-status-ok">
               <CircleCheck aria-hidden className="size-4" />
               Gate open
             </span>
-          ) : (
+          ) : idle ? (
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-fg-muted">
+              <CircleDashed aria-hidden className="size-4" />
+              Idle
+            </span>
+          ) : v ? (
             <span className="inline-flex items-center gap-1.5 text-sm font-medium text-sev-warning">
               <TriangleAlert aria-hidden className="size-4" />
               Gate closed
             </span>
-          )
+          ) : null
         }
       >
         {v && !open && v.trust_candidate ? (
@@ -223,10 +240,14 @@ export function VpnStep() {
             Nothing to do here. You can still replace the tunnel with another WireGuard file below.
           </p>
         ) : v ? (
-          <p className="text-sm text-fg-muted">
-            Upload the WireGuard file your VPN provider gave you (a <code>.conf</code> file). The
-            tunnel restarts by itself and this page updates when it is up.
-          </p>
+          <ol className="list-decimal space-y-1 pl-4 text-sm text-fg-muted marker:text-fg-subtle">
+            <li>
+              Download a WireGuard file (<code className="font-mono text-fg">.conf</code>) from your
+              VPN provider.
+            </li>
+            <li>Upload it below. The tunnel starts by itself.</li>
+            <li>This page shows the exit address as soon as the gate opens.</li>
+          </ol>
         ) : (
           <SkeletonText lines={2} />
         )}
@@ -234,6 +255,7 @@ export function VpnStep() {
       <UploadCard
         onUploaded={() => void qc.invalidateQueries({ queryKey: vpnKeys.status })}
         disabled={v ? !v.config_writable : false}
+        first={idle}
       />
     </div>
   )
@@ -403,47 +425,30 @@ export function NetworkStep() {
 
 /* --- Done ------------------------------------------------------------------- */
 
-export function DoneStep({
-  onTour,
-  onFinish,
-  pending,
-}: {
-  onTour: () => void
-  onFinish: () => void
-  pending: boolean
-}) {
+/** The checklist. Its actions ("Go to Today", "Take the tour") live in the wizard's action bar. */
+export function DoneStep() {
   const q = useSetupStatus()
   return (
-    <div className="space-y-4">
-      <FindingCard
-        eyebrow="Setup checklist"
-        finding={
-          q.data
-            ? describeSetup(q.data)
-            : q.isError
-              ? "The setup status is not available right now."
-              : "Checking the setup…"
-        }
-        detail="Each line is computed from the running stack, so it keeps up with changes you make later."
-        bodyClassName="px-0 sm:px-0 pt-3 pb-0 sm:pb-0"
-        footer={<FirewallNote />}
-      >
-        {q.data ? (
-          <SetupItems items={q.data} />
-        ) : q.isPending ? (
-          <div className="border-t px-4 py-3 sm:px-5">
-            <SkeletonText lines={4} />
-          </div>
-        ) : null}
-      </FindingCard>
-      <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={onFinish} disabled={pending}>
-          Go to Today
-        </Button>
-        <Button variant="outline" onClick={onTour}>
-          Take the tour
-        </Button>
-      </div>
-    </div>
+    <FindingCard
+      eyebrow="Setup checklist"
+      finding={
+        q.data
+          ? describeSetup(q.data)
+          : q.isError
+            ? "The setup status is not available right now."
+            : "Checking the setup…"
+      }
+      detail="Each line is computed from the running stack, so it keeps up with changes you make later."
+      bodyClassName="px-0 sm:px-0 pt-3 pb-0 sm:pb-0"
+      footer={<FirewallNote />}
+    >
+      {q.data ? (
+        <SetupItems items={q.data} />
+      ) : q.isPending ? (
+        <div className="border-t px-4 py-3 sm:px-5">
+          <SkeletonText lines={4} />
+        </div>
+      ) : null}
+    </FindingCard>
   )
 }

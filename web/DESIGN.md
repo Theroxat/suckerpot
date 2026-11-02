@@ -164,6 +164,16 @@ Ingest labels sessions from known, harmless crawlers (Censys, Shodan...; the lis
 
 Read-only by design: a dashed note says settings live in `.env`. Four cards, each with a finding sentence: Sensors (Active / Quiet / Silent with icon and label; silent is a warning, never red), Enrichment (GeoIP provider, age, the required attribution text, quota meters), Data retention, Storage (database against its ceiling; red only when the disk guard is critical).
 
+## First-run setup
+
+The audience is someone installing Selfhostr for the first time, so every step answers three questions in the same places:
+
+- **What it is for**: the step title (`h2`) is one plain sentence (`WIZARD_STEPS[].sentence`).
+- **Can I skip it?** and **What happens next**: a two-column `StepGuide` (`dl`, subtle labels, muted answers) sits right above the sticky action bar. The skip answer is `WIZARD_STEPS[].skip` (null hides it, as on the last step); "what happens next" is the next step's `teaser`, or `AFTER_SETUP` on the last step, so it stays right when the M29 network step appears.
+- **Action bar**: Back on the left; "Finish later" and Next (or "Skip for now" while an optional step is not satisfied) on the right. The last step puts its own actions there instead ("Take the tour", "Go to Today"), never a second row of buttons in the body.
+- **Never forward** (`NeverForward` in `setup/ports-table.tsx`): the one rule that must not be missed sits above the ports table, in both the setup step and Settings: a `role="note"` box with a `border-sev-warning/40` outline, a `ShieldAlert` icon in `sev-warning` and the dashboard port in mono. It covers the dashboard port, the admin SSH port and the DMZ. Never red: nothing has gone wrong.
+- **VPN idle**: with the gate closed and nothing to trust, the step says "No VPN yet, so nothing leaves this machine.", shows a neutral `CircleDashed` "Idle" (not a warning: it is the expected first-run state), three numbered steps, and the upload card in its `first` mode ("Set up the tunnel"). `?vpn=none` in the mocks shows it.
+
 ## CVE watch
 
 A ranked list of vulnerabilities under one plain-English finding ("3 new critical CVEs this week affect services we emulate"). Severity is a word plus a number: a filled orange triangle and a stronger word for critical, an outlined orange triangle for high, a neutral dot for medium and low (never red: red is for severe events). Feed prose (titles, descriptions, dates) uses `normal-nums`, because Inter's tabular figures also widen the hyphen ("pre - auth"). KEV is a small outlined badge with a tooltip, relevance is three dots plus a word, and matched services are neutral chips. The detail panel shows the description, the CISA entry, the sessions of ours that match (links to the filtered Attacks view) and a "Propose a trap" button that copies a plain-text sheet: nothing is built from it. Feed status and the optional NVD and GitHub keys sit under the list. Everything fetched from the feeds is rendered as text.
