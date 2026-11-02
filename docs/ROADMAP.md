@@ -340,14 +340,14 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 ## M29 — The Selfhostr network (opt-in, anonymous)
 
-- [ ] Protocol `spn/1` (JSON over HTTPS, Ed25519-signed requests and responses, nonce and timestamp replay protection, proof of work at enrolment) in a shared `netproto/` package and `docs/network-protocol.md`, with golden test vectors.
-- [ ] Hub service in `hub/` (own Dockerfile, compose file and migrations, deployed separately): enrol, signed daily observation batches, targets and network summary, reveals, takedown re-checks, leave and delete. No client address stored or logged, no analytics, 14-day observation retention, size caps and rate limits.
-- [ ] Consensus and anti-poisoning: at least 5 eligible nodes (14 days old, active, with reputation), 2 distinct days, a cap per enrolment cohort, external corroboration or twice the nodes, a never-list, and reputation that drops on disputes.
-- [ ] Grouped abuse reports sent by the hub from the project mailbox, deduplicated per recipient and target, under daily caps, reviewed by the hub operator in the first release; members' own M22 reports skip targets the network has reported.
-- [ ] Node worker in ingest (off by default, `NETWORK_ENABLED` plus an admin opt-in with re-authentication): VPN egress gate only, allow-listed aggregates (day buckets, count buckets, services and tags; URLs and domains blinded until consensus), the identity guard on every item and batch, a random delay after each day, never raw events or credentials. Migration `0028`.
-- [ ] Leaving is one click: the hub deletes the node and its data, the node deletes its key and every network row.
-- [ ] Network pages: overview (totals, weekly takedowns, k-anonymous country map, what the node helped confirm), members (pseudonyms, country only when 3 or more share it, coarse weekly activity), Settings > Network, the setup step, and figures for the M27 Impact page.
-- [ ] Threat model, user guide and hub operator guide; security review and UI review.
+- [x] Protocol `spn/1` (JSON over HTTPS, Ed25519-signed requests and responses, nonce and timestamp replay protection, proof of work at enrolment) in a shared `netproto/` package and `docs/network-protocol.md`, with golden test vectors.
+- [x] Hub service in `hub/` (own Dockerfile, compose file and migrations, deployed separately): enrol, signed daily observation batches, targets and network summary, reveals, takedown re-checks, leave and delete. No client address stored or logged, no analytics, 14-day observation retention, size caps and rate limits.
+- [x] Consensus and anti-poisoning: at least 5 eligible nodes (14 days old, active, with reputation), 2 distinct days, a cap per enrolment cohort, external corroboration or twice the nodes, a never-list, and reputation that drops on disputes.
+- [x] Grouped abuse reports sent by the hub from the project mailbox, deduplicated per recipient and target, under daily caps, reviewed by the hub operator in the first release; members' own M22 reports skip targets the network has reported.
+- [x] Node worker in ingest (off by default, `NETWORK_ENABLED` plus an admin opt-in with re-authentication): VPN egress gate only, allow-listed aggregates (day buckets, count buckets, services and tags; URLs and domains blinded until consensus), the identity guard on every item and batch, a random delay after each day, never raw events or credentials. Migration `0028`.
+- [x] Leaving is one click: the hub deletes the node and its data, the node deletes its key and every network row.
+- [x] Network pages: overview (totals, weekly takedowns, k-anonymous country map, what the node helped confirm), members (pseudonyms, country only when 3 or more share it, coarse weekly activity), Settings > Network, the setup step, and figures for the M27 Impact page.
+- [x] Threat model, user guide and hub operator guide; security review and UI review.
 
 **Acceptance:** with `NETWORK_ENABLED=false` or no opt-in nothing is ever sent; seven test nodes against a local hub confirm a target only when the consensus rules hold, and a Sybil set of new or same-week nodes never does; planted self addresses in sensor data never reach a batch; a node that leaves has no row left at the hub; the public and member views carry no per-node observation; security review PASS.
 
