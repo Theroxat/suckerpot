@@ -109,3 +109,10 @@ def test_the_api_has_no_route_out() -> None:
         names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
         names |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
         assert not names & {"httpx", "requests", "aiohttp", "socket", "urllib"}, module.__name__
+
+
+def test_a_submission_without_evidence_says_so() -> None:
+    fields = SubmissionOut.model_fields
+    assert fields["session_count"].default == 0
+    assert fields["last_seen"].default is None
+    assert "sensors" in fields

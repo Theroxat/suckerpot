@@ -44,6 +44,10 @@ function row(
     reference: null,
     malware: null,
     demo: false,
+    // Evidence, varied by id so the rows do not all read the same.
+    session_count: (id % 5) + 1,
+    sensors: id % 3 === 0 ? ["ssh", "telnet"] : id % 2 === 0 ? ["telnet"] : ["ssh"],
+    last_seen: iso((ageH + 1) * HOUR),
     ...extra,
   }
 }
@@ -78,7 +82,12 @@ const submissions: Submission[] = [
     result_code: "already_known",
     reference: "https://urlhaus.example.org/url/5",
   }),
-  row(41, "http://192.0.2.201/z.sh", "failed", 60, ["sh"], { result_code: "unreachable" }),
+  row(41, "http://192.0.2.201/z.sh", "failed", 60, ["sh"], {
+    result_code: "unreachable",
+    session_count: 0,
+    sensors: [],
+    last_seen: null,
+  }),
 ]
 
 const counts = (): Record<string, number> => {

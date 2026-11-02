@@ -135,6 +135,11 @@ export interface Submission {
   reference: string | null
   malware: string | null
   demo: boolean
+  /** Evidence from recorded sessions that showed the value; 0 and empty when none is linked. */
+  session_count: number
+  /** Sensor names that saw it. */
+  sensors: string[]
+  last_seen: string | null
 }
 
 export interface SubmissionPage extends Page<Submission> {
