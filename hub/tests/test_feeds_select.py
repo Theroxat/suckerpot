@@ -77,6 +77,30 @@ def test_ten_nodes_three_days_three_cohorts_and_corroboration_is_high() -> None:
     assert select.evaluate(t, one_cohort, True).candidate.tier == "standard"  # type: ignore[union-attr]
 
 
+def test_one_node_cannot_add_the_days_or_the_cohort_of_the_high_tier() -> None:
+    """Security review M2: ten nodes on two days, from two enrolment weeks, are standard. One
+    node alone adding two more days, or coming from a third week, must not make it high."""
+    ids = nodes(10)
+    two_weeks = SelectContext(k=5, today=TODAY, cohort_of=cohorts(ids, weeks=2))
+    base = rows(ids, D[:2], **SSH)
+    assert select.evaluate(target("ip", IP, base), two_weeks, True).candidate.tier == "standard"  # type: ignore[union-attr]
+    # One node seen on two more days: still two days with k nodes.
+    extra_days = base + rows(ids[:1], D[2:4], **SSH)
+    three = SelectContext(k=5, today=TODAY, cohort_of=cohorts(ids, weeks=5))
+    assert select.evaluate(target("ip", IP, extra_days), three, True).candidate.tier == "standard"  # type: ignore[union-attr]
+    # One node from a third enrolment week, on three days: one node is not a cohort.
+    lone = uuid.UUID(int=99)
+    weeks = {**cohorts(ids, weeks=2), lone: TODAY - timedelta(days=100)}
+    one_more = rows(ids, D[:3], **SSH) + rows([lone], D[:3], **SSH)
+    ctx3 = SelectContext(k=5, today=TODAY, cohort_of=weeks)
+    assert select.evaluate(target("ip", IP, one_more), ctx3, True).candidate.tier == "standard"  # type: ignore[union-attr]
+    # Payload hosts follow the same rule.
+    fetched: dict[str, Any] = {"activity": ("download",), "families": ("mirai",), "fetched": True}
+    out = rows(ids, D[:2], **fetched) + rows(ids[:1], D[2:4], **fetched)
+    got = select.evaluate(target("payload_ip", "198.51.100.7", out), three, True)
+    assert got.candidate is not None and got.candidate.tier == "standard"
+
+
 @pytest.mark.parametrize("activity", [("connect",), ("scan",), ("connect", "scan"), ("http",)])
 def test_scan_connect_and_http_only_are_never_listed(activity: tuple[str, ...]) -> None:
     ids = nodes(8)

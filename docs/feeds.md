@@ -32,8 +32,8 @@ Each entry has a tier: `standard` or `high`. The `-high` files hold only the hig
 An entry reaches the high tier when:
 
 - at least 10 eligible nodes saw it;
-- on at least 3 different days;
-- from at least 3 different enrolment weeks;
+- on at least 3 different days, each with at least 5 nodes that saw it;
+- from at least 3 different enrolment weeks, each with at least 2 of those nodes;
 - and an outside service also flags it. The hub uses AbuseIPDB or GreyNoise for this.
 
 The high tier is empty when the hub has no outside source configured. `outbound-domains` has only the standard tier for now.
