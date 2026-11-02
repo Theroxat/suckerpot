@@ -42,3 +42,32 @@ test("settings replies and abuse.ch cards", async ({ page }, info) => {
   await settle(page)
   await shoot(page, "settings-replies-abusech", info.project.name, true)
 })
+
+test("settings mailbox: free or shared mailbox and a failed check", async ({ page }, info) => {
+  await page.goto("/settings?tab=reporting&imap=shared")
+  await expect(page.getByText("This looks like a free or shared mailbox")).toBeVisible()
+  await expect(page.getByText("The secure connection to the mail server failed.")).toBeVisible()
+  await expect(page.getByLabel("Mail provider name")).toHaveValue("")
+  await settle(page)
+  await shoot(page, "settings-imap-shared", info.project.name, true)
+})
+
+test("settings mailbox: trusted provider name and password required", async ({ page }, info) => {
+  await page.goto("/settings?tab=reporting&imap=password")
+  await expect(page.getByLabel("Mail provider name")).toHaveValue("mx.example.net")
+  await page.getByRole("button", { name: "Save mailbox settings" }).click()
+  const dialog = page.getByRole("dialog")
+  await dialog.getByLabel(/password/i).fill("demo-password")
+  await dialog.getByRole("button", { name: "Save", exact: true }).click()
+  await expect(page.getByText("Enter the mailbox password again.")).toBeVisible()
+  await settle(page)
+  await shoot(page, "settings-imap-password", info.project.name)
+})
+
+test("reply without a sender address cannot be trusted", async ({ page }, info) => {
+  await page.goto("/defend/abuse?status=replies")
+  await page.getByRole("button", { name: "Trust this sender" }).first().click()
+  await expect(page.getByText(/has no sender address/)).toBeVisible()
+  await settle(page)
+  await shoot(page, "replies-no-address", info.project.name, true)
+})
