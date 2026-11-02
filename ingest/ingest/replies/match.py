@@ -222,4 +222,8 @@ def is_verified(found: Match, reply: ParsedReply, trust: Trust) -> bool:
             return reply.auth == "pass" or speaks
     if found.method == "message_id":
         return speaks
+    # A "dsn" match was made from the notification's own fields, so it is a bounce even when the
+    # parser did not see a multipart/report body.
+    if found.method == "dsn" and found.via_message_id:
+        return reply.auth == "pass" or speaks
     return reply.auth == "pass" and speaks
