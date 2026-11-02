@@ -1,0 +1,108 @@
+import { Eye, HandHelping } from "lucide-react"
+import { useIpMask } from "@/app/ip-mask"
+import { CopyButton } from "@/components/defend/copy-button"
+import { IPChip } from "@/components/ip-chip"
+import { TagBadge } from "@/components/tag-badge"
+import { Badge } from "@/components/ui/badge"
+import { maskIpsInText } from "@/lib/format"
+import { formatDay } from "@/lib/network"
+import { categoryLabel, SEVERE_CATEGORIES, type FeedEntry } from "@/lib/network-feed"
+
+export const FEED_GRID =
+  "md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,2.2fr)_minmax(0,1.6fr)_11rem] md:items-center md:gap-x-4"
+
+function Value({ entry }: { entry: FeedEntry }) {
+  const { masked } = useIpMask()
+  if (entry.family !== null) {
+    // Only an address that also reached this sensor has a local page to open.
+    return <IPChip ip={entry.value} variant="ghost" href={entry.seen_here ? undefined : null} />
+  }
+  const shown = masked ? maskIpsInText(entry.value) : entry.value
+  return (
+    <span className="group/row flex min-w-0 items-center gap-1">
+      <span title={shown} className="min-w-0 truncate font-mono text-xs text-fg">
+        {shown}
+      </span>
+      {masked ? null : <CopyButton text={entry.value} label={`Copy ${entry.value}`} />}
+    </span>
+  )
+}
+
+/** Malware hosts and command servers carry the severe marker: a diamond and a word, not colour. */
+function CategoryBadge({ category }: { category: string }) {
+  const severe = SEVERE_CATEGORIES.includes(category)
+  return (
+    <li
+      className={
+        severe
+          ? "inline-flex h-6 items-center gap-1.5 rounded-sm border border-sev-severe/40 px-2 text-2xs font-medium text-fg"
+          : "inline-flex h-6 items-center rounded-sm border border-border-strong px-2 text-2xs font-medium text-fg-muted"
+      }
+    >
+      {severe ? (
+        <span aria-hidden className="size-1.5 rotate-45 rounded-[1px] bg-sev-severe" />
+      ) : null}
+      {categoryLabel(category)}
+      {severe ? <span className="sr-only"> (severe)</span> : null}
+    </li>
+  )
+}
+
+export function EntryRow({ entry }: { entry: FeedEntry }) {
+  return (
+    <div className={`flex flex-col gap-2 px-4 py-3.5 sm:px-5 md:py-3 ${FEED_GRID}`}>
+      <div className="min-w-0 space-y-1">
+        <Value entry={entry} />
+        <p className="text-2xs text-fg-subtle">
+          {entry.tier === "high" ? "High tier" : "Standard tier"}
+          {entry.family ? ` · IPv${entry.family}` : " · Host name"}
+          {entry.families.length > 0 ? ` · ${entry.families.join(", ")}` : ""}
+        </p>
+      </div>
+      <div className="min-w-0 space-y-1.5">
+        <ul aria-label="Categories" className="flex flex-wrap gap-1.5">
+          {entry.categories.map((c) => (
+            <CategoryBadge key={c} category={c} />
+          ))}
+        </ul>
+        {entry.tags.length > 0 ? (
+          <ul aria-label="Tags" className="flex flex-wrap gap-1.5">
+            {entry.tags.map((t) => (
+              <li key={t}>
+                <TagBadge tag={t} />
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+      <dl className="grid grid-cols-3 gap-x-3 text-2xs text-fg-muted md:grid-cols-1 md:gap-y-0.5">
+        <div className="md:flex md:gap-1.5">
+          <dt className="text-fg-subtle md:w-14">First seen</dt>
+          <dd className="tabular-nums">{formatDay(entry.first_seen)}</dd>
+        </div>
+        <div className="md:flex md:gap-1.5">
+          <dt className="text-fg-subtle md:w-14">Last seen</dt>
+          <dd className="tabular-nums">{formatDay(entry.last_seen)}</dd>
+        </div>
+        <div className="md:flex md:gap-1.5">
+          <dt className="text-fg-subtle md:w-14">Expires</dt>
+          <dd className="tabular-nums">{formatDay(entry.expires)}</dd>
+        </div>
+      </dl>
+      <div className="flex flex-wrap items-start gap-1.5 md:justify-end">
+        {entry.seen_here ? (
+          <Badge variant="outline" className="rounded-sm text-fg">
+            <Eye aria-hidden />
+            Seen here
+          </Badge>
+        ) : null}
+        {entry.helped ? (
+          <Badge variant="outline" className="rounded-sm text-fg">
+            <HandHelping aria-hidden />
+            You helped
+          </Badge>
+        ) : null}
+      </div>
+    </div>
+  )
+}

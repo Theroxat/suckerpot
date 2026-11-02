@@ -25,6 +25,7 @@ import { takedownHandlers } from "./takedown"
 import { abusechHandlers } from "./abusech"
 import { vpnHandlers } from "./vpn"
 import { networkHandlers } from "./network"
+import { networkFeedHandlers } from "./network-feed"
 import { setupHandlers } from "./setup"
 import { setupWizardHandlers } from "./setup-wizard"
 import { searchHandlers } from "./search"
@@ -107,6 +108,7 @@ export const handlers = [
   ...abuseHandlers,
   ...vpnHandlers,
   ...networkHandlers,
+  ...networkFeedHandlers,
   ...setupHandlers,
   ...setupWizardHandlers,
   ...scriptsHandlers,
