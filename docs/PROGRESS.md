@@ -172,3 +172,12 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - **Migrations.** Renumbered to 0026 and 0027 after the deployed 0025; a test upgrades from 0025 with data to head and back.
 - **Reviews.** Security review failed (a poison-pill mail, forged replies, freemail relevance, re-checks reaching attackers, token exposure), then passed after fixes. The merge review caught the forged-reply path reopened by a test-driven change; it is reverted and covered by negative tests. UI review approved after two rounds.
 - **Deployed.** Backup taken first; migrations 0026 and 0027 applied; every service healthy; no event lost. Every new worker stays off until its flag is set.
+
+## 2026-11-02 — M29 Opt-in anonymous network
+
+- **Protocol.** `spn/1` in the new `netproto/` package: Ed25519-signed requests and answers bound to each other, replay protection, proof of work at enrolment priced per address prefix, blinding of URLs and domains until consensus, golden test vectors.
+- **Hub.** `hub/`, deployed separately and never on a member's home line: enrolment, signed daily batches, consensus (5 eligible nodes, 2 days, cohort cap, corroboration), reputation, grouped reports reviewed by the operator (C2 reports never automatic), no client address stored or logged.
+- **Node.** A worker in ingest (migration 0028), off unless `NETWORK_ENABLED` is set and the admin joins with re-authentication and five consents. VPN egress only; allow-listed aggregates guarded against the owner's identity on every item and batch, resent batches guarded again, demo sessions never shared, a random delay of at least 2 h. Leaving deletes everything on both sides.
+- **Dashboard.** Network overview, members (pseudonyms, k-anonymous countries), Settings → Network and an optional setup step; `just set` accepts the hub URL and public key with strict validation.
+- **Reviews.** Hub review failed (reportability counted ineligible nodes, corroboration on addresses only), then passed. The integration review passed with findings (demo sessions, hub URL validation, resent batches, reveals without an own address, report suppression window, unbounded hub fields), all fixed. UI review approved after fixing a join dialog that could not be completed.
+- **Deployed.** Backup taken first; migration 0028 applied; every service healthy; no event lost. The node stays off; no hub is configured.
