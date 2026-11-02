@@ -20,7 +20,7 @@ from .config import Settings, load_signing_key
 from .context import AppContext, get_ctx
 from .db import make_engine, make_sessionmaker, utcnow
 from .ratelimit import AddressLimiter, Counter
-from .routes import enrol, info, network, node, observations, targets
+from .routes import delist, enrol, info, lookup, network, node, observations, targets
 
 log = logging.getLogger("hub")
 
@@ -97,7 +97,7 @@ def create_app(
             await session.execute(text("SELECT 1"))
         return Response(content='{"ok":true}', media_type="application/json")
 
-    for module in (info, enrol, node, observations, targets, network):
+    for module in (info, enrol, node, observations, targets, network, delist, lookup):
         app.include_router(module.router, prefix="/v1")
     return app
 
