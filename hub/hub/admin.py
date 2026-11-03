@@ -24,11 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_netproto import blind, sign
 from suckerpot_netproto.feeds import minisign
 
-from . import abusech, reputation
+from . import abusech, egress_check, reputation
 from .config import ConfigError, Settings, load_signing_key
 from .db import make_engine, make_sessionmaker, utcnow
 from .feeds import job as feed_job
 from .feeds.select import BASE_LISTS as DELIST_LISTS
+from .reports import tunnel as report_tunnel
 
 Out = Callable[[str], None]
 
@@ -731,6 +732,9 @@ async def _ranges(
         for r in rows:
             out(f"{r.source}\t{r.n} prefixes\tfetched {r.day}")
         return 0
+    if not egress_check.egress_ok(report_tunnel.proxy_url_from_env()):
+        out(egress_check.CODE)  # a proxy is set but a direct route exists: refuse to go online
+        return 1
     import importlib
 
     try:

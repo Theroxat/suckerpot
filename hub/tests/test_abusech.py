@@ -619,3 +619,26 @@ async def test_threatfox_guard_reads_the_flag_not_the_actor_name(env: Env) -> No
     out = await _send(env, s)
     assert out.failed == 1
     assert (await _rows(env))[C2].state == "failed"
+
+
+@pytest.mark.integration
+async def test_an_inbound_only_delisting_does_not_block_submissions(env: Env) -> None:
+    await _seed(env)
+    s = active(env)
+    async with env.worker() as ses:
+        await ses.execute(
+            text(
+                "INSERT INTO feed_allow (value, kind, reason, added_day, source, list) "
+                "VALUES ('198.51.100.21', 'ip', 'false_positive', :d, 'delist', 'inbound')"
+            ),
+            {"d": TODAY},
+        )
+        await ses.commit()
+        await abusech.queue_submissions(ses, s, TODAY, never=Never())
+    assert URL_BIN in await _rows(env)
+    async with env.worker() as ses:
+        await ses.execute(text("UPDATE feed_allow SET list = 'outbound'"))
+        await ses.execute(text("DELETE FROM abusech_submissions"))
+        await ses.commit()
+        await abusech.queue_submissions(ses, s, TODAY, never=Never())
+    assert URL_BIN not in await _rows(env)
