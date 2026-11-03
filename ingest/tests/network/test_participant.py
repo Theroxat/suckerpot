@@ -234,7 +234,8 @@ def test_settings_from_env_participant_values() -> None:
     s = NetworkSettings.from_env(env)
     assert s.participant and s.egress_mode == "direct" and s.country == "CH" and s.verifier
     assert s.verify_daily_cap == 7 and s.verify_host_daily_cap == 3 and not s.collector_enabled
-    assert s.hub_configured and s.hub_url == "https://hub.selfhostr.io"  # committed release defaults
+    # The committed release defaults name the project hub.
+    assert s.hub_configured and s.hub_url == "https://hub.selfhostr.io"
     for bad in ({"SUCKERPOT_STACK_MODE": "x"}, {"EGRESS_MODE": "tor"}):
         with pytest.raises(ValueError):
             NetworkSettings.from_env(bad)
