@@ -357,5 +357,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      # The installer refuses to run with less than 15 GiB free under Docker's data folder, and
+      # some hosted runners start just below that. Remove preinstalled toolchains this job never uses.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h / /var/lib/docker
       - name: Participant end-to-end test
         run: scripts/e2e/participant.sh
