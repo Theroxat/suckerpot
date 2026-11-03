@@ -134,9 +134,9 @@ def test_only_caddy_publishes_a_port_in_tunnel_mode() -> None:
     assert "${HUB_HTTP_PORT:?" in ports[0]
 
 
-def test_caddy_needs_no_capability_or_sysctl_in_tunnel_mode() -> None:
+def test_caddy_needs_no_sysctl_in_tunnel_mode() -> None:
     caddy = _overlay()["services"]["caddy"]
-    assert caddy["cap_add"] == ("reset", [])
+    assert "cap_add" not in caddy  # the binary needs NET_BIND_SERVICE to execute at all
     assert caddy["sysctls"] == ("reset", [])
     assert "8080" in " ".join(caddy["healthcheck"]["test"])
     mounts = caddy["volumes"]
