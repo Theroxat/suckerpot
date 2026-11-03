@@ -236,6 +236,51 @@ async def self_address_state(factory: async_sessionmaker[AsyncSession]) -> dict[
     return {"self_address_fresh": row.active > 0, "self_terms_pending": row.pending}
 
 
+def auto_confirm_enabled(env: Mapping[str, str] | None = None) -> bool:
+    """``SELF_TERMS_AUTO_CONFIRM`` (participant mode, M32 section 8.4)."""
+    e = os.environ if env is None else env
+    return e.get("SELF_TERMS_AUTO_CONFIRM", "false").strip().lower() in ("1", "true", "yes", "on")
+
+
+def parse_self_address(raw: str) -> str | None:
+    """The canonical address of ``SELF_ADDRESS``, or ``None`` when it is empty or not an address."""
+    value = raw.strip().strip("[]")
+    if not value:
+        return None
+    try:
+        addr = ipaddress.ip_address(value)
+    except ValueError:
+        return None
+    if addr.is_unspecified or addr.is_multicast or addr.is_loopback:
+        return None
+    return str(addr)
+
+
+def effective_rows(rows: Iterable[SelfTermRow], env: Mapping[str, str]) -> list[SelfTermRow]:
+    """The table rows plus what the environment adds in participant mode (M32 section 8.4).
+
+    The ingest role cannot confirm a row or write a ``manual`` one (the owner's decision lives in
+    the database), so both happen in memory only:
+
+    * ``SELF_TERMS_AUTO_CONFIRM``: a learned *address* row (it already passed the learning
+      thresholds) acts as confirmed. Names never do: a planted ``Host:`` header can then only make
+      the node redact more, never less (M13).
+    * ``SELF_ADDRESS``: a ``manual`` address that never expires.
+    """
+    out = list(rows)
+    if auto_confirm_enabled(env):
+        out = [
+            r.model_copy(update={"confirmed": True})
+            if r.source == "learned" and r.kind == "address" and not r.confirmed
+            else r
+            for r in out
+        ]
+    address = parse_self_address(env.get("SELF_ADDRESS", ""))
+    if address is not None:
+        out.append(SelfTermRow(kind="address", value=address, source="manual", confirmed=True))
+    return out
+
+
 class TermsCache:
     """``SelfTerms`` rebuilt at most once a minute. ``None`` when the table cannot be read."""
 
@@ -273,17 +318,20 @@ class TermsCache:
             self._terms = None
             return None
         terms = load_self_terms(
-            [
-                SelfTermRow(
-                    kind=r.kind,
-                    value=r.value,
-                    source=r.source,
-                    distinct_sources=r.distinct_sources,
-                    confirmed=r.confirmed,
-                    last_seen=r.last_seen,
-                )
-                for r in rows
-            ],
+            effective_rows(
+                [
+                    SelfTermRow(
+                        kind=r.kind,
+                        value=r.value,
+                        source=r.source,
+                        distinct_sources=r.distinct_sources,
+                        confirmed=r.confirmed,
+                        last_seen=r.last_seen,
+                    )
+                    for r in rows
+                ],
+                self.env,
+            ),
             self.env,
             vpn_exit=egress.ip if egress is not None and egress.ip else None,
         )

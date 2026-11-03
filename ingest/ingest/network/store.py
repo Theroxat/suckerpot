@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass, fields
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Protocol
 
 from sqlalchemy import text
@@ -25,7 +25,7 @@ MEMBERSHIP_COLUMNS = (
     "pubkey", "privkey_enc", "privkey_nonce", "enrolled_day", "eligible_from_day", "standing",
     "next_submit_at", "last_submit_day", "last_pull_at", "last_summary_at", "pull_cursor",
     "synced_pseudonym", "synced_country", "synced_show_country", "leave_requested_at",
-    "last_error_code",
+    "last_error_code", "requested_by", "requested_at", "left_day",
 )  # fmt: skip
 RECENT_VALUES_LIMIT = 20_000
 MINE_DAYS = 14
@@ -56,6 +56,9 @@ class Membership:
     synced_show_country: bool | None = None
     leave_requested_at: datetime | None = None
     last_error_code: str | None = None
+    requested_by: str | None = None  # 'admin' (API) or 'installer' (participant mode)
+    requested_at: datetime | None = None
+    left_day: date | None = None  # UTC day of the last leave: participant mode never re-joins
 
 
 assert {f.name for f in fields(Membership)} == set(MEMBERSHIP_COLUMNS)  # noqa: S101
@@ -115,16 +118,23 @@ class SqlStore:
             )
 
     async def wipe(self, *, leave_error: str | None = None) -> None:
-        """Leaving: membership back to its defaults (key included), every network row gone."""
+        """Leaving: membership back to its defaults (key included), every network row gone.
+
+        ``left_day`` records the leave (M32): participant mode never joins again by itself."""
         blank: dict[str, Any] = {c: None for c in MEMBERSHIP_COLUMNS}
-        blank.update(desired="off", state="off", show_country=False, last_error_code=leave_error)
+        blank.update(
+            desired="off", state="off", show_country=False, last_error_code=leave_error,
+            left_day=datetime.now(UTC).date(),
+        )  # fmt: skip
         sets = ", ".join(f"{k} = :{k}" for k in blank)
         async with self.factory() as session, session.begin():
             await session.execute(text(f"UPDATE network_membership SET {sets} WHERE id = 1"), blank)  # noqa: S608
-            await session.execute(
-                text("UPDATE network_membership SET requested_by = NULL, requested_at = NULL")
-            )
-            for table in ("network_targets", "network_submissions", "network_summary"):
+            for table in (
+                "network_targets",
+                "network_submissions",
+                "network_summary",
+                "network_verify_tasks",
+            ):
                 await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
 
     async def submitted_days(self) -> set[date]:

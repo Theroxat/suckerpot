@@ -55,7 +55,7 @@ class FakeGate:
     def __init__(self, open_: bool = True) -> None:
         self.open = open_
 
-    def require_open(self) -> None:
+    def require_open(self, host: str | None = None) -> None:
         if not self.open:
             from suckerpot_egress import EgressClosed
 
@@ -84,7 +84,7 @@ class MemoryStore:
             setattr(self.m, k, v)
 
     async def wipe(self, *, leave_error: str | None = None) -> None:
-        self.m = Membership(last_error_code=leave_error)
+        self.m = Membership(last_error_code=leave_error, left_day=NOW.date())
         self.subs.clear()
         self.targets.clear()
         self.summary = None
@@ -147,6 +147,12 @@ class FakeHub:
         self.targets: dict[str, Any] = {"cursor": "c_1", "targets": [], "reveal": [], "recheck": []}
         self.node_key: str | None = None
         self.deleted = False
+        self.fail_once: dict[str, tuple[int, str]] = {}  # same as ``fail``, consumed on use
+        self.alt_seed: bytes | None = None  # also sign with this key in the Alt header
+        self.primary_signs = True  # False: only the Alt header carries a valid signature
+        self.verify_refs: list[str] = []  # blinded hashes of /v1/verify/reveals
+        self.verify_tasks: list[dict[str, Any]] = []
+        self.no_verify = False  # a pre-M32 hub: unsigned 404 on /v1/verify/*
 
     def _reply(self, request: httpx.Request, status: int, body: dict[str, Any]) -> httpx.Response:
         raw = json.dumps(body).encode()
@@ -167,7 +173,14 @@ class FakeHub:
             sig = sign.sign_response(bytes(32), binding, status, raw)
         if self.unsigned_errors and status >= 400:
             return httpx.Response(status, content=raw)
-        return httpx.Response(status, content=raw, headers={sign.H_HUB_SIGNATURE: sig})
+        headers = {sign.H_HUB_SIGNATURE: sig}
+        if not self.primary_signs:
+            headers[sign.H_HUB_SIGNATURE] = sign.sign_response(bytes(32), binding, status, raw)
+        if self.alt_seed is not None:
+            headers[sign.H_HUB_SIGNATURE_ALT] = sign.sign_response(
+                self.alt_seed, binding, status, raw
+            )
+        return httpx.Response(status, content=raw, headers=headers)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         assert request.url.host == "hub.example.org", "a call left the configured hub"
@@ -177,6 +190,8 @@ class FakeHub:
         self.calls.append((request.method, bare))
         route = f"{request.method} {bare}"
         body = request.content
+        if self.no_verify and bare.startswith("/v1/verify/"):
+            return httpx.Response(404, content=b"{}")
         assert request.headers.get("Accept-Encoding") == "identity"
         if request.method in ("POST", "PATCH"):
             assert len(body) % 4096 == 0, "bodies are padded"
@@ -194,6 +209,9 @@ class FakeHub:
             )
             assert ok, "bad node signature"
             self.node_key = key
+        if route in self.fail_once:
+            status, code = self.fail_once.pop(route)
+            return self._reply(request, status, {"error": code})
         if route in self.fail:
             status, code = self.fail[route]
             return self._reply(request, status, {"error": code})
@@ -247,6 +265,12 @@ class FakeHub:
         if route == "GET /v1/targets":
             return 200, self.targets
         if route in ("POST /v1/reveals", "POST /v1/rechecks"):
+            return 200, {"accepted": len(self.bodies[-1]["items"]), "rejected": 0}
+        if route == "GET /v1/verify/reveals":
+            return 200, {"items": [{"kind": "url", "value_b": b} for b in self.verify_refs]}
+        if route == "GET /v1/verify/tasks":
+            return 200, {"tasks": self.verify_tasks}
+        if route == "POST /v1/verify/results":
             return 200, {"accepted": len(self.bodies[-1]["items"]), "rejected": 0}
         if route == "GET /v1/network":
             return 200, {

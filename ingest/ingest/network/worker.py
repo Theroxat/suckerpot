@@ -18,12 +18,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import httpx
-from suckerpot_db.network_names import pseudonym_problem
+from suckerpot_db.network_names import pseudonym_problem, valid_country
 from suckerpot_db.secretbox import SecretBox
 from suckerpot_netproto import ProtoError, sign
 from suckerpot_netproto import models as wire
@@ -33,12 +33,13 @@ from ingest.egress import EgressClosed, EgressGate, gate_open
 from ingest.features import FeatureSettings, FeatureWorker
 
 from . import identity as ident
-from . import scheduler, sync
+from . import participant, pseudonym, scheduler, sync, verify_reveal
 from .builder import BatchBuilder, TermsSource
-from .client import HubClient, HubError, HubUnavailable
+from .client import HubClient, HubError, HubNoVerify, HubUnavailable
 from .config import NetworkSettings
 from .powproc import solve_low_priority
 from .store import Membership, Store
+from .verifier import Verifier, VerifyStore
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +54,10 @@ BACKOFF_FIRST = timedelta(minutes=15)
 BACKOFF_MAX = timedelta(hours=6)
 WAITING_ENROLMENT = "waiting_enrolment"
 FAST_INTERVAL_S = 60.0
+VERIFY_REVEAL_EVERY = timedelta(minutes=15)
+VERIFY_RETRY = timedelta(hours=24)
+LEARN_EVERY = timedelta(hours=1)
+NAME_RETRIES = 5
 
 
 class NetworkWorker(FeatureWorker):
@@ -72,6 +77,8 @@ class NetworkWorker(FeatureWorker):
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         rng: random.Random | None = None,
         allow_documentation: bool = False,
+        verify_store: VerifyStore | None = None,
+        learn: Callable[[], Awaitable[object]] | None = None,
     ) -> None:
         super().__init__(features, enabled=network.enabled)
         self.network = network
@@ -89,6 +96,20 @@ class NetworkWorker(FeatureWorker):
         self.reason: str | None = None
         self._enrol_failures = 0
         self._enrol_retry_at: datetime | None = None
+        # M32: participant mode, early reveals, verifier role, own-address learning.
+        self.consent_state, self.consent = participant.parse(network.consent)
+        self.verifier = (
+            Verifier(network, verify_store, terms, gate=gate, clock=clock)
+            if verify_store is not None
+            else None
+        )
+        self._learn = learn
+        self._last_learn: datetime | None = None
+        self._last_vreveal: datetime | None = None
+        self._vreveal_retry_at: datetime | None = None
+        self._name_tries = 0
+        self._consent_reason: str | None = None  # why participant mode did not join
+        self.revealed: dict[str, int] = {}  # UTC day -> links revealed for verification
 
     # -- status -----------------------------------------------------------------------------
 
@@ -101,6 +122,11 @@ class NetworkWorker(FeatureWorker):
                 "reason": self.reason,
                 "cycles": self.cycles,
                 "last_error": self.last_error,
+                "mode": self.network.stack_mode,
+                "consent": self.consent_state,
+                "verify_reveals": verify_reveal.enabled(self.network, self.consent),
+                "revealed": dict(sorted(self.revealed.items())[-8:]),
+                "verifier": self.verifier.state if self.verifier is not None else "off",
             }
         }
 
@@ -124,15 +150,19 @@ class NetworkWorker(FeatureWorker):
 
     async def run_once(self) -> None:
         store = self.store
+        if store is not None:
+            await self._learn_self_address()
         if store is None or not self.network.hub_configured:
             self.state, self.reason = "off", "no_hub" if store is not None else None
             return
         m = await store.membership()
+        if self.network.participant:
+            m = await self._auto_join(m)
         self.state = m.state
         pending = m.desired == "leave" or (m.desired == "member" and m.state != "member")
         self.interval_s = FAST_INTERVAL_S if pending else float(self.network.interval_s)
         if m.desired == "off" and m.state in ("off", "error"):
-            self.reason = None
+            self.reason = self._consent_reason
             return
         try:
             if m.desired == "leave" or m.state == "leaving":
@@ -152,6 +182,61 @@ class NetworkWorker(FeatureWorker):
             await self._note(m, "hub_unreachable")
         except ProtoError as exc:
             await self._note(m, exc.code)
+
+    async def _learn_self_address(self) -> None:
+        """Participant mode has no abuse worker: learn the own address from traffic here."""
+        if self._learn is None or not self.network.participant:
+            return
+        now = self._now()
+        if self._last_learn is not None and now - self._last_learn < LEARN_EVERY:
+            return
+        self._last_learn = now
+        try:
+            await self._learn()
+        except Exception as exc:
+            log.warning("self address learning failed (%s)", type(exc).__name__)
+
+    async def _auto_join(self, m: Membership) -> Membership:
+        """Request membership from the installer's consent record (N1'): once, never re-joins."""
+        store = self.store
+        assert store is not None  # noqa: S101
+        self._consent_reason = None
+        if m.desired != "off" or m.state != "off" or m.left_day is not None:
+            return m
+        if self.consent is None:
+            self._consent_reason = (
+                self.consent_state if self.consent_state != participant.MISSING else None
+            )
+            return m
+        country = self.network.country if valid_country(self.network.country) else None
+        await store.update(
+            desired="member",
+            pseudonym=self.network.pseudonym or None,
+            country=country,
+            show_country=self.network.show_country and country is not None,
+            requested_by="installer",
+            requested_at=self._now(),
+            last_error_code=None,
+        )
+        return await store.membership()
+
+    async def _retry_name(self, m: Membership) -> bool:
+        """A generated pseudonym that is taken is replaced (up to 5 times); a chosen one stops."""
+        store = self.store
+        assert store is not None  # noqa: S101
+        if (
+            m.requested_by != "installer"
+            or not pseudonym.is_generated(m.pseudonym)
+            or self._name_tries >= NAME_RETRIES
+        ):
+            return False
+        name = await pseudonym.fresh(self._pseudonym_ok, self._rng)
+        if name is None:
+            return False
+        self._name_tries += 1
+        await store.update(pseudonym=name, last_error_code=None)
+        self.state, self.reason = "enrolling", "pseudonym_retry"
+        return True
 
     async def _note(self, m: Membership, code: str) -> None:
         self.reason = code
@@ -232,7 +317,7 @@ class NetworkWorker(FeatureWorker):
     async def _enrol(self, m: Membership) -> None:
         store = self.store
         assert store is not None  # noqa: S101
-        if not gate_open(self._gate):
+        if not gate_open(self._gate, host=self.network.hub_host):
             raise EgressClosed("egress_closed")
         if m.privkey_enc is None:
             try:
@@ -260,7 +345,9 @@ class NetworkWorker(FeatureWorker):
         hub = self._hub(identity)
         try:
             info = await hub.info()
-            if "spn/1" not in info.protocols or info.hub_key != self.network.hub_key:
+            if "spn/1" not in info.protocols or not sign.key_in_set(
+                self.network.hub_keys, info.hub_key
+            ):
                 await store.update(state="error", last_error_code="unsupported_protocol")
                 self.state, self.reason = "error", "unsupported_protocol"
                 return
@@ -280,6 +367,8 @@ class NetworkWorker(FeatureWorker):
                 show_country=m.show_country,
             )
         except HubError as exc:
+            if exc.code == "pseudonym_taken" and await self._retry_name(m):
+                return
             if exc.code in PERMANENT:
                 await store.update(state="error", desired="off", last_error_code=exc.code)
                 self.state, self.reason = "error", exc.code
@@ -332,11 +421,39 @@ class NetworkWorker(FeatureWorker):
             await store.save_summary(sync.summary_json(summary))
             node = await hub.node()
             await store.update(standing=node.standing, last_summary_at=now)
+        await self._verification(hub, errors)
         if errors:
             await self._note(m, errors[0])
         elif m.last_error_code is not None:
             await store.update(last_error_code=None)
             self.reason = None
+
+    async def _verification(self, hub: HubClient, errors: list[str]) -> None:
+        """Early reveals (N17) and the verifier role (N18). A pre-M32 hub is asked once a day."""
+        now = self._now()
+        if verify_reveal.enabled(self.network, self.consent) and (
+            self._last_vreveal is None or now - self._last_vreveal >= VERIFY_REVEAL_EVERY
+        ):
+            if self._vreveal_retry_at is None or now >= self._vreveal_retry_at:
+                self._last_vreveal = now
+                terms = await self.terms.get() if self.terms is not None else None
+                store = self.store
+                assert store is not None  # noqa: S101
+                try:
+                    await verify_reveal.answer(
+                        hub, store, terms, self.network, self.consent,
+                        allow_documentation=self._allow_doc, on_sent=self._count_reveals,
+                    )  # fmt: skip
+                except HubNoVerify:
+                    self._vreveal_retry_at = now + VERIFY_RETRY
+        if self.verifier is not None:
+            await self.verifier.cycle(hub)
+
+    def _count_reveals(self, n: int) -> None:
+        day = self._now().date().isoformat()
+        self.revealed[day] = self.revealed.get(day, 0) + n
+        for old in sorted(self.revealed)[:-14]:
+            del self.revealed[old]
 
     async def _sync_profile(self, m: Membership, hub: HubClient) -> None:
         store = self.store
