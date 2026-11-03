@@ -32,6 +32,8 @@ def upgrade() -> None:
             tags text[] NOT NULL DEFAULT '{}',
             state text NOT NULL,
             approved_by text,
+            -- Set only by an operator command; the ThreatFox guard reads this, not the actor name.
+            approved_manually boolean NOT NULL DEFAULT false,
             created_day date NOT NULL,
             sent_at timestamptz,
             result_code text,

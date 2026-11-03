@@ -108,13 +108,16 @@ Set these in `.env` (see the end of `.env.example`). The overlay needs Docker Co
 | --- | --- |
 | `HUB_BIND` | Host address Caddy listens on. Use a private address that only the tunnel machine can reach |
 | `HUB_HTTP_PORT` | Host port that maps to Caddy's port 8080 |
-| `HUB_EGRESS_NETWORK` | Name of the existing Docker network the proxy is on. It must already exist |
+| `HUB_TRUSTED_PROXY` | Required. The peer address allowed to name the client (see below) |
+| `HUB_PUBLIC_SUBNET` | Subnet of the `hub-public` network, `198.18.77.0/24` by default. Change it if it collides with yours |
+| `HUB_EGRESS_NETWORK` | Name of the existing Docker network the proxy is on. It must already exist and be created with `internal: true`, with the proxy as its only uplink |
 | `HUB_EGRESS_PROXY` | The proxy URL, for example `http://user:change-me@vpn:8888` |
 
 What the overlay changes:
 
 - **Caddy** loads `Caddyfile.tunnel` instead of `Caddyfile`. It serves plain HTTP on 8080 for both names, needs no capability and no sysctl, and is the only service with a published port. A test keeps `Caddyfile.tunnel` identical to `Caddyfile` apart from the site addresses, the trust settings and the forwarding header.
-- **Client addresses.** Caddy trusts the `Cf-Connecting-Ip` header from private peers only, and rewrites `X-Forwarded-For` with that address for `hub-api`. The rate limits then work per client and not per tunnel. This is why `HUB_BIND` must not be a public address: anyone who could reach the port could name any address. The main `Caddyfile` has no such trust.
+- **Client addresses.** Caddy trusts the `Cf-Connecting-Ip` header only from `HUB_TRUSTED_PROXY`, and rewrites `X-Forwarded-For` with that address for `hub-api`. The rate limits then work per client and not per tunnel. The main `Caddyfile` has no such trust. With Docker's userland proxy (the default), a connection to the published port reaches Caddy from the gateway of the `hub-public` bridge, not from the connector. So set `HUB_TRUSTED_PROXY` to the gateway (the first address of `HUB_PUBLIC_SUBNET`, `198.18.77.1` by default), or to the connector's address when the userland proxy is off (`"userland-proxy": false` in the Docker daemon settings). Either way, anyone who can reach the host port can name any client address, so firewall that port to the tunnel connector only, and keep `HUB_BIND` private.
+- **The egress network must have no other route.** Create it with `internal: true` and put only the proxy on it as the uplink. The worker checks this at start: when a proxy variable is set and the container has a default route, it logs the code `egress_default_route` and refuses to start.
 - **Outbound traffic.** `hub-worker` and `hub-admin` join the proxy's network and get `HTTPS_PROXY` and `HTTP_PROXY`. The `hub-out` network is unused, so no service has a direct route out. RDAP, the corroboration sources, the range lists and the abuse.ch submissions all go through the proxy.
 
 In the Cloudflare dashboard, add two public hostnames to the tunnel, one for `HUB_DOMAIN` and one for `HUB_FEEDS_DOMAIN`. Both point at `http://<host>:<HUB_HTTP_PORT>`, where `<host>` is `HUB_BIND`.
@@ -319,10 +322,10 @@ Confirmed malicious infrastructure goes to abuse.ch first, because hosting provi
 
 The same consensus as for reports, with the same strictness:
 
-- **URLhaus:** a confirmed link with a revealed value that at least two eligible nodes fetched, and that has a malware family or an executable file type (ELF, PE or a script) from those fetches. A fetched ordinary web page is never submitted.
+- **URLhaus:** a confirmed link with a revealed value that at least two eligible nodes fetched, where each of those nodes' own report is malware-like (a known family or an executable file type: ELF, PE or a script). One count decides: HTML fetched twice and a third node claiming an executable queues nothing. The tags come from those nodes' reports only.
 - **ThreatFox:** a confirmed command server whose family has a Malpedia name (the table is in `hub/abusech.py`). These submissions are never automatic. They wait for an operator in every mode.
 
-Public addresses and hosts only. Anything on the never-list is skipped, both when it is queued and again just before it is sent. A target is submitted once: the table `abusech_submissions` has a unique `(kind, indicator)`.
+Public hosts only: no private or shorthand numeric addresses (`127.1`), single-label names or local suffixes (`.local`, `.internal`, `.lan`, `.home.arpa`). Anything the feeds would exclude (never-list, allow-list, delisting decisions, reserved space, and for ThreatFox the CDN and Tor ranges) is skipped, both when it is queued and again just before it is sent, and the target must still be confirmed or reported. ThreatFox waits while the CDN or Tor ranges are older than 30 days, like the feeds. `target dispute` and an accepted delisting reject the matching queued and approved submissions. A ThreatFox submission is sent only if an operator approved it with the CLI (`approved_manually`), whatever the mode or the actor name. A target is submitted once: the table `abusech_submissions` has a unique `(kind, indicator)`.
 
 ### What is sent
 

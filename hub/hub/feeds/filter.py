@@ -239,8 +239,11 @@ def build_exclusions(
     )
 
 
-async def load_exclusions(session: AsyncSession, s: Settings, today: date) -> Exclusions:
-    """Load every source. Raises ``RangesStale`` when the CDN or Tor ranges cannot be trusted."""
+async def load_exclusions(
+    session: AsyncSession, s: Settings, today: date, *, require_ranges: bool = True
+) -> Exclusions:
+    """Load every source. Raises ``RangesStale`` when the CDN or Tor ranges cannot be trusted
+    (unless ``require_ranges`` is false: a caller that handles staleness itself)."""
     never_rows = [
         (r[0], r[1]) for r in (await session.execute(text("SELECT value, kind FROM never_list")))
     ]
@@ -273,7 +276,9 @@ async def load_exclusions(session: AsyncSession, s: Settings, today: date) -> Ex
     # Fail closed per source: one source that was never fetched (or went stale) would let its
     # addresses through while the others look fine (security review M1).
     oldest_ok = today - timedelta(days=RANGES_MAX_AGE_DAYS)
-    if any(newest.get(name, date.min) < oldest_ok for name in required_sources()):
+    if require_ranges and any(
+        newest.get(name, date.min) < oldest_ok for name in required_sources()
+    ):
         raise RangesStale("ranges_stale")
     return build_exclusions(
         s,
