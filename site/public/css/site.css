@@ -1291,6 +1291,36 @@ h3 {
   }
 }
 
+/* Policy page: long text in one column, with the notice under the hero */
+.policy {
+  max-width: 42em;
+}
+.policy > p {
+  margin-top: 16px;
+  color: var(--fg-muted);
+  font-size: 16px;
+  line-height: 1.65;
+}
+.policy h3 {
+  margin-top: 40px;
+}
+.policy .checks {
+  margin-top: 16px;
+}
+.policy .cards {
+  margin-top: 28px;
+}
+.policy-notice,
+.policy-outcomes {
+  max-width: 42em;
+}
+.policy-notice {
+  margin-top: 32px;
+}
+.policy-date {
+  margin-top: 16px;
+}
+
 /* Small screens */
 @media (max-width: 599px) {
   .cta .btn {
