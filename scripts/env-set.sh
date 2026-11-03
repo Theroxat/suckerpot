@@ -7,7 +7,7 @@
 #   scripts/env-set.sh set KEY=VALUE [...]     change allow-listed settings (see lib/env.sh)
 #
 # Refuses secret-looking keys (*_PASSWORD, *_SECRET, *_HASH, *_KEY except the public
-# NETWORK_HUB_KEY, VPN_WG_*) and keys outside
+# NETWORK_HUB_KEY, VPN_WG_*, and NETWORK_CONSENT, which only participant.sh join writes) and keys outside
 # the allow-list. Prints variable names only, never values of anything secret. The change is
 # reverted when scripts/check-ports.sh refuses the resulting port layout.
 set -euo pipefail
@@ -106,7 +106,7 @@ case $cmd in
       settable_value "$value" || die "the value for $key has characters that are not allowed"
       case $key in
         SENSOR_*) [[ $value =~ ^[01]$ ]] || die "$key must be 0 or 1" ;;
-        *_ENABLED | COOKIE_SECURE) [[ $value =~ ^(true|false)$ ]] || die "$key must be true or false" ;;
+        *_ENABLED | COOKIE_SECURE | NETWORK_VERIFY_REVEALS | NETWORK_VERIFIER) [[ $value =~ ^(true|false)$ ]] || die "$key must be true or false" ;;
         *_HOST_PORT | DASHBOARD_PORT)
           [[ $value =~ ^[0-9]{1,5}$ ]] && [ "$value" -ge 1 ] && [ "$value" -le 65535 ] || die "$key must be a port number"
           ;;
@@ -122,6 +122,11 @@ case $cmd in
     done
     apply_checked
     echo "env-set: updated ${keys[*]}"
+    for k in "${keys[@]}"; do
+      if [ "$k" = AUTO_UPDATE_ENABLED ]; then
+        echo "env-set: AUTO_UPDATE_ENABLED only sets the flag; ./scripts/participant.sh auto-update on|off also installs or removes the schedule"
+      fi
+    done
     ;;
   *)
     die "usage: env-set.sh sensors [LIST] | set KEY=VALUE [...]"
