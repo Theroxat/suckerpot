@@ -229,6 +229,22 @@ Without a key, a source is off. Addresses then need 10 nodes instead of 5. The l
 | `HUB_NEW_VALUES_PER_DAY` | `20000` | New values per node and day. More are dropped and counted as `cap` |
 | `HUB_WORKER_INTERVAL_S` | `3600` | Seconds between worker cycles, at least 5 |
 
+### Link verification (M32)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `HUB_VERIFY_MODE` | `off` | `off`: no task, no early reveal accepted. `review`: an operator approves each link (`verify approve <id>`) before a verifier gets it. `auto`: tasks are released after a random delay |
+| `HUB_VERIFY_MIN_REPORTERS` | `2` | Eligible nodes that must have reported a link. Below 2 the hub refuses to start |
+| `HUB_VERIFY_DAILY_CAP` | `200` | Tasks per day for the whole network |
+| `HUB_VERIFY_HOST_DAILY_CAP` | `5` | Tasks per site per day |
+| `HUB_VERIFY_LEASE_HOURS` | `6` | How long a verifier holds a task |
+| `HUB_VERIFY_MAX_ATTEMPTS` | `2` | Tries per link |
+| `HUB_VERIFY_URL_MAX_AGE_DAYS` | `3` | Only links reported in the last N days |
+| `HUB_VERIFY_DELAY_MIN_H`, `HUB_VERIFY_DELAY_MAX_H` | `6`, `30` | Random delay between the reveal and the release of a task in `auto` mode |
+| `HUB_SIGNING_KEY_ALT_FILE` | empty | Alternate signing key for a key rollover. Answers then carry both signatures. Make it with `gen-signing-key --alt`, publish it in a release, then promote it |
+
+Grant the role with `node role grant <fingerprint> verifier`. The commands are in the Operator CLI section.
+
 ### Test overlay only
 
 | Variable | Default | Meaning |
