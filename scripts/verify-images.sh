@@ -25,7 +25,7 @@ cd "$(dirname "$0")/.."
 
 COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign:v3.1.4@sha256:0f06154836d2de34f887a5c273506d52ca43edaa1d9e53e6510fa78a48f69c2d"
 ISSUER="https://token.actions.githubusercontent.com"
-IMAGES="redis migrate ingest api collector demo sensor-ssh sensor-rdp sensor-telnet sensor-web sensor-redis sensor-docker sensor-mysql sensor-mssql sensor-adb sensor-smb sensor-sip sensor-synology"
+IMAGES="redis migrate ingest api collector hubproxy demo sensor-ssh sensor-rdp sensor-telnet sensor-web sensor-redis sensor-docker sensor-mysql sensor-mssql sensor-adb sensor-smb sensor-sip sensor-synology"
 
 die() { echo "verify-images: $*" >&2; exit 1; }
 

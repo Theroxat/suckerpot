@@ -98,3 +98,8 @@ def test_analyzer_child_limit_fits_in_the_container() -> None:
     analyzer = load_compose([BASE, LOWMEM])["services"]["analyzer"]
     child_mb = int(_env(analyzer)["ANALYZER_MEMORY_MB"].split(":-")[-1].rstrip("}"))
     assert child_mb * 1024**2 < _bytes(str(analyzer["mem_limit"]))
+
+
+def test_hubproxy_keeps_its_small_budget() -> None:
+    hub = load_compose([BASE, LOWMEM])["services"]["hubproxy"]
+    assert hub["mem_limit"] == hub["memswap_limit"] == "48m"

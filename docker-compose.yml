@@ -371,6 +371,20 @@ services:
       EGRESS_CHECK_INTERVAL_S: ${EGRESS_CHECK_INTERVAL_S:-300}
       VPN_WG_ENDPOINT_IP: ${VPN_WG_ENDPOINT_IP:-}
       VPN_WG_DNS: ${VPN_WG_DNS:-}
+      # Participant mode (M32): full-mode defaults keep today's behaviour. EGRESS_MODE=direct goes
+      # with EGRESS_PROXY_URL / EGRESS_CONTROL_URL pointing at hubproxy (written by the installer).
+      SUCKERPOT_STACK_MODE: ${SUCKERPOT_STACK_MODE:-full}
+      EGRESS_MODE: ${EGRESS_MODE:-vpn}
+      NETWORK_CONSENT: ${NETWORK_CONSENT:-}
+      NETWORK_PSEUDONYM: ${NETWORK_PSEUDONYM:-}
+      NETWORK_COUNTRY: ${NETWORK_COUNTRY:-}
+      NETWORK_SHOW_COUNTRY: ${NETWORK_SHOW_COUNTRY:-false}
+      NETWORK_VERIFY_REVEALS: ${NETWORK_VERIFY_REVEALS:-false}
+      NETWORK_VERIFIER: ${NETWORK_VERIFIER:-false}
+      NETWORK_VERIFY_DAILY_CAP: ${NETWORK_VERIFY_DAILY_CAP:-100}
+      NETWORK_VERIFY_HOST_DAILY_CAP: ${NETWORK_VERIFY_HOST_DAILY_CAP:-3}
+      SELF_TERMS_AUTO_CONFIRM: ${SELF_TERMS_AUTO_CONFIRM:-false}
+      SELF_ADDRESS: ${SELF_ADDRESS:-}
     volumes:
       # GeoIP databases downloaded by ingest (the only writable path besides /tmp).
       - geoip-data:/data/geoip
@@ -1386,6 +1400,47 @@ services:
       start_period: 30s
     # no ports: nothing is published
 
+  # Participant mode without a VPN (M32): a tiny allow-list forward proxy, the ONLY service with a
+  # route out in that mode. It accepts CONNECT to the hub (and optionally feed) host on 443 and
+  # nothing else (hubproxy/). Profile `direct`, never together with `vpn` (profile `egress`).
+  hubproxy:
+    profiles: [direct]
+    image: ${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-hubproxy:${SUCKERPOT_VERSION:-dev}
+    build:
+      context: .
+      dockerfile: hubproxy/Dockerfile
+      args:
+        VERSION: ${SUCKERPOT_BUILD_VERSION:-dev}
+        BUILD_KIND: source
+        COMMIT: ${SUCKERPOT_BUILD_COMMIT:-unknown}
+    <<: *hardening
+    user: "10001:10001"
+    environment:
+      # Empty values make hubproxy refuse to start (fail closed). Not `:?` here: compose
+      # interpolates inactive profiles too, and full-mode installs set neither variable.
+      HUBPROXY_ALLOW: ${HUBPROXY_ALLOW:-}
+      HUBPROXY_PASSWORD: ${EGRESS_PROXY_PASSWORD:-}
+      HUBPROXY_MAX_CONNS: "8"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=1m
+    # Docker's embedded resolver is needed to resolve the allowed names.
+    networks:
+      hub-uplink:
+        gw_priority: 100
+      hub-proxy: {}
+    mem_limit: 48m
+    memswap_limit: 48m
+    cpus: 0.25
+    pids_limit: 32
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "hubproxy.healthcheck"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    # no ports, no volumes: nothing is published
+
   # Fetches the files behind captured download URLs, through the vpn proxy only. Hashes and
   # stores them in quarantine; never parses or executes them.
   collector:
@@ -1435,6 +1490,8 @@ services:
       EGRESS_CHECK_INTERVAL_S: ${EGRESS_CHECK_INTERVAL_S:-300}
       VPN_WG_ENDPOINT_IP: ${VPN_WG_ENDPOINT_IP:-}
       VPN_WG_DNS: ${VPN_WG_DNS:-}
+      # Verifier fetches for the network (M32): on only through ingest's verifier wiring in .env.
+      COLLECTOR_VERIFY_ENABLED: ${COLLECTOR_VERIFY_ENABLED:-false}
     dns: ["127.0.0.1"]
     volumes:
       - quarantine:/quarantine
@@ -1609,6 +1666,20 @@ networks:
     driver_opts:
       # Named so the host firewall can drop its traffic to the host (the gateway is the host).
       com.docker.network.bridge.name: sp-egress
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  # Participant mode without a VPN (M32): hubproxy's uplink, the only route out in that mode.
+  # Masquerading stays on so the proxy can reach the hub; the host firewall (scripts/host/firewall.nft)
+  # restricts sp-hubgate to TCP 443. Members: hubproxy only.
+  hub-uplink:
+    name: sp-hubgate
+    driver_opts:
+      com.docker.network.bridge.name: sp-hubgate
+      com.docker.network.bridge.enable_icc: "false"
+  # hubproxy <-> ingest (participant overlay): the proxy and control server. Internal.
+  hub-proxy:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.name: sp-hubproxy
       com.docker.network.bridge.gateway_mode_ipv4: isolated
   # db <-> collector <-> analyzer. Keeps both away from Redis, ingest and the API.
   samples:

@@ -15,7 +15,13 @@ def test_main_compose_is_clean() -> None:
 
 
 @pytest.mark.parametrize(
-    "overlay", ["docker-compose.ci.yml", "docker-compose.it.yml", "docker-compose.lowmem.yml"]
+    "overlay",
+    [
+        "docker-compose.ci.yml",
+        "docker-compose.it.yml",
+        "docker-compose.lowmem.yml",
+        "docker-compose.participant.yml",
+    ],
 )
 def test_overlays_keep_the_guardrails(overlay: str) -> None:
     assert check_compose(load_compose([BASE, ROOT / overlay])) == []
@@ -46,7 +52,9 @@ def test_every_sensor_is_switched_by_replicas() -> None:
 def test_built_images_use_the_release_prefix_and_version() -> None:
     services = load_compose([BASE])["services"]
     built = {n: s for n, s in services.items() if "build" in s}
-    assert len(built) == 19  # redis, migrate, ingest, api, collector, analyzer, demo, 12 sensors
+    assert (
+        len(built) == 20
+    )  # redis, migrate, ingest, api, collector, analyzer, demo, hubproxy, 12 sensors
     for name, svc in built.items():
         assert svc["image"].startswith(
             "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-"
@@ -95,7 +103,7 @@ def test_test_overlays_never_resolve_to_the_live_image_names(overlay: str) -> No
     }
     merged = load_compose([BASE, ROOT / overlay])["services"]
     built = [n for n, s in merged.items() if "build" in s]
-    assert len(built) == 19
+    assert len(built) == 20
     for project in ("sp-it-x", "sp-test"):
         for name in built:
             image = merged[name]["image"]

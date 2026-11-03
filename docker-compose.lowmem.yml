@@ -130,3 +130,8 @@ services:
       SYNOLOGY_MEMORY_BUDGET_MB: ${SYNOLOGY_MEMORY_BUDGET_MB:-48}
     mem_limit: 128m
     memswap_limit: 128m
+
+  # Participant mode without a VPN (M32): already small, pinned here so the budget is explicit.
+  hubproxy:
+    mem_limit: 48m
+    memswap_limit: 48m

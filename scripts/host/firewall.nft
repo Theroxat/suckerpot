@@ -12,6 +12,10 @@
 #   3. Containers on sp-ingress and sp-dashboard cannot open NEW connections
 #      through the host (no egress, no sensor-to-sensor traffic, no scanning of
 #      the LAN). Replies to inbound connections still work.
+#   4. The vpn container (sp-vpn) may only open WireGuard to its one endpoint, and the proxy and
+#      sample networks cannot talk to the host.
+#   5. Participant mode without a VPN (M32): the hubproxy uplink (sp-hubgate) may only open
+#      new TCP connections to port 443 (and DNS); its proxy network (sp-hubproxy) cannot talk to the host.
 #
 # Docker's own rules are left alone. This table only adds drops, at a higher
 # priority than Docker's chains, so it cannot be bypassed by published ports.
@@ -50,6 +54,13 @@ table inet suckerpot_host {
     #     the host's published ports through it.
     iifname { "sp-vpn", "sp-egress", "sp-samples" } ct state new counter drop
 
+    # (6) Participant mode without a VPN (M32): the proxy network (sp-hubproxy) never talks to
+    #     the host, and hubproxy (sp-hubgate) only asks for DNS. No effect when those networks do
+    #     not exist.
+    iifname "sp-hubproxy" ct state new counter drop
+    iifname "sp-hubgate" ct state new meta l4proto { tcp, udp } th dport 53 counter accept
+    iifname "sp-hubgate" ct state new counter drop
+
     # (2) No container may reach the protected ports of the host. Matching by
     #     interface (not by address) is independent of the address pool Docker
     #     picks, and it never touches your LAN.
@@ -68,6 +79,13 @@ table inet suckerpot_host {
     # (5) From the vpn uplink, only WireGuard to the one endpoint.
     iifname "sp-vpn" ct state new ip daddr $VPN_ENDPOINT_IP udp dport $VPN_ENDPOINT_PORT counter accept
     iifname "sp-vpn" ct state new counter drop
+
+    # (7) From the hubproxy uplink, only TCP 443 (the hub and feed hosts, which hubproxy itself
+    #     allow-lists by name) and DNS. Optional extra control: without it hubproxy is the only
+    #     control.
+    iifname "sp-hubgate" ct state new tcp dport 443 counter accept
+    iifname "sp-hubgate" ct state new meta l4proto { tcp, udp } th dport 53 counter accept
+    iifname "sp-hubgate" ct state new counter drop
   }
 
   # OPTIONAL: rate-limit new SIP flows (udp/5060) before they reach the sensor. The

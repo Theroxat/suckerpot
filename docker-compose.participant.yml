@@ -1,0 +1,31 @@
+# Participant mode (M32). Structural changes only: no port, capability or volume change.
+#
+# The participant stack is the base file without the dashboard: sensors, database, ingest and the
+# network node. The installer writes it to .env together with the profile and the egress settings
+# (docs/design/m32.md section 4):
+#
+#   COMPOSE_FILE=docker-compose.yml[:docker-compose.lowmem.yml]:docker-compose.participant.yml
+#   COMPOSE_PROFILES=direct    # hubproxy is the only route out (no VPN)
+#   COMPOSE_PROFILES=egress    # participant with a VPN: vpn, collector, analyzer
+#
+# Never both profiles at once: `vpn` and `hubproxy` must not coexist (scripts/guardrails).
+# scripts/guardrails/tests/test_participant.py fails if this file ever changes anything else.
+services:
+  # A profile no installer ever sets: the api (and with it the dashboard port) never starts.
+  api:
+    profiles: [dashboard]
+
+  # The vpn used to wait for the api, which fixes the owner of the empty vpn-config volume. In
+  # participant mode it reads WireGuard settings from .env only (the volume stays empty and
+  # read-only); scripts/ensure-volumes.sh creates the volume with uid 10001.
+  vpn:
+    depends_on: !reset {}
+
+  # Ingest reaches hubproxy (profile direct) on the internal hub-proxy network. It keeps the
+  # egress-proxy network for the participant-with-VPN case.
+  ingest:
+    networks: [backend, egress-proxy, hub-proxy]
+
+  backup:
+    mem_limit: 96m
+    memswap_limit: 96m

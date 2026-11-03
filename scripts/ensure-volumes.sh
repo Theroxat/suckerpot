@@ -67,4 +67,11 @@ for v in "${volumes[@]}"; do
     docker run --rm --network none --cap-drop ALL --cap-add CHOWN --security-opt no-new-privileges:true \
       --user 0:0 --entrypoint chown -v "$v:/b" "$image" 70:70 /b
   fi
+  if [ "$v" = "${prefix}_vpn-config" ]; then
+    # In participant mode (M32) the api never starts, so nobody else fixes the owner of this
+    # volume. The vpn container (read-only mount) and a later switch to full mode (the api,
+    # uid 10001) both expect uid 10001.
+    docker run --rm --network none --cap-drop ALL --cap-add CHOWN --security-opt no-new-privileges:true \
+      --user 0:0 --entrypoint chown -v "$v:/b" "$image" 10001:10001 /b
+  fi
 done

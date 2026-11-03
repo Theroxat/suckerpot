@@ -32,7 +32,13 @@ EXTERNAL_NETWORKS: dict[str, dict[str, str]] = {
         "name": "sp-vpn",
         "com.docker.network.bridge.enable_icc": "false",
     },
+    # M32: the uplink of hubproxy (participant mode without a VPN), its only member.
+    "hub-uplink": {
+        "name": "sp-hubgate",
+        "com.docker.network.bridge.enable_icc": "false",
+    },
 }
+ADMIN_SSH_PORT = "22222"
 PROXY_ENV = {"http_proxy", "https_proxy", "all_proxy", "no_proxy"}
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -170,7 +176,11 @@ def check_compose(compose: Compose) -> list[str]:
             problems.append(f"network '{net}' must be internal: true")
 
     # Bridges that hold a proxy or sample traffic are named, so the host firewall can match them.
-    for net, bridge in (("egress-proxy", "sp-egress"), ("samples", "sp-samples")):
+    for net, bridge in (
+        ("egress-proxy", "sp-egress"),
+        ("samples", "sp-samples"),
+        ("hub-proxy", "sp-hubproxy"),
+    ):
         opts = (networks.get(net) or {}).get("driver_opts") or {}
         if net in networks and opts.get("com.docker.network.bridge.name") != bridge:
             problems.append(f"network '{net}' must set the bridge name {bridge}")
@@ -188,6 +198,7 @@ def check_compose(compose: Compose) -> list[str]:
         "dashboard": {"api"},
         "vpn-uplink": {"vpn"},
         "egress-proxy": {"vpn", "ingest", "collector"},
+        "hub-uplink": {"hubproxy"},
     }
     for net, want in expected_members.items():
         if net in networks and members.get(net, set()) != want:
@@ -195,9 +206,15 @@ def check_compose(compose: Compose) -> list[str]:
                 f"network '{net}' members must be exactly {sorted(want)}, "
                 f"found {sorted(members.get(net, set()))}"
             )
-    for net in ("egress-proxy", "vpn-uplink"):
+    for net in ("egress-proxy", "vpn-uplink", "hub-uplink", "hub-proxy"):
         if net not in networks:
             problems.append(f"network '{net}' is missing")
+    # hub-proxy: hubproxy and ingest only (never a sensor, the api or the vpn side).
+    extra = members.get("hub-proxy", set()) - {"hubproxy", "ingest"}
+    if extra:
+        problems.append(
+            f"network 'hub-proxy' members must be hubproxy and ingest only: {sorted(extra)}"
+        )
 
     # 3. Egress clients sit on internal networks only and cannot resolve external names.
     for name in ("ingest", "collector", "analyzer"):
@@ -299,6 +316,8 @@ def check_compose(compose: Compose) -> list[str]:
         if len(script_mounts) != 1 or not script_ro:
             problems.append("service 'vpn' must mount /vpn/entrypoint.sh read-only")
 
+    problems += _check_hubproxy(services)
+    problems += _check_ports(services)
     problems += _check_sensor_switches(services)
     problems += _check_images(services)
     if vpn is not None:
@@ -310,6 +329,86 @@ def check_compose(compose: Compose) -> list[str]:
         test = list((vpn.get("healthcheck") or {}).get("test") or [])
         if test != ["CMD", "/bin/sh", "/vpn/health.sh"]:
             problems.append("service 'vpn' healthcheck must run /vpn/health.sh")
+    return problems
+
+
+def _check_hubproxy(services: Mapping[str, Any]) -> list[str]:
+    """M32: hubproxy is the only other route out. Profile ``direct``, never with ``vpn``."""
+    problems: list[str] = []
+    for name in ("vpn", "collector", "analyzer"):
+        svc = services.get(name)
+        if svc is not None and list(svc.get("profiles") or []) != ["egress"]:
+            problems.append(f"service '{name}' profiles must be exactly [egress]")
+    # No service may belong to both route-out profiles.
+    for name, svc in services.items():
+        if {"egress", "direct"} <= set(svc.get("profiles") or []):
+            problems.append(f"service '{name}' must not be in both profiles egress and direct")
+    hub = services.get("hubproxy")
+    if hub is None:
+        problems.append("service 'hubproxy' is missing")
+        return problems
+    if list(hub.get("profiles") or []) != ["direct"]:
+        problems.append("service 'hubproxy' profiles must be exactly [direct]")
+    vpn = services.get("vpn") or {}
+    if "hubproxy" in _depends(vpn) or "vpn" in _depends(hub):
+        problems.append("services 'vpn' and 'hubproxy' must not depend on each other")
+    if _service_networks(hub) != {"hub-uplink", "hub-proxy"}:
+        problems.append("service 'hubproxy' must be on exactly hub-uplink and hub-proxy")
+    for key in ("ports", "cap_add", "devices", "volumes", "privileged", "network_mode"):
+        if hub.get(key):
+            problems.append(f"service 'hubproxy' must not set {key}")
+    if hub.get("read_only") is not True:
+        problems.append("service 'hubproxy' must be read_only")
+    if "ALL" not in (hub.get("cap_drop") or []):
+        problems.append("service 'hubproxy' must set cap_drop: [ALL]")
+    if "no-new-privileges:true" not in (hub.get("security_opt") or []):
+        problems.append("service 'hubproxy' must set no-new-privileges:true")
+    user = str(hub.get("user", "0")).split(":")[0]
+    if not user.isdigit() or int(user) == 0:
+        problems.append("service 'hubproxy' must run as a non-root user")
+    for key in ("mem_limit", "memswap_limit", "cpus", "pids_limit"):
+        if not hub.get(key):
+            problems.append(f"service 'hubproxy' must set {key}")
+    if hub.get("dns"):
+        problems.append("service 'hubproxy' needs Docker's resolver (no dns override)")
+    return problems
+
+
+def _depends(service: Mapping[str, Any]) -> set[str]:
+    deps = service.get("depends_on") or []
+    return set(deps) if not isinstance(deps, Mapping) else set(deps.keys())
+
+
+def _host_port(entry: Any) -> str:
+    """The host-side part of a ports entry, as written (``${X:-22}`` stays whole)."""
+    if isinstance(entry, Mapping):
+        return str(entry.get("published", ""))
+    # Split on colons that are not part of a ${VAR:-default} expression.
+    parts = re.split(r":(?![-?+])", str(entry))
+    return parts[-2] if len(parts) >= 2 else parts[0]
+
+
+def _default_port(host: str) -> str:
+    match = re.fullmatch(r"\$\{[A-Z0-9_]+:-(\d+)\}", host)
+    return match.group(1) if match else host
+
+
+def _check_ports(services: Mapping[str, Any]) -> list[str]:
+    """M32: nobody publishes the admin SSH port; the dashboard never uses a sensor port."""
+    problems: list[str] = []
+    sensor_ports = {
+        _default_port(_host_port(p))
+        for n, s in services.items()
+        if n.startswith("sensor-")
+        for p in s.get("ports") or []
+    }
+    for name, svc in services.items():
+        for entry in svc.get("ports") or []:
+            host = _host_port(entry)
+            if _default_port(host) == ADMIN_SSH_PORT:
+                problems.append(f"service '{name}' must not publish port {ADMIN_SSH_PORT}")
+            if name == "api" and (_default_port(host) in sensor_ports or "_HOST_PORT" in host):
+                problems.append("service 'api' must not publish a sensor port")
     return problems
 
 
@@ -366,3 +465,140 @@ def find_hash_named_files(root: Path) -> list[str]:
         dirs[:] = [d for d in dirs if d not in skip]
         found += [str(Path(current, f).relative_to(root)) for f in files if HEX64.match(f)]
     return found
+
+
+def active_services(compose: Compose, profiles: Iterable[str]) -> set[str]:
+    """Services compose would start for the given ``COMPOSE_PROFILES`` (no ``--profile`` flag)."""
+    wanted = set(profiles)
+    active: set[str] = set()
+    for name, svc in (compose.get("services") or {}).items():
+        service_profiles = set(svc.get("profiles") or [])
+        if not service_profiles or service_profiles & wanted:
+            active.add(name)
+    return active
+
+
+def check_participant(compose: Compose, profiles: Iterable[str]) -> list[str]:
+    """M32: the participant rendering (base + lowmem + participant overlay) for one profile set.
+
+    ``profiles`` is ``["direct"]`` (no VPN) or ``["egress"]`` (with a VPN). Returns violations.
+    """
+    wanted = set(profiles)
+    problems = check_compose(compose)
+    services: dict[str, Any] = compose.get("services") or {}
+    networks: dict[str, Any] = compose.get("networks") or {}
+    active = active_services(compose, wanted)
+    sensors = {n for n in active if n.startswith("sensor-")}
+    if wanted not in ({"direct"}, {"egress"}):
+        problems.append(
+            f"participant profiles must be exactly direct or egress, got {sorted(wanted)}"
+        )
+    if {"vpn", "hubproxy"} <= active:
+        problems.append("vpn and hubproxy must never run together")
+    want = {"redis", "db", "migrate", "backup", "ingest"} | sensors
+    want |= {"hubproxy"} if wanted == {"direct"} else {"vpn", "collector", "analyzer"}
+    if active != want:
+        problems.append(
+            f"participant active services must be {sorted(want)}, "
+            f"extra {sorted(active - want)}, missing {sorted(want - active)}"
+        )
+    if "api" in active:
+        problems.append("participant mode must not start the api")
+    for name in sorted(active):
+        svc = services[name]
+        if name in ("hubproxy", "vpn"):
+            continue
+        for net in _service_networks(svc):
+            if name.startswith("sensor-") and net == "ingress":
+                continue
+            if (networks.get(net) or {}).get("internal") is not True:
+                problems.append(f"participant service '{name}' is on non-internal network '{net}'")
+        if svc.get("ports") and not name.startswith("sensor-"):
+            problems.append(f"participant service '{name}' must not publish ports")
+    # Sensors never share a network with hubproxy.
+    hub_nets = _service_networks(services.get("hubproxy") or {})
+    for name in sensors:
+        if _service_networks(services[name]) & hub_nets:
+            problems.append(f"sensor '{name}' shares a network with hubproxy")
+    return problems
+
+
+ALLOWED_OVERLAY_KEYS: dict[str, set[str]] = {
+    "api": {"profiles"},
+    "vpn": {"depends_on"},
+    "ingest": {"networks"},
+    "backup": {"mem_limit", "memswap_limit"},
+}
+
+
+def check_participant_overlay(base: Compose, overlay: Compose) -> list[str]:
+    """M32: the overlay changes only profiles, depends_on, ingest networks and backup limits."""
+    problems: list[str] = []
+    extra_top = set(overlay) - {"services"}
+    if extra_top:
+        problems.append(f"participant overlay may only set services, found {sorted(extra_top)}")
+    base_services: dict[str, Any] = base.get("services") or {}
+    for name, svc in (overlay.get("services") or {}).items():
+        allowed = ALLOWED_OVERLAY_KEYS.get(name)
+        if allowed is None or name not in base_services:
+            problems.append(f"participant overlay must not touch service '{name}'")
+            continue
+        svc = svc or {}
+        if set(svc) - allowed:
+            problems.append(f"participant overlay: '{name}' may only set {sorted(allowed)}")
+        if name == "api" and list(svc.get("profiles") or []) != ["dashboard"]:
+            problems.append("participant overlay: api profiles must be exactly [dashboard]")
+        if name == "ingest":
+            added = _service_networks(svc) - _service_networks(base_services[name])
+            if added != {"hub-proxy"}:
+                problems.append("participant overlay: ingest may only add the hub-proxy network")
+        if name == "backup":
+            for key in ("mem_limit", "memswap_limit"):
+                limit = base_services[name].get(key) or base_services[name]["mem_limit"]
+                if key in svc and _mem_bytes(str(svc[key])) > _mem_bytes(str(limit)):
+                    problems.append(f"participant overlay must not raise backup {key}")
+    return problems
+
+
+def _mem_bytes(value: str) -> int:
+    match = re.fullmatch(r"(\d+)([mg])", value)
+    if match is None:
+        return 1 << 62
+    return int(match.group(1)) * (1024**2 if match.group(2) == "m" else 1024**3)
+
+
+def check_hubproxy_allow(value: str, defaults: str) -> list[str]:
+    """M32: ``HUBPROXY_ALLOW`` holds at most two ``<name>:443`` entries naming default hosts."""
+    problems: list[str] = []
+    hosts = {
+        m.group(1)
+        for m in re.finditer(r"^NETWORK_(?:HUB|FEED)_URL=https://([a-z0-9.-]+)", defaults, re.M)
+    }
+    entries = [e for e in value.split(",") if e.strip()]
+    if not 1 <= len(entries) <= 2:
+        problems.append("HUBPROXY_ALLOW must hold one or two entries")
+    for entry in entries:
+        host, _, port = entry.strip().rpartition(":")
+        if port != "443" or not host:
+            problems.append(f"HUBPROXY_ALLOW entry '{entry}' must be <name>:443")
+        elif host not in hosts:
+            problems.append(
+                f"HUBPROXY_ALLOW host '{host}' is not a host of config/network-defaults.env"
+            )
+    return problems
+
+
+def profile_view(compose: Compose, profiles: Iterable[str]) -> dict[str, Any]:
+    """What compose would create for a profile set: active services as written, the networks and
+    volumes they use, and nothing else. Used to prove that an install does not change."""
+    services: dict[str, Any] = compose.get("services") or {}
+    active = active_services(compose, profiles)
+    used_networks: set[str] = set()
+    for name in active:
+        used_networks |= _service_networks(services[name])
+    return {
+        "services": {n: services[n] for n in sorted(active)},
+        "networks": {
+            n: (compose.get("networks") or {}).get(n) or {} for n in sorted(used_networks)
+        },
+    }
