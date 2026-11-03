@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the 18 images of the stack (the analyzer service reuses the collector image) for linux/amd64 and linux/arm64 on native runners, publishes
+# Builds the 19 images of the stack (the analyzer service reuses the collector image) for linux/amd64 and linux/arm64 on native runners, publishes
 # them to GHCR by digest, merges the two architectures under one tag, signs each image with
 # cosign (keyless, the workflow identity), attaches an SBOM and a provenance attestation, then
 # installs the published images on a throwaway runner and checks that the stack comes up.
@@ -9,7 +9,12 @@ name: Release
 # A manual run from a branch is a dry run: it builds every image for both architectures and
 # pushes nothing, signs nothing and logs in nowhere.
 #
-# Verify a release on your own machine with `just verify-images` (scripts/verify-images.sh).
+# After the images are signed and the smoke test passed, a signed release manifest
+# (release-manifest.json + its Sigstore bundle: version, commit, image digests, network defaults
+# hash, release time) is attached to the GitHub release. The automatic updater trusts only that.
+# A release is REFUSED while config/network-defaults.env still holds a <PLACEHOLDER> key.
+#
+# Verify a release on your own machine with `just verify-images` and scripts/verify-release.sh.
 
 on:
   push:
@@ -46,6 +51,25 @@ jobs:
       publish: ${{ steps.v.outputs.publish }}
       prefix: ${{ steps.v.outputs.prefix }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Refuse a release whose network defaults still hold a placeholder
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -eu
+          file=config/network-defaults.env
+          packaged=netproto/suckerpot_netproto/data/network_defaults.env
+          test -f "$file"
+          if grep -q '<HUB_PUBLIC_KEY>\|<FEED_PUBLIC_KEY>' "$file" || grep -Eq '^[A-Z_]+=<[A-Z_]+>' "$file"; then
+            if [ "$EVENT" = push ]; then
+              echo "config/network-defaults.env still holds a placeholder key: refusing to release." >&2
+              exit 1
+            fi
+            echo "::warning::config/network-defaults.env still holds a placeholder key (a release would be refused)"
+          fi
+          if [ -f "$packaged" ]; then cmp "$file" "$packaged"; fi
       - name: Work out the version and whether to publish
         id: v
         env:
@@ -100,6 +124,7 @@ jobs:
           - ingest
           - api
           - collector
+          - hubproxy
           - demo
           - sensor-ssh
           - sensor-rdp
@@ -126,7 +151,7 @@ jobs:
           case "$IMAGE" in
             redis) context=redis; file=redis/Dockerfile ;;
             migrate) context=.; file=db/Dockerfile ;;
-            ingest | api | collector) context=.; file="$IMAGE/Dockerfile" ;;
+            ingest | api | collector | hubproxy) context=.; file="$IMAGE/Dockerfile" ;;
             demo) context=.; file=scripts/demo/Dockerfile ;;
             sensor-*) context=.; file="sensors/${IMAGE#sensor-}/Dockerfile" ;;
             *) echo "unknown image" >&2; exit 1 ;;
@@ -205,6 +230,7 @@ jobs:
           - ingest
           - api
           - collector
+          - hubproxy
           - demo
           - sensor-ssh
           - sensor-rdp
@@ -273,6 +299,20 @@ jobs:
           cosign verify --certificate-identity-regexp '^https://github\.com/.+/\.github/workflows/release\.yml@refs/tags/v' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com "$NAME@$DIGEST" > /dev/null
           docker buildx imagetools create --tag "$NAME:$VERSION" --tag "$NAME:${MINOR}" "$NAME@$DIGEST"
+      - name: Keep the signed digest for the release manifest
+        env:
+          DIGEST: ${{ steps.tags.outputs.digest }}
+        run: |
+          set -eu
+          mkdir -p merged
+          printf '%s' "$DIGEST" > merged/digest
+      - name: Hand the digest to the manifest job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: merged-${{ matrix.image }}
+          path: merged/digest
+          if-no-files-found: error
+          retention-days: 1
 
   smoke:
     # Installs the published images exactly as a new owner would, on a throwaway runner.
@@ -329,3 +369,89 @@ jobs:
         run: |
           docker compose down || true
           docker volume ls -q --filter "name=^${PROJECT}_" | xargs -r docker volume rm
+
+  manifest:
+    # Publishing only: the signed release manifest (D7 and M11 of docs/design/m32.md).
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, merge]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # cosign keyless signing (OIDC), nothing else
+    env:
+      IMAGES: >-
+        redis migrate ingest api collector hubproxy demo sensor-ssh sensor-rdp sensor-telnet sensor-web
+        sensor-redis sensor-docker sensor-mysql sensor-mssql sensor-adb sensor-smb sensor-sip sensor-synology
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Fetch the signed digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: merged-*
+      - name: Install cosign (pinned release, checked against its SHA-256)
+        run: |
+          set -eu
+          curl -fsSL -o cosign "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/cosign-linux-amd64"
+          echo "$COSIGN_AMD64_SHA256  cosign" | sha256sum -c -
+          sudo install -m 0755 cosign /usr/local/bin/cosign
+      - name: Write and sign the manifest
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -eu
+          images='{}'
+          for image in $IMAGES; do
+            digest=$(cat "merged-$image/digest")
+            printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'
+            images=$(printf '%s' "$images" | jq -c --arg k "$image" --arg v "$digest" '. + {($k): $v}')
+          done
+          defaults=$(sha256sum config/network-defaults.env | cut -d' ' -f1)
+          major=${VERSION#v}
+          major=${major%%.*}
+          jq -n -S --arg version "$VERSION" --arg commit "$COMMIT" --argjson images "$images" \
+            --arg defaults "$defaults" --argjson major "$major" --argjson released "$(date -u +%s)" \
+            '{schema: "selfhostr-release/1", version: $version, commit: $commit, images: $images,
+              network_defaults_sha256: $defaults, auto_min_age_h: 48, major: $major, released_at: $released}' \
+            > release-manifest.json
+          cat release-manifest.json
+          cosign sign-blob --yes --bundle release-manifest.json.sigstore.json release-manifest.json
+          cosign verify-blob --bundle release-manifest.json.sigstore.json \
+            --certificate-identity-regexp '^https://github\.com/.+/\.github/workflows/release\.yml@refs/tags/v' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com release-manifest.json
+      - name: Keep the manifest for the attach job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-manifest
+          path: |
+            release-manifest.json
+            release-manifest.json.sigstore.json
+          if-no-files-found: error
+          retention-days: 1
+
+  attach:
+    # Publishing only, and only after the smoke test passed: the manifest goes onto the release.
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, manifest, smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release if needed and upload two assets, nothing else
+    steps:
+      - name: Fetch the signed manifest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-manifest
+      - name: Attach it to the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          gh release view "$VERSION" --repo "$REPO" > /dev/null 2>&1 \
+            || gh release create "$VERSION" --repo "$REPO" --verify-tag --title "$VERSION" --generate-notes
+          gh release upload "$VERSION" --repo "$REPO" --clobber release-manifest.json release-manifest.json.sigstore.json

@@ -9,7 +9,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 SENSORS = "ssh rdp telnet web redis docker mysql mssql adb smb sip synology".split()
-IMAGES = ["redis", "migrate", "ingest", "api", "collector", "demo"] + [
+IMAGES = ["redis", "migrate", "ingest", "api", "collector", "hubproxy", "demo"] + [
     f"sensor-{n}" for n in SENSORS
 ]
 
@@ -26,14 +26,20 @@ def test_only_a_version_tag_or_a_manual_run_triggers_it() -> None:
     assert triggers["push"] == {"tags": ["v*.*.*"]}  # no branch, no pull request
 
 
-def test_permissions_are_read_only_at_the_top_and_signing_is_confined_to_merge() -> None:
+def test_permissions_are_read_only_at_the_top_and_signing_is_confined_to_merge_and_manifest() -> (
+    None
+):
     wf = _load()
     assert wf["permissions"] == {"contents": "read"}
     for name, job in wf["jobs"].items():
         perms = job.get("permissions", {})
-        assert ("id-token" in perms) == (name == "merge"), name
+        assert ("id-token" in perms) == (name in {"merge", "manifest"}), name
         assert perms.get("packages") in (None, "read", "write"), name
-        assert perms.get("contents", "read") == "read", name
+        # Only the attach job may write to the repository (release assets), and nothing else.
+        if name == "attach":
+            assert perms == {"contents": "write"}
+        else:
+            assert perms.get("contents", "read") == "read", name
 
 
 def test_every_image_is_built_for_both_architectures() -> None:
@@ -48,7 +54,7 @@ def test_every_image_is_built_for_both_architectures() -> None:
 
 def test_publishing_steps_are_gated_and_a_branch_run_pushes_nothing() -> None:
     wf = _load()
-    for job in ("merge", "smoke"):
+    for job in ("merge", "smoke", "manifest", "attach"):
         assert wf["jobs"][job]["if"] == "needs.prepare.outputs.publish == 'true'"
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "refs/tags/v*) version=$REF_NAME; publish=true" in text
@@ -96,3 +102,51 @@ def test_verify_script_pins_cosign_and_checks_the_workflow_identity() -> None:
     for image in IMAGES:
         assert image in script
     assert "latest" not in script
+
+
+def test_manifest_is_signed_keyless_after_the_images_and_attached_after_the_smoke_test() -> None:
+    jobs = _load()["jobs"]
+    assert set(jobs["manifest"]["needs"]) == {"prepare", "merge"}
+    assert set(jobs["attach"]["needs"]) == {"prepare", "manifest", "smoke"}
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "cosign sign-blob --yes --bundle release-manifest.json.sigstore.json" in text
+    assert "cosign verify-blob --bundle release-manifest.json.sigstore.json" in text
+    assert "selfhostr-release/1" in text
+    for field in ("version", "commit", "images", "network_defaults_sha256", "auto_min_age_h"):
+        assert field in text
+    assert "released_at" in text
+    assert "--clobber release-manifest.json release-manifest.json.sigstore.json" in text
+    # The manifest lists exactly the images that are built and signed.
+    assert jobs["manifest"]["env"]["IMAGES"].split() == IMAGES
+
+
+def test_a_release_with_a_placeholder_key_is_refused_before_anything_is_built() -> None:
+    wf = _load()
+    steps = wf["jobs"]["prepare"]["steps"]
+    guard = next(s for s in steps if "placeholder" in s.get("name", ""))
+    run = guard["run"]
+    assert "config/network-defaults.env" in run
+    assert "<HUB_PUBLIC_KEY>" in run and "<FEED_PUBLIC_KEY>" in run
+    assert 'if [ "$EVENT" = push ]' in run and "exit 1" in run
+    # Every other job waits for prepare, so nothing is built or pushed first.
+    for name in ("build", "merge", "manifest", "attach"):
+        assert "prepare" in wf["jobs"][name]["needs"]
+
+
+def test_the_placeholder_gate_matches_the_real_file_format() -> None:
+    gate = re.compile(r"<HUB_PUBLIC_KEY>|<FEED_PUBLIC_KEY>|^[A-Z_]+=<[A-Z_]+>", re.MULTILINE)
+    assert gate.search("NETWORK_HUB_KEY=<HUB_PUBLIC_KEY>\n")
+    assert not gate.search(
+        "NETWORK_HUB_KEY=AAAAbase64key=\nNETWORK_HUB_URL=https://hub.example.org\n"
+    )
+    assert (ROOT / "config" / "network-defaults.env").is_file()
+
+
+def test_verify_release_pins_the_same_cosign_and_identity_as_the_images() -> None:
+    images = (ROOT / "scripts" / "verify-images.sh").read_text(encoding="utf-8")
+    release = (ROOT / "scripts" / "verify-release.sh").read_text(encoding="utf-8")
+    pin = re.search(r'COSIGN_IMAGE="(\S+@sha256:[0-9a-f]{64})"', release)
+    assert pin and f'COSIGN_IMAGE="{pin.group(1)}"' in images
+    assert "verify-blob" in release and "--bundle" in release
+    assert "release\\\\.yml@refs/tags/" in release
+    assert "https://token.actions.githubusercontent.com" in release
