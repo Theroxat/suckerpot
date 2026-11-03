@@ -254,7 +254,7 @@ A report never contains a node id, a pseudonym, a fingerprint, a node's address,
 ### What gets reported
 
 - An address with a severe activity (a login that worked, a command, a download or an exploit) from enough nodes, or with 100 or more login attempts from enough nodes.
-- A link or a file-hosting domain that at least two nodes fetched, once the link is confirmed.
+- A link or a file-hosting domain that at least two nodes fetched, once the link is confirmed. The fetched content must be malware-like: a known malware family or an executable or script file type (ELF, PE, shell, Python, Perl, PHP). An HTML page, plain text, an archive or an unknown type never qualifies, so an ordinary page of a compromised site is not listed or reported.
 - A command server that is confirmed. Command servers are always reported by hand.
 
 Scans and connections alone are never reported. A target that has been reported is not reported again. A target that came back after a takedown can be reported again, but only when its earlier report is more than 30 days old.

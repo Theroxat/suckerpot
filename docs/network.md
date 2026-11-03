@@ -100,7 +100,7 @@ The network also publishes free blocklists. They are built from the same consens
 
 | List | Blocks | Built from |
 | --- | --- | --- |
-| `outbound` | Traffic leaving your network to malware hosts and command servers | Payload hosts fetched by at least 2 nodes, with a known malware family. Command servers with high-confidence analysis and at least 2 samples from 2 nodes. |
+| `outbound` | Traffic leaving your network to malware hosts and command servers | Payload hosts fetched by at least 2 nodes, with a known malware family or an executable or script file type. Command servers with high-confidence analysis and at least 2 samples from 2 nodes. |
 | `inbound` | Traffic coming in from attack sources | Addresses with login success, commands, downloads, exploits or repeated login attempts, seen over TCP by at least 5 nodes |
 | `outbound-domains` | DNS lookups of the same hosts, by name | The names behind the `outbound` evidence |
 
