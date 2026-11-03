@@ -65,11 +65,10 @@ def test_no_address_column_in_any_table() -> None:
             )
 
 
-def test_caddy_logs_nowhere() -> None:
+@pytest.mark.parametrize("name", ["Caddyfile", "Caddyfile.tunnel"])
+def test_caddy_logs_nowhere(name: str) -> None:
     caddyfile = "\n".join(
-        line
-        for line in (HUB / "Caddyfile").read_text().splitlines()
-        if not line.strip().startswith("#")
+        line for line in (HUB / name).read_text().splitlines() if not line.strip().startswith("#")
     )
     blocks = re.findall(r"\blog\s*\{([^}]*)\}", caddyfile)
     assert blocks, "a log block must exist so the default logger is disabled"
@@ -89,7 +88,7 @@ def test_database_does_not_log_connections_or_statements() -> None:
 
 
 def test_no_third_party_resources_or_analytics() -> None:
-    for path in [*_python_files(), HUB / "Caddyfile"]:
+    for path in [*_python_files(), HUB / "Caddyfile", HUB / "Caddyfile.tunnel"]:
         src = path.read_text().lower()
         for word in (
             "google-analytics",

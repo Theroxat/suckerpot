@@ -1,0 +1,48 @@
+# "Behind a tunnel" overlay. Use it on a host whose ports 80 and 443 are taken, with a Cloudflare
+# Tunnel (cloudflared on another machine, plain HTTP to one host port, TLS ends at Cloudflare) and
+# an existing authenticated HTTP proxy (a VPN gateway) as the only way out:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --build
+#
+# What changes: Caddy serves plain HTTP on one unprivileged port (Caddyfile.tunnel), and the
+# worker and the admin CLI reach the internet only through the proxy. No service keeps a direct
+# route out (hub-out is unused). Needs Docker Compose 2.24 or newer (!override, !reset).
+# SMTP cannot use an HTTP proxy, so report mail stays queued in this mode (hub/README.md).
+
+services:
+  caddy:
+    cap_add: !reset []
+    sysctls: !reset []
+    # Bind to a private address: the tunnel connector is trusted to name the client address.
+    ports: !override
+      - "${HUB_BIND:?HUB_BIND must be set}:${HUB_HTTP_PORT:?HUB_HTTP_PORT must be set}:8080"
+    volumes:
+      # Same target as the base file, so this replaces the Caddyfile mount; the others stay.
+      - ./Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  hub-worker:
+    networks: !override [hub-internal, egress]
+    environment:
+      HTTPS_PROXY: ${HUB_EGRESS_PROXY:?HUB_EGRESS_PROXY must be set}
+      HTTP_PROXY: ${HUB_EGRESS_PROXY:?HUB_EGRESS_PROXY must be set}
+      NO_PROXY: hub-db,localhost,127.0.0.1
+
+  # `hub-admin ranges refresh` fetches the CDN and Tor lists.
+  hub-admin:
+    networks: !override [hub-internal, egress]
+    environment:
+      HTTPS_PROXY: ${HUB_EGRESS_PROXY:?HUB_EGRESS_PROXY must be set}
+      HTTP_PROXY: ${HUB_EGRESS_PROXY:?HUB_EGRESS_PROXY must be set}
+      NO_PROXY: hub-db,localhost,127.0.0.1
+
+networks:
+  # The existing network of the proxy (it must already exist). The proxy is the only route out.
+  egress:
+    external: true
+    name: ${HUB_EGRESS_NETWORK:?HUB_EGRESS_NETWORK must be set}

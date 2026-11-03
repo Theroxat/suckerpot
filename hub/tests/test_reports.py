@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import text
 
 from hub import consensus
+from hub.config import Settings
 from hub.never import Never
 from hub.reports import render, send
 from hub.reports import select as sel
@@ -294,6 +295,44 @@ async def test_recipient_and_global_daily_caps(env: Env) -> None:
     assert out.sent == 1 and out.deferred.get("daily_cap") == 1
 
 
+async def test_smtp_fails_closed_behind_an_http_proxy(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Tunnel mode: smtplib cannot use the proxy, so the mailer refuses before any connection."""
+    for v in send.PROXY_VARS:
+        monkeypatch.delenv(v, raising=False)
+        monkeypatch.delenv(v.lower(), raising=False)
+    monkeypatch.setenv("HTTPS_PROXY", "http://user:proxy-secret@vpn:8888")
+    s = Settings(
+        smtp_host="smtp.example.org", smtp_from="r@example.org", smtp_password="smtp-secret"
+    )
+    mailer = send.smtp_mailer(s, lambda: datetime(2026, 11, 1, tzinfo=UTC))
+    with caplog.at_level("DEBUG"), pytest.raises(send.SendBlocked) as err:
+        await mailer("abuse@example.net", "s", "b", None)
+    assert err.value.args == ("smtp_needs_direct_route",)
+    assert "smtp-secret" not in caplog.text and "proxy-secret" not in caplog.text
+
+
+@pytest.mark.integration
+async def test_blocked_send_keeps_reports_queued(env: Env) -> None:
+    async def blocked(to: str, subject: str, body: str, xarf: str | None) -> None:
+        raise send.SendBlocked("smtp_needs_direct_route")
+
+    async with env.worker() as s:
+        await s.execute(
+            text(
+                "INSERT INTO reports (recipient, kind, target_ids, state, body_text, created_day) "
+                "VALUES ('c@example.net', 'c2', ARRAY['t_x'], 'approved', 'Subject: s\n\nb', :d)"
+            ),
+            {"d": TODAY},
+        )
+        await s.commit()
+        out = await send.send_due(s, env.settings, env.clock(), TODAY, blocked)
+        row = (await s.execute(text("SELECT state, error_code FROM reports"))).one()
+    assert out.failed == 0 and out.deferred == {"smtp_needs_direct_route": 1}
+    assert (row.state, row.error_code) == ("approved", None)
+
+
 @pytest.mark.integration
 async def test_failed_send_releases_the_targets(env: Env) -> None:
     await _confirmed_ip(env)
@@ -355,10 +394,6 @@ async def test_cancelled_report_blocks_requeue(env: Env) -> None:
 
 
 def test_build_message_is_neutral() -> None:
-    from datetime import UTC, datetime
-
-    from hub.config import Settings
-
     s = Settings(smtp_from="reports@example.org", report_reply_to="desk@example.org")
     msg = send.build_message(
         s,

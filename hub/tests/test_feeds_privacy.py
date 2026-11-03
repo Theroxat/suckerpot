@@ -89,25 +89,27 @@ def test_feed_code_only_talks_to_the_database_and_the_disk() -> None:
         assert not {"httpx", "requests", "urllib", "aiohttp", "socket"} & set(imports), path.name
 
 
-def test_feeds_site_logs_nothing() -> None:
-    caddy = (HUB / "Caddyfile").read_text()
+@pytest.mark.parametrize("name", ["Caddyfile", "Caddyfile.tunnel"])
+def test_feeds_site_logs_nothing(name: str) -> None:
+    caddy = (HUB / name).read_text()
     match = re.search(r"\{\$HUB_FEEDS_DOMAIN[^{]*\{(.*)", caddy, flags=re.S)
     assert match is not None, "the feeds site must be in the Caddyfile"
     block = match.group(1)
     assert "output discard" in block and not re.search(r"output\s+(file|stdout|stderr)", block)
 
 
-def test_delist_page_hashes_match_the_caddy_policy() -> None:
+@pytest.mark.parametrize("name", ["Caddyfile", "Caddyfile.tunnel"])
+def test_delist_page_hashes_match_the_caddy_policy(name: str) -> None:
     import base64
     import hashlib
 
     page = (HUB / "static" / "delist.html").read_text()
-    caddy = (HUB / "Caddyfile").read_text()
+    caddy = (HUB / name).read_text()
     for tag in ("script", "style"):
         match = re.search(rf"<{tag}>(.*?)</{tag}>", page, flags=re.S)
         assert match is not None
         digest = base64.b64encode(hashlib.sha256(match.group(1).encode()).digest()).decode()
-        assert f"sha256-{digest}" in caddy, f"update the {tag} hash in the Caddyfile"
+        assert f"sha256-{digest}" in caddy, f"update the {tag} hash in {name}"
     assert page.count("<script") == 1 and page.count("<style") == 1
 
 

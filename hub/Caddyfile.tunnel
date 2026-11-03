@@ -1,0 +1,118 @@
+# TUNNEL VARIANT of Caddyfile: keep the two in step (tests/test_caddy_tunnel.py compares them).
+# Plain HTTP on 8080, behind a Cloudflare Tunnel that terminates TLS. Differences from Caddyfile:
+# the site addresses, the trust settings in the global block, and the X-Forwarded-For line in
+# every reverse_proxy. Nothing else.
+#
+# Edge of the hub. Nothing about a client is logged: no access log, and the default logger
+# writes nowhere (client addresses show up in TLS error lines otherwise).
+{
+	admin off
+	log {
+		output discard
+	}
+	auto_https off
+	servers {
+		# Only the tunnel connector can reach the published port (bind it to a private address and
+		# firewall it). Its address is private, so its Cf-Connecting-Ip header is believed; from
+		# anyone else the header is ignored.
+		trusted_proxies static private_ranges
+		client_ip_headers Cf-Connecting-Ip
+		protocols h1 h2
+		max_header_size 16KB
+		timeouts {
+			read_header 10s
+			read_body 20s
+			write 30s
+			idle 2m
+		}
+	}
+}
+
+http://{$HUB_DOMAIN}:8080 {
+	log {
+		output discard
+	}
+	request_body {
+		max_size 1MiB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Cache-Control "no-store"
+		-Server
+	}
+	handle /v1/* {
+		# hub-api reads the LAST X-Forwarded-For entry: set it to the client address Caddy derived
+		# from the tunnel header, replacing whatever arrived.
+		reverse_proxy hub-api:8080 {
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
+	handle {
+		respond "Not Found" 404
+	}
+}
+
+# The public feed site: static files only, the same for everyone. No access log, no cookies, no
+# CDN, no query handling. The feeds volume is mounted read-only. Design M30 sections 6.1 and 8.
+http://{$HUB_FEEDS_DOMAIN}:8080 {
+	log {
+		output discard
+	}
+	request_body {
+		max_size 64KB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Cache-Control "public, max-age=900"
+		-Server
+	}
+
+	# Delisting and lookup are the only dynamic paths; hub-api answers them.
+	@api path /v1/delist /v1/delist/* /v1/lookup
+	handle @api {
+		@apibad not method GET HEAD POST
+		respond @apibad "Method Not Allowed" 405
+		header Cache-Control "no-store"
+		reverse_proxy hub-api:8080 {
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
+
+	handle /v1/* {
+		@readonly not method GET HEAD
+		respond @readonly "Method Not Allowed" 405
+
+		# Never serve temporary publication directories or any dot file.
+		@hidden path /v1/.* /v1/*/.*
+		respond @hidden "Not Found" 404
+
+		@plain path *.txt *.nft *.ipset *.rsc *.minisig
+		header @plain Content-Type "text/plain; charset=utf-8"
+		# The delisting page: inline script and style pinned by hash (tests/test_feeds_privacy.py
+		# recomputes both from static/delist.html), nothing else may load or run.
+		@page path /v1/delist.html
+		header @page Content-Security-Policy "default-src 'none'; script-src 'sha256-Zp2mLyxOAn1EMFrIZjQnA9PcHojINbKic2Hjw1GrkSY='; style-src 'sha256-vTVC0cS3214e7DOUbc/X6p6MV78OWzfhcKo5DhngLhY='; connect-src 'self'; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		@project path /v1/stats.json /v1/index.json
+		header @project Access-Control-Allow-Origin "*"
+
+		# The feed index names files in lower case (a format rule); README.txt is its public name.
+		@readme path /v1/README.txt /v1/README.txt.minisig /v1/README.txt.gz
+		uri @readme replace README.txt readme.txt
+
+		uri strip_prefix /v1
+		root * /srv/feeds
+		file_server {
+			precompressed gzip
+			index off
+			hide .tmp-* .*
+		}
+	}
+
+	handle {
+		respond "Not Found" 404
+	}
+}

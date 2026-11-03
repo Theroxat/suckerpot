@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import smtplib
 import ssl
 from collections.abc import Awaitable, Callable
@@ -30,6 +31,22 @@ Mailer = Callable[[str, str, str, str | None], Awaitable[None]]
 
 class SendError(Exception):
     """The message is a short constant code (never a server answer)."""
+
+
+class SendBlocked(SendError):
+    """No route for mail in this deployment: the report must stay approved and queued."""
+
+
+PROXY_VARS = ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY")
+
+
+def _egress_is_proxied() -> bool:
+    """True when outbound traffic must go through an HTTP proxy (tunnel mode, see the README).
+
+    smtplib cannot use an HTTP proxy, and in that mode the container has no direct route out, so a
+    send could only fail. Refusing up front keeps the report queued instead of marking it failed.
+    """
+    return any(os.environ.get(v) or os.environ.get(v.lower()) for v in PROXY_VARS)
 
 
 @dataclass
@@ -79,6 +96,8 @@ def smtp_mailer(s: Settings, clock: Callable[[], datetime]) -> Mailer:
     async def send(to: str, subject: str, body: str, xarf: str | None) -> None:
         if not (s.smtp_host and s.smtp_from):
             raise SendError("smtp_not_configured")
+        if _egress_is_proxied():
+            raise SendBlocked("smtp_needs_direct_route")
         await asyncio.to_thread(deliver, to, subject, body, xarf)
 
     return send
@@ -131,6 +150,12 @@ async def send_due(
         subject, body = split_stored(r.body_text)
         try:
             await mailer(r.recipient, subject, body, r.xarf)
+        except SendBlocked as exc:
+            # Nothing was tried and nothing is stored: the same reports are due next run.
+            code = str(exc.args[0] if exc.args else "blocked")
+            log.warning("report mail not sent: %s", code)
+            result.deferred[code] = len(rows) - rows.index(r)
+            break
         except SendError as exc:
             await session.execute(
                 text("UPDATE reports SET state = 'failed', error_code = :e WHERE id = :id"),
