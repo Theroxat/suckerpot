@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from suckerpot_netproto import ERROR_STATUS, ProtoError, defaults, enums, models, sign
+from suckerpot_netproto.feeds import minisign
 from suckerpot_netproto.models import (
     VerifyResultsRequest,
     VerifyRevealsResponse,
@@ -18,6 +19,7 @@ from suckerpot_netproto.models import (
     parse_response,
 )
 
+FEED_PUBLIC = minisign.generate_keypair().public.encoded
 H = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 REPO = Path(__file__).resolve().parents[2]
 
@@ -256,7 +258,8 @@ def test_committed_defaults_load_and_are_placeholders_until_release() -> None:
         assert not d.hub_configured and not d.feed_configured
         assert d.hub_keys == () and d.feed_keys == ()
     else:
-        assert d.hub_configured and d.feed_configured  # pragma: no cover
+        assert d.hub_configured and d.feed_configured
+        assert len(d.hub_keys) == 1 and len(d.feed_keys) == 1
 
 
 def test_host_mirror_is_identical_to_package_data() -> None:
@@ -281,7 +284,7 @@ def _file(**over: str) -> str:
         "NETWORK_HUB_URL": "https://hub.example.org",
         "NETWORK_HUB_KEY": ",".join(keys),
         "NETWORK_FEED_URL": "https://feeds.example.org/v1",
-        "NETWORK_FEED_KEY": keys[0],
+        "NETWORK_FEED_KEY": FEED_PUBLIC,
     }
     values.update(over)
     return "# c\n" + "\n".join(f"{k}={v}" for k, v in values.items() if v != "<DROP>") + "\n"

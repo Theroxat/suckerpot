@@ -34,3 +34,12 @@ tags = ["network", "privacy"]
 [[allowlists]]
 description = "spn/1 golden test vectors"
 paths = ['''^netproto/tests/vectors\.json$''']
+
+# The network defaults hold the project hub's public signing key and the feed's minisign public
+# key. They are public by design (nodes pin them); no secret key ever lives in these files.
+[[allowlists]]
+description = "Public hub and feed keys in the committed network defaults"
+paths = [
+  '''^config/network-defaults\.env$''',
+  '''^netproto/suckerpot_netproto/data/network_defaults\.env$''',
+]

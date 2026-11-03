@@ -20,7 +20,9 @@ from .helpers import HUB_KEY, HUB_URL, NOW, FakeGate, FakeHub, hub_client, setti
 
 def test_defaults_are_off_and_unconfigured() -> None:
     s = NetworkSettings.from_env({})
-    assert not s.enabled and not s.hub_configured and s.interval_s == 900 and s.max_sources == 5000
+    assert not s.enabled and s.interval_s == 900 and s.max_sources == 5000
+    # The committed release defaults name the project hub; joining still needs an explicit opt-in.
+    assert s.hub_configured and s.hub_url == "https://hub.selfhostr.io"
 
 
 def test_settings_validation() -> None:
