@@ -37,9 +37,12 @@ from urllib.parse import urlsplit
 import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from suckerpot_netproto.enums import FAMILIES_V1
 
 from . import consensus
 from .config import Settings
+from .feeds.filter import Exclusions, RangesStale, load_exclusions, parse_network
+from .malware import EXECUTABLE_FILE_TYPES, SQL_MALWARE_LIKE, sql_params
 from .never import Never
 
 log = logging.getLogger("hub.abusech")
@@ -74,20 +77,6 @@ MALPEDIA: Final = {
     "mozi": "elf.mozi",
     "xorddos": "elf.xorddos",
 }
-EXECUTABLE_TYPES: Final = (
-    "elf-x86",
-    "elf-x86_64",
-    "elf-arm",
-    "elf-aarch64",
-    "elf-mips",
-    "elf-ppc",
-    "elf-other",
-    "pe",
-    "script-sh",
-    "script-py",
-    "script-pl",
-    "script-php",
-)
 # File type to abuse.ch tags (fixed vocabulary; an unmapped type adds none).
 _TYPE_TAGS: Final = {
     "elf-x86": ("elf", "x86"),
@@ -112,15 +101,24 @@ HTTP_ERROR: Final = "http_error"
 UNKNOWN_OUTCOME: Final = "unknown_outcome"
 GUARD_FAILED: Final = "guard_failed"
 NEVER_LISTED: Final = "never_listed"
+TARGET_NOT_LIVE: Final = "target_not_live"
+EXCLUDED: Final = "excluded"
+WITHDRAWN: Final = "withdrawn"
 CODES: Final = frozenset(
     {
         INSERTED, ALREADY_KNOWN, INVALID, BLACKLISTED, AUTH_FAILED, RATE_LIMITED, HTTP_ERROR,
-        UNKNOWN_OUTCOME, GUARD_FAILED, NEVER_LISTED,
+        UNKNOWN_OUTCOME, GUARD_FAILED, NEVER_LISTED, TARGET_NOT_LIVE, EXCLUDED, WITHDRAWN,
     }
 )  # fmt: skip
 # Nothing reached abuse.ch, or it asked us to wait: the submission stays approved for a retry.
 TRANSIENT: Final = frozenset({HTTP_ERROR, RATE_LIMITED, AUTH_FAILED})
 SUCCESS: Final = frozenset({INSERTED, ALREADY_KNOWN})
+# Withdrawn before anything left: the row is final and marked rejected.
+REJECTING: Final = frozenset({NEVER_LISTED, TARGET_NOT_LIVE, EXCLUDED})
+LIVE_STATES: Final = ("confirmed", "reported")
+# Hosts that never name a public machine: local suffixes and shorthand numeric forms.
+LOCAL_SUFFIXES: Final = (".local", ".internal", ".lan", ".localhost", ".home.arpa", ".intranet")
+_NUMERIC_LABEL: Final = re.compile(r"^(0x[0-9a-f]*|[0-9]+)$")
 
 Submitter = Callable[[str, bytes, str], Awaitable[str]]
 
@@ -285,9 +283,22 @@ def url_refusal(url: str, *, allow_documentation: bool = False) -> str | None:
     try:
         addr = ipaddress.ip_address(host)
     except ValueError:
-        return None if "." in host and host.isascii() else "host"
+        return _name_refusal(host)
     if addr.is_multicast or not (addr.is_global or allow_documentation):
         return "private"
+    return None
+
+
+def _name_refusal(host: str) -> str | None:
+    """A host name that is not a plain public DNS name: single label, local suffix, or made only
+    of numbers (shorthand IPv4 such as ``127.1`` or ``0x7f.1``, which resolvers may read as one)."""
+    if "." not in host or not host.isascii():
+        return "host"
+    if host.endswith(LOCAL_SUFFIXES):
+        return "local_name"
+    labels = host.split(".")
+    if all(_NUMERIC_LABEL.match(label) for label in labels) or labels[-1].isdigit():
+        return "numeric_host"
     return None
 
 
@@ -329,42 +340,44 @@ async def urlhaus_candidates(
 ) -> list[Candidate]:
     """Fetched by at least two eligible nodes, and a family or an executable file type."""
     since = today - timedelta(days=s.window_days)
+    # ONE count: distinct eligible nodes whose own row for the link is fetched AND malware-like.
+    # Families and file types come from those rows only, never from the target's merged fields.
     rows = (
         await session.execute(
             text(
-                """
-                SELECT t.id, t.value, t.families,
-                  (SELECT coalesce(array_agg(DISTINCT o.file_type), '{}') FROM observations o
-                    WHERE o.kind = 'url' AND o.value = coalesce(t.value_b, t.value)
-                      AND o.day >= :since AND o.fetched AND o.node_id = ANY(:eligible)
-                      AND o.file_type = ANY(:exe)) AS exe_types
+                f"""
+                SELECT t.id, t.value,
+                  coalesce(array_agg(DISTINCT f) FILTER (WHERE f IS NOT NULL), '{{}}') AS families,
+                  coalesce(array_agg(DISTINCT o.file_type)
+                           FILTER (WHERE o.file_type = ANY(CAST(:mal_types AS text[]))),
+                           '{{}}') AS exe_types
                 FROM targets t
+                JOIN observations o ON o.kind = 'url' AND o.value = coalesce(t.value_b, t.value)
+                  AND o.day >= :since AND o.fetched AND o.node_id = ANY(:eligible)
+                  AND {SQL_MALWARE_LIKE}
+                LEFT JOIN LATERAL unnest(o.families) AS f ON true
                 WHERE t.kind = 'url' AND t.state IN ('confirmed', 'reported')
                   AND t.value IS NOT NULL
-                  AND (SELECT count(DISTINCT o.node_id) FROM observations o
-                        WHERE o.kind = 'url' AND o.value = coalesce(t.value_b, t.value)
-                          AND o.day >= :since AND o.fetched
-                          AND o.node_id = ANY(:eligible)) >= :fetched
                   AND NOT EXISTS (SELECT 1 FROM abusech_submissions a
                                   WHERE a.kind = 'urlhaus' AND a.indicator = t.value)
+                GROUP BY t.id, t.value
+                HAVING count(DISTINCT o.node_id) >= :fetched
                 ORDER BY t.id LIMIT :n
-                """
+                """  # noqa: S608 - module constants only
             ),
             {
                 "since": since,
                 "eligible": eligible,
-                "exe": list(EXECUTABLE_TYPES),
                 "fetched": MIN_FETCHED_NODES,
                 "n": PER_CYCLE,
+                **sql_params(),
             },
         )
     ).all()
     out: list[Candidate] = []
     for r in rows:
-        families = [f for f in (r.families or []) if f != "generic"]
-        exe_types = list(r.exe_types or [])
-        if not families and not exe_types:
-            continue  # a fetched ordinary page: never submitted
+        families = [f for f in (r.families or []) if f in FAMILIES_V1 and f != "generic"]
+        exe_types = [t for t in (r.exe_types or []) if t in EXECUTABLE_FILE_TYPES]
         out.append(Candidate(URLHAUS, r.id, r.value, None, tags_for(families, exe_types)))
     return out
 
@@ -392,6 +405,36 @@ async def threatfox_candidates(session: AsyncSession) -> list[Candidate]:
     return out
 
 
+def _host_of(kind: str, indicator: str) -> tuple[str, bool]:
+    """``(host, is_domain)`` of an indicator."""
+    host = (
+        (urlsplit(indicator).hostname or "")
+        if kind == URLHAUS
+        else indicator.rpartition(":")[0].strip("[]")
+    )
+    host = host.lower().rstrip(".")
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return host, True
+    return host, False
+
+
+def excluded_reason(excl: Exclusions, kind: str, indicator: str) -> str | None:
+    """Why the feeds would not carry this host (allow-list, delisting, never-list, reserved,
+    CDN, Tor), reusing ``hub.feeds.filter``."""
+    host, is_domain = _host_of(kind, indicator)
+    return excl.classify(host, is_domain=is_domain)
+
+
+async def load_excl(session: AsyncSession, s: Settings, today: date) -> tuple[Exclusions, bool]:
+    """The feed exclusions, and whether the CDN/Tor ranges are stale (then ThreatFox waits)."""
+    try:
+        return await load_exclusions(session, s, today), False
+    except RangesStale:
+        return await load_exclusions(session, s, today, require_ranges=False), True
+
+
 def _never_kind(kind: str) -> str:
     return "url" if kind == URLHAUS else "c2_ip"
 
@@ -407,7 +450,14 @@ async def queue_submissions(
     found = await urlhaus_candidates(session, s, today, eligible)
     found += await threatfox_candidates(session)
     result.candidates = len(found)
+    excl, stale = await load_excl(session, s, today)
     for c in found:
+        if c.kind == THREATFOX and stale:
+            result.skip("ranges_stale")  # fail closed, like the feeds
+            continue
+        if excluded_reason(excl, c.kind, c.indicator) is not None:
+            result.skip("excluded")
+            continue
         if never.matches(_never_kind(c.kind), c.indicator):
             result.skip("never_list")
             continue
@@ -454,10 +504,16 @@ async def auto_approve(session: AsyncSession, s: Settings, today: date) -> int:
         return 0
     result = await session.execute(
         text(
-            "UPDATE abusech_submissions SET state = 'approved', approved_by = 'auto' "
-            "WHERE state = 'queued' AND kind = 'urlhaus' AND created_day <= :cutoff"
+            "UPDATE abusech_submissions SET state = 'approved', approved_by = 'auto', "
+            "approved_manually = false "
+            "WHERE state = 'queued' AND kind = 'urlhaus' AND created_day <= :cutoff "
+            "AND EXISTS (SELECT 1 FROM targets t WHERE t.id = abusech_submissions.target_id "
+            "AND t.state = ANY(:live))"
         ),
-        {"cutoff": today - timedelta(days=math.ceil(s.report_hold_hours / 24))},
+        {
+            "live": list(LIVE_STATES),
+            "cutoff": today - timedelta(days=math.ceil(s.report_hold_hours / 24)),
+        },
     )
     await session.commit()
     return int(getattr(result, "rowcount", 0) or 0)
@@ -482,11 +538,18 @@ async def send_due(
     *,
     never: Never,
 ) -> SendResult:
-    """Send approved submissions, oldest first, up to the daily cap."""
+    """Send approved submissions, oldest first, up to the daily cap.
+
+    Each row is checked again just before it leaves: its target must still be confirmed or
+    reported, the host must not be on the allow-list, a delisting decision, the never-list or (for
+    ThreatFox, with fresh CDN/Tor ranges) a shared range, and a ThreatFox row needs a person.
+    """
     result = SendResult()
     if not s.abusech_active:
         return result
-    midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=now.tzinfo)
+    today = now.date()
+    excl, stale = await load_excl(session, s, today)
+    midnight = datetime.combine(today, datetime.min.time(), tzinfo=now.tzinfo)
     sent_today = (
         await session.execute(
             text(
@@ -499,8 +562,10 @@ async def send_due(
     rows = (
         await session.execute(
             text(
-                "SELECT id, kind, indicator, malware, tags, approved_by FROM abusech_submissions "
-                "WHERE state = 'approved' ORDER BY id LIMIT :n"
+                "SELECT a.id, a.kind, a.indicator, a.malware, a.tags, a.approved_manually, "
+                "t.state AS target_state FROM abusech_submissions a "
+                "LEFT JOIN targets t ON t.id = a.target_id "
+                "WHERE a.state = 'approved' ORDER BY a.id LIMIT :n"
             ),
             {"n": PER_CYCLE},
         )
@@ -509,7 +574,10 @@ async def send_due(
         if sent_today >= s.abusech_daily_cap:
             result.deferred["daily_cap"] = result.deferred.get("daily_cap", 0) + 1
             continue
-        code = await _one(r, s, submit, never)
+        if r.kind == THREATFOX and stale:
+            result.deferred["ranges_stale"] = result.deferred.get("ranges_stale", 0) + 1
+            continue
+        code = await _one(r, s, submit, never, excl)
         if code in TRANSIENT:
             await session.execute(
                 text("UPDATE abusech_submissions SET result_code = :c WHERE id = :id"),
@@ -518,7 +586,7 @@ async def send_due(
             await session.commit()
             result.deferred[code] = len(rows) - i
             break  # the service is down, throttling or refusing the key: next cycle
-        state = "sent" if code in SUCCESS else "rejected" if code == NEVER_LISTED else "failed"
+        state = "sent" if code in SUCCESS else "rejected" if code in REJECTING else "failed"
         await session.execute(
             text(
                 "UPDATE abusech_submissions SET state = :st, result_code = :c, sent_at = :now "
@@ -538,14 +606,68 @@ async def send_due(
     return result
 
 
-async def _one(r: Any, s: Settings, submit: Submitter, never: Never) -> str:
+async def _one(r: Any, s: Settings, submit: Submitter, never: Never, excl: Exclusions) -> str:
     # A command-and-control submission needs a person, whatever the mode.
-    if r.kind == THREATFOX and r.approved_by in (None, "auto"):
+    if r.kind == THREATFOX and not r.approved_manually:
         return GUARD_FAILED
+    if r.target_state not in LIVE_STATES:
+        return TARGET_NOT_LIVE
     if never.matches(_never_kind(r.kind), r.indicator):
         return NEVER_LISTED
+    if excluded_reason(excl, r.kind, r.indicator) is not None:
+        return EXCLUDED
     try:
         body = build_body(r.kind, r.indicator, r.malware, list(r.tags or []))
     except ValueError:
         return GUARD_FAILED
     return await submit(r.kind, body, s.abusech_auth_key)
+
+
+# ---------------------------------------------------------------- withdrawing
+
+
+async def withdraw_target(session: AsyncSession, target_id: str) -> int:
+    """A disputed target: its queued and approved submissions are rejected. Does not commit."""
+    res = await session.execute(
+        text(
+            "UPDATE abusech_submissions SET state = 'rejected', result_code = :c "
+            "WHERE target_id = :t AND state IN ('queued', 'approved')"
+        ),
+        {"c": WITHDRAWN, "t": target_id},
+    )
+    return int(getattr(res, "rowcount", 0) or 0)
+
+
+async def withdraw_value(session: AsyncSession, value: str) -> int:
+    """An accepted delisting: queued and approved submissions whose host the decision covers (an
+    address inside the network, or the domain and its sub-domains) are rejected. Does not commit."""
+    net = parse_network(value)
+    domain = value.lower().rstrip(".")
+    rows = (
+        await session.execute(
+            text(
+                "SELECT id, kind, indicator FROM abusech_submissions "
+                "WHERE state IN ('queued', 'approved')"
+            )
+        )
+    ).all()
+    hit: list[int] = []
+    for r in rows:
+        host, is_domain = _host_of(r.kind, r.indicator)
+        if is_domain:
+            if net is None and (host == domain or host.endswith("." + domain)):
+                hit.append(r.id)
+        elif net is not None:
+            addr = ipaddress.ip_address(host)
+            if addr.version == net.version and addr in net:
+                hit.append(r.id)
+    if not hit:
+        return 0
+    await session.execute(
+        text(
+            "UPDATE abusech_submissions SET state = 'rejected', result_code = :c "
+            "WHERE id = ANY(:ids)"
+        ),
+        {"c": WITHDRAWN, "ids": hit},
+    )
+    return len(hit)

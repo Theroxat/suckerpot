@@ -12,10 +12,10 @@
 	}
 	auto_https off
 	servers {
-		# Only the tunnel connector can reach the published port (bind it to a private address and
-		# firewall it). Its address is private, so its Cf-Connecting-Ip header is believed; from
-		# anyone else the header is ignored.
-		trusted_proxies static private_ranges
+		# Only the tunnel connector may name the client: HUB_TRUSTED_PROXY is its address, or the
+		# gateway/subnet of hub-public when Docker's userland proxy hides it (README, "Behind a
+		# tunnel"). Never a broad private range: any other peer's header is ignored.
+		trusted_proxies static {$HUB_TRUSTED_PROXY}
 		client_ip_headers Cf-Connecting-Ip
 		protocols h1 h2
 		max_header_size 16KB

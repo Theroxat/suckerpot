@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from suckerpot_netproto import blind, sign
 from suckerpot_netproto.feeds import minisign
 
-from . import reputation
+from . import abusech, reputation
 from .config import ConfigError, Settings, load_signing_key
 from .db import make_engine, make_sessionmaker, utcnow
 from .feeds import job as feed_job
@@ -263,6 +263,7 @@ async def _dispatch(
         return await _abusech(args, session, who, out)
     if args.cmd == "target":
         penalised = await reputation.dispute(session, args.id)
+        await abusech.withdraw_target(session, args.id)
         await _audit(
             session, who, "target.dispute", {"penalised": penalised, "note": args.note[:200]}
         )
@@ -388,7 +389,8 @@ async def _abusech(args: argparse.Namespace, session: AsyncSession, who: str, ou
             return 1
         await session.execute(
             text(
-                "UPDATE abusech_submissions SET state = 'approved', approved_by = :w WHERE id = :id"
+                "UPDATE abusech_submissions SET state = 'approved', approved_by = :w, "
+                "approved_manually = true WHERE id = :id"
             ),
             {"w": who, "id": args.id},
         )
@@ -659,6 +661,7 @@ async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out
             ).all()
             for (target_id,) in targets:
                 penalised += await reputation.dispute(session, target_id)
+                await abusech.withdraw_target(session, target_id)
         await session.execute(
             text(
                 "INSERT INTO feed_allow (value, kind, reason, note, added_day, expires_day, source, "
@@ -679,6 +682,8 @@ async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out
                 "e": expires,
             },
         )
+        if scope != "inbound":  # an inbound-only decision does not touch outbound submissions
+            await abusech.withdraw_value(session, row.value)
         if outcome == "policy":
             await session.execute(
                 text(

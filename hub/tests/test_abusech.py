@@ -17,7 +17,7 @@ from hub.config import ConfigError, Settings
 from hub.never import Never
 
 from .conftest import Env
-from .seed import TODAY, add_nodes, observe
+from .seed import TODAY, add_nodes, observe, shipped_ranges
 
 D1, D2 = TODAY - timedelta(days=2), TODAY - timedelta(days=1)
 KEY = "test-auth-key-not-a-secret"  # placeholder
@@ -146,7 +146,7 @@ async def _seed(env: Env) -> None:
     nodes = await add_nodes(
         env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
     )
-    one = nodes[:1]
+    await shipped_ranges(env.worker)
     async with env.worker() as s:
         for i, (url, fam) in enumerate([(URL_PAGE, []), (URL_BIN, []), (URL_FAMILY, ["mirai"])]):
             h = f"{i + 1:02x}" * 32
@@ -170,7 +170,6 @@ async def _seed(env: Env) -> None:
     await observe(env.worker, nodes, "url", "01" * 32, [D1], fetched=True, file_type="other")
     await observe(env.worker, nodes, "url", "02" * 32, [D1], fetched=True, file_type="elf-arm")
     await observe(env.worker, nodes, "url", "03" * 32, [D1], fetched=True, families=["mirai"])
-    del one
 
 
 async def _rows(env: Env) -> dict[str, Any]:
@@ -239,7 +238,11 @@ async def test_never_list_blocks_queueing_and_sending(env: Env) -> None:
     assert URL_BIN not in await _rows(env) and res.skipped["never_list"] == 2
     async with env.worker() as ses:
         await abusech.queue_submissions(ses, s, TODAY, never=Never())
-        await ses.execute(text("UPDATE abusech_submissions SET state='approved', approved_by='op'"))
+        await ses.execute(
+            text(
+                "UPDATE abusech_submissions SET state='approved', approved_by='op', approved_manually=true"
+            )
+        )
         await ses.commit()
 
         async def boom(kind: str, body: bytes, key: str) -> str:
@@ -273,7 +276,7 @@ async def test_review_mode_never_sends_unapproved_and_sent_has_no_node_data(env:
         assert out.sent == 0 and sent == []
         await ses.execute(
             text(
-                "UPDATE abusech_submissions SET state='approved', approved_by='op' "
+                "UPDATE abusech_submissions SET state='approved', approved_by='op', approved_manually=true "
                 "WHERE indicator = :i"
             ),
             {"i": URL_BIN},
@@ -318,7 +321,7 @@ async def test_auto_mode_approves_urlhaus_after_hold_but_never_threatfox(env: En
         await ses.execute(
             text(
                 "UPDATE abusech_submissions SET state='approved', "
-                "approved_by='auto' WHERE kind='threatfox'"
+                "approved_by='op', approved_manually=false WHERE kind='threatfox'"
             )
         )
         await ses.commit()
@@ -341,7 +344,11 @@ async def test_daily_cap_and_transient_errors(env: Env) -> None:
     now = datetime(2026, 11, 1, 12, tzinfo=UTC)
     async with env.worker() as ses:
         await abusech.queue_submissions(ses, s, TODAY, never=Never())
-        await ses.execute(text("UPDATE abusech_submissions SET state='approved', approved_by='op'"))
+        await ses.execute(
+            text(
+                "UPDATE abusech_submissions SET state='approved', approved_by='op', approved_manually=true"
+            )
+        )
         await ses.commit()
         replies = iter([abusech.INSERTED, abusech.INSERTED, abusech.INSERTED])
 
@@ -397,3 +404,218 @@ async def test_cli_list_approve_reject_and_reports_marker(env: Env) -> None:
             await ses.execute(text("SELECT count(*) FROM hub_audit WHERE action LIKE 'abusech.%'"))
         ).scalar_one()
     assert n == 2
+
+
+# ---------------------------------------------------------------- security review fixes
+
+
+def test_numeric_and_local_hosts_are_refused() -> None:
+    for url in (
+        "http://127.1/x",
+        "http://0x7f.1/x",
+        "http://2130706433/x",
+        "http://0177.0.0.1/x",
+        "http://intranet/x",
+        "http://printer.local/x",
+        "http://db.internal/x",
+        "http://nas.lan/x",
+        "http://app.localhost/x",
+        "http://router.home.arpa/x",
+    ):
+        assert abusech.url_refusal(url) is not None, url
+    assert abusech.url_refusal("http://bad.cafe/x") is None  # hex-looking letters are fine
+
+
+@pytest.mark.integration
+async def test_html_fetched_twice_and_a_third_claim_of_elf_queue_nothing(env: Env) -> None:
+    nodes = await add_nodes(
+        env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
+    )
+    h = "0a" * 32
+    async with env.worker() as ses:
+        await ses.execute(
+            text(
+                "INSERT INTO targets (id, kind, value, value_b, state, families) VALUES "
+                "('t_mix', 'url', 'http://198.51.100.30/a', :h, 'confirmed', ARRAY['mirai'])"
+            ),
+            {"h": h},
+        )
+        await ses.commit()
+    await observe(env.worker, nodes[:2], "url", h, [D1], fetched=True, file_type="other")
+    await observe(env.worker, nodes[2:3], "url", h, [D1], fetched=True, file_type="elf-arm")
+    await shipped_ranges(env.worker)
+    async with env.worker() as ses:
+        await abusech.queue_submissions(ses, active(env), TODAY, never=Never())
+    assert await _rows(env) == {}
+    # a second node that really fetched an executable makes two
+    await observe(env.worker, nodes[3:4], "url", h, [D1], fetched=True, file_type="elf-arm")
+    async with env.worker() as ses:
+        await abusech.queue_submissions(ses, active(env), TODAY, never=Never())
+    assert set(await _rows(env)) == {"http://198.51.100.30/a"}
+
+
+@pytest.mark.integration
+async def test_tags_come_from_qualifying_rows_not_the_target(env: Env) -> None:
+    await _seed(env)
+    async with env.worker() as ses:
+        await ses.execute(text("UPDATE targets SET families = ARRAY['xmrig'] WHERE id = 't_url1'"))
+        await ses.commit()
+        await abusech.queue_submissions(ses, active(env), TODAY, never=Never())
+    assert "xmrig" not in (await _rows(env))[URL_BIN].tags
+
+
+async def _approve_all(env: Env) -> None:
+    async with env.worker() as ses:
+        await ses.execute(
+            text(
+                "UPDATE abusech_submissions SET state='approved', approved_by='op', "
+                "approved_manually=true"
+            )
+        )
+        await ses.commit()
+
+
+async def _send(env: Env, s: Settings) -> abusech.SendResult:
+    sent: list[str] = []
+
+    async def submit(kind: str, body: bytes, key: str) -> str:
+        sent.append(kind)
+        return abusech.INSERTED
+
+    async with env.worker() as ses:
+        return await abusech.send_due(
+            ses, s, datetime(2026, 11, 1, 12, tzinfo=UTC), submit, never=Never()
+        )
+
+
+@pytest.mark.integration
+async def test_a_target_that_is_no_longer_live_is_rejected_before_sending(env: Env) -> None:
+    await _seed(env)
+    s = active(env)
+    async with env.worker() as ses:
+        await abusech.queue_submissions(ses, s, TODAY, never=Never())
+    await _approve_all(env)
+    async with env.worker() as ses:
+        await ses.execute(text("UPDATE targets SET state = 'disputed' WHERE id = 't_url1'"))
+        await ses.execute(text("DELETE FROM targets WHERE id = 't_c2a'"))
+        await ses.commit()
+    out = await _send(env, s)
+    rows = await _rows(env)
+    assert out.sent == 1 and out.rejected == 2
+    assert rows[URL_BIN].state == "rejected" and rows[C2].state == "rejected"
+    assert rows[URL_FAMILY].state == "sent"
+
+
+@pytest.mark.integration
+async def test_auto_approve_skips_targets_that_are_not_live(env: Env) -> None:
+    await _seed(env)
+    s = replace(active(env, report_hold_hours=0), abusech_mode="auto")
+    async with env.worker() as ses:
+        await abusech.queue_submissions(ses, s, TODAY, never=Never())
+        await ses.execute(text("UPDATE targets SET state = 'disputed' WHERE id = 't_url1'"))
+        await ses.commit()
+        assert await abusech.auto_approve(ses, s, TODAY) == 1
+    assert (await _rows(env))[URL_BIN].state == "queued"
+
+
+@pytest.mark.integration
+async def test_allow_list_row_stops_a_queued_submission(env: Env) -> None:
+    await _seed(env)
+    s = active(env)
+    async with env.worker() as ses:
+        await abusech.queue_submissions(ses, s, TODAY, never=Never())
+    await _approve_all(env)
+    async with env.worker() as ses:
+        await ses.execute(
+            text(
+                "INSERT INTO feed_allow (value, kind, reason, added_day, source) "
+                "VALUES ('198.51.100.21', 'ip', 'policy', :d, 'admin')"
+            ),
+            {"d": TODAY},
+        )
+        await ses.commit()
+    out = await _send(env, s)
+    rows = await _rows(env)
+    assert rows[URL_BIN].state == "rejected" and out.sent == 2
+
+
+@pytest.mark.integration
+async def test_dispute_and_delist_accept_withdraw_matching_submissions(env: Env) -> None:
+    await _seed(env)
+    async with env.worker() as ses:
+        await abusech.queue_submissions(ses, active(env), TODAY, never=Never())
+    lines: list[str] = []
+
+    async def cli(*argv: str) -> int:
+        return await admin.run(list(argv), sessionmaker=env.worker, out=lines.append, actor="op")
+
+    assert await cli("target", "dispute", "t_url1", "--note", "wrong") == 0
+    rows = await _rows(env)
+    assert rows[URL_BIN].state == "rejected" and rows[URL_FAMILY].state == "queued"
+    async with env.worker() as ses:
+        await ses.execute(
+            text(
+                "INSERT INTO delist_requests (id, token_hash, value, category, state, "
+                "created_day) VALUES ('r1', 'x', '198.51.100.22', 'other', 'received', :d)"
+            ),
+            {"d": TODAY},
+        )
+        await ses.commit()
+    assert await cli("delist", "accept", "r1", "--as", "remediated", "--note", "fixed") == 0
+    rows = await _rows(env)
+    assert rows[URL_FAMILY].state == "rejected" and rows[C2].state == "queued"
+
+
+@pytest.mark.integration
+async def test_threatfox_waits_when_the_ranges_are_stale(env: Env) -> None:
+    await _seed(env)
+    s = active(env)
+    async with env.worker() as ses:
+        await ses.execute(text("DELETE FROM feed_auto_ranges"))
+        await ses.commit()
+        res = await abusech.queue_submissions(ses, s, TODAY, never=Never())
+    assert C2 not in await _rows(env) and res.skipped["ranges_stale"] == 1
+    await shipped_ranges(env.worker)
+    async with env.worker() as ses:
+        await abusech.queue_submissions(ses, s, TODAY, never=Never())
+    await _approve_all(env)
+    async with env.worker() as ses:
+        await ses.execute(text("DELETE FROM feed_auto_ranges"))
+        await ses.commit()
+    out = await _send(env, s)
+    assert out.deferred["ranges_stale"] == 1 and out.sent == 2
+    assert (await _rows(env))[C2].state == "approved"
+
+
+@pytest.mark.integration
+async def test_threatfox_in_a_cdn_range_is_never_queued(env: Env) -> None:
+    await _seed(env)
+    async with env.worker() as ses:
+        await ses.execute(
+            text(
+                "INSERT INTO feed_auto_ranges (source, prefix, fetched_day) "
+                "VALUES ('cdn:test', '203.0.113.0/24', :d)"
+            ),
+            {"d": TODAY},
+        )
+        await ses.commit()
+        await abusech.queue_submissions(ses, active(env), TODAY, never=Never())
+    assert C2 not in await _rows(env)
+
+
+@pytest.mark.integration
+async def test_threatfox_guard_reads_the_flag_not_the_actor_name(env: Env) -> None:
+    await _seed(env)
+    s = active(env)
+    async with env.worker() as ses:
+        await abusech.queue_submissions(ses, s, TODAY, never=Never())
+        await ses.execute(
+            text(
+                "UPDATE abusech_submissions SET state='approved', approved_by='alice', "
+                "approved_manually=false WHERE kind='threatfox'"
+            )
+        )
+        await ses.commit()
+    out = await _send(env, s)
+    assert out.failed == 1
+    assert (await _rows(env))[C2].state == "failed"

@@ -62,7 +62,7 @@ def _normalise_tunnel(text: str) -> str:
     """Undo the allowed differences, so what is left must equal the main Caddyfile."""
     out = text
     out = out.replace("\tauto_https off\n", "")
-    out = out.replace("\t\ttrusted_proxies static private_ranges\n", "")
+    out = out.replace("\t\ttrusted_proxies static {$HUB_TRUSTED_PROXY}\n", "")
     out = out.replace("\t\tclient_ip_headers Cf-Connecting-Ip\n", "")
     out = re.sub(r"http://(\{\$HUB_[A-Z_]+\}):8080 \{", r"\1 {", out)
     return re.sub(
@@ -89,7 +89,8 @@ def test_trust_settings_exist_only_in_the_tunnel_caddyfile() -> None:
     main, tunnel = _code(MAIN), _code(TUNNEL)
     for needle in ("trusted_proxies", "client_ip_headers", "Cf-Connecting-Ip", "header_up"):
         assert needle not in main, needle
-    assert "trusted_proxies static private_ranges" in tunnel
+    assert "trusted_proxies static {$HUB_TRUSTED_PROXY}" in tunnel
+    assert "private_ranges" not in tunnel
     assert "client_ip_headers Cf-Connecting-Ip" in tunnel
 
 
@@ -209,3 +210,13 @@ def test_overlay_and_example_name_the_new_variables() -> None:
 def test_secrets_directory_is_ignored() -> None:
     lines = (HUB / ".gitignore").read_text().split()
     assert "secrets/" in lines
+
+
+def test_trusted_proxy_is_required_by_the_overlay_and_never_a_private_range() -> None:
+    env = _overlay()["services"]["caddy"]["environment"]
+    assert env["HUB_TRUSTED_PROXY"].startswith("${HUB_TRUSTED_PROXY:?")
+    assert "private_ranges" not in _code(TUNNEL)
+    example = (HUB / ".env.example").read_text()
+    assert re.search(r"^#HUB_TRUSTED_PROXY=", example, flags=re.M)
+    subnet = _overlay()["networks"]["hub-public"]["ipam"]["config"][0]["subnet"]
+    assert subnet.startswith("${HUB_PUBLIC_SUBNET:-")

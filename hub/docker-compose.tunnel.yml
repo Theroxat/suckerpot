@@ -14,6 +14,9 @@ services:
     # cap_add stays as in the base file: the Caddy binary carries the file capability
     # cap_net_bind_service, and the kernel refuses to execute it without that capability.
     sysctls: !reset []
+    environment:
+      # Who may name the client address (Caddyfile.tunnel). Required: see README, "Behind a tunnel".
+      HUB_TRUSTED_PROXY: ${HUB_TRUSTED_PROXY:?HUB_TRUSTED_PROXY must be set}
     # Bind to a private address: the tunnel connector is trusted to name the client address.
     ports: !override
       - "${HUB_BIND:?HUB_BIND must be set}:${HUB_HTTP_PORT:?HUB_HTTP_PORT must be set}:8080"
@@ -43,6 +46,12 @@ services:
       NO_PROXY: hub-db,localhost,127.0.0.1
 
 networks:
+  # A fixed subnet, so that the gateway Caddy sees as the peer (Docker's userland proxy) is known
+  # in advance: it is the first address of this subnet.
+  hub-public:
+    ipam:
+      config:
+        - subnet: ${HUB_PUBLIC_SUBNET:-198.18.77.0/24}
   # The existing network of the proxy (it must already exist). The proxy is the only route out.
   egress:
     external: true

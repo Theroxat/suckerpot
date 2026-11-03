@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from . import abusech, consensus, reputation, retention, stats
+from . import abusech, consensus, egress_check, reputation, retention, stats
 from . import logging as hub_logging
 from .config import Settings
 from .db import make_engine, make_sessionmaker, utcnow
@@ -30,6 +30,7 @@ from .never import load_never
 from .never_seed import ensure_seed
 from .reports import select as report_select
 from .reports import send as report_send
+from .reports import tunnel as report_tunnel
 from .reports.rdap import RdapDirectory, Resolver
 
 log = logging.getLogger("hub.worker")
@@ -200,6 +201,9 @@ async def main_async(argv: list[str]) -> int:
     try:
         if "--health" in argv:
             return 0 if await healthy(ctx) else 1
+        if not egress_check.egress_ok(report_tunnel.proxy_url_from_env()):
+            log.error("refusing to start: %s", egress_check.CODE)
+            return 3
         corroborator = Corroborator(s)
         directory = RdapDirectory()
         ctx.corroborate = corroborator if corroborator.enabled else None
