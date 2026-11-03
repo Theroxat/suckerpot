@@ -153,7 +153,7 @@ def _sigma(
         f"id: {sigma_id(key)}",
         "status: experimental",
         f"description: {yaml_scalar(description)}",
-        "author: SuckerPot (generated)",
+        "author: generated",
         f"date: {today.isoformat()}",
     ]
     if tags:
@@ -195,7 +195,7 @@ def sigma_web_paths(
     if not safe_tag(tag) or not values:
         return None
     key = f"sigma:web:{tag}"
-    title = f"SuckerPot: web requests seen with {tag} attacks"
+    title = f"Web requests seen with {tag} attacks"
     description = (
         f"{REVIEW}. Request paths that attackers used in {tag} attempts against a decoy web "
         "server. They may also match your own pages."
@@ -220,7 +220,7 @@ def sigma_commands(
     if not safe_tag(tag) or not values:
         return None
     key = f"sigma:cmd:{tag}"
-    title = f"SuckerPot: shell commands seen with {tag} attacks"
+    title = f"Shell commands seen with {tag} attacks"
     description = (
         f"{REVIEW}. Command lines that attackers typed on decoy servers in {tag} sessions. "
         "Matching is by substring, so short or common text can match harmless activity."
@@ -244,7 +244,7 @@ def sigma_domains(
     if not values:
         return None
     key = "sigma:dns"
-    title = "SuckerPot: DNS lookups of hosts used by attackers"
+    title = "DNS lookups of hosts used by attackers"
     description = (
         f"{REVIEW}. Host names that attackers used to download malware or to call back. "
         "A hit means a machine of yours looked one up."
@@ -271,7 +271,7 @@ def sigma_urls(urls: Sequence[str], sessions: int, sources: int, today: date) ->
     if not values:
         return None
     key = "sigma:proxy"
-    title = "SuckerPot: proxy requests for download URLs used by attackers"
+    title = "Proxy requests for download URLs used by attackers"
     description = (
         f"{REVIEW}. Download addresses that attackers used to fetch malware. "
         "Match them against your web proxy log."
@@ -301,7 +301,7 @@ def sigma_hashes(
     if not values:
         return None
     key = "sigma:hash"
-    title = "SuckerPot: files with hashes seen in attacks"
+    title = "Files with hashes seen in attacks"
     description = (
         f"{REVIEW}. Hashes of files that attackers dropped on decoy servers. "
         "The field name may differ in your log source."
@@ -338,7 +338,7 @@ def suricata_web_path(
     if value in GENERIC_PATHS:
         return None
     key = f"suricata:web:{tag}:{value}"
-    msg = f"SuckerPot ({REVIEW.lower()}) web request seen with {tag} attacks"
+    msg = f"({REVIEW.lower()}) web request seen with {tag} attacks"
     text = _suricata(
         sid_for(key, taken), msg, "http $EXTERNAL_NET any -> $HOME_NET any",
         ["flow:established,to_server", "http.uri", f'content:"{suricata_content(value)}"'],
@@ -358,7 +358,7 @@ def suricata_static_body(
     if not safe_tag(tag) or value is None:
         return None
     key = f"suricata:body:{tag}:{value}"
-    msg = f"SuckerPot ({REVIEW.lower()}) request body typical of {tag} attacks"
+    msg = f"({REVIEW.lower()}) request body typical of {tag} attacks"
     text = _suricata(
         sid_for(key, taken), msg, "http $EXTERNAL_NET any -> $HOME_NET any",
         ["flow:established,to_server", "http.request_body", f'content:"{suricata_content(value)}"'],
@@ -379,7 +379,7 @@ def suricata_domain(
         return []
     out: list[Generated] = []
     sev = severity_of("", score)
-    msg = f"SuckerPot ({REVIEW.lower()}) host used by attackers"
+    msg = f"({REVIEW.lower()}) host used by attackers"
     dns_key = f"suricata:dns:{value}"
     dns = _suricata(
         sid_for(dns_key, taken), msg + " (DNS)", "dns $HOME_NET any -> any any",
@@ -424,7 +424,7 @@ def suricata_domain(
 
 def suricata_file(rules: Sequence[Generated]) -> str:
     head = (
-        "# SuckerPot generated Suricata rules\n"
+        "# Generated Suricata rules\n"
         f"# {REVIEW.upper()}: built from honeypot traffic, not tested against your network.\n"
         "# Start them in alert mode, read the hits, and tune or remove noisy ones.\n"
         "# Sids are in the local range 4100000 to 4999999.\n\n"
@@ -434,7 +434,7 @@ def suricata_file(rules: Sequence[Generated]) -> str:
 
 def sigma_file(rules: Sequence[Generated]) -> str:
     head = (
-        "# SuckerPot generated Sigma rules\n"
+        "# Generated Sigma rules\n"
         f"# {REVIEW.upper()}: built from honeypot traffic, not tested against your logs.\n"
         "# Convert them with your Sigma backend, run them as searches first, then decide.\n"
     )
