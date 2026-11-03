@@ -8,6 +8,9 @@ Who qualifies, with the same strictness as the reports:
 * URLhaus: a confirmed ``url`` target with a revealed value that at least two eligible nodes
   fetched, AND that has a malware family or an executable file type from those fetches. A fetched
   ordinary web page never qualifies.
+* URLhaus, path B (basis ``verified``, M32): a link at least two eligible nodes reported, and a
+  verifier (a node that still holds the ``verifier`` role) attested malware-like content. The
+  attestation is evidence about the link, never a reporter: it is not counted among the two.
 * ThreatFox: a confirmed ``c2_ip`` target whose family has a Malpedia name. These submissions are
   queued for review in every mode and never approved automatically.
 
@@ -118,6 +121,11 @@ SUCCESS: Final = frozenset({INSERTED, ALREADY_KNOWN})
 # Withdrawn before anything left: the row is final and marked rejected.
 REJECTING: Final = frozenset({NEVER_LISTED, TARGET_NOT_LIVE, EXCLUDED})
 LIVE_STATES: Final = ("confirmed", "reported")
+# Path B: the url candidate target may still be a candidate, but never disputed or gone.
+VERIFIED_TARGET_STATES: Final = ("candidate", "confirmed", "reported")
+BASIS_CONSENSUS: Final = "consensus"
+BASIS_VERIFIED: Final = "verified"
+ATTEST_MAX_AGE_DAYS: Final = 3
 # Hosts that never name a public machine: local suffixes and shorthand numeric forms.
 LOCAL_SUFFIXES: Final = (".local", ".internal", ".lan", ".localhost", ".home.arpa", ".intranet")
 _NUMERIC_LABEL: Final = re.compile(r"^(0x[0-9a-f]*|[0-9]+)$")
@@ -325,6 +333,8 @@ class Candidate:
     indicator: str
     malware: str | None
     tags: list[str]
+    basis: str = BASIS_CONSENSUS
+    task_id: str | None = None
 
 
 @dataclass
@@ -381,6 +391,97 @@ async def urlhaus_candidates(
         families = [f for f in (r.families or []) if f in FAMILIES_V1 and f != "generic"]
         exe_types = [t for t in (r.exe_types or []) if t in EXECUTABLE_FILE_TYPES]
         out.append(Candidate(URLHAUS, r.id, r.value, None, tags_for(families, exe_types)))
+    return out
+
+
+async def reporter_stats(
+    session: AsyncSession,
+    s: Settings,
+    today: date,
+    eligible: dict[Any, Any],
+    blinded: list[str],
+) -> dict[str, tuple[int, int]]:
+    """``{value_b: (distinct eligible reporters, enrolment cohorts among them)}``.
+
+    Counted from observations only: a verifier attestation is never a reporter. A verifier whose
+    own sensor saw the link counts through its observation like any other node.
+    """
+    if not blinded or not eligible:
+        return {}
+    rows = (
+        await session.execute(
+            text(
+                "SELECT o.value AS b, array_agg(DISTINCT o.node_id) AS nodes FROM observations o "
+                "WHERE o.kind = 'url' AND o.value = ANY(:b) AND o.day >= :since "
+                "AND o.node_id = ANY(:eligible) GROUP BY o.value"
+            ),
+            {
+                "b": blinded,
+                "since": today - timedelta(days=s.verify_url_max_age_days + ATTEST_MAX_AGE_DAYS),
+                "eligible": list(eligible),
+            },
+        )
+    ).all()
+    out: dict[str, tuple[int, int]] = {}
+    for r in rows:
+        nodes = [n for n in r.nodes if n in eligible]
+        out[r.b] = (len(nodes), len({eligible[n].cohort for n in nodes}))
+    return out
+
+
+def _enough_reporters(s: Settings, count: int) -> bool:
+    return count >= max(MIN_FETCHED_NODES, s.verify_min_reporters)
+
+
+async def verified_candidates(
+    session: AsyncSession, s: Settings, today: date, eligible: dict[Any, Any]
+) -> list[Candidate]:
+    """Path B: an attested task whose attester still holds the role, and two eligible reporters."""
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT v.id AS task_id, v.url, v.url_b, t.id AS target_id,
+                  array_agg(DISTINCT a.family) FILTER (WHERE a.family IS NOT NULL) AS families,
+                  array_agg(DISTINCT a.file_type) FILTER (WHERE a.file_type IS NOT NULL) AS types
+                FROM verify_tasks v
+                JOIN verify_attestations a ON a.task_id = v.id AND a.malware_like
+                  AND a.day >= :since
+                JOIN node_roles r ON r.node_id = a.node_id AND r.role = 'verifier'
+                JOIN targets t ON t.kind = 'url' AND t.value_b = v.url_b
+                  AND t.state = ANY(:tstates)
+                WHERE v.state = 'attested' AND v.url IS NOT NULL
+                  AND NOT EXISTS (SELECT 1 FROM abusech_submissions x
+                                  WHERE x.kind = 'urlhaus' AND x.indicator = v.url)
+                GROUP BY v.id, v.url, v.url_b, t.id
+                ORDER BY v.id LIMIT :n
+                """
+            ),
+            {
+                "since": today - timedelta(days=ATTEST_MAX_AGE_DAYS),
+                "tstates": list(VERIFIED_TARGET_STATES),
+                "n": PER_CYCLE,
+            },
+        )
+    ).all()
+    stats = await reporter_stats(session, s, today, eligible, [r.url_b for r in rows])
+    out: list[Candidate] = []
+    for r in rows:
+        if not _enough_reporters(s, stats.get(r.url_b, (0, 0))[0]):
+            continue
+        families = [f for f in (r.families or []) if f in FAMILIES_V1 and f != "generic"]
+        types = [t for t in (r.types or []) if t in EXECUTABLE_FILE_TYPES]
+        out.append(
+            Candidate(
+                URLHAUS,
+                r.target_id,
+                r.url,
+                None,
+                tags_for(families, types),
+                BASIS_VERIFIED,
+                r.task_id,
+            )
+        )
     return out
 
 
@@ -450,8 +551,9 @@ async def queue_submissions(
     result = QueueResult()
     if not s.abusech_active:
         return result
-    eligible = list(await consensus.eligible_nodes(session, s, today))
-    found = await urlhaus_candidates(session, s, today, eligible)
+    eligible = await consensus.eligible_nodes(session, s, today)
+    found = await urlhaus_candidates(session, s, today, list(eligible))
+    found += await verified_candidates(session, s, today, eligible)
     found += await threatfox_candidates(session)
     result.candidates = len(found)
     excl, stale = await load_excl(session, s, today)
@@ -481,7 +583,8 @@ async def queue_submissions(
         inserted = await session.execute(
             text(
                 "INSERT INTO abusech_submissions (kind, target_id, indicator, malware, tags, "
-                "state, created_day) VALUES (:k, :t, :i, :m, :tags, 'queued', :d) "
+                "state, created_day, basis, verify_task_id) "
+                "VALUES (:k, :t, :i, :m, :tags, 'queued', :d, :basis, :task) "
                 "ON CONFLICT (kind, indicator) DO NOTHING"
             ),
             {
@@ -491,6 +594,8 @@ async def queue_submissions(
                 "m": c.malware,
                 "tags": c.tags,
                 "d": today,
+                "basis": c.basis,
+                "task": c.task_id,
             },
         )
         result.queued += int(getattr(inserted, "rowcount", 0) or 0)
@@ -500,27 +605,70 @@ async def queue_submissions(
 
 async def auto_approve(session: AsyncSession, s: Settings, today: date) -> int:
     """In ``auto`` mode, queued URLhaus submissions become approved after the report hold, once the
-    network has ``HUB_AUTO_MIN_COHORTS`` independent cohorts. ThreatFox ones never are."""
+    network has ``HUB_AUTO_MIN_COHORTS`` independent cohorts. ThreatFox ones never are.
+
+    Path B (verified) rows additionally need ``HUB_VERIFY_MODE=auto``, reporters from at least two
+    enrolment cohorts (recomputed now) and a task that is still attested by a node that still
+    holds the verifier role; otherwise they stay queued for an operator."""
     if s.abusech_mode != "auto" or not s.abusech_active:
         return 0
     eligible = await consensus.eligible_nodes(session, s, today)
     if len({n.cohort for n in eligible.values()}) < s.auto_min_cohorts:
         return 0
+    cutoff = today - timedelta(days=math.ceil(s.report_hold_hours / 24))
     result = await session.execute(
         text(
             "UPDATE abusech_submissions SET state = 'approved', approved_by = 'auto', "
             "approved_manually = false "
-            "WHERE state = 'queued' AND kind = 'urlhaus' AND created_day <= :cutoff "
+            "WHERE state = 'queued' AND kind = 'urlhaus' AND basis = 'consensus' "
+            "AND created_day <= :cutoff "
             "AND EXISTS (SELECT 1 FROM targets t WHERE t.id = abusech_submissions.target_id "
             "AND t.state = ANY(:live))"
         ),
-        {
-            "live": list(LIVE_STATES),
-            "cutoff": today - timedelta(days=math.ceil(s.report_hold_hours / 24)),
-        },
+        {"live": list(LIVE_STATES), "cutoff": cutoff},
     )
+    approved = int(getattr(result, "rowcount", 0) or 0)
+    if s.verify_mode == "auto":
+        approved += await _approve_verified(session, s, today, eligible, cutoff)
     await session.commit()
-    return int(getattr(result, "rowcount", 0) or 0)
+    return approved
+
+
+async def _approve_verified(
+    session: AsyncSession, s: Settings, today: date, eligible: dict[Any, Any], cutoff: date
+) -> int:
+    rows = (
+        await session.execute(
+            text(
+                "SELECT a.id, t.value_b FROM abusech_submissions a "
+                "JOIN targets t ON t.id = a.target_id AND t.state = ANY(:tstates) "
+                "JOIN verify_tasks v ON v.id = a.verify_task_id AND v.state = 'attested' "
+                "WHERE a.state = 'queued' AND a.kind = 'urlhaus' AND a.basis = 'verified' "
+                "AND a.created_day <= :cutoff AND t.value_b IS NOT NULL "
+                "AND EXISTS (SELECT 1 FROM verify_attestations va JOIN node_roles nr "
+                "ON nr.node_id = va.node_id AND nr.role = 'verifier' "
+                "WHERE va.task_id = v.id AND va.malware_like)"
+            ),
+            {"tstates": list(VERIFIED_TARGET_STATES), "cutoff": cutoff},
+        )
+    ).all()
+    stats = await reporter_stats(session, s, today, eligible, [r.value_b for r in rows])
+    ids = [
+        r.id
+        for r in rows
+        if _enough_reporters(s, stats.get(r.value_b, (0, 0))[0])
+        and stats.get(r.value_b, (0, 0))[1] >= 2
+    ]
+    if not ids:
+        return 0
+    res = await session.execute(
+        text(
+            "UPDATE abusech_submissions SET state = 'approved', approved_by = 'auto', "
+            "approved_manually = false WHERE id = ANY(:ids) AND state = 'queued'"
+        ),
+        {"ids": ids},
+    )
+    return int(getattr(res, "rowcount", 0) or 0)
 
 
 # ---------------------------------------------------------------- sending
@@ -567,8 +715,13 @@ async def send_due(
         await session.execute(
             text(
                 "SELECT a.id, a.kind, a.indicator, a.malware, a.tags, a.approved_manually, "
-                "t.state AS target_state FROM abusech_submissions a "
+                "a.basis, t.state AS target_state, v.state AS task_state, "
+                "EXISTS (SELECT 1 FROM verify_attestations va JOIN node_roles nr "
+                "ON nr.node_id = va.node_id AND nr.role = 'verifier' "
+                "WHERE va.task_id = a.verify_task_id AND va.malware_like) AS verifier_ok "
+                "FROM abusech_submissions a "
                 "LEFT JOIN targets t ON t.id = a.target_id "
+                "LEFT JOIN verify_tasks v ON v.id = a.verify_task_id "
                 "WHERE a.state = 'approved' ORDER BY a.id LIMIT :n"
             ),
             {"n": PER_CYCLE},
@@ -614,7 +767,14 @@ async def _one(r: Any, s: Settings, submit: Submitter, never: Never, excl: Exclu
     # A command-and-control submission needs a person, whatever the mode.
     if r.kind == THREATFOX and not r.approved_manually:
         return GUARD_FAILED
-    if r.target_state not in LIVE_STATES:
+    if r.basis == BASIS_VERIFIED:
+        # Path B: the task must still be attested (not refused, not deleted), its attester must
+        # still be a verifier, and the candidate target must not be disputed or gone.
+        if r.task_state != "attested" or not r.verifier_ok:
+            return TARGET_NOT_LIVE
+        if r.target_state not in VERIFIED_TARGET_STATES:
+            return TARGET_NOT_LIVE
+    elif r.target_state not in LIVE_STATES:
         return TARGET_NOT_LIVE
     if never.matches(_never_kind(r.kind), r.indicator):
         return NEVER_LISTED
@@ -638,6 +798,46 @@ async def withdraw_target(session: AsyncSession, target_id: str) -> int:
             "WHERE target_id = :t AND state IN ('queued', 'approved')"
         ),
         {"c": WITHDRAWN, "t": target_id},
+    )
+    return int(getattr(res, "rowcount", 0) or 0)
+
+
+async def withdraw_task(session: AsyncSession, task_id: str) -> int:
+    """A refused verification task: its queued and approved submissions are rejected. No commit."""
+    res = await session.execute(
+        text(
+            "UPDATE abusech_submissions SET state = 'rejected', result_code = :c "
+            "WHERE verify_task_id = :t AND state IN ('queued', 'approved')"
+        ),
+        {"c": WITHDRAWN, "t": task_id},
+    )
+    return int(getattr(res, "rowcount", 0) or 0)
+
+
+async def withdraw_verified(session: AsyncSession) -> int:
+    """Cancel every path-B submission not yet sent (a verifier is no longer trusted). No commit."""
+    res = await session.execute(
+        text(
+            "UPDATE abusech_submissions SET state = 'rejected', result_code = :c "
+            "WHERE basis = 'verified' AND state IN ('queued', 'approved')"
+        ),
+        {"c": WITHDRAWN},
+    )
+    return int(getattr(res, "rowcount", 0) or 0)
+
+
+async def withdraw_unattested(session: AsyncSession) -> int:
+    """Path-B submissions that no current verifier vouches for any more (role revoked): rejected.
+    Call after the role row is deleted. No commit."""
+    res = await session.execute(
+        text(
+            "UPDATE abusech_submissions SET state = 'rejected', result_code = :c "
+            "WHERE basis = 'verified' AND state IN ('queued', 'approved') AND NOT EXISTS ("
+            "SELECT 1 FROM verify_attestations va JOIN node_roles nr "
+            "ON nr.node_id = va.node_id AND nr.role = 'verifier' "
+            "WHERE va.task_id = abusech_submissions.verify_task_id AND va.malware_like)"
+        ),
+        {"c": WITHDRAWN},
     )
     return int(getattr(res, "rowcount", 0) or 0)
 
