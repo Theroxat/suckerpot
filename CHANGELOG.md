@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added (M32, planned v0.6.0, release date to be set)
+## [0.6.0] - 2026-11-03
+
+### Added (M32)
 
 - Participant mode (M32). `./scripts/install.sh --participant` installs sensors, database, ingest and the network node only: no dashboard, no admin account, no wizard, no API key and no VPN needed. Choosing it is the consent to join; a random pseudonym is generated. Three commands, then open the printed ports. Guide: [Join the network](docs/participate.md). `--full` switches an existing participant install to the full product and keeps its data.
 - `hubproxy` (profile `direct`, M32): a small allow-list proxy that lets a participant without a VPN reach the hub and nothing else. Ingest keeps no route out. The overlay is `docker-compose.participant.yml`.
@@ -169,7 +171,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Isolation: four networks with an internal backend, one Redis ACL user per sensor limited to `XADD` on its own stream, least-privilege database roles, no outbound route for the API, non-root read-only containers with all capabilities dropped.
 - The first review of the M1 stack found unbounded stream growth, egress, poison-message and default-credential issues; all were fixed and the second pass passed.
 
-[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Theroxat/suckerpot/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Theroxat/suckerpot/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Theroxat/suckerpot/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Theroxat/suckerpot/compare/v0.2.0...v0.3.0
