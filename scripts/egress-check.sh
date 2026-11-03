@@ -6,6 +6,10 @@
 #   scripts/egress-check.sh           everything, including the kill-switch tests
 #                                     (briefly takes the tunnel down, then stops/starts vpn)
 #   scripts/egress-check.sh --quick   read-only checks only
+#
+# With COMPOSE_PROFILES=direct (participant stack, M32) it checks the direct mode instead:
+# hubproxy is the only way out, and only to the allowed names. The VPN checks below are
+# then skipped; no kill-switch test applies (there is no tunnel).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -22,6 +26,40 @@ check_not() { local label=$1; shift; if "$@" >/dev/null 2>&1; then fail "$label"
 
 dc() { docker compose "$@"; }
 selftest() { local svc=$1; shift; dc exec -T "$svc" python -m suckerpot_egress.selftest "$@"; }
+
+# Direct mode (M32): ingest has no route and no DNS; hubproxy tunnels to the allowed names only.
+env_value() { local v=${!1:-}; [ -n "$v" ] || v=$(sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1); printf '%s' "$v"; }
+direct=0
+case ",$(env_value COMPOSE_PROFILES)," in *,direct,*) direct=1 ;; esac
+if [ "$direct" -eq 1 ]; then
+  for svc in hubproxy ingest; do
+    state=$(dc ps --format '{{.State}}' "$svc" 2>/dev/null | head -n 1)
+    [ "$state" = "running" ] && pass "$svc is running" || fail "$svc is running (state: ${state:-none})"
+  done
+  hub_url=$(env_value NETWORK_HUB_URL)
+  hub_host=${hub_url#*://}; hub_host=${hub_host%%[/:]*}
+  hub_host=${hub_host:-hub.selfhostr.io}
+  for svc in vpn collector analyzer; do
+    state=$(dc ps --format '{{.State}}' "$svc" 2>/dev/null | head -n 1)
+    [ "$state" = "running" ] && fail "$svc must not run in direct mode" || pass "$svc is not running"
+  done
+  check "ingest: no direct route, no external DNS" selftest ingest --direct
+  check "ingest: egress gate open (hubproxy allows only the scope)" selftest ingest --gate
+  check "ingest: hubproxy refuses CONNECT example.org:443" selftest ingest --refuse "example.org:443"
+  check "ingest: hubproxy refuses CONNECT to an IP literal" selftest ingest --refuse "1.1.1.1:443"
+  check "ingest: hubproxy refuses CONNECT to the hub on another port" \
+    selftest ingest --refuse "$hub_host:80"
+  check "ingest: hubproxy accepts CONNECT to the hub" selftest ingest --accept "$hub_host:443"
+  for svc in redis db; do
+    check_not "$svc: no direct route out" dc exec -T "$svc" sh -c 'exec 3<>/dev/tcp/1.1.1.1/443' 
+  done
+  if [ "$fails" -gt 0 ]; then
+    echo "egress-check: $fails check(s) failed" >&2
+    exit 1
+  fi
+  echo "egress-check: all checks passed (direct mode)"
+  exit 0
+fi
 
 case ",${COMPOSE_PROFILES:-}," in
   *,egress,*) ;;

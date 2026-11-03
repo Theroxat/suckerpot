@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 
 import httpx
 
-from suckerpot_egress.settings import EgressSettings
+from suckerpot_egress.settings import HUBPROXY_PORT, EgressSettings
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +51,10 @@ REASONS = (
     "exit_is_self",
     "exit_asn_denied",
     "check_error",
+    # direct mode (M32)
+    "egress_direct",
+    "no_hubproxy",
+    "direct_allow_mismatch",
 )
 
 
@@ -114,13 +118,21 @@ class EgressGate:
     def status(self) -> GateStatus:
         return self._status
 
-    def require_open(self) -> None:
+    def require_open(self, host: str | None = None) -> None:
+        """Raise ``EgressClosed`` unless egress may start. In direct mode the gate is open only
+        for a request whose ``host`` is in the scope (hub, feed); any other caller, or one that
+        names no host, is refused with ``egress_direct``. VPN mode ignores ``host``."""
+        if self.settings.direct and not self._in_scope(host):
+            raise EgressClosed("egress_direct")
         st = self._status
         if not st.open:
             raise EgressClosed(st.reason)
         age = (self._clock() - st.checked_at).total_seconds()
         if age > self.settings.check_interval_s * STALE_FACTOR:
             raise EgressClosed("stale")
+
+    def _in_scope(self, host: str | None) -> bool:
+        return host is not None and host.lower().rstrip(".") in self.settings.scope_hosts
 
     def note_proxy_ok(self) -> None:
         self._proxy_errors = 0
@@ -180,6 +192,8 @@ class EgressGate:
             return self._set(False, "check_error", None)
 
     async def _check(self) -> GateStatus:
+        if self.settings.direct:
+            return await self._check_direct()
         control, _ = self._clients()
         base = self.settings.control_url
         # 1. tunnel state
@@ -227,6 +241,34 @@ class EgressGate:
         ):
             return self._set(False, "ip_not_allowed", shown, asn, org)
         return self._set(True, "ok", shown, asn, org)
+
+    async def _check_direct(self) -> GateStatus:
+        """Direct mode: ``hubproxy`` must be up and allow no name outside the scope. No echo
+        request (it would reach a third party from the home address) and no exit-address check
+        (there is no tunnel)."""
+        control, _ = self._clients()
+        try:
+            resp = await control.get(f"{self.settings.control_url}/status")
+        except httpx.HTTPError:
+            return self._set(False, "no_hubproxy", None)
+        if resp.status_code != 200:
+            return self._set(False, "no_hubproxy", None)
+        try:
+            body = resp.json()
+        except ValueError:
+            return self._set(False, "no_hubproxy", None)
+        if not isinstance(body, dict) or body.get("mode") != "direct" or body.get("ok") is not True:
+            return self._set(False, "no_hubproxy", None)
+        allow = body.get("allow")
+        wanted = {f"{h}:{HUBPROXY_PORT}" for h in self.settings.scope_hosts}
+        if (
+            not isinstance(allow, list)
+            or not allow
+            or not all(isinstance(a, str) for a in allow)
+            or not set(allow) <= wanted
+        ):
+            return self._set(False, "direct_allow_mismatch", None)
+        return self._set(True, "ok", None)
 
     def _asn_of(self, ip: str) -> tuple[int | None, str | None]:
         if self._asn_lookup is None:

@@ -55,10 +55,18 @@ def set_gate(gate: EgressGate | None) -> None:
     _gate = gate
 
 
-def gate_open(gate: EgressGate | None = None) -> bool:
-    """True when egress work may start. Use it before spending any quota."""
+def gate_open(gate: EgressGate | None = None, *, host: str | None = None) -> bool:
+    """True when egress work may start. Use it before spending any quota.
+
+    In direct mode (M32) only a call that names a ``host`` inside the scope (hub, feed) can be
+    true; without a host it is always False there. VPN mode ignores ``host``."""
+    g = gate or get_gate()
     try:
-        (gate or get_gate()).require_open()
+        # Without a host the call is the one every caller made before M32.
+        if host is None:
+            g.require_open()
+        else:
+            g.require_open(host)
     except EgressClosed:
         return False
     return True

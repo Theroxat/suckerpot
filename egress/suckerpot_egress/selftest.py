@@ -9,6 +9,7 @@ Flags (default: ``--direct --gate``):
   --gate               run the gate check; it must be open (or the reason given by --expect)
   --expect REASON      the gate reason that counts as a PASS (default: ok)
   --refuse H:P         CONNECT through the proxy to H:P must be refused (repeatable)
+  --accept H:P         CONNECT through the proxy to H:P must succeed (repeatable; direct mode)
   --echo-fails         an echo through the proxy must fail
 """
 
@@ -101,6 +102,15 @@ def refused(settings: EgressSettings, target: str) -> bool:
     return False
 
 
+def accepted(settings: EgressSettings, target: str) -> bool:
+    host, port = _split_target(target)
+    try:
+        connect_via_proxy(settings, host, port, timeout=PROBE_TIMEOUT_S).close()
+    except (TunnelError, OSError):
+        return False
+    return True
+
+
 async def echo_fails(settings: EgressSettings) -> bool:
     url = settings.echo_urls[0]
     proxy = httpx.Proxy(settings.proxy_url, auth=(settings.proxy_user, settings.proxy_password))
@@ -123,6 +133,8 @@ async def main_async(args: argparse.Namespace) -> int:
             results.append(await run_gate(gate, args.expect))
         for target in args.refuse:
             results.append(_line(refused(settings, target), f"proxy refuses CONNECT {target}"))
+        for target in args.accept:
+            results.append(_line(accepted(settings, target), f"proxy accepts CONNECT {target}"))
         if args.echo_fails:
             results.append(_line(await echo_fails(settings), "echo through the proxy fails"))
     finally:
@@ -137,9 +149,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--gate", action="store_true")
     p.add_argument("--expect", default="ok")
     p.add_argument("--refuse", action="append", default=[], metavar="HOST:PORT")
+    p.add_argument("--accept", action="append", default=[], metavar="HOST:PORT")
     p.add_argument("--echo-fails", action="store_true")
     args = p.parse_args(argv)
-    if not (args.direct or args.no_connect or args.gate or args.refuse or args.echo_fails):
+    if not (
+        args.direct or args.no_connect or args.gate or args.refuse or args.accept or args.echo_fails
+    ):
         args.direct = args.gate = True
     return asyncio.run(main_async(args))
 
