@@ -157,6 +157,22 @@ The collector polls the download URLs that ingest already stored as indicators (
 
 Both services are off until `COLLECTOR_ENABLED=true`. TFTP and FTP URLs are recorded but not fetched: UDP cannot cross an HTTP proxy.
 
+### Participant mode and `hubproxy` (M32)
+
+Participant mode (`./scripts/install.sh --participant`) runs sensors, `db`, `migrate`, `ingest`, the network node and, without a VPN, `hubproxy`. It is the base `docker-compose.yml` plus the overlay `docker-compose.participant.yml`. The overlay turns `api` off through a profile that is never set, takes the `api` dependency away from `vpn` and joins `ingest` to the `hub-proxy` network. A full install does not use the overlay and renders exactly as before.
+
+- **`hubproxy`** (profile `direct`) is a small allow-list forward proxy, written with the Python standard library only. It accepts `CONNECT host:443` for the names in `HUBPROXY_ALLOW` (at most two: the hub, and the feed host if feeds are on) and refuses everything else, including IP literals and names that resolve to non-global addresses. It sits on the internal `hub-proxy` network (shared with `ingest` only) and on the routed `hub-uplink` network. It is the only service with a route out in that mode.
+- **`ingest` keeps no route and no external DNS.** Its egress client points at `hubproxy` instead of `vpn` (`EGRESS_MODE=direct`). The egress gate has a **direct mode** with a host scope: it is open only for the hub and feed hosts. Every other worker sees a closed gate and idles. The collector and analyzer do not run.
+- **`vpn` and `hubproxy` never run together.** A participant who adds a VPN (`./scripts/participant.sh vpn <file>`) moves to profile `egress` and `EGRESS_MODE=vpn`.
+
+### Verifier flow (M32)
+
+1. Two or more eligible nodes report the same download link as a blinded hash.
+2. The hub lists the hash in `GET /v1/verify/reveals`. A node whose consent includes `verify_reveals` and that holds the clear value sends it, after the identity guard.
+3. After a random delay, a node with the `verifier` role leases the task (`GET /v1/verify/tasks`). Its `collector` fetches the link through the VPN, with the usual SSRF and size caps and no recursion.
+4. The node posts an attestation (sha256, size, file type, family) to `/v1/verify/results`. The attestation never counts as a sighting.
+5. A malware-like attestation plus two reporters makes the link eligible for URLhaus. See [The Selfhostr network](network.md#participants-and-verifiers) and [Network protocol](network-protocol.md#verification-added-in-m32-additive).
+
 ### Outbound hosts
 
 | Caller | Destination | When | Rules |
@@ -169,6 +185,7 @@ Both services are off until `COLLECTOR_ENABLED=true`. TFTP and FTP URLs are reco
 | Collector | The host in a captured download URL | `COLLECTOR_ENABLED=true` | The only caller whose destination is chosen by an attacker. Public addresses only (see [Security](SECURITY.md#the-collector-and-ssrf)), size, time, redirect and rate caps, never executed. |
 | Egress self-check | Two public "what is my address" services (`EGRESS_ECHO_URLS`) | Every `EGRESS_CHECK_INTERVAL_S` | Goes through the proxy like everything else. |
 | `vpn` | The one WireGuard endpoint (`VPN_WG_ENDPOINT_IP`, UDP) | Always, with the profile | The host firewall allows nothing else from `sp-vpn`. |
+| Network hub (participant, no VPN) | The hub host in `NETWORK_HUB_URL` (and the feed host if feeds are on), port 443 | Participant mode, `EGRESS_MODE=direct` | Through `hubproxy` only: `CONNECT` to the names in `HUBPROXY_ALLOW`. The hub sees the participant's home address and does not store it. Nothing else leaves. |
 | Community lists (node) | The feed host in `NETWORK_FEED_URL` (for example `https://feeds.example.org/v1`) | `NETWORK_FEED_ENABLED=true`, with the address and key set | `GET` only, HTTPS, no redirect, no cookie, no query string, generic client name `spn-feed/1`. Through the VPN gate. The signature and the sha256 are checked before anything is stored. |
 
 Webhook and SMTP targets are checked when they are saved and again just before each send. Private and loopback addresses are refused. Every call in this table leaves through the `vpn` proxy; no service in the stack has a direct outbound route.

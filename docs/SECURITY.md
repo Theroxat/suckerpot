@@ -435,6 +435,35 @@ The community blocklist feeds ([Community blocklist feeds](feeds.md)) add three 
 
 The lists are a factual statement: at least five independent sensors observed the behaviour. They are not an accusation. IP addresses can be personal data, so retention is short, and a delisting path is public with a 72 hour target. A short legal review is an owner action before the hub leaves `HUB_FEED_MODE=off`. This is not legal advice.
 
+## Participant mode, verifiers and automatic updates (M32)
+
+The full threat model is in the [M32 design](design/m32.md). The summary:
+
+### Invariants
+
+| # | Invariant | Where it is enforced |
+| --- | --- | --- |
+| I1' | No container has a route to the internet except `vpn` (profile `egress`) or `hubproxy` (profile `direct`), never both. `sp-ingress` and `sp-dashboard` stay inbound only. | Compose and guardrails |
+| I7 | `hubproxy` opens TCP connections only to names in `HUBPROXY_ALLOW` (at most two, port 443, public DNS names that resolve to global addresses), and only after a `CONNECT` from an authenticated client. | `hubproxy` code, tests, guardrails |
+| N16 | In direct mode every egress worker except the network and feed workers sees a closed gate. The collector and analyzer never run. | Gate and compose profiles |
+| N17 | A node reveals a link early only if its consent lists `verify_reveals`, only for hashes the hub lists, and only after the identity guard. | Network worker |
+| N18 | A node fetches for the network only with `NETWORK_VERIFIER=true`, a VPN, the collector on, and within its daily caps. Fetches never recurse. | Worker and collector |
+| N19 | A hub answer is accepted only if a signature verifies under one of the pinned keys (at most three). | `netproto` |
+| N20 | Auto-update installs only a release whose signed manifest names the tag's commit, whose images verify, that is at least 48 hours old and of the same major version. A failed health check rolls back. | `auto-update.sh` |
+| H8, H9 | The hub gives verification tasks only to verifiers, from links reported by two or more eligible nodes. Clear links are deleted 14 days after the task ends. | Hub code and retention |
+
+### Risks that remain
+
+| Risk | What it means |
+| --- | --- |
+| No-VPN participants (M1) | The hub operator or the tunnel provider in front of the hub can link a participant to its home address. The hub does not store or log it. This is policy, not technique, and the consent text says so. A VPN removes it. |
+| Compromised `ingest` (M3, M4) | It can send data to the hub only. A second exploit in `hubproxy` would give a route out from the host address. Both are small code with fuzz tests. |
+| Release channel (M11) | A compromise of the project's GitHub identity reaches every auto-updating participant. The signature, the tag check and the 48-hour delay reduce it. They do not remove it. Updates can be turned off. |
+| Sybil reporters (M5, M6) | Two fake eligible nodes could steer a verifier to fetch a link. Caps, URL checks, a random delay and the 14-day node age limit this. A fetch can show that an address runs a sensor, never which pseudonym. |
+| Compromised verifier (M9) | It can lie in an attestation. Two eligible reporters are still needed, and the operator can revoke the role. Today the operator is the only verifier. |
+
+Automatic updates run from the installing user's crontab, with no new privilege and no new network path inside the stack. This is the one piece of host code, and it is documented in [Updates](updates.md#automatic-updates).
+
 ## Defend: feeds, exports and generated rules (M16)
 
 The Defend pages turn recorded data into lists and rules (see [Defend](defend.md)). The rules for that code:

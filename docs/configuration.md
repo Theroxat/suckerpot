@@ -654,6 +654,31 @@ Notes:
 - `NETWORK_ENABLED`, `NETWORK_HUB_URL` and `NETWORK_HUB_KEY` can be changed with `just set` (for example `just set NETWORK_ENABLED=true`). `NETWORK_HUB_KEY` is the hub's public key, so it is the one `*_KEY` name that `just set` accepts.
 - Joining, the pseudonym, the country and leaving are done in the dashboard, not in `.env`. The hub's own settings are in `hub/README.md`.
 
+## Participant mode, verification and automatic updates (M32)
+
+Participant mode is described in [Join the network](participate.md). The installer writes these lines. They are commented out in `.env.example` on purpose, so a full install does not carry them.
+
+| Variable | Default | Service | Description |
+| --- | --- | --- | --- |
+| `SUCKERPOT_STACK_MODE` | `full` | scripts | `full` or `participant`. Chosen at install. `./scripts/install.sh --full` switches a participant install to full |
+| `COMPOSE_FILE` | `docker-compose.yml` | compose | In participant mode: `docker-compose.yml:docker-compose.participant.yml` |
+| `COMPOSE_PROFILES` | `egress` (full) | compose | `direct` starts `hubproxy` (no VPN). `egress` starts the VPN. Never both |
+| `EGRESS_MODE` | `vpn` | `ingest` | `direct` reaches only the hub, through `hubproxy`. `vpn` uses the VPN proxy |
+| `HUBPROXY_ALLOW` | the hub host, port 443 | `hubproxy` | Comma-separated `host:443` pairs, at most two. Direct mode only |
+| `NETWORK_CONSENT` | empty | `ingest` | Consent record `v1:<list>:<UTC day>`, written by the installer or `participant.sh join`. Never set it with `just set`. `ingest` does not join on a version it does not know (`consent_outdated`) |
+| `NETWORK_PSEUDONYM` | random | `ingest` | Optional pseudonym |
+| `NETWORK_COUNTRY`, `NETWORK_SHOW_COUNTRY` | empty, `false` | `ingest` | Optional two-letter country, shown only if you opt in and enough members share it |
+| `NETWORK_VERIFY_REVEALS` | `false` (`true` in participant mode) | `ingest` | Answer the hub when it asks for a link that several sensors saw |
+| `NETWORK_VERIFIER` | `false` | `ingest` | Ask to be a verifier. Needs a VPN and `COLLECTOR_VERIFY_ENABLED`. The hub operator must grant the role (`verifier_needs_vpn` and `verifier_needs_collector` explain a refusal) |
+| `COLLECTOR_VERIFY_ENABLED` | `false` | `collector` | Let the collector fetch links for the network |
+| `NETWORK_VERIFY_DAILY_CAP` | `100` | `ingest` | Local cap on verification fetches per day |
+| `NETWORK_VERIFY_HOST_DAILY_CAP` | `3` | `ingest` | Local cap per site per day |
+| `SELF_TERMS_AUTO_CONFIRM` | `false` (`true` in participant mode) | `ingest` | Learned own addresses act without a click |
+| `SELF_ADDRESS` | empty | `ingest` | Optional own public address. No script looks it up |
+| `AUTO_UPDATE_ENABLED` | `false` (`true` in participant mode) | scripts | Install new signed releases once a day from the user's crontab. See [Updates](updates.md#automatic-updates) |
+
+The hub address and key are not in `.env` by default. They ship inside each release (`config/network-defaults.env`), and an explicit `.env` value always wins. `NETWORK_HUB_KEY` accepts up to three comma-separated keys, for a key rollover.
+
 ## Community lists (M30)
 
 The community blocklist feeds are free and public. A node can fetch them, and firewalls can fetch the public files directly, with or without a node. Details are in [Community blocklist feeds](feeds.md). Fetching is off by default, and it does not depend on network membership.

@@ -126,7 +126,7 @@ The domain list has no `.v4`, `.v6`, `.nft`, `.ipset`, `.rsc` or `.stix.json` fi
 
 Fetch `index.json` first. It lists every file with its size and its sha256, plus the serial and the validity:
 
-```json
+```text
 {"schema":"selfhostr-feeds/1","serial":4812,"generated_at":"2026-11-01T13:00:00Z",
  "valid_until":"2026-11-04T13:00:00Z","licence":"CC0-1.0","key_id":"8C1D2E3F4A5B6C7D",
  "next_key_id":null,"lists":[{"id":"outbound", ...,"files":[{"name":"outbound.txt",

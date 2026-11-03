@@ -59,6 +59,7 @@ design/m27
 design/m28
 design/m29
 design/m30
+design/m32
 ```
 
 ```{toctree}
