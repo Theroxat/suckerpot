@@ -19,6 +19,7 @@ from importlib import resources
 from urllib.parse import urlsplit
 
 from . import sign
+from .feeds import minisign
 
 DEFAULTS_FILE = "network_defaults.env"
 WORDS_FILE = "pseudonym_words.txt"
@@ -81,6 +82,15 @@ def check_key_list(value: str) -> tuple[str, ...]:
         raise DefaultsError(f"not a key set: {exc}") from None
 
 
+def check_feed_key(value: str) -> str:
+    """One minisign public key (the feed key is not a hub key set) or DefaultsError."""
+    try:
+        minisign.parse_public_key(value.strip())
+    except ValueError as exc:
+        raise DefaultsError(f"not a minisign public key: {exc}") from None
+    return value.strip()
+
+
 def parse(text: str) -> dict[str, str]:
     """Strict parse of a defaults file: ``KEY=value`` lines, known keys only, no duplicates."""
     out: dict[str, str] = {}
@@ -139,7 +149,7 @@ class Defaults:
 
     @property
     def feed_keys(self) -> tuple[str, ...]:
-        return () if is_placeholder(self.feed_key) else check_key_list(self.feed_key)
+        return () if is_placeholder(self.feed_key) else (check_feed_key(self.feed_key),)
 
 
 def from_text(text: str) -> Defaults:
@@ -162,10 +172,10 @@ def from_text(text: str) -> Defaults:
         check_https_url(d.hub_url, allow_path=False)
     if not is_placeholder(d.feed_url):
         check_https_url(d.feed_url, allow_path=True)
-    for name in KEY_NAMES:
-        value = data[name]
-        if not is_placeholder(value):
-            check_key_list(value)
+    if not is_placeholder(d.hub_key):
+        check_key_list(d.hub_key)
+    if not is_placeholder(d.feed_key):
+        check_feed_key(d.feed_key)
     return d
 
 
