@@ -162,6 +162,9 @@ echo "released_at=$effective"
 echo "age_h=$age_h"
 echo "auto_min_age_h=$m_min_age"
 echo "major=$m_major"
+# The signed digest of each image: verify-images.sh --expect refuses an image that differs.
+printf '%s' "$flat" | grep -oE '"[a-z0-9-]{1,40}" *: *"sha256:[0-9a-f]{64}"' \
+  | sed -E 's/^"([^"]*)" *: *"([^"]*)"$/image.\1=\2/' || true
 
 if [ "$auto" = 1 ] && [ "$age_h" -lt "$m_min_age" ]; then
   die "$tag is ${age_h} h old; an automatic update waits for ${m_min_age} h" 4

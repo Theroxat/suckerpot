@@ -565,7 +565,7 @@ def test_participant_dry_run_writes_the_participant_env(
     assert env["HUBPROXY_ALLOW"] == "hub.selfhostr.io:443"
     assert env["NETWORK_ENABLED"] == "true"
     assert re.fullmatch(
-        r"v1:sources,payloads,c2,files,rechecks,verify_reveals:\d{4}-\d\d-\d\d",
+        r"v2:sources,payloads,c2,files,rechecks,verify_reveals:\d{4}-\d\d-\d\d",
         env["NETWORK_CONSENT"],
     )
     assert re.fullmatch(r"[a-z]+-[a-z]+-\d\d", env["NETWORK_PSEUDONYM"])

@@ -92,7 +92,7 @@ case "$*" in
     grep -qx "$t" "$SHIM_DIR/gitstate/tags" 2>/dev/null; exit $? ;;
   "rev-parse -q --verify refs/heads/"*) echo "$(rd head)" ;;
   "rev-parse -q --verify "*) echo deadbeefdeadbeef ;;
-  "rev-parse v"*) rd tagcommit ;;
+  "rev-parse v"*|"rev-parse refs/tags/"*) rd tagcommit ;;
   "symbolic-ref --short -q HEAD") b=$(rd branch); [ -n "$b" ] && echo "$b" || exit 1 ;;
   "describe --tags --always"*) rd describe ;;
   "describe --tags --exact-match HEAD") exit 128 ;;
@@ -100,6 +100,7 @@ case "$*" in
   "fetch "*) ;;
   "tag -l v*.*.* --sort"*) rd tags | sort -rV ;;
   "tag -l --format="*) rd notes ;;
+  "checkout --quiet --detach "*) printf '%s' "$4" > "$SHIM_DIR/gitstate/head" ;;
   "checkout "*) ;;
   "pull "*) ;;
   *) ;;

@@ -29,7 +29,7 @@ from .helpers import (
 from .test_worker import Src
 
 BOX = SecretBox(bytes(range(32)))
-CONSENT = "v1:sources,payloads,c2,files,rechecks,verify_reveals:2026-11-03"
+CONSENT = "v2:sources,payloads,c2,files,rechecks,verify_reveals:2026-11-03"
 GENERATED = "amber-falcon-42"
 
 
@@ -61,15 +61,15 @@ def test_consent_parse_cases() -> None:
     state, c = participant.parse(CONSENT)
     assert state == participant.VALID and c is not None
     assert c.has("verify_reveals") and c.day == date(2026, 11, 3)
-    state, c = participant.parse("v1:sources,payloads,c2,files,rechecks:2026-11-03")
+    state, c = participant.parse("v2:sources,payloads,c2,files,rechecks:2026-11-03")
     assert state == participant.VALID and c is not None and not c.has("verify_reveals")
     assert participant.parse("") == (participant.MISSING, None)
-    assert participant.parse("v2:sources:2026-11-03")[0] == participant.OUTDATED
-    assert participant.parse("v1:sources,payloads:2026-11-03")[0] == participant.INVALID  # partial
-    assert participant.parse("v1:sources,payloads,c2,files,rechecks,x:2026-11-03")[0] == (
+    assert participant.parse("v3:sources:2026-11-03")[0] == participant.OUTDATED
+    assert participant.parse("v2:sources,payloads:2026-11-03")[0] == participant.INVALID  # partial
+    assert participant.parse("v2:sources,payloads,c2,files,rechecks,x:2026-11-03")[0] == (
         participant.INVALID
     )
-    assert participant.parse("v1:sources,payloads,c2,files,rechecks:2026-13-45")[0] == (
+    assert participant.parse("v2:sources,payloads,c2,files,rechecks:2026-13-45")[0] == (
         participant.INVALID
     )
     assert participant.parse("garbage")[0] == participant.INVALID
@@ -95,13 +95,21 @@ async def test_no_pseudonym_means_anonymous() -> None:
     assert store.m.state == "member" and "pseudonym" not in hub.bodies[-1]
 
 
-@pytest.mark.parametrize("consent", ["", "v2:sources:2026-11-03", "v1:sources:2026-11-03", "x"])
+@pytest.mark.parametrize(
+    "consent",
+    [
+        "",
+        "v3:sources:2026-11-03",
+        "v1:sources,payloads,c2,files,rechecks,verify_reveals:2026-11-03",
+        "x",
+    ],
+)
 async def test_no_valid_record_no_join_and_no_hub_call(consent: str) -> None:
     store = MemoryStore()
     worker, hub = make(store, consent=consent)
     await worker.run_once()
     assert hub.calls == [] and store.m.desired == "off" and store.m.state == "off"
-    if consent.startswith("v2"):
+    if consent.startswith(("v1", "v3")):
         assert worker.reason == participant.OUTDATED
 
 

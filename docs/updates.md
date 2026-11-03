@@ -258,6 +258,10 @@ update FAILED after the code was changed. Nothing was rolled back automatically.
 
 A rollback is your decision, because it replaces the database.
 
+## Automatic updates and the docker group
+
+The daily update job (`./scripts/participant.sh auto-update on`) runs from the crontab of the user who installed Selfhostr. That user is in the `docker` group, which is root-equivalent on the host: anyone who can write that user's files or crontab can run code as root. Keep the checkout and the crontab writable by that user only. The job refuses a release whose signed manifest does not match its commit or its image digests (`error_code` values such as `commit_mismatch` and `digest_mismatch` in `.suckerpot-state/auto-update.json`).
+
 ## The optional update check
 
 The update check tells you when a newer release exists. It never installs anything.

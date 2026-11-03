@@ -680,7 +680,7 @@ def test_join_shows_the_consent_and_writes_a_fresh_record(
     assert env["NETWORK_PSEUDONYM"] == "'Grey Heron 7'"
     assert env["NETWORK_PSEUDONYM"] != old_pseudonym
     assert env["NETWORK_CONSENT"].startswith(
-        "v1:sources,payloads,c2,files,rechecks,verify_reveals:"
+        "v2:sources,payloads,c2,files,rechecks,verify_reveals:"
     )
 
 

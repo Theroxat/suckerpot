@@ -8,6 +8,9 @@
 # reports the digest it verified; the image is then pulled BY THAT DIGEST and the local
 # <prefix>-<image>:<version> tag is pointed at it. Nothing the registry serves later under the
 # same tag can slip in between the check and the start. Any failure stops with a non-zero exit.
+# --expect FILE compares each verified digest with the signed release manifest: FILE holds the
+# `image.<name>=sha256:...` lines printed by verify-release.sh. An image that differs, or that the
+# manifest does not list, is refused (exit 7) before anything is pulled.
 # --only restricts the check (and the pull) to the listed image names, e.g. "api".
 #
 # The version comes from the argument, then SUCKERPOT_VERSION (environment or .env). The registry
@@ -40,9 +43,11 @@ get() {
 
 pull=0
 only=""
+expect_file=""
 while [ $# -gt 0 ]; do
   case $1 in
     --pull) pull=1; shift ;;
+    --expect) [ $# -ge 2 ] || die "--expect needs a file"; expect_file=$2; shift 2 ;;
     --only) [ $# -ge 2 ] || die "--only needs a list of image names"; only=$2; shift 2 ;;
     --*) die "unknown option: $1" ;;
     *) break ;;
@@ -101,6 +106,7 @@ trap 'rm -f "$errlog" "$outlog"' EXIT
 
 echo "verify-images: $version, signer github.com/$repo release workflow"
 fail=0
+mismatch=0
 for image in $IMAGES; do
   ref="$prefix-$image:$version"
   if docker run --rm --user 65532:65532 --read-only --cap-drop ALL \
@@ -117,6 +123,14 @@ for image in $IMAGES; do
       echo "  FAILED  $image (no single verified digest in the cosign output)" >&2
       fail=1
       continue
+    fi
+    if [ -n "$expect_file" ]; then
+      signed=$(sed -n "s/^image\\.$image=//p" "$expect_file" | head -n 1)
+      if [ "$signed" != "$digests" ]; then
+        echo "  REFUSED $image (verified $digests, the signed manifest says ${signed:-nothing})" >&2
+        mismatch=1
+        continue
+      fi
     fi
     if [ "$pull" = 1 ]; then
       if docker pull --quiet "$prefix-$image@$digests" >/dev/null 2>"$errlog" \
@@ -137,6 +151,10 @@ for image in $IMAGES; do
   fi
 done
 
+if [ "$mismatch" -ne 0 ]; then
+  echo "verify-images: an image digest differs from the signed release manifest: do not run this version" >&2
+  exit 7
+fi
 if [ "$fail" -ne 0 ]; then
   die "at least one image did not verify: do not run this version"
 fi

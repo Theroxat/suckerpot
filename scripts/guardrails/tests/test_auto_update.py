@@ -60,6 +60,11 @@ def write_exec(path: Path, text: str) -> None:
 
 STUB_RELEASE = """#!/bin/sh
 echo "verify-release $*" >> "$SHIM_LOG"
+echo "commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+for n in redis migrate ingest api collector hubproxy demo sensor-ssh sensor-rdp sensor-telnet sensor-web \
+  sensor-redis sensor-docker sensor-mysql sensor-mssql sensor-adb sensor-smb sensor-sip sensor-synology; do
+  echo "image.$n=sha256:0000000000000000000000000000000000000000000000000000000000000000"
+done
 exit "${SHIM_RELEASE_RC:-0}"
 """
 STUB_IMAGES = """#!/bin/sh
@@ -117,10 +122,11 @@ def test_a_signed_old_enough_release_is_installed(sandbox: Sandbox) -> None:
     assert proc.returncode == 0, proc.stdout + proc.stderr
     calls = sandbox.calls()
     assert "verify-release --auto v0.9.0" in calls
-    assert "verify-images v0.9.0" in calls
+    assert any(c.startswith("verify-images --expect ") and c.endswith(" v0.9.0") for c in calls)
     assert "update --yes --auto v0.9.0 lock_held=1" in calls
     # Both checks run before the update.
-    assert calls.index("verify-images v0.9.0") < calls.index(
+    first_images = next(i for i, c in enumerate(calls) if c.startswith("verify-images"))
+    assert first_images < calls.index(
         "update --yes --auto v0.9.0 lock_held=1"
     )
     assert (result(sandbox)["last_result"], result(sandbox)["to"]) == ("updated", "v0.9.0")
@@ -678,3 +684,34 @@ def test_asking_for_hubproxy_of_a_release_without_it_fails(sandbox: Sandbox) -> 
     sandbox.env["SHIM_HUBPROXY_IN_TREE"] = "0"
     proc = sandbox.run("scripts/verify-images.sh", "--only", "hubproxy", "v0.5.0")
     assert proc.returncode != 0
+
+
+def expect_file(sb: Sandbox, digest: str, names: str = "redis api") -> Path:
+    path = sb.root / "expect.txt"
+    path.write_text("".join(f"image.{n}={digest}\n" for n in names.split()))
+    return path
+
+
+def test_images_matching_the_signed_manifest_pass(sandbox: Sandbox) -> None:
+    stage_images(sandbox, "v0.6.0\n")
+    path = expect_file(sandbox, "sha256:" + "0" * 64)
+    args = ("--only", "redis api", "--expect", str(path), "v0.6.0")
+    proc = sandbox.run("scripts/verify-images.sh", *args)
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_an_image_that_differs_from_the_signed_manifest_is_refused(sandbox: Sandbox) -> None:
+    stage_images(sandbox, "v0.6.0\n")
+    path = expect_file(sandbox, "sha256:" + "1" * 64)
+    args = ("--pull", "--only", "redis api", "--expect", str(path), "v0.6.0")
+    proc = sandbox.run("scripts/verify-images.sh", *args)
+    assert proc.returncode == 7
+    assert "REFUSED redis" in proc.stderr
+    assert not any(" pull " in c for c in sandbox.docker_calls())
+
+
+def test_an_image_missing_from_the_signed_manifest_is_refused(sandbox: Sandbox) -> None:
+    stage_images(sandbox, "v0.6.0\n")
+    path = expect_file(sandbox, "sha256:" + "0" * 64, "redis")
+    args = ("--only", "redis api", "--expect", str(path), "v0.6.0")
+    assert sandbox.run("scripts/verify-images.sh", *args).returncode == 7
