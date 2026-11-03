@@ -58,7 +58,6 @@ table inet suckerpot_host {
     #     the host, and hubproxy (sp-hubgate) only asks for DNS. No effect when those networks do
     #     not exist.
     iifname "sp-hubproxy" ct state new counter drop
-    iifname "sp-hubgate" ct state new meta l4proto { tcp, udp } th dport 53 counter accept
     iifname "sp-hubgate" ct state new counter drop
 
     # (2) No container may reach the protected ports of the host. Matching by
@@ -83,11 +82,12 @@ table inet suckerpot_host {
     # (7) From the hubproxy uplink, only TCP 443 (the hub and feed hosts, which hubproxy itself
     #     allow-lists by name) and DNS. Optional extra control: without it hubproxy is the only
     #     control.
-    #     Destinations that are not on the public internet are dropped first.
+    #     DNS is accepted first: the resolver Docker forwards to is often on the local network.
+    #     Other destinations that are not on the public internet are then dropped.
+    iifname "sp-hubgate" ct state new meta l4proto { tcp, udp } th dport 53 counter accept
     iifname "sp-hubgate" ct state new ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } counter drop  # gitleaks:allow (private ranges are the point of this rule)
     iifname "sp-hubgate" ct state new ip6 daddr { ::/128, ::1/128, fc00::/7, fe80::/10, ff00::/8 } counter drop
     iifname "sp-hubgate" ct state new tcp dport 443 counter accept
-    iifname "sp-hubgate" ct state new meta l4proto { tcp, udp } th dport 53 counter accept
     iifname "sp-hubgate" ct state new counter drop
   }
 
