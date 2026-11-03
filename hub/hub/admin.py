@@ -1,7 +1,9 @@
 """Operator CLI: ``python -m hub.admin <command>``. No web admin: a smaller attack surface.
 
-Commands: gen-signing-key, gen-feed-key, show-public-key, reports list|show|approve|cancel, abusech list|approve|reject,
-target dispute, never add|remove|list, node suspend|unsuspend, stats, feeds
+Commands: gen-signing-key, gen-feed-key, show-public-key, reports list|show|approve|cancel,
+abusech list|approve|reject|cancel, target dispute, never add|remove|list,
+node suspend|unsuspend|role grant|role revoke|roles, verify status|list|show|approve|refuse,
+stats, feeds
 status|diff|release|discard|pause|resume|rebuild, allow add|remove|list, delist
 list|show|accept|reject, ranges status|refresh. Every change writes ``hub_audit`` with the action
 and counts only (no node data, no addresses). Key generation touches no database.
@@ -58,6 +60,11 @@ def _parser() -> argparse.ArgumentParser:
     abl.add_argument("--state", choices=["queued", "approved", "sent", "failed", "rejected"])
     for name in ("approve", "reject"):
         abs_.add_parser(name).add_argument("id", type=int)
+    abc = abs_.add_parser(
+        "cancel", help="withdraw unsent submissions: one id, or every verified (path B) one"
+    )
+    abc.add_argument("id", type=int, nargs="?")
+    abc.add_argument("--all-verified", action="store_true")
 
     t = sub.add_parser("target")
     ts = t.add_subparsers(dest="action", required=True)
@@ -78,6 +85,29 @@ def _parser() -> argparse.ArgumentParser:
     nds = nd.add_subparsers(dest="action", required=True)
     for name in ("suspend", "unsuspend"):
         nds.add_parser(name).add_argument("fingerprint")
+    ndr = nds.add_parser("role", help="grant or revoke a node role")
+    ndrs = ndr.add_subparsers(dest="role_action", required=True)
+    for name in ("grant", "revoke"):
+        rp = ndrs.add_parser(name)
+        rp.add_argument("fingerprint")
+        rp.add_argument("role", choices=sorted(NODE_ROLES))
+    nds.add_parser("roles", help="list the nodes that hold a role")
+
+    vf = sub.add_parser("verify", help="link verification tasks (M32)")
+    vfs = vf.add_subparsers(dest="action", required=True)
+    vfs.add_parser("status")
+    vl = vfs.add_parser("list")
+    vl.add_argument("--state", choices=sorted(VERIFY_STATES))
+    vfs.add_parser("show").add_argument("id")
+    vfs.add_parser("approve").add_argument("id")
+    vr = vfs.add_parser("refuse", aliases=["reject"])
+    vr.add_argument("id")
+    vr.add_argument("--note", required=True)
+    vr.add_argument(
+        "--abuse",
+        action="store_true",
+        help="also dispute the url candidate (lowers its contributors' reputation)",
+    )
 
     sub.add_parser("stats")
 
@@ -132,6 +162,17 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
+NODE_ROLES = frozenset({"verifier"})
+VERIFY_STATES = frozenset(
+    {
+        "waiting_reveal", "pending_review", "queued", "leased", "attested", "failed", "refused",
+        "expired",
+    }
+)  # fmt: skip
+# States in which the clear link may be shown to the operator (design 7.5).
+VERIFY_SHOW_URL = frozenset({"pending_review", "queued", "leased"})
+# States an operator may still refuse (a leased task is left to finish or expire).
+VERIFY_REFUSABLE = frozenset({"waiting_reveal", "pending_review", "queued", "attested"})
 ALLOW_REASONS = frozenset(
     {"owner_request", "shared_infra", "remediated", "policy", "false_positive"}
 )
@@ -273,6 +314,10 @@ async def _dispatch(
         return 0
     if args.cmd == "never":
         return await _never(args, session, who, out)
+    if args.cmd == "verify":
+        return await _verify(args, session, who, out, settings)
+    if args.cmd == "node" and args.action in ("role", "roles"):
+        return await _node_roles(args, session, who, out)
     if args.cmd == "node":
         state = "soft_suspended" if args.action == "suspend" else "active"
         result = await session.execute(
@@ -363,7 +408,7 @@ async def _reports(args: argparse.Namespace, session: AsyncSession, who: str, ou
 async def _abusech(args: argparse.Namespace, session: AsyncSession, who: str, out: Out) -> int:
     if args.action == "list":
         sql = (
-            "SELECT id, state, kind, indicator, malware, result_code, created_day "
+            "SELECT id, state, kind, basis, indicator, malware, result_code, created_day "
             "FROM abusech_submissions"
         )
         params: dict[str, Any] = {}
@@ -372,10 +417,12 @@ async def _abusech(args: argparse.Namespace, session: AsyncSession, who: str, ou
             params["s"] = args.state
         for r in (await session.execute(text(sql + " ORDER BY id DESC LIMIT 200"), params)).all():
             out(
-                f"{r.id}\t{r.state}\t{r.kind}\t{_safe(r.indicator)}\t{r.malware or '-'}"
+                f"{r.id}\t{r.state}\t{r.kind}\t{r.basis}\t{_safe(r.indicator)}\t{r.malware or '-'}"
                 f"\t{r.result_code or '-'}\t{r.created_day}"
             )
         return 0
+    if args.action == "cancel":
+        return await _abusech_cancel(args, session, who, out)
     row = (
         await session.execute(
             text("SELECT id, state FROM abusech_submissions WHERE id = :id"), {"id": args.id}
@@ -408,6 +455,228 @@ async def _abusech(args: argparse.Namespace, session: AsyncSession, who: str, ou
     await _audit(session, who, "abusech.reject", {"submission": args.id})
     await session.commit()
     out(f"rejected {args.id}")
+    return 0
+
+
+async def _abusech_cancel(
+    args: argparse.Namespace, session: AsyncSession, who: str, out: Out
+) -> int:
+    """Withdraw unsent submissions: one by id, or every verified one (a verifier is distrusted)."""
+    if args.all_verified == (args.id is not None):
+        out("give exactly one of: a submission id, --all-verified")
+        return 2
+    if args.all_verified:
+        count = await abusech.withdraw_verified(session)
+    else:
+        res = await session.execute(
+            text(
+                "UPDATE abusech_submissions SET state = 'rejected', result_code = :c "
+                "WHERE id = :id AND state IN ('queued', 'approved')"
+            ),
+            {"c": abusech.WITHDRAWN, "id": args.id},
+        )
+        count = int(getattr(res, "rowcount", 0) or 0)
+    await _audit(session, who, "abusech.cancel", {"submissions": count, "all": args.all_verified})
+    await session.commit()
+    out(f"cancelled {count} submission(s)")
+    return 0 if count else 1
+
+
+async def _node_roles(args: argparse.Namespace, session: AsyncSession, who: str, out: Out) -> int:
+    if args.action == "roles":
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT substr(encode(sha256(n.pubkey), 'hex'), 1, 8) AS fp, r.role, "
+                    "r.granted_day FROM node_roles r JOIN nodes n ON n.id = r.node_id "
+                    "ORDER BY r.granted_day, fp"
+                )
+            )
+        ).all()
+        for r in rows:
+            out(f"{r.fp}\t{r.role}\t{r.granted_day}")
+        return 0
+    fp = args.fingerprint.lower()
+    ids = [
+        r.id
+        for r in await session.execute(
+            text("SELECT id FROM nodes WHERE substr(encode(sha256(pubkey), 'hex'), 1, 8) = :fp"),
+            {"fp": fp},
+        )
+    ]
+    if len(ids) != 1:
+        out("no node has that fingerprint" if not ids else "the fingerprint is ambiguous")
+        return 1
+    if args.role_action == "grant":
+        res = await session.execute(
+            text(
+                "INSERT INTO node_roles (node_id, role, granted_day) VALUES (:n, :r, :d) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            {"n": ids[0], "r": args.role, "d": utcnow().date()},
+        )
+        granted = int(getattr(res, "rowcount", 0) or 0)
+        await _audit(session, who, "node.role.grant", {"role": args.role, "granted": granted})
+        await session.commit()
+        out(f"granted {args.role}" if granted else f"already holds {args.role}")
+        return 0
+    res = await session.execute(
+        text("DELETE FROM node_roles WHERE node_id = :n AND role = :r"),
+        {"n": ids[0], "r": args.role},
+    )
+    revoked = int(getattr(res, "rowcount", 0) or 0)
+    released = withdrawn = 0
+    if revoked and args.role == "verifier":
+        # Its open leases go back to the queue; verified submissions nobody else vouches for are
+        # withdrawn (a send is also re-checked against the role just before it leaves).
+        rel = await session.execute(
+            text(
+                "UPDATE verify_tasks SET state = 'queued', release_at = NULL, lease_node = NULL, "
+                "lease_until = NULL WHERE lease_node = :n AND state = 'leased'"
+            ),
+            {"n": ids[0]},
+        )
+        released = int(getattr(rel, "rowcount", 0) or 0)
+        withdrawn = await abusech.withdraw_unattested(session)
+    await _audit(
+        session,
+        who,
+        "node.role.revoke",
+        {
+            "role": args.role,
+            "revoked": revoked,
+            "leases_released": released,
+            "withdrawn": withdrawn,
+        },
+    )
+    await session.commit()
+    out(f"revoked {args.role}; {released} lease(s) released, {withdrawn} submission(s) withdrawn")
+    return 0 if revoked else 1
+
+
+async def _verify(
+    args: argparse.Namespace,
+    session: AsyncSession,
+    who: str,
+    out: Out,
+    settings: Settings | None,
+) -> int:
+    s = settings or Settings()
+    today = utcnow().date()
+    if args.action == "status":
+        out(f"mode: {s.verify_mode}")
+        for r in await session.execute(
+            text("SELECT state, count(*) AS n FROM verify_tasks GROUP BY state ORDER BY state")
+        ):
+            out(f"{r.state}: {r.n}")
+        admitted = (
+            await session.execute(
+                text(
+                    "SELECT count(*) FROM verify_tasks WHERE revealed_day = :d AND url IS NOT NULL "
+                    "AND state NOT IN ('waiting_reveal', 'refused')"
+                ),
+                {"d": today},
+            )
+        ).scalar_one()
+        out(
+            f"admitted today: {admitted} of {s.verify_daily_cap} (per site: {s.verify_host_daily_cap})"
+        )
+        return 0
+    if args.action == "list":
+        sql = (
+            "SELECT id, state, site, reporters, reporter_cohorts, last_report_day, release_at "
+            "FROM verify_tasks"
+        )
+        params: dict[str, Any] = {}
+        if args.state:
+            sql += " WHERE state = :s"
+            params["s"] = args.state
+        for r in await session.execute(
+            text(sql + " ORDER BY created_day DESC, id LIMIT 200"), params
+        ):
+            out(
+                f"{r.id}\t{r.state}\t{_safe(r.site or '-')}\t{r.reporters}/{r.reporter_cohorts}"
+                f"\t{r.last_report_day}\t{r.release_at.isoformat() if r.release_at else '-'}"
+            )
+        return 0
+    task = (
+        await session.execute(
+            text(
+                "SELECT id, state, url, site, refusal, reporters, reporter_cohorts, "
+                "last_report_day, created_day, revealed_day, release_at, attempts, ended_day "
+                "FROM verify_tasks WHERE id = :i FOR UPDATE"
+            ),
+            {"i": args.id},
+        )
+    ).first()
+    if task is None:
+        out("no such task")
+        return 1
+    if args.action == "show":
+        for key in ("id", "state", "site", "refusal", "reporters", "reporter_cohorts",
+                    "last_report_day", "created_day", "revealed_day", "release_at", "attempts",
+                    "ended_day"):  # fmt: skip
+            out(f"{key}: {_safe(getattr(task, key))}")
+        if task.state in VERIFY_SHOW_URL:
+            out(f"url: {_safe(task.url)}")
+        for a in await session.execute(
+            text(
+                "SELECT outcome, file_type, family, malware_like, day FROM verify_attestations "
+                "WHERE task_id = :i ORDER BY day"
+            ),
+            {"i": args.id},
+        ):
+            out(
+                f"attestation: {a.day} {a.outcome} type={a.file_type or '-'} "
+                f"family={a.family or '-'} malware_like={a.malware_like}"
+            )
+        return 0
+    if args.action == "approve":
+        if task.state != "pending_review" or not task.url:
+            out(f"only a pending_review task can be approved (this one is {task.state})")
+            return 1
+        await session.execute(
+            text("UPDATE verify_tasks SET state = 'queued', release_at = NULL WHERE id = :i"),
+            {"i": args.id},
+        )
+        await _audit(session, who, "verify.approve", {"task": args.id})
+        await session.commit()
+        out(f"approved {args.id}; a verifier can lease it now")
+        return 0
+    # refuse
+    if task.state not in VERIFY_REFUSABLE:
+        out(f"a {task.state} task cannot be refused")
+        return 1
+    await session.execute(
+        text(
+            "UPDATE verify_tasks SET state = 'refused', refusal = 'operator', ended_day = :d, "
+            "release_at = NULL WHERE id = :i"
+        ),
+        {"d": today, "i": args.id},
+    )
+    withdrawn = await abusech.withdraw_task(session, args.id)
+    await _audit(
+        session,
+        who,
+        "verify.refuse",
+        {"task": args.id, "abuse": args.abuse, "withdrawn": withdrawn, "note": args.note[:200]},
+    )
+    penalised = 0
+    if args.abuse:
+        target = (
+            await session.execute(
+                text(
+                    "SELECT t.id FROM targets t JOIN verify_tasks v ON v.url_b = t.value_b "
+                    "WHERE v.id = :i AND t.kind = 'url'"
+                ),
+                {"i": args.id},
+            )
+        ).first()
+        if target is not None:
+            withdrawn += await abusech.withdraw_target(session, target.id)
+            penalised = await reputation.dispute(session, target.id)  # commits
+    await session.commit()
+    out(f"refused {args.id}; {withdrawn} submission(s) withdrawn, {penalised} contributors lowered")
     return 0
 
 

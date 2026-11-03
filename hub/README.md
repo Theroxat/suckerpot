@@ -336,6 +336,17 @@ The same consensus as for reports, with the same strictness:
 
 Public hosts only: no private or shorthand numeric addresses (`127.1`), single-label names or local suffixes (`.local`, `.internal`, `.lan`, `.home.arpa`). Anything the feeds would exclude (never-list, allow-list, delisting decisions, reserved space, and for ThreatFox the CDN and Tor ranges) is skipped, both when it is queued and again just before it is sent, and the target must still be confirmed or reported. ThreatFox waits while the CDN or Tor ranges are older than 30 days, like the feeds. `target dispute` and an accepted delisting reject the matching queued and approved submissions. A ThreatFox submission is sent only if an operator approved it with the CLI (`approved_manually`), whatever the mode or the actor name. A target is submitted once: the table `abusech_submissions` has a unique `(kind, indicator)`.
 
+### Path B: a link a verifier fetched
+
+A second route to URLhaus exists when link verification is on (`HUB_VERIFY_MODE`). A submission with `basis = verified` needs both:
+
+- at least two distinct **eligible** nodes reported the link (counted from their observations; the verifier's attestation never counts as one of the two, though a verifier whose own sensor reported the link does count as a reporter), and
+- a node that **still holds the `verifier` role** attested malware-like content (a known family or an executable file type) in the last 3 days.
+
+The candidate `url` target may still be a candidate, but never disputed, taken down or expired. Every guard of the first path applies (public host, never-list, allow-list, delisting, CDN and Tor ranges, length), at queue time and again just before sending. Before sending, the task must also still be `attested` (not refused by an operator or deleted by retention) and the attester must still hold the role. A link that already has a submission is not queued again; the earlier row wins.
+
+Approval: in `review` mode every row waits for an operator, as today. In `auto` mode a verified row is approved automatically only if `HUB_VERIFY_MODE=auto`, its reporters (recomputed at approval time) come from at least two enrolment cohorts, the network has `HUB_AUTO_MIN_COHORTS` cohorts and the report hold has passed; otherwise it stays queued for review. `target dispute`, `verify refuse`, an accepted delisting and `node role revoke verifier` withdraw verified rows like the others.
+
 ### What is sent
 
 The public indicator, the malware name, at most five tags from a fixed list (the family, `elf`, an architecture, `sh`, `exe`), a fixed confidence for ThreatFox and the anonymous flag. Never a node key, a pseudonym, a count of nodes, a day, a free text or anything about the operator. A test checks the outgoing body. The answer is reduced to a constant code (`inserted`, `already_known`, `invalid`, `blacklisted`, `auth_failed`, `rate_limited`, `http_error`, `unknown_outcome`) and the server text is never stored.
@@ -535,6 +546,14 @@ docker compose run --rm hub-admin <command>
 | `reports cancel <id>` | Cancels a report |
 | `abusech list [--state queued\|approved\|sent\|failed\|rejected]` | Lists abuse.ch submissions |
 | `abusech approve <id>` / `abusech reject <id>` | Approves a queued submission, or rejects a queued or approved one |
+| `abusech cancel <id>` / `abusech cancel --all-verified` | Withdraws one unsent submission, or every unsent verified one (use it if you stop trusting a verifier) |
+| `node role grant <fingerprint> verifier` / `node role revoke <fingerprint> verifier` | Gives or removes the verifier role. A revoke returns the node's open leases to the queue and withdraws verified submissions that no remaining verifier vouches for |
+| `node roles` | Lists the nodes that hold a role (fingerprint, role, day granted) |
+| `verify status` | Task counts per state, the mode and how many links were admitted today against the caps |
+| `verify list [--state ...]` | Lists tasks (id, state, site, reporters/cohorts, last report day, release time). Never prints a link |
+| `verify show <id>` | One task and its attestations. The link is printed only while the task is `pending_review`, `queued` or `leased` |
+| `verify approve <id>` | Moves a `pending_review` task to `queued`. A verifier can lease it at once (no release delay) |
+| `verify refuse <id> --note "..." [--abuse]` | Ends a task as `refused` (`operator`) and withdraws its submissions. `--abuse` also disputes the `url` candidate (lowers its contributors' reputation). `reject` is an alias |
 | `target dispute <id> --note "..."` | Disputes a target |
 | `never add <value> [--kind ip\|domain\|sha256] [--note "..."]` | Adds a value to the never-list |
 | `never remove <value>` | Removes a value from the never-list |
@@ -542,7 +561,9 @@ docker compose run --rm hub-admin <command>
 | `node suspend <fingerprint>` / `node unsuspend <fingerprint>` | Suspends or restores a node |
 | `stats` | Prints the figures |
 
-There is no web admin. The CLI keeps the attack surface small.
+There is no web admin. The CLI keeps the attack surface small. Every change above writes a `hub_audit` row with the action and counts only: no link, no fingerprint, no node id.
+
+There is no `verify pause`. The API (`hub_api`) cannot read worker markers, and a pause that only the worker honoured would let verifiers keep leasing. To stop verification, set `HUB_VERIFY_MODE=off` and restart the hub, or `review` to hold new tasks for approval. To stop one verifier, `node role revoke`. To stop sending, `abusech cancel --all-verified` or `HUB_ABUSECH_MODE=off`.
 
 ## What the worker does
 
