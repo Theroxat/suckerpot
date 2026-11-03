@@ -1,6 +1,8 @@
+import { Globe } from "lucide-react"
 import type { ReactNode } from "react"
 import { Link } from "react-router"
 import { RelativeTime } from "@/components/relative-time"
+import { Badge } from "@/components/ui/badge"
 import { SeverityBadge } from "@/components/severity-badge"
 import { TagBadge } from "@/components/tag-badge"
 import { formatBytes, formatNumber } from "@/lib/format"
@@ -45,10 +47,15 @@ export function SampleRow({ item, action }: { item: SampleItem; action?: ReactNo
           )}
           <span className="text-fg-muted">{describeKind(item)}</span>
           {item.origin === "network_verify" ? (
-            <span title={NETWORK_CHECK.explain} className="relative z-10 inline-flex">
-              <TagBadge tag={NETWORK_CHECK.label} href={null} />
+            <Badge
+              variant="outline"
+              title={NETWORK_CHECK.explain}
+              className="font-sans text-fg-muted"
+            >
+              <Globe aria-hidden="true" />
+              {NETWORK_CHECK.label} · {NETWORK_CHECK.qualifier}
               <span className="sr-only">. {NETWORK_CHECK.explain}</span>
-            </span>
+            </Badge>
           ) : null}
         </p>
         <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-fg-muted">
