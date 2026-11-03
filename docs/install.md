@@ -27,14 +27,14 @@ The memory figures are sizing targets. Check the real use on your host with `doc
 
 | Mode | What runs | Use it when |
 | --- | --- | --- |
-| `full` (default) | Everything: sensors, database, ingest, API and dashboard, and the VPN service | You want the dashboard, reports and blocklists |
+| `full` (default) | Everything: sensors, database, ingest, API and dashboard, and the VPN service (optional; idle until you add a WireGuard file) | You want the dashboard, reports and blocklists |
 | `participant` (`--participant`) | Sensors, database, ingest and the network node. No dashboard, no admin account, no VPN needed | You only want to help the network. See [Join the network](participate.md) |
 
 Participant mode has its own flags: `--pseudonym`, `--no-pseudonym`, `--country`, `--show-country`, `--verifier`, `--no-auto-update`, `--feeds`, `--self-address` and `--repair`. It refuses the dashboard flags (`--dashboard-*`, `--public-host`, `--admin-*`, `--allow-lan`). Choosing it is your consent to join the network.
 
 To switch an existing participant install to full mode, run `./scripts/install.sh --full`. It asks the dashboard questions, takes a backup and keeps your data. The other way (full to participant) is not supported. Running the installer again on an existing install only prints its status. Add `--repair` to run the volume, start and schedule steps again.
 
-## Two install modes
+## Images or source build
 
 | Mode | What runs | Use it when |
 | --- | --- | --- |
@@ -83,7 +83,7 @@ Each question has a default. Press Enter to accept it. With `--yes`, every quest
 
 | Question | Default | Notes |
 | --- | --- | --- |
-| Install mode | `images` | `images` or `source`. See [two install modes](#two-install-modes). |
+| Install mode | `images` | `images` or `source`. See [images or source build](#images-or-source-build). |
 | Sensors | `recommended` | `recommended` is SSH, Telnet, Web, Redis, Docker and ADB. `all` turns on all twelve. Or type a list such as `ssh,web`. |
 | How the dashboard is reached | local | `l` for this machine or an SSH tunnel. `h` for an HTTPS tunnel such as cloudflared. With `h` the installer asks for the public host name, for example `dash.example.com`. |
 | Admin user name | `admin` | Letters, digits, `.`, `_` and `-`. |
