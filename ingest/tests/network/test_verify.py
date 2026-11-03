@@ -16,6 +16,7 @@ from ingest.network.builder import BatchBuilder
 from ingest.network.client import HubClient, HubNoVerify, HubUnavailable
 from ingest.network.verifier import (
     FetchView,
+    StaleFetch,
     TaskRow,
     Verifier,
     local_refusal,
@@ -200,6 +201,7 @@ class MemoryVerifyStore:
         self.targets: dict[str, int] = {}
         self.views: dict[int, FetchView] = {}
         self.queued: list[tuple[str, str, str]] = []
+        self.stale: set[str] = set()
 
     async def open_tasks(self) -> list[TaskRow]:
         return [
@@ -218,6 +220,8 @@ class MemoryVerifyStore:
             setattr(self.tasks[hub_id], k, v)
 
     async def queue_fetch(self, url: str, host: str, scheme: str, now: datetime) -> int | None:
+        if url in self.stale:
+            raise StaleFetch
         self.queued.append((url, host, scheme))
         return self.targets.setdefault(url, len(self.targets) + 1)
 
@@ -462,3 +466,15 @@ def test_result_items_are_validated() -> None:
 
 async def test_hub_no_verify_is_unavailable_subclass() -> None:
     assert issubclass(HubNoVerify, HubUnavailable)
+
+
+async def test_a_stale_reused_fetch_is_skipped_never_attested() -> None:
+    r = Rigged()
+    t = task(7)
+    r.store.stale.add(t["url"])
+    r.hub.verify_tasks = [t]
+    await r.cycle()
+    r.hub.verify_tasks = []
+    await r.cycle()
+    assert r.results() == [{"id": t["id"], "outcome": "skipped"}]
+    assert r.store.tasks[t["id"]].fetch_target_id is None

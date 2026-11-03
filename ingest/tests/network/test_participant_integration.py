@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from ingest.abuse.selfterms import TermsCache, learn, parse_self_address
 from ingest.network import cli
 from ingest.network.store import SqlStore
-from ingest.network.verifier import SqlVerifyStore, TaskRow
+from ingest.network.verifier import SqlVerifyStore, StaleFetch, TaskRow
 
 pytestmark = [
     pytest.mark.integration,
@@ -49,7 +49,7 @@ async def clean(engine: AsyncEngine) -> None:
         )
 
 
-async def add_http(engine: AsyncEngine, n: int, host: str) -> None:
+async def add_http(engine: AsyncEngine, n: int, host: str, days_ago: int = 0) -> None:
     async with engine.begin() as conn:
         for i in range(n):
             await conn.execute(
@@ -59,8 +59,8 @@ async def add_http(engine: AsyncEngine, n: int, host: str) -> None:
                     "CAST(:ip AS inet), 40000, 8080, CAST(:d AS jsonb))"
                 ),
                 {
-                    "ts": datetime.now(UTC) - timedelta(minutes=20),
-                    "sid": f"pi-{host}-{i}",
+                    "ts": datetime.now(UTC) - timedelta(minutes=20, days=days_ago),
+                    "sid": f"pi-{host}-{days_ago}-{i}",
                     "ip": f"10.{40 + i}.0.9",
                     "d": json.dumps({"host": host, "path": "/"}),
                 },
@@ -87,7 +87,11 @@ async def test_auto_confirm_applies_to_learned_addresses_only(
     plain = await TermsCache(factory, {}).get()
     assert plain is not None and not plain.has_self_address
     auto = await TermsCache(factory, {"SELF_TERMS_AUTO_CONFIRM": "true"}).get()
-    assert auto is not None and auto.has_self_address  # the learned address acts at once
+    assert auto is not None and not auto.has_self_address  # one day of planting is not enough
+    for d in (1, 2):
+        await add_http(engine, 3, "8.8.4.4", days_ago=d)
+    seen = await TermsCache(factory, {"SELF_TERMS_AUTO_CONFIRM": "true"}).get()
+    assert seen is not None and seen.has_self_address  # named on three days: it acts
 
 
 async def test_self_address_acts_without_a_row(engine: AsyncEngine, factory: Factory) -> None:
@@ -153,6 +157,14 @@ async def test_the_verify_queue_uses_only_the_granted_columns(
             text("UPDATE fetch_targets SET status='fetched', last_sha256=:s WHERE id=:i"),
             {"s": "c" * 64, "i": first},
         )
+    with pytest.raises(StaleFetch):  # a fetched row with no recent attempt is never reused
+        await vs.queue_fetch(url, "198.51.100.9", "http", NOW)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE fetch_targets SET last_attempt_at = :t WHERE id = :i"),
+            {"t": NOW - timedelta(hours=1), "i": first},
+        )
+    assert await vs.queue_fetch(url, "198.51.100.9", "http", NOW) == first  # recent: reusable
     view = await vs.fetch_view(first)
     assert view is not None and (view.status, view.size, view.kind, view.family) == (
         "fetched", 4096, "elf", "mirai",

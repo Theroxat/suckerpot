@@ -47,6 +47,12 @@ LEARNED_CAP = 200
 MIN_NETWORKS = 2  # distinct /24 (IPv4) or /48 (IPv6) source networks before a candidate is stored
 PER_SOURCE_ROWS = 20
 FRESH_HOURS = 72
+# An auto-confirmed address only opens the fail-closed guards after it was named on this many
+# distinct UTC days. Planting a decoy needs sources from two networks, which is cheap for one
+# burst; three separate days makes steering the guard a sustained campaign, while the real
+# address (every scanner that hits the node by IP names it) reaches three days within a week.
+MIN_LEARNED_DAYS = 3
+DAYS_WINDOW = 14
 
 # SQL that extracts the host the same way ``hosts_of`` does (exact match, no substring search).
 _SIP_RE = r"sips?:(?:[^@/;[:space:]>]*@)?([^:;/[:space:]>?]+)"
@@ -256,28 +262,67 @@ def parse_self_address(raw: str) -> str | None:
     return str(addr)
 
 
-def effective_rows(rows: Iterable[SelfTermRow], env: Mapping[str, str]) -> list[SelfTermRow]:
+def effective_rows(
+    rows: Iterable[SelfTermRow],
+    env: Mapping[str, str],
+    learned_days: Mapping[str, int] | None = None,
+) -> list[SelfTermRow]:
     """The table rows plus what the environment adds in participant mode (M32 section 8.4).
 
     The ingest role cannot confirm a row or write a ``manual`` one (the owner's decision lives in
     the database), so both happen in memory only:
 
     * ``SELF_TERMS_AUTO_CONFIRM``: a learned *address* row (it already passed the learning
-      thresholds) acts as confirmed. Names never do: a planted ``Host:`` header can then only make
-      the node redact more, never less (M13).
-    * ``SELF_ADDRESS``: a ``manual`` address that never expires.
+      thresholds) acts as confirmed once it was named on ``MIN_LEARNED_DAYS`` distinct days
+      (``learned_days``, address to day count). Before that it is only redacted (as a literal
+      text term) and does not count as a known self address, so a decoy planted in a burst of
+      ``Host:`` headers cannot open the fail-closed guards. Names never auto-confirm (M13).
+    * ``SELF_ADDRESS``: a ``manual`` address that never expires and always counts.
     """
-    out = list(rows)
-    if auto_confirm_enabled(env):
-        out = [
-            r.model_copy(update={"confirmed": True})
-            if r.source == "learned" and r.kind == "address" and not r.confirmed
-            else r
-            for r in out
-        ]
+    days = learned_days or {}
+    out: list[SelfTermRow] = []
+    for r in rows:
+        if (
+            auto_confirm_enabled(env)
+            and r.source == "learned"
+            and r.kind == "address"
+            and not r.confirmed
+        ):
+            if days.get(r.value, 0) >= MIN_LEARNED_DAYS:
+                out.append(r.model_copy(update={"confirmed": True}))
+            else:
+                out.append(r)
+                out.append(SelfTermRow(kind="text", value=r.value, source="manual", confirmed=True))
+            continue
+        out.append(r)
     address = parse_self_address(env.get("SELF_ADDRESS", ""))
     if address is not None:
         out.append(SelfTermRow(kind="address", value=address, source="manual", confirmed=True))
+    return out
+
+
+async def learned_address_days(
+    factory: async_sessionmaker[AsyncSession], addresses: Iterable[str], now: datetime | None = None
+) -> dict[str, int]:
+    """Distinct UTC days (last ``DAYS_WINDOW``) on which each address was named as a destination."""
+    moment = now or datetime.now(UTC)
+    out: dict[str, int] = {}
+    async with factory() as session:
+        for value in addresses:
+            out[value] = int(
+                (
+                    await session.execute(
+                        text(
+                            f"""
+                            SELECT count(DISTINCT (ts AT TIME ZONE 'UTC')::date) FROM events
+                            WHERE ts >= :since AND sensor IN ('web', 'synology', 'sip')
+                              AND ({_HOST_EXPR})
+                            """  # noqa: S608  (constant fragments only, the value is bound)
+                        ),
+                        {"since": moment - timedelta(days=DAYS_WINDOW), "v": value},
+                    )
+                ).scalar_one()
+            )
     return out
 
 
@@ -317,21 +362,30 @@ class TermsCache:
             log.warning("self terms unavailable (%s)", type(exc).__name__)
             self._terms = None
             return None
+        table = [
+            SelfTermRow(
+                kind=r.kind,
+                value=r.value,
+                source=r.source,
+                distinct_sources=r.distinct_sources,
+                confirmed=r.confirmed,
+                last_seen=r.last_seen,
+            )
+            for r in rows
+        ]
+        days: dict[str, int] = {}
+        if auto_confirm_enabled(self.env):
+            pending = [
+                r.value
+                for r in table
+                if r.source == "learned" and r.kind == "address" and not r.confirmed
+            ]
+            try:
+                days = await learned_address_days(self.factory, pending)
+            except Exception as exc:
+                log.warning("self address days unavailable (%s)", type(exc).__name__)
         terms = load_self_terms(
-            effective_rows(
-                [
-                    SelfTermRow(
-                        kind=r.kind,
-                        value=r.value,
-                        source=r.source,
-                        distinct_sources=r.distinct_sources,
-                        confirmed=r.confirmed,
-                        last_seen=r.last_seen,
-                    )
-                    for r in rows
-                ],
-                self.env,
-            ),
+            effective_rows(table, self.env, days),
             self.env,
             vpn_exit=egress.ip if egress is not None and egress.ip else None,
         )

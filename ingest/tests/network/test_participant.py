@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import random
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
@@ -235,17 +235,33 @@ def test_settings_from_env_participant_values() -> None:
 
 
 def test_effective_rows_confirm_learned_addresses_only_when_asked() -> None:
-    from suckerpot_reporting import SelfTermRow
+    from suckerpot_reporting import SelfTermRow, load_self_terms
 
-    from ingest.abuse.selfterms import effective_rows
+    from ingest.abuse.selfterms import MIN_LEARNED_DAYS, effective_rows
 
     rows = [
-        SelfTermRow(kind="address", value="8.8.4.4", source="learned", distinct_sources=3),
+        SelfTermRow(
+            kind="address",
+            value="8.8.4.4",
+            source="learned",
+            distinct_sources=3,
+            last_seen=datetime.now(UTC),
+        ),
         SelfTermRow(kind="name", value="owner-box.example.net", source="learned"),
     ]
     assert not any(r.confirmed for r in effective_rows(rows, {}))
-    auto = effective_rows(rows, {"SELF_TERMS_AUTO_CONFIRM": "true"})
+    auto_env = {"SELF_TERMS_AUTO_CONFIRM": "true"}
+    young = effective_rows(rows, auto_env, {"8.8.4.4": MIN_LEARNED_DAYS - 1})
+    assert not any(r.confirmed for r in young if r.source == "learned")
+    # a decoy seen on too few days is still redacted (literal text term) but never counts
+    terms = load_self_terms(young, {})
+    assert not terms.has_self_address and "8.8.4.4" in terms.texts
+    auto = effective_rows(rows, auto_env, {"8.8.4.4": MIN_LEARNED_DAYS})
     assert [(r.kind, r.confirmed) for r in auto] == [("address", True), ("name", False)]
+    assert load_self_terms(auto, {}).has_self_address
+    # SELF_ADDRESS always counts, whatever was learned
+    explicit = effective_rows(rows, {**auto_env, "SELF_ADDRESS": "198.51.100.4"}, {})
+    assert load_self_terms(explicit, {}).has_self_address
     added = effective_rows(rows, {"SELF_ADDRESS": "198.51.100.4"})
     assert added[-1].source == "manual" and added[-1].value == "198.51.100.4"
     assert len(effective_rows(rows, {"SELF_ADDRESS": "not-an-address"})) == 2

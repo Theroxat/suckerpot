@@ -41,6 +41,9 @@ log = logging.getLogger(__name__)
 ORIGIN = "network_verify"
 LEASE_MAX = wire.MAX_VERIFY_TASKS
 OUTSTANDING_MAX = 20  # leased but unreported tasks held at once
+# A reused fetch target only vouches for a task when its last attempt falls inside the hub's
+# lease window (6 hours): an older result says nothing about the file as it is now.
+FETCH_FRESH = timedelta(hours=6)
 RESULT_TIMEOUT = timedelta(hours=5)  # the hub's lease is 6 hours: report before it ends
 RETRY_AFTER = timedelta(hours=24)
 MAX_URL = 2048
@@ -56,6 +59,10 @@ OK = "ok"
 
 OPEN_STATES = ("received", "queued", "done", "refused", "skipped")
 LOCAL_DECISIONS = ("refused", "skipped")
+
+
+class StaleFetch(Exception):
+    """The reusable fetch target holds only an old result: never attest from it."""
 
 
 @dataclass(slots=True)
@@ -165,7 +172,10 @@ class SqlVerifyStore:
             )
 
     async def queue_fetch(self, url: str, host: str, scheme: str, now: datetime) -> int | None:
-        """Insert the verification target (depth 0), reusing an existing row for the same URL."""
+        """Insert the verification target (depth 0), reusing an existing row for the same URL.
+
+        Raises ``StaleFetch`` when the existing row holds a result older than ``FETCH_FRESH``.
+        """
         async with self.factory() as session, session.begin():
             await session.execute(
                 text(
@@ -180,10 +190,17 @@ class SqlVerifyStore:
             )
             row = (
                 await session.execute(
-                    text("SELECT id FROM fetch_targets WHERE url = :url"), {"url": url}
+                    text("SELECT id, status, last_attempt_at FROM fetch_targets WHERE url = :url"),
+                    {"url": url},
                 )
             ).first()
-        return None if row is None else int(row.id)
+        if row is None:
+            return None
+        if row.status != "pending" and (
+            row.last_attempt_at is None or row.last_attempt_at < now - FETCH_FRESH
+        ):
+            raise StaleFetch
+        return int(row.id)
 
     async def fetch_view(self, target_id: int) -> FetchView | None:
         async with self.factory() as session:
@@ -411,7 +428,11 @@ class Verifier:
         if row.state != "received":
             return
         scheme = urlsplit(task.url).scheme
-        target_id = await self.store.queue_fetch(task.url, host, scheme, now)
+        try:
+            target_id = await self.store.queue_fetch(task.url, host, scheme, now)
+        except StaleFetch:
+            await self.store.update_task(task.id, state="done", outcome="skipped")
+            return
         if target_id is None:
             await self.store.update_task(task.id, state="done", outcome="unreachable")
             return
