@@ -81,4 +81,4 @@ def render(fmt: str, kind: str, rows: Sequence[Mapping[str, Any]]) -> tuple[str,
 
 
 def filename(kind: str, fmt: str) -> str:
-    return f"suckerpot-{kind}.{'csv' if fmt == 'csv' else 'txt'}"
+    return f"{kind}-export.{'csv' if fmt == 'csv' else 'txt'}"

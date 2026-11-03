@@ -166,7 +166,7 @@ async def load_inputs(
             """
             SELECT t.id, t.kind, t.value, t.state, t.confirmed_day, t.reported_day,
                    o.node_id, o.day, o.services, o.activity, o.tags, o.families, o.attempts,
-                   o.fetched, o.via
+                   o.fetched, o.via, o.file_type
             FROM targets t
             JOIN observations o ON o.kind = t.kind AND o.value = coalesce(t.value_b, t.value)
             WHERE t.state IN ('confirmed', 'reported') AND t.kind = ANY(:kinds)
@@ -196,6 +196,7 @@ async def load_inputs(
                 attempts=r.attempts,
                 fetched=bool(r.fetched),
                 via=r.via,
+                file_type=r.file_type,
             )
         )
     return [

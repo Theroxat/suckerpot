@@ -181,12 +181,33 @@ def test_rule_files_carry_the_review_banner_and_sids_are_unique_and_local() -> N
     assert len(set(sids)) == len(sids) == 6
     assert all(4_100_000 <= s < 5_000_000 for s in sids)
     file = rulegen.suricata_file(rules)
-    assert file.startswith("# SuckerPot generated Suricata rules")
+    assert file.startswith("# Generated Suricata rules")
     assert "REVIEW BEFORE DEPLOYING" in file.splitlines()[1]
     sigma = rulegen.sigma_domains(["a.example", "b.example"], 4, 2, TODAY)
     assert sigma is not None
     assert "REVIEW BEFORE DEPLOYING" in rulegen.sigma_file([sigma])
     assert rulegen.sigma_file([sigma]).count("\n---\n") == 1
+
+
+def test_generated_rules_never_name_the_product() -> None:
+    taken: set[int] = set()
+    parts = [g.text for g in rulegen.suricata_domain("a.example", 90, 4, 2, TODAY, taken)]
+    web = rulegen.suricata_web_path("php2shell", "/some/long/path", "severe", 3, 2, TODAY, taken)
+    assert web is not None
+    parts.append(web.text)
+    sigma = [
+        rulegen.sigma_domains(["a.example"], 4, 2, TODAY),
+        rulegen.sigma_web_paths("php2shell", ["/some/long/path"], "severe", 3, 2, TODAY),
+        rulegen.sigma_hashes(["ab" * 32], 1, 1, TODAY),
+        rulegen.sigma_urls(["http://dl.bad.example/x.sh"], 1, 1, TODAY),
+    ]
+    generated = [s for s in sigma if s is not None]
+    assert len(generated) == len(sigma)
+    parts += [s.text for s in generated]
+    parts.append(rulegen.sigma_file(generated))
+    out = "\n".join(parts).lower()
+    assert "suckerpot" not in out and "selfhostr" not in out
+    assert "author: generated" in out
 
 
 def test_hash_and_url_rules_are_built_from_validated_values() -> None:
