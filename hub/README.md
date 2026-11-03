@@ -115,7 +115,7 @@ What the overlay changes:
 
 - **Caddy** loads `Caddyfile.tunnel` instead of `Caddyfile`. It serves plain HTTP on 8080 for both names, needs no capability and no sysctl, and is the only service with a published port. A test keeps `Caddyfile.tunnel` identical to `Caddyfile` apart from the site addresses, the trust settings and the forwarding header.
 - **Client addresses.** Caddy trusts the `Cf-Connecting-Ip` header from private peers only, and rewrites `X-Forwarded-For` with that address for `hub-api`. The rate limits then work per client and not per tunnel. This is why `HUB_BIND` must not be a public address: anyone who could reach the port could name any address. The main `Caddyfile` has no such trust.
-- **Outbound traffic.** `hub-worker` and `hub-admin` join the proxy's network and get `HTTPS_PROXY` and `HTTP_PROXY`. The `hub-out` network is unused, so no service has a direct route out. RDAP, the corroboration sources and the range lists all go through the proxy.
+- **Outbound traffic.** `hub-worker` and `hub-admin` join the proxy's network and get `HTTPS_PROXY` and `HTTP_PROXY`. The `hub-out` network is unused, so no service has a direct route out. RDAP, the corroboration sources, the range lists and the abuse.ch submissions all go through the proxy.
 
 In the Cloudflare dashboard, add two public hostnames to the tunnel, one for `HUB_DOMAIN` and one for `HUB_FEEDS_DOMAIN`. Both point at `http://<host>:<HUB_HTTP_PORT>`, where `<host>` is `HUB_BIND`.
 
@@ -186,6 +186,16 @@ Lower the thresholds only on a test hub. A smaller `HUB_MIN_NODES` makes the net
 | `HUB_SMTP_STARTTLS` | `true` | Upgrade the connection with STARTTLS |
 
 Keep the wording out of Git. Put it in a file on the host and point `HUB_REPORT_TEMPLATE_FILE` at it.
+
+### abuse.ch submissions
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `HUB_ABUSECH_MODE` | `off` | `off`: nothing is queued or sent. `review`: an operator approves each submission. `auto`: URLhaus submissions are sent after the report hold. ThreatFox ones always wait for an operator |
+| `HUB_ABUSECH_AUTH_KEY` | empty | The abuse.ch Auth-Key. Empty means off, whatever the mode. Sent only as a header, never logged |
+| `HUB_ABUSECH_DAILY_CAP` | `50` | Submissions sent per day, both services together |
+
+See [Submitting to abuse.ch](#submitting-to-abusech) for what is sent.
 
 ### Corroboration
 
@@ -300,6 +310,35 @@ When a desk replies, or a member or someone else reports a mistake:
 - `node suspend <fingerprint>` (and `unsuspend`) stops a node's data from counting. The node is not told.
 
 Each CLI action that changes state writes an entry to `hub_audit`, with the actor and the action. The audit holds no node data.
+
+## Submitting to abuse.ch
+
+Confirmed malicious infrastructure goes to abuse.ch first, because hosting providers and security vendors act on URLhaus and ThreatFox. The abuse e-mail of the previous section stays the secondary channel, and it is still reviewed by an operator.
+
+### What qualifies
+
+The same consensus as for reports, with the same strictness:
+
+- **URLhaus:** a confirmed link with a revealed value that at least two eligible nodes fetched, and that has a malware family or an executable file type (ELF, PE or a script) from those fetches. A fetched ordinary web page is never submitted.
+- **ThreatFox:** a confirmed command server whose family has a Malpedia name (the table is in `hub/abusech.py`). These submissions are never automatic. They wait for an operator in every mode.
+
+Public addresses and hosts only. Anything on the never-list is skipped, both when it is queued and again just before it is sent. A target is submitted once: the table `abusech_submissions` has a unique `(kind, indicator)`.
+
+### What is sent
+
+The public indicator, the malware name, at most five tags from a fixed list (the family, `elf`, an architecture, `sh`, `exe`), a fixed confidence for ThreatFox and the anonymous flag. Never a node key, a pseudonym, a count of nodes, a day, a free text or anything about the operator. A test checks the outgoing body. The answer is reduced to a constant code (`inserted`, `already_known`, `invalid`, `blacklisted`, `auth_failed`, `rate_limited`, `http_error`, `unknown_outcome`) and the server text is never stored.
+
+Requests use `httpx` with its default proxy handling, so the tunnel overlay's proxy applies. There is a timeout, no redirect is followed and an answer over 64 KiB is dropped. An unknown outcome is not retried. A refused key, a rate limit or an unreachable service leaves the submissions approved for the next cycle.
+
+### The operator's review
+
+```bash
+docker compose run --rm hub-admin abusech list --state queued
+docker compose run --rm hub-admin abusech approve 7
+docker compose run --rm hub-admin abusech reject 8
+```
+
+`reports list` shows `abuse.ch: <n>` on a report whose targets have a submission. Finished submissions are kept 365 days.
 
 ## Public feeds
 
@@ -482,6 +521,8 @@ docker compose run --rm hub-admin <command>
 | `reports show <id>` | Shows a report's text and targets |
 | `reports approve <id>` | Approves a queued report. It is sent by the next worker cycle |
 | `reports cancel <id>` | Cancels a report |
+| `abusech list [--state queued\|approved\|sent\|failed\|rejected]` | Lists abuse.ch submissions |
+| `abusech approve <id>` / `abusech reject <id>` | Approves a queued submission, or rejects a queued or approved one |
 | `target dispute <id> --note "..."` | Disputes a target |
 | `never add <value> [--kind ip\|domain\|sha256] [--note "..."]` | Adds a value to the never-list |
 | `never remove <value>` | Removes a value from the never-list |
@@ -503,7 +544,8 @@ Each cycle runs these steps. A failing step is logged by type and does not stop 
 6. Once a day: reputation, weekly member statistics and the network summary.
 7. Runs retention.
 8. Queues, approves and sends reports, if the mode allows it.
-9. Writes a heartbeat. The container health check fails when the heartbeat is older than three cycles.
+9. Queues, approves and sends abuse.ch submissions, if a mode and an Auth-Key are set.
+10. Writes a heartbeat. The container health check fails when the heartbeat is older than three cycles.
 
 Takedown votes come from members' local re-checks. Members do not send those yet in this release, so no target moves to `taken_down` for now. See [Takedown checks](../docs/network.md#takedown-checks).
 
@@ -521,6 +563,7 @@ Takedown votes come from members' local re-checks. Members do not send those yet
 | Expired targets | 180 days after their last update |
 | Recipient log (report counts per day) | 90 days |
 | Reports sent, failed or cancelled | 365 days |
+| abuse.ch submissions sent, failed or rejected | 365 days |
 | Nodes with no request for 30 days | Deleted, with everything linked to them |
 | Delisting requests | 180 days once decided (an open request is kept until its decision); evidence and contact 30 days after the decision, or 180 days after the request while it is still open |
 

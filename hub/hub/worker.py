@@ -2,7 +2,8 @@
 
 Every cycle (hourly by default): built-in never-list entries, consensus, takedown votes,
 never-list re-check, expiry, daily jobs (reputation, statistics and the network summary),
-retention, then grouped reports (queue, auto-approve in ``auto`` mode, send what is approved).
+retention, then grouped reports (queue, auto-approve in ``auto`` mode, send what is approved),
+then the abuse.ch submissions (same three steps) when a mode and an Auth-Key are set.
 A failing step is logged by type only and never stops the others.
 """
 
@@ -18,7 +19,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from . import consensus, reputation, retention, stats
+from . import abusech, consensus, reputation, retention, stats
 from . import logging as hub_logging
 from .config import Settings
 from .db import make_engine, make_sessionmaker, utcnow
@@ -47,6 +48,8 @@ class WorkerContext:
     mailer: report_send.Mailer | None = None
     # Fetches the CDN and Tor ranges before the feed job. None (the default) never contacts
     # anything, so tests stay offline; main_async turns it on.
+    # Sends one submission to abuse.ch. None (the default) never contacts anything.
+    abusech_submit: abusech.Submitter | None = None
     ranges: Callable[[AsyncSession, Settings, datetime], Awaitable[dict[str, str]]] | None = None
 
 
@@ -154,6 +157,23 @@ async def run_cycle(ctx: WorkerContext) -> CycleReport:
                 lambda ses: report_send.send_due(ses, s, now, today, mailer),
             )
 
+    if s.abusech_active:
+
+        async def do_abusech_queue(ses: AsyncSession) -> object:
+            res = await abusech.queue_submissions(ses, s, today, never=await load_never(ses))
+            return {"queued": res.queued, "skipped": res.skipped}
+
+        await step("abusech_queue", do_abusech_queue)
+        await step("abusech_approve", lambda ses: abusech.auto_approve(ses, s, today))
+        if ctx.abusech_submit is not None:
+            submit = ctx.abusech_submit
+
+            async def do_abusech_send(ses: AsyncSession) -> object:
+                res = await abusech.send_due(ses, s, now, submit, never=await load_never(ses))
+                return {"sent": res.sent, "failed": res.failed, "deferred": res.deferred}
+
+            await step("abusech_send", do_abusech_send)
+
     async def beat(ses: AsyncSession) -> object:
         await _set_marker(ses, HEARTBEAT, now.isoformat())
         return None
@@ -186,6 +206,9 @@ async def main_async(argv: list[str]) -> int:
         ctx.resolver = directory.resolve
         ctx.mailer = report_send.smtp_mailer(s, ctx.clock)
         ctx.ranges = feed_ranges.refresh
+        abusech_client = abusech.AbusechClient() if s.abusech_active else None
+        if abusech_client is not None:
+            ctx.abusech_submit = abusech_client.submit
         try:
             while True:
                 await run_cycle(ctx)
@@ -195,6 +218,8 @@ async def main_async(argv: list[str]) -> int:
         finally:
             await corroborator.aclose()
             await directory.aclose()
+            if abusech_client is not None:
+                await abusech_client.aclose()
     finally:
         await engine.dispose()
 

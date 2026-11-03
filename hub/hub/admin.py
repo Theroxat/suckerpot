@@ -1,6 +1,6 @@
 """Operator CLI: ``python -m hub.admin <command>``. No web admin: a smaller attack surface.
 
-Commands: gen-signing-key, gen-feed-key, show-public-key, reports list|show|approve|cancel,
+Commands: gen-signing-key, gen-feed-key, show-public-key, reports list|show|approve|cancel, abusech list|approve|reject,
 target dispute, never add|remove|list, node suspend|unsuspend, stats, feeds
 status|diff|release|discard|pause|resume|rebuild, allow add|remove|list, delist
 list|show|accept|reject, ranges status|refresh. Every change writes ``hub_audit`` with the action
@@ -50,6 +50,13 @@ def _parser() -> argparse.ArgumentParser:
     rl.add_argument("--state", choices=["queued", "approved", "sent", "failed", "cancelled"])
     for name in ("show", "approve", "cancel"):
         rs.add_parser(name).add_argument("id", type=int)
+
+    ab = sub.add_parser("abusech")
+    abs_ = ab.add_subparsers(dest="action", required=True)
+    abl = abs_.add_parser("list")
+    abl.add_argument("--state", choices=["queued", "approved", "sent", "failed", "rejected"])
+    for name in ("approve", "reject"):
+        abs_.add_parser(name).add_argument("id", type=int)
 
     t = sub.add_parser("target")
     ts = t.add_subparsers(dest="action", required=True)
@@ -252,6 +259,8 @@ async def _dispatch(
         return await _ranges(args, session, who, out, settings)
     if args.cmd == "reports":
         return await _reports(args, session, who, out)
+    if args.cmd == "abusech":
+        return await _abusech(args, session, who, out)
     if args.cmd == "target":
         penalised = await reputation.dispute(session, args.id)
         await _audit(
@@ -297,13 +306,20 @@ async def _dispatch(
 
 async def _reports(args: argparse.Namespace, session: AsyncSession, who: str, out: Out) -> int:
     if args.action == "list":
-        sql = "SELECT id, state, kind, recipient, array_length(target_ids, 1) AS n, created_day FROM reports"
+        sql = (
+            "SELECT id, state, kind, recipient, array_length(target_ids, 1) AS n, created_day, "
+            "(SELECT count(*) FROM abusech_submissions a WHERE a.target_id = ANY(reports.target_ids) "
+            "AND a.state IN ('queued', 'approved', 'sent')) AS ab FROM reports"
+        )
         params: dict[str, Any] = {}
         if args.state:
             sql += " WHERE state = :s"
             params["s"] = args.state
         for r in (await session.execute(text(sql + " ORDER BY id DESC LIMIT 200"), params)).all():
-            out(f"{r.id}\t{r.state}\t{r.kind}\t{r.recipient}\t{r.n} target(s)\t{r.created_day}")
+            mark = f"\tabuse.ch: {r.ab}" if r.ab else ""
+            out(
+                f"{r.id}\t{r.state}\t{r.kind}\t{r.recipient}\t{r.n} target(s)\t{r.created_day}{mark}"
+            )
         return 0
     row = (
         await session.execute(
@@ -339,6 +355,56 @@ async def _reports(args: argparse.Namespace, session: AsyncSession, who: str, ou
     await _audit(session, who, "report.cancel", {"report": args.id})
     await session.commit()
     out(f"cancelled {args.id}")
+    return 0
+
+
+async def _abusech(args: argparse.Namespace, session: AsyncSession, who: str, out: Out) -> int:
+    if args.action == "list":
+        sql = (
+            "SELECT id, state, kind, indicator, malware, result_code, created_day "
+            "FROM abusech_submissions"
+        )
+        params: dict[str, Any] = {}
+        if args.state:
+            sql += " WHERE state = :s"
+            params["s"] = args.state
+        for r in (await session.execute(text(sql + " ORDER BY id DESC LIMIT 200"), params)).all():
+            out(
+                f"{r.id}\t{r.state}\t{r.kind}\t{_safe(r.indicator)}\t{r.malware or '-'}"
+                f"\t{r.result_code or '-'}\t{r.created_day}"
+            )
+        return 0
+    row = (
+        await session.execute(
+            text("SELECT id, state FROM abusech_submissions WHERE id = :id"), {"id": args.id}
+        )
+    ).first()
+    if row is None:
+        out("no such submission")
+        return 1
+    if args.action == "approve":
+        if row.state != "queued":
+            out(f"only a queued submission can be approved (this one is {row.state})")
+            return 1
+        await session.execute(
+            text(
+                "UPDATE abusech_submissions SET state = 'approved', approved_by = :w WHERE id = :id"
+            ),
+            {"w": who, "id": args.id},
+        )
+        await _audit(session, who, "abusech.approve", {"submission": args.id})
+        await session.commit()
+        out(f"approved {args.id}; it is sent by the next worker cycle")
+        return 0
+    if row.state not in ("queued", "approved"):
+        out(f"only a queued or approved submission can be rejected (this one is {row.state})")
+        return 1
+    await session.execute(
+        text("UPDATE abusech_submissions SET state = 'rejected' WHERE id = :id"), {"id": args.id}
+    )
+    await _audit(session, who, "abusech.reject", {"submission": args.id})
+    await session.commit()
+    out(f"rejected {args.id}")
     return 0
 
 
