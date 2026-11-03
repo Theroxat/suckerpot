@@ -71,8 +71,7 @@
             </p>
             <div class="cta">
               <a class="btn" href="#install">Install with Docker Compose</a>
-              <!-- TODO: point to the public repository once the operator chooses to publish its location. -->
-              <a class="btn btn-ghost" href="#source">Source code</a>
+              <a class="btn btn-ghost" href="https://github.com/Theroxat/suckerpot" target="_blank" rel="noopener">Source code</a>
             </div>
             <ul class="facts mono" aria-label="Key facts">
               <li>MIT licence</li>
@@ -410,6 +409,7 @@ cd suckerpot
 
           <ul class="checks">
             <li>Sensors, database and the network node only, in about 2 GiB of memory.</li>
+            <li>In this mode the machine sends no reports itself.</li>
             <li>Without a VPN, the hub and the tunnel provider in front of it see your home address. The hub never stores it. Add a VPN any time.</li>
             <li>Signed releases install themselves once a day, at least 48 hours after they are published. One command turns it off.</li>
             <li>Leave any time with <span class="mono">./scripts/participant.sh leave</span>.</li>
@@ -443,7 +443,7 @@ cd suckerpot</pre>
             <li>
               <p class="step-n mono">02</p>
               <h3>Run the installer</h3>
-              <p>It checks the machine, asks a few questions and generates every secret on this host. A VPN and API keys are optional.</p>
+              <p>It checks the machine, asks a few questions and generates every secret on this host. A VPN and API keys are optional. By default the recommended sensors are on (6); <span class="mono">--sensors all</span> turns on all twelve.</p>
               <div class="code">
                 <div class="code-bar mono"><span>shell</span><button class="copy" type="button" data-copy="c2" aria-label="Copy the commands of step 2">Copy</button></div>
                 <pre class="mono" id="c2">./scripts/install.sh</pre>
@@ -536,8 +536,7 @@ cd suckerpot</pre>
           <p class="fine">Open source, MIT licence. Every address and name on this page is fake.</p>
         </div>
         <ul class="foot-links">
-          <!-- TODO: point to the public repository once the operator chooses to publish its location. -->
-          <li><a href="#source" id="source">Source code</a></li>
+          <li><a href="https://github.com/Theroxat/suckerpot" id="source" target="_blank" rel="noopener">Source code</a></li>
           <li><a href="#install">Install</a></li>
           <li><a href="#faq">FAQ</a></li>
           <li><a href="blocklist-policy.html">Blocklist policy</a></li>

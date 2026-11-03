@@ -27,13 +27,13 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 
 ## Status
 
-The current release is `v0.2.0`. `v0.1.0` shipped four sensors, enrichment, tagging, the dashboard, login, retention and backups. Milestones M9 to M19, released in `v0.2.0`, added seven more sensors, users and roles, CVE watch, indicators, campaigns, ATT&CK, Defend, scripts, alerts, the weekly report, Today and search. The new analysis features are off until you turn them on, with an `*_ENABLED` variable each (see [configuration](docs/configuration.md)). Every sensor and feature goes through adversarial security review before it is accepted. See the [roadmap](docs/ROADMAP.md).
+The current release is `v0.6.0`. It added the opt-in Selfhostr network, a public community blocklist, a three-command participant install, a one-command installer and signed automatic updates. Earlier releases brought twelve sensors, the dashboard, campaigns, ATT&CK, Defend, scripts, alerts, the weekly report and anonymous reporting. The new analysis features are off until you turn them on, with an `*_ENABLED` variable each (see [configuration](docs/configuration.md)). Every sensor and feature goes through adversarial security review before it is accepted. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
 
 ## Features
 
 - **SSH sensor.** The fingerprint of OpenSSH 9.6 on Ubuntu, a configurable set of weak logins, and a pure-emulation shell over an in-memory fake filesystem. It records every login attempt and command, records `wget` / `curl` / `tftp` downloads as URLs only, and keeps timed terminal I/O for replay (see [the sensor notes](sensors/ssh/README.md)).
 - **Telnet sensor.** A BusyBox telnetd look-alike with Mirai-style login and command flows.
-- **Web sensor** (in final security review). A byte-identical fake Apache 2.4.58 with PHP 8.3 (unpatched mod_php), WordPress and phpMyAdmin pages, and detection of PHP2Shell (upload-progress) exploit attempts, tagged `php2shell`.
+- **Web sensor.** A byte-identical fake Apache 2.4.58 with PHP 8.3 (unpatched mod_php), WordPress and phpMyAdmin pages, and detection of PHP2Shell (upload-progress) exploit attempts, tagged `php2shell`.
 - **RDP sensor.** A Windows Server look-alike with NLA. It records NTLM logins, checks decoy passwords, identifies the client tool, and can optionally capture cleartext passwords from clients that skip NLA (owner opt-in).
 - **Twelve sensors in four families.** Each family has its own colour in the dashboard, and each sensor has its own icon and name.
 
@@ -56,10 +56,11 @@ Each sensor records what the attacker does and never runs it. SIP answers are ca
 - **Campaigns.** Sessions that share a script, a payload host, a file hash, a malware family, an exploit or a credential list are grouped into one campaign, with a plain-English story. A campaign needs at least two sources, and research scanners are never grouped.
 - **Techniques.** Each session is labelled with the MITRE ATT&CK techniques it used. The Techniques page shows them as a heatmap per day.
 - **Scripts.** The command sequences that attackers type are fingerprinted into a library. Each script has a plain-English explanation from a rules base. An optional LLM explainer is off by default, and when on it sees only the normalised script text.
-- **Anonymous reporting.** Drafts of abuse reports for the networks that host attackers, found through RDAP behind the VPN, plus STIX 2.1 and MISP exports and password-protected sample bundles. An identity check blocks any report that could point back to you, and the wording around the facts is yours and optional. The stack never sends anything: you review each report and send it yourself.
+- **Anonymous reporting.** Drafts of abuse reports for the networks that host attackers, found through RDAP behind the VPN, plus STIX 2.1 and MISP exports and password-protected sample bundles. An identity check blocks any report that could point back to you, and the wording around the facts is yours and optional. Each report is reviewed first, then sent by hand or through the VPN.
 - **Defend.** Scored blocklists with a reason for every point, exports for OPNsense and pfSense aliases, an opt-in token feed for firewalls, Sigma and Suricata rules marked "review before deploying", and "Your exposure", which compares your own service inventory with what was recorded.
 - **Alerts and reports.** Discord, Microsoft Teams and e-mail alerts for new campaigns, new download hosts, malware drops and watched CVEs. Every rule is off until you switch it on. A weekly report has a one-page printable view.
 - **Today and search.** A Today home page says what changed in the last 24 hours. One search box finds an IP, hash, domain, CVE or campaign. Known research scanners are labelled, and hidden from lists unless you ask for them. A glossary explains the terms.
+- **Opt-in network and public blocklist.** Many Selfhostr systems can share aggregate attacker data, and the network confirms a target only when several independent sensors agree. Joining is a choice you make in the installer or the dashboard. A community blocklist built from it is published for free, once the network has confirmed its first targets. See [the network](docs/network.md) and [the public feeds](docs/feeds.md).
 - **Retention and backups.** Raw events kept 90 days, aggregates forever, compression after 7 days, a disk guard, and `just backup` / `just restore`.
 - **Hardened by default.** Non-root, read-only containers with all capabilities dropped and `no-new-privileges`; isolated networks with an internal backend; one Redis ACL user per sensor, limited to `XADD` on its own stream; least-privilege database roles; no outbound route for the API; and an nftables [host firewall template](scripts/host/firewall.nft).
 
@@ -92,26 +93,24 @@ Each sensor records what the attacker does and never runs it. SIP answers are ca
 
 ```
 Internet --> sensors (twelve, one stream each) --> Redis Streams --> ingest --> PostgreSQL + TimescaleDB --> API (FastAPI) --> Web UI (React)
-             network "sensors"                   (ACL per sensor)  (only service with outbound access)   network "backend" (internal)   also serves the built UI
+             network "sensors"                   (ACL per sensor)  (no route out; lookups go via the VPN)   network "backend" (internal)   also serves the built UI
 ```
 
 Sensors are the only services published to the internet, and they can reach Redis and nothing else. Details, networks and the shared event schema are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/event-schema.md](docs/event-schema.md).
 
-## Quick start (Docker Compose)
+## Quick start
 
 You need Docker with the compose plugin, on a machine you can afford to lose.
 
 ```bash
-git clone https://github.com/Theroxat/suckerpot.git
+git clone --depth 1 --branch v0.6.0 https://github.com/Theroxat/suckerpot.git
 cd suckerpot
-cp .env.example .env        # replace every change-me (openssl rand -base64 32), on the live install set COMPOSE_PROJECT_NAME=suckerpot and SUCKERPOT_VOLUME_PREFIX=suckerpot
-just up                     # creates the data volumes, then starts the stack
-docker compose --profile tools run --rm demo     # or: just demo
+./scripts/install.sh
 ```
 
-Open http://127.0.0.1:8443. The dashboard binds to loopback by default (`DASHBOARD_BIND`).
+The installer creates the secrets, starts the stack and prints the address of the dashboard. Open it and follow the setup checklist. By default the six recommended sensors are on; `--sensors all` turns on all twelve. For the steps by hand, see [Manual setup](docs/getting-started.md#manual-setup).
 
-**Before you expose anything**, follow the go-live checklist in [docs/deployment.md](docs/deployment.md) and apply [scripts/host/firewall.nft](scripts/host/firewall.nft). Set the admin password hash in `.env` (see [docs/deployment.md](docs/deployment.md)) and keep the dashboard port filtered upstream. Set `INDICATORS_IGNORE` in `.env` to your public IP and host names, so they are never recorded as attack infrastructure.
+**Before you expose anything**, follow the go-live checklist in [docs/deployment.md](docs/deployment.md) and apply [scripts/host/firewall.nft](scripts/host/firewall.nft). Keep the dashboard port filtered upstream. Set `INDICATORS_IGNORE` in `.env` to your public IP and host names, so they are never recorded as attack infrastructure.
 
 ## Join the network
 
@@ -161,33 +160,7 @@ Selfhostr runs hostile traffic through containers, so isolation is a feature, no
 
 ## Roadmap
 
-| Milestone | Scope | State |
-| --- | --- | --- |
-| M0 | Bootstrap, docs, CI, secret scanning | Done |
-| M1 | Compose stack, event pipeline, API, demo data | Done |
-| M2 | SSH sensor | Done |
-| M3 | Design system and web shell | Done |
-| M4 | Enrichment and tagging | Done |
-| M5 | Core pages and terminal replay | Done |
-| M6 | Telnet, web and RDP sensors | Done |
-| M7 | Live page, Trends, Malware | Done |
-| M8 | Dashboard login, retention, backups, `v0.1.0` | Done (`v0.1.0`) |
-| M9 | Seven more sensors (Redis, Docker, MySQL, MSSQL, ADB, SMB, SIP) | Done |
-| M10 | RDP sensor, deeper (NTLM, decoy passwords, client tools) | Done |
-| M11 | Settings you can edit (provider keys, encrypted at rest) | Done |
-| M12 | CVE watch | Done |
-| M13 | Indicators and threat intelligence | Done |
-| M14 | Users and roles (admin and viewer) | Done |
-| M15 | Campaigns and MITRE ATT&CK | Done |
-| M16 | Defend: blocklists, exports, feed, detections, exposure | Done |
-| M17 | Script library and optional LLM explainer | Done |
-| M18 | Alerts (Discord, Teams, e-mail) and weekly report | Done |
-| M19 | Today, global search, glossary, research scanners | Done |
-| M20 | Synology NAS sensor (DSM 7.2.1), CVE watch fixes | Done |
-| M21 | Anonymous egress (WireGuard VPN), payload collection and static analysis | Built, not deployed yet |
-| M22 | Anonymous reporting: abuse reports, CERT exports, sample bundles | Built, not deployed yet |
-
-Details in [docs/ROADMAP.md](docs/ROADMAP.md).
+Shipped through `v0.6.0`. See [docs/ROADMAP.md](docs/ROADMAP.md) for every milestone.
 
 ## License
 

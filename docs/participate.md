@@ -39,12 +39,12 @@ The installer ends with a table like this (example):
 
 | Router port | This machine | Protocol | Sensor |
 | --- | --- | --- | --- |
-| 22 | 2222 | TCP | ssh |
+| 22 | 22 | TCP | ssh |
 | 23 | 23 | TCP | telnet |
 | 80 | 80 | TCP | web |
 | 443 | 443 | TCP | web |
 
-Forward each router port to this machine on your router or firewall. Never forward your own admin SSH port. If port 22 is busy on the machine, the SSH sensor uses host port 2222 and the installer never edits your `sshd_config`. More on ports: [Install Selfhostr](install.md#ports-to-forward).
+The first column is the port on your router. The second is the port on this machine. They are the same unless port 22 is busy on the machine: then the SSH sensor uses port 2222 and the table shows `22` and `2222`. Forward each router port to this machine on your router or firewall. Never forward your own admin SSH port. The installer never edits your `sshd_config`. More on ports: [Install Selfhostr](install.md#ports-to-forward).
 
 ## What you agree to share
 
@@ -53,7 +53,7 @@ In plain words, the node sends the hub:
 - the addresses that attacked your sensors, with the service they used, what they did and rounded counts. This happens once a day, a few hours late;
 - download links attackers tried, as hashes. The clear link goes to the hub only when two or more sensors saw the same link, so that a [verifier](#verifier-nodes) can check it;
 - malware hashes and command-and-control addresses, but only if you have a VPN and the collector is on;
-- takedown checks for addresses the network reported.
+- takedown checks for addresses the network reported (not active yet).
 
 It never shares passwords, commands, your ports, your own address or any name of yours in a payload. The full picture, with the threat model, is in [The Selfhostr network](network.md).
 
@@ -79,7 +79,7 @@ Everything then goes through the VPN, and the collector and enrichment can run. 
 
 It shows the sensors and their ports, your standing in the network, the last contact with the hub, what was sent each day, and the update schedule. Exit code 0 is OK, 1 is a warning, 2 is an error. `--json` prints the same data for monitoring tools. `--last-batch` prints the exact data of the last submission.
 
-Your sensor counts toward confirmations after 14 days of regular batches. Until then its standing is `new`.
+By default, your sensor counts toward confirmations after 14 days of regular batches. Until then its standing is `new`.
 
 ## Automatic updates
 
@@ -99,7 +99,7 @@ You can also install with `--no-auto-update`. You then update by hand with `just
 
 ## Verifier nodes
 
-Most participants never download malware. When at least two nodes report the same download link, the hub asks a **verifier node** to fetch it through its VPN and send back a description (hash, size, file type, family). A verified malware-like link can then be reported to URLhaus.
+Most participants never download malware. When at least two nodes report the same download link, the hub asks a **verifier node** to fetch it through its VPN and send back a description (hash, size, file type, family). A verified malware-like link can then be reported to URLhaus, after a person reviews it.
 
 A verifier is opt-in on two sides:
 
@@ -127,7 +127,7 @@ If a newer release widens what is shared, the node waits until you run `join` ag
 ./scripts/install.sh --full
 ```
 
-The installer asks the dashboard questions, takes a backup, starts the dashboard and the VPN service, and keeps your data and your membership. Without a VPN file, the node waits until you upload one in Settings. A full install cannot be switched back to participant mode.
+The installer asks the dashboard questions, takes a backup, starts the dashboard and the VPN service, and keeps your data and your membership. Without a VPN file, the node waits until you upload one in Settings. A full install needs a VPN for the network node, because every call to the hub goes through it. A full install cannot be switched back to participant mode.
 
 ## Useful flags
 

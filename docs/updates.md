@@ -74,6 +74,8 @@ The database password `POSTGRES_PASSWORD` is never generated during an update. T
 
 Automatic updates are on by default in participant mode (see [Join the network](participate.md)). In full mode they are off, so an existing install does not change.
 
+A full install can turn them on at any time, if it uses the signed release images (`SUCKERPOT_INSTALL_MODE=images`). Run `./scripts/participant.sh auto-update on`. The command name says participant, but it works on any install. In full mode it first warns you that the update checks (GitHub, the image registry and Sigstore) leave from this machine's own address, not through the VPN, and asks you to confirm. In source mode it refuses.
+
 ### Where it runs
 
 The update runs from the **crontab of the installing user**, or from a systemd user timer when that is not available. It calls `scripts/auto-update.sh`. This is the one documented exception to "nothing runs on the host except Docker". The reason: an updater container would need the Docker socket (root on the host) and a route to the internet, and that is worse. The cron line is visible with `crontab -l`. It carries the marker `# selfhostr-auto-update`, so install and removal never touch your other lines. No `sudo` is needed.

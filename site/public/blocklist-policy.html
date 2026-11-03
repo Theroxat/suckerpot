@@ -64,7 +64,7 @@
           </p>
           <div class="card policy-notice">
             <p class="card-label mono">Status</p>
-            <p class="story-text">The public lists are not published yet. This policy describes how they will work.</p>
+            <p class="story-text">The network is live. The public lists will appear at <span class="mono">feeds.selfhostr.io</span> once enough nodes have confirmed their first targets. This policy describes how they work.</p>
           </div>
           <p class="fine policy-date mono">Last updated 2026-11-03.</p>
         </div>
@@ -111,7 +111,7 @@
 
             <p>
               Each list also has a stricter <span class="mono">-high</span> version. It is a subset with fewer entries.
-              It needs at least 10 sensors, sightings on three different days, and a check against an outside reputation
+              By default it needs at least 10 sensors, sightings on three different days, and a check against an outside reputation
               source.
             </p>
 
@@ -161,6 +161,10 @@
 
           <div class="policy">
             <h3>The rules</h3>
+            <p>
+              These are the default values. The hub can change them, and the live values are published at
+              <a href="https://hub.selfhostr.io/v1/info">hub.selfhostr.io/v1/info</a>.
+            </p>
             <ul class="checks">
               <li>
                 At least five member sensors saw the address. Each one is established: enrolled at least 14 days ago,
@@ -384,9 +388,9 @@
             <h3>abuse.ch</h3>
             <p>
               Confirmed malware hosts and command servers can also go to abuse.ch, where URLhaus and ThreatFox list them
-              for everyone. Submission to abuse.ch is optional and off by default. Malware download addresses may be
-              submitted automatically once confirmed; command servers are only ever submitted after an operator
-              approves them. The record of a finished submission is kept for 365 days.
+              for everyone. Submission to abuse.ch is optional and off by default. Today a person reviews every
+              submission before it is sent, and command servers are only ever submitted after an operator approves
+              them. The record of a finished submission is kept for 365 days.
             </p>
           </div>
         </div>

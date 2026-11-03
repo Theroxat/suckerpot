@@ -5,7 +5,7 @@ The Selfhostr network is an opt-in pool. Many Selfhostr systems share what their
 This page is for members and for people who want to know what joining means. The hub operator reads `hub/README.md`. The exact wire format is in [Network protocol](network-protocol.md). The design and its review are in [M29](design/m29.md).
 
 ```{warning}
-Joining is a choice. Selfhostr never joins the network for you, and nothing is sent until you have turned it on and joined in the dashboard.
+Joining is a choice. Selfhostr never joins the network for you. In a full install, nothing is sent until you have turned it on and joined in the dashboard. In a participant install, choosing that mode in the installer is the join.
 ```
 
 ## What joining means
@@ -123,7 +123,7 @@ Joining does not give you a private list or an early copy. Members get the same 
 
 Poisoning means that someone sends false sightings to get an innocent address or site listed. The network makes this expensive. A single node can never publish anything.
 
-A value becomes a **confirmed target** only when all of these hold:
+A value becomes a **confirmed target** only when all of these hold. The numbers below are the defaults. The hub operator can change them, and the live values are published at `https://hub.selfhostr.io/v1/info`.
 
 1. **Enough nodes.** At least 5 eligible nodes saw it.
 2. **Enough weight.** The reputation of those nodes adds up to at least 3.0. A node counts at most 1.0. A new node starts at 0.6, so five new nodes make exactly 3.0.
@@ -133,7 +133,7 @@ A value becomes a **confirmed target** only when all of these hold:
 6. **Dropper for command servers.** A command server counts only with a file that at least two eligible nodes fetched, and with at least five of its own nodes that fetched the same file.
 7. **Never-list.** Public resolvers, large CDN and SaaS domains, update servers, package registries, reserved ranges and the operator's own entries never confirm.
 
-An **eligible node** must:
+By default, an **eligible node** must:
 
 - be at least 14 days old;
 - have sent data on at least 7 of the last 14 days (an empty batch does not count);
@@ -185,13 +185,13 @@ A verifier is a node that has a VPN and the collector, and that the hub operator
 
 Before you start, make sure these hold:
 
-- `NETWORK_HUB_URL` and `NETWORK_HUB_KEY` are set in `.env`. The project provides both with a hub. Until a hub exists, both stay empty and the network cannot be joined.
+- `NETWORK_HUB_URL` and `NETWORK_HUB_KEY` are set in `.env`. Each release ships the public hub address and key in `config/network-defaults.env`, so you do not need to set them. A value in `.env` always wins.
 - `SETTINGS_ENCRYPTION_KEY` is set. The node key is stored encrypted, and without this key the network refuses to store it.
 - Your own address is confirmed in Settings, Reporting.
 
 Then:
 
-1. On the host, run `just set NETWORK_ENABLED=true`. It writes `.env` and restarts `ingest` and `api` so they read it. If the project gave you a hub address and key, set them the same way: `just set NETWORK_HUB_URL=https://hub.example.org NETWORK_HUB_KEY=<key>`.
+1. On the host, run `just set NETWORK_ENABLED=true`. It writes `.env` and restarts `ingest` and `api` so they read it. Only if you run your own hub, set its address and key the same way: `just set NETWORK_HUB_URL=https://hub.example.org NETWORK_HUB_KEY=<key>`. A full install also needs a working VPN, because every call to the hub goes through it.
 2. Open **Settings, Network** and read the page. It lists what is shared and what is never shared.
 3. Press **Join the network**. The dialog asks for:
    - the five consents, one box each;
@@ -199,7 +199,7 @@ Then:
    - an optional country. It is never detected for you. It is shown only if you tick "Show my country" and at least three members share it;
    - your dashboard password again.
 4. The sensor creates its key and solves a proof-of-work puzzle. This can take a few minutes on a small machine. It runs at low priority, so ingest keeps working. The hub can raise the puzzle's price when many systems sign up at once. While the hub is closed or the puzzle is too hard, the page says that enrolment is waiting, and the sensor retries by itself.
-5. Your sensor is now a member. Its standing shows `new`. It sends its first batch after the next day ends, plus a random wait of 2 to 20 hours. Your sensor counts toward confirmations after 14 days of regular batches. The standing then changes to `good`.
+5. Your sensor is now a member. Its standing shows `new`. It sends its first batch after the next day ends, plus a random wait of 2 to 20 hours. By default, your sensor counts toward confirmations after 14 days of regular batches. The standing then changes to `good`.
 
 ### Pseudonyms
 
@@ -258,11 +258,13 @@ The setup checklist has a Network item. It is off when this system is not a memb
 
 The network can follow what happens after a report. Members check their own targets locally, and the hub counts the answers. A target is taken down after at least two nodes say `down` on three different days, with no `up` on the last of them.
 
-This feature is not active yet. The local re-check it depends on is not part of this release. Until it exists:
+Two parts exist, and only one is active.
 
-- every local re-check answers `unknown`;
-- the node sends a re-check only for `up` or `down`, so it sends nothing for this box;
-- no target moves to `taken_down` because of a member.
+- **Local takedown tracking works.** In a full install with a VPN, your own system re-checks the targets in your reports (M27) and shows their state in the dashboard.
+- **Network-wide confirmation is not active yet.** Nodes do not send their re-check results to the hub yet. Until they do:
+  - every re-check a node would share answers `unknown`;
+  - the node sends a re-check only for `up` or `down`, so it sends nothing for this box;
+  - no target moves to `taken_down` because of a member.
 
 The box stays in the join form so that the consent list does not change later. Ticking it now sends nothing.
 
