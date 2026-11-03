@@ -383,7 +383,7 @@ async def test_rules_are_generated_from_what_was_seen_and_marked_for_review(
     assert {r["kind"] for r in only["items"]} == {"sigma"}
     export = await client.get(f"{API}/detections/export", params={"kind": "suricata"})
     assert "REVIEW BEFORE DEPLOYING" in export.text.splitlines()[1]
-    assert export.headers["content-disposition"].endswith('suckerpot.rules"')
+    assert export.headers["content-disposition"].endswith('suricata.rules"')
     sigma_file = await client.get(f"{API}/detections/export", params={"kind": "sigma"})
     assert sigma_file.text.count("\n---\n") == int(sigma_file.headers["x-rule-count"])
     assert (await client.get(f"{API}/detections", params={"cursor": "zz"})).status_code == 400

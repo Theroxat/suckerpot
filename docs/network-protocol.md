@@ -201,6 +201,7 @@ The node records these codes itself. The hub never sends them.
 - **Idempotency.** `batch_id` is 16 random bytes in base64url. A second batch with the same `batch_id` for the same node and day answers `duplicate: true` and changes nothing. A different `batch_id` for a day that was already submitted is `invalid_payload`. One batch per node and day.
 - **Buckets.** `sessions` and `attempts` are buckets: `0` is 0 or 1, `1` is 2 to 9, `2` is 10 to 99, `3` is 100 to 999, `4` is 1000 or more.
 - **Shape.** A payload has exactly one of `host_ip` and `host_b`. A fetched payload has its `sha256`. A C2 entry has exactly one of `ip` and `domain_b`. A C2 entry names the file it came from with `via_sha256`.
+- **Malware-like fetches.** The hub counts a `fetched` payload towards a report or a feed entry only when its `family` is known or its `file_type` is an executable or script type (`elf-*`, `pe`, `script-*`). `archive`, `other` and a missing type never count.
 - **Lists.** Every list holds distinct entries. Duplicates are refused.
 - **Addresses.** IPv4 or IPv6 global unicast only. Private, reserved and documentation ranges are refused. Documentation ranges are accepted only by a hub test overlay (`HUB_ALLOW_DOCUMENTATION=1`). IPv4-mapped addresses and addresses that embed an IPv4 address (NAT64, Teredo, 6to4) are refused.
 - **Tags.** Tags outside the allow-list are dropped, not refused. The allow-list is `TAGS_V1` in `netproto/suckerpot_netproto/enums.py`, plus `cve-YYYY-NNNN` to `cve-YYYY-NNNNNNN`.

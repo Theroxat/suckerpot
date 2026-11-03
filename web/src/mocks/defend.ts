@@ -707,7 +707,7 @@ export const defendHandlers: RequestHandler[] = [
     return new HttpResponse(`${body}\n`, {
       headers: {
         "Content-Type": csv ? "text/csv" : "text/plain",
-        "Content-Disposition": `attachment; filename="suckerpot-${kind}.${csv ? "csv" : "txt"}"`,
+        "Content-Disposition": `attachment; filename="${kind}-export.${csv ? "csv" : "txt"}"`,
       },
     })
   }),
@@ -830,7 +830,7 @@ export const defendHandlers: RequestHandler[] = [
     return new HttpResponse(text, {
       headers: {
         "Content-Type": "text/plain",
-        "Content-Disposition": `attachment; filename="suckerpot.${kind === "sigma" ? "yml" : "rules"}"`,
+        "Content-Disposition": `attachment; filename="${kind === "sigma" ? "sigma-rules.yml" : "suricata.rules"}"`,
       },
     })
   }),

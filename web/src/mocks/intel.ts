@@ -359,7 +359,7 @@ export function intelHandlers(sessions: readonly Session[] = []) {
             })),
           },
           {
-            headers: { "Content-Disposition": 'attachment; filename="suckerpot-indicators.json"' },
+            headers: { "Content-Disposition": 'attachment; filename="indicators.json"' },
           },
         )
       }
@@ -370,7 +370,7 @@ export function intelHandlers(sessions: readonly Session[] = []) {
       return new HttpResponse(csv.join("\n"), {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": 'attachment; filename="suckerpot.csv"',
+          "Content-Disposition": 'attachment; filename="indicators.csv"',
         },
       })
     }),
