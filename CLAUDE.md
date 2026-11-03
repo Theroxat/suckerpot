@@ -74,11 +74,13 @@ Full detail in `docs/ARCHITECTURE.md`; read it before touching compose, Redis AC
 | `ingest` | `backend`, `egress-proxy` | Enrichment, tagging and the analysis workers. No route out: every outbound call goes through `suckerpot_egress` and the `vpn` proxy |
 | `vpn` (profile `egress`) | `vpn-uplink` (`sp-vpn`), `egress-proxy` | WireGuard client (gluetun) with kill switch and HTTP proxy. The ONLY service with an internet route, the only one with `NET_ADMIN` |
 | `collector` / `analyzer` (profile `egress`) | `egress-proxy` + `samples` / `samples` only | Fetch captured download URLs through the proxy into the `quarantine` volume / static analysis in an rlimited child, no network out |
+| `hubproxy` (profile `direct`) | `hub-proxy`, `hub-uplink` | Participant mode without a VPN (`docker-compose.participant.yml`, no `api`, no dashboard): allow-list CONNECT proxy to the hub host only. The ONLY service with a route out in that mode. Design: `docs/design/m32.md` |
 | `db` | `backend` | PostgreSQL + TimescaleDB, on a named volume |
 | `api` | `backend`, `dashboard` (`sp-dashboard`) | FastAPI: REST + WebSocket, also serves the built web UI |
 | `demo` (profile `tools`) | `tools` | Demo generator; reaches Redis only |
 
 - `backend`, `tools`, `egress-proxy`, `samples` and every `sensors-<name>` network are `internal: true`. The owner's home IP must never be used for an outbound connection: only `vpn` reaches the internet, `just guardrails` (CI) enforces the compose rules and `just egress-check` proves them on the live stack. Design: `docs/design/m21.md`. The host firewall (`scripts/host/`) matches `sp-ingress` and `sp-dashboard` by bridge name.
+- One host exception to "only Docker on the host": automatic updates (`scripts/auto-update.sh`) run from the installing user's crontab, with signed-manifest checks and rollback (`docs/updates.md`).
 - The dashboard is published on ONE port only (set in `.env`), never on a sensor port or 22222. `scripts/check-ports.sh` enforces this and runs before `just up` / `just config`.
 
 ### Pipeline invariants (break these and data is lost or forged)

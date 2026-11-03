@@ -162,6 +162,25 @@ Reports are grouped: at most one report per abuse desk and kind in a week. In th
 
 A patient operator with at least five aged, well-behaved nodes can get a false target through. The reputation rules slow this down, and human review of reports is the last barrier. Consensus is a strong filter, not a proof.
 
+## Participants and verifiers
+
+There are two ways to join. Both mean the same thing for the data that is shared.
+
+- **Full install.** You join from the dashboard, as described in [How to join](#how-to-join).
+- **Participant install.** You run `./scripts/install.sh --participant`, which is the consent, and the node joins by itself. There is no dashboard. See [Join the network in three commands](participate.md).
+
+### The no-VPN trade-off
+
+A participant can run without a VPN. The node then reaches the hub through `hubproxy`, a small allow-list proxy that accepts connections to the hub host only. The cost is that the hub, and a tunnel provider in front of it, can see the participant's home address when it connects. The hub does not store or log it. This is stated in the consent text and in `./scripts/status.sh`. A VPN can be added at any time with `./scripts/participant.sh vpn <file>`. Without a VPN the collector and enrichment are off, so the node reports links but never downloads anything.
+
+### The early reveal of a link
+
+Normally a download link is shared as a hash. When at least two nodes report the same link, the node reveals the clear link to the hub so that a verifier can fetch it. The clear link is kept apart from the blinded target. This adds a residual risk: a seized hub would show the links revealed for verification. Nodes keep a record of what they revealed (`./scripts/status.sh`).
+
+### Verifier nodes
+
+A verifier is a node that has a VPN and the collector, and that the hub operator has granted the `verifier` role. It fetches a revealed link through its VPN and sends back an attestation: sha256, size, file type and family. An attestation never counts as a sighting. A link becomes eligible for URLhaus only when at least two eligible nodes reported it and a verifier attested malware-like content. The role is opt-in on the node (`--verifier`) and granted by the operator, who can revoke it at any time. A wrong or hostile verifier is the main new risk. The operator's controls are in `hub/README.md`.
+
 ## How to join
 
 Before you start, make sure these hold:
@@ -325,6 +344,7 @@ The lists are public, so they are visible to everyone, attackers included.
 | Read | When |
 | --- | --- |
 | [Network protocol](network-protocol.md) | You build a client or want to check a signature |
+| [Join the network in three commands](participate.md) | You want to help the network with a small install |
 | `hub/README.md` | You run a hub |
 | [Configuration](configuration.md#selfhostr-network-m29) | You want every `NETWORK_*` variable |
 | [M29 design](design/m29.md) | You want the full analysis and the decisions |

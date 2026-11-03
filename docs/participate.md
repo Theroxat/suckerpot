@@ -1,0 +1,150 @@
+# Join the network in three commands
+
+This page is for people who want to help the Selfhostr network and nothing else. You do not need a dashboard, an admin account, an API key or a VPN. You run sensors on a machine, and the machine shares what they see with the network.
+
+If you want the full product (the dashboard, reports, blocklists), read [Install Selfhostr](install.md) instead. You can switch to it later and keep your data.
+
+```{warning}
+Selfhostr is built to be attacked. Use a dedicated machine that holds nothing else you care about. Choosing participant mode is your consent to join the network, as described below.
+```
+
+## What you need
+
+| Item | Needed |
+| --- | --- |
+| Machine | A Linux VM or small server, `x86_64` or `aarch64`, with 2 GiB of memory or more and 15 GiB of free disk |
+| Software | Docker Engine 24+ with the Compose plugin, `git`, `curl`, Bash 4+. Your user must run `docker` without `sudo` |
+| Router | You can forward ports to this machine |
+| VPN | Not needed |
+
+The full list of checks is in [Install Selfhostr](install.md#requirements).
+
+## The three commands
+
+```bash
+git clone --depth 1 --branch v0.6.0 https://github.com/Theroxat/suckerpot.git
+cd suckerpot
+./scripts/install.sh --participant
+```
+
+The installer prints what it will share and asks one question: `Join the Selfhostr network as described? [y/N]`. With `--yes` it does not ask, and `--yes` counts as your consent.
+
+It then creates every secret on this machine, starts the sensors, the database, the ingest service and the network node, and picks a random pseudonym such as `amber-falcon-42`. Memory use is about 2 GiB.
+
+After that, your only job is to open the printed ports.
+
+## Open the ports
+
+The installer ends with a table like this (example):
+
+| Router port | This machine | Protocol | Sensor |
+| --- | --- | --- | --- |
+| 22 | 2222 | TCP | ssh |
+| 23 | 23 | TCP | telnet |
+| 80 | 80 | TCP | web |
+| 443 | 443 | TCP | web |
+
+Forward each router port to this machine on your router or firewall. Never forward your own admin SSH port. If port 22 is busy on the machine, the SSH sensor uses host port 2222 and the installer never edits your `sshd_config`. More on ports: [Install Selfhostr](install.md#ports-to-forward).
+
+## What you agree to share
+
+In plain words, the node sends the hub:
+
+- the addresses that attacked your sensors, with the service they used, what they did and rounded counts. This happens once a day, a few hours late;
+- download links attackers tried, as hashes. The clear link goes to the hub only when two or more sensors saw the same link, so that a [verifier](#verifier-nodes) can check it;
+- malware hashes and command-and-control addresses, but only if you have a VPN and the collector is on;
+- takedown checks for addresses the network reported.
+
+It never shares passwords, commands, your ports, your own address or any name of yours in a payload. The full picture, with the threat model, is in [The Selfhostr network](network.md).
+
+## Privacy without a VPN
+
+Without a VPN, the hub sees your home address when your machine connects. A tunnel provider in front of the hub sees it too. The hub does not store it and does not log it, but the address is not hidden.
+
+Only one small service, `hubproxy`, has a route out in this mode. It forwards connections to the hub host and nothing else. The ingest service, which parses attacker data, has no route out. Your sensors never download anything.
+
+A VPN can be added at any time:
+
+```bash
+./scripts/participant.sh vpn /path/to/wireguard.conf
+```
+
+Everything then goes through the VPN, and the collector and enrichment can run. To go back to the direct path: `./scripts/participant.sh vpn --remove`.
+
+## Check what it does
+
+```bash
+./scripts/status.sh
+```
+
+It shows the sensors and their ports, your standing in the network, the last contact with the hub, what was sent each day, and the update schedule. Exit code 0 is OK, 1 is a warning, 2 is an error. `--json` prints the same data for monitoring tools. `--last-batch` prints the exact data of the last submission.
+
+Your sensor counts toward confirmations after 14 days of regular batches. Until then its standing is `new`.
+
+## Automatic updates
+
+Signed releases install themselves once a day, at a random time between 03:00 and 06:00 local time. Details are in [Updates and rollback](updates.md#automatic-updates). In short:
+
+- A release is installed only if its signature is valid and it is at least 48 hours old.
+- Only releases of the same major version are installed.
+- A database dump is taken first. If the update fails, the previous version is restored and that release is not tried again.
+
+There is a risk to know about. If the release channel of the project were ever compromised, every auto-updating participant would be affected. The signature and the 48-hour delay reduce that risk. They do not remove it. To turn updates off:
+
+```bash
+./scripts/participant.sh auto-update off
+```
+
+You can also install with `--no-auto-update`. You then update by hand with `just update`.
+
+## Verifier nodes
+
+Most participants never download malware. When at least two nodes report the same download link, the hub asks a **verifier node** to fetch it through its VPN and send back a description (hash, size, file type, family). A verified malware-like link can then be reported to URLhaus.
+
+A verifier is opt-in on two sides:
+
+1. You ask for it: `./scripts/install.sh --participant --wg-conf FILE --verifier`. It needs a VPN file, and it turns the collector on.
+2. The hub operator grants the role. Until then your node works as a normal participant.
+
+At first, only the operator's own node is a verifier.
+
+## Manage your membership
+
+| Command | What it does |
+| --- | --- |
+| `./scripts/participant.sh status` | Same as `./scripts/status.sh` |
+| `./scripts/participant.sh leave` | Leave the network. The sensors keep running |
+| `./scripts/participant.sh join` | Show the consent again and join |
+| `./scripts/participant.sh vpn FILE` | Send everything through your VPN |
+| `./scripts/participant.sh auto-update on\|off` | Turn the daily update schedule on or off |
+| `./scripts/participant.sh uninstall` | Leave, stop the stack and remove the schedule. It prints the command that removes the data volumes and never runs it |
+
+If a newer release widens what is shared, the node waits until you run `join` again. It never agrees for you.
+
+## Switch to full mode
+
+```bash
+./scripts/install.sh --full
+```
+
+The installer asks the dashboard questions, takes a backup, starts the dashboard and the VPN service, and keeps your data and your membership. Without a VPN file, the node waits until you upload one in Settings. A full install cannot be switched back to participant mode.
+
+## Useful flags
+
+| Flag | Meaning |
+| --- | --- |
+| `--yes` | No prompt. This is your consent to join |
+| `--pseudonym NAME` / `--no-pseudonym` | Choose your pseudonym, or have none |
+| `--sensors LIST` | `recommended` (default), `all`, or a list such as `ssh,telnet` |
+| `--feeds` | Also fetch the public blocklist feed |
+| `--self-address ADDR` | Tell the node your own public address so it is never recorded |
+| `--no-auto-update` | Do not schedule updates |
+| `--repair` | Run the volume, start and schedule steps again without changing settings |
+
+Run `./scripts/install.sh --help` for the full list.
+
+## Next steps
+
+- [The Selfhostr network](network.md)
+- [Updates and rollback](updates.md)
+- [Install Selfhostr](install.md)

@@ -70,6 +70,41 @@ The script then prints the names of what it added. It never prints a value. It a
 
 The database password `POSTGRES_PASSWORD` is never generated during an update. The database owner's password lives inside the data volume, so a new value would lock you out. If it is missing, the update prints it as a name to set by hand.
 
+## Automatic updates
+
+Automatic updates are on by default in participant mode (see [Join the network](participate.md)). In full mode they are off, so an existing install does not change.
+
+### Where it runs
+
+The update runs from the **crontab of the installing user**, or from a systemd user timer when that is not available. It calls `scripts/auto-update.sh`. This is the one documented exception to "nothing runs on the host except Docker". The reason: an updater container would need the Docker socket (root on the host) and a route to the internet, and that is worse. The cron line is visible with `crontab -l`. It carries the marker `# selfhostr-auto-update`, so install and removal never touch your other lines. No `sudo` is needed.
+
+The time is a random minute between 03:00 and 05:59 local time, chosen at install. A random wait of up to 30 minutes is added, so many machines do not update at the same second.
+
+### What a run does
+
+1. It takes a lock, so only one run happens at a time.
+2. It stops if automatic updates are off, if an earlier update never finished, or if the install is in `source` mode.
+3. It picks the newest release tag of the **same major version** that is newer than the running one and not marked bad.
+4. It verifies the signed release manifest (`scripts/verify-release.sh`) and the image signatures. The manifest must be signed by the release workflow, its commit must be the commit of the tag, and the release must be at least **48 hours old**.
+5. It runs `update.sh --yes --auto`, which takes a database dump first.
+6. It waits up to 10 minutes for every service to be healthy, the running version to match, and the network node to answer.
+7. If anything fails after the code changed, it runs the [rollback](#rollback), marks the version as bad and never tries it again. The next release is tried normally.
+
+The outcome of the last run is in `.suckerpot-state/auto-update.json`, and the log is in `.suckerpot-state/auto-update.log` (rotated at 1 MiB). `./scripts/status.sh` shows both.
+
+### Turn it on or off
+
+```bash
+./scripts/participant.sh auto-update off
+./scripts/participant.sh auto-update on
+```
+
+This adds or removes the cron line and sets `AUTO_UPDATE_ENABLED` in `.env`. At install, `--no-auto-update` skips the schedule. A manual `just update` always works.
+
+### The risk
+
+Automatic updates trade control for convenience. If the release channel of the project were compromised (the signing workflow, the repository or the registry), every participant that updates automatically would receive the bad release. The signature check and the 48-hour minimum age reduce the risk and give time to notice and withdraw a release. They do not remove it. If you cannot accept that, turn updates off and update by hand.
+
 ## Image signatures
 
 Every release image is signed when it is published. The signature proves that the release workflow of the project built the image from a version tag. The signature is made with [cosign](https://docs.sigstore.dev/cosign/) and GitHub's identity, so no private key is kept.
