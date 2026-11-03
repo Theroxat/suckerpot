@@ -83,11 +83,11 @@ describe("SampleRow origin badge", () => {
     )
   it("flags a network check with a plain-English explanation", () => {
     renderRow("network_verify")
-    expect(screen.getByText("Network check")).toBeInTheDocument()
+    expect(screen.getByText(/Network check · not seen here/)).toBeInTheDocument()
     expect(screen.getByText(/did not attack this node/)).toBeInTheDocument()
   })
   it("shows nothing for a local sample", () => {
     renderRow("local")
-    expect(screen.queryByText("Network check")).not.toBeInTheDocument()
+    expect(screen.queryByText(/Network check/)).not.toBeInTheDocument()
   })
 })

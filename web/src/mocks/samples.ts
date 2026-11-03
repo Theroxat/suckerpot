@@ -245,6 +245,7 @@ function at<T>(list: readonly T[], i: number): T {
 
 const items: SampleItem[] = SEEDS.map((s, i) => {
   const last = now - s.daysAgo * DAY
+  const netCheck = i === 3 || i === 8
   const severe = Boolean(s.family) || s.kind === "ELF" || s.kind === "PE"
   return {
     sha256: sampleSha(i),
@@ -254,14 +255,15 @@ const items: SampleItem[] = SEEDS.map((s, i) => {
     family: s.family,
     severity: severe ? "severe" : "notice",
     size: s.size,
-    sources: s.sources,
-    sessions: s.sessions,
+    // A network check was never seen attacking this node: no sessions, a link or two.
+    sources: netCheck ? Math.min(s.sources, 2) : s.sources,
+    sessions: netCheck ? 0 : s.sessions,
     first_seen: iso(last - s.daysAgo * 0.4 * DAY),
     last_seen: iso(last),
     yara: s.yara,
     stored: true,
     analysis_status: i === 12 ? "pending" : "done",
-    origin: i === 3 || i === 8 ? "network_verify" : "local",
+    origin: netCheck ? "network_verify" : "local",
   }
 })
 
