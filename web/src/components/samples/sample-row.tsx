@@ -4,7 +4,7 @@ import { RelativeTime } from "@/components/relative-time"
 import { SeverityBadge } from "@/components/severity-badge"
 import { TagBadge } from "@/components/tag-badge"
 import { formatBytes, formatNumber } from "@/lib/format"
-import { describeKind, familyLabel, shortHash, type SampleItem } from "@/lib/samples"
+import { describeKind, familyLabel, NETWORK_CHECK, shortHash, type SampleItem } from "@/lib/samples"
 import { cn } from "@/lib/utils"
 
 export const SAMPLE_GRID = "md:grid-cols-[minmax(0,1fr)_6rem_5rem_5rem_6rem] md:gap-x-4"
@@ -44,6 +44,12 @@ export function SampleRow({ item, action }: { item: SampleItem; action?: ReactNo
             <span className="font-medium text-fg-muted">{family}</span>
           )}
           <span className="text-fg-muted">{describeKind(item)}</span>
+          {item.origin === "network_verify" ? (
+            <span title={NETWORK_CHECK.explain} className="relative z-10 inline-flex">
+              <TagBadge tag={NETWORK_CHECK.label} href={null} />
+              <span className="sr-only">. {NETWORK_CHECK.explain}</span>
+            </span>
+          ) : null}
         </p>
         <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-fg-muted">
           <span className="font-mono text-2xs" title={item.sha256}>

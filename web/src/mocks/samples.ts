@@ -261,6 +261,7 @@ const items: SampleItem[] = SEEDS.map((s, i) => {
     yara: s.yara,
     stored: true,
     analysis_status: i === 12 ? "pending" : "done",
+    origin: i === 3 || i === 8 ? "network_verify" : "local",
   }
 })
 
