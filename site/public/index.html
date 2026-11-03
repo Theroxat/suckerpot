@@ -86,7 +86,7 @@
               <li data-stage="0">Capture</li>
               <li data-stage="1">Story</li>
               <li data-stage="2">Report</li>
-              <li data-stage="3" class="coming">Takedown</li>
+              <li data-stage="3">Takedown</li>
             </ol>
 
             <div class="term">
@@ -189,11 +189,11 @@ then tried to download a file</pre>
 to     abuse@hosting.example
 check  passed</pre>
             </li>
-            <li class="step step-coming">
-              <p class="step-n mono">04 <span class="pill">coming</span></p>
+            <li class="step">
+              <p class="step-n mono">04</p>
               <h3>Takedown</h3>
               <p>
-                Selfhostr will check whether reported hosts go offline, so you know which reports worked and which
+                Selfhostr checks whether reported hosts go offline, so you know which reports worked and which
                 providers ignore them.
               </p>
               <pre class="snip mono">198.51.100.23
@@ -341,17 +341,17 @@ line 12   names this host    <span class="g-stop">stop</span>
       <section class="section" id="network" aria-labelledby="net-title">
         <div class="wrap split">
           <header class="sec-head">
-            <p class="eyebrow mono">The network <span class="pill">coming</span></p>
+            <p class="eyebrow mono">The network</p>
             <h2 id="net-title">Many honeypots. One report.</h2>
             <p class="sec-lede">
-              One honeypot sees one attack. Twenty see a pattern. The network will let Selfhostr nodes pool what they
+              One honeypot sees one attack. Twenty see a pattern. The network lets Selfhostr nodes pool what they
               observe, so a bad host is reported once, with stronger evidence, instead of twenty times with weak evidence.
             </p>
             <ul class="checks">
               <li>Opt-in. A node that does not join sends nothing.</li>
               <li>No account and no email. A node is at most an optional pseudonym.</li>
-              <li>Only the facts a report would carry are shared, through the same VPN and identity check.</li>
-              <li>Also coming: submissions to abuse.ch.</li>
+              <li>Only the facts a report would carry are shared. The hub never stores a node&rsquo;s address.</li>
+              <li>Malware links seen by several nodes go to abuse.ch, after a human review.</li>
             </ul>
           </header>
 
@@ -384,7 +384,7 @@ line 12   names this host    <span class="g-stop">stop</span>
                 <text x="180" y="145" text-anchor="middle" class="mono">198.51.100.23</text>
               </g>
             </svg>
-            <figcaption class="mono"><span class="net-cap-line">One host, five witnesses, one report.</span><span class="fine">Planned design. Node names are made up.</span></figcaption>
+            <figcaption class="mono"><span class="net-cap-line">One host, five witnesses, one report.</span><span class="fine">Illustration. Node names are made up.</span></figcaption>
           </figure>
         </div>
       </section>
@@ -433,30 +433,29 @@ cd suckerpot
             <li>
               <p class="step-n mono">01</p>
               <h3>Get the code</h3>
-              <p>You need Docker with the Compose plugin, and <span class="mono">just</span>.</p>
+              <p>You need Linux and Docker 24 or newer with the Compose plugin.</p>
               <div class="code">
                 <div class="code-bar mono"><span>shell</span><button class="copy" type="button" data-copy="c1" aria-label="Copy the commands of step 1">Copy</button></div>
-                <pre class="mono" id="c1">git clone &lt;repository-url&gt; selfhostr
-cd selfhostr</pre>
+                <pre class="mono" id="c1">git clone --depth 1 --branch v0.6.0 https://github.com/Theroxat/suckerpot.git
+cd suckerpot</pre>
               </div>
             </li>
             <li>
               <p class="step-n mono">02</p>
-              <h3>Fill in the settings</h3>
-              <p>Replace every <span class="mono">change-me</span> with a random value. VPN and API keys are optional.</p>
+              <h3>Run the installer</h3>
+              <p>It checks the machine, asks a few questions and generates every secret on this host. A VPN and API keys are optional.</p>
               <div class="code">
                 <div class="code-bar mono"><span>shell</span><button class="copy" type="button" data-copy="c2" aria-label="Copy the commands of step 2">Copy</button></div>
-                <pre class="mono" id="c2">cp .env.example .env
-openssl rand -base64 32</pre>
+                <pre class="mono" id="c2">./scripts/install.sh</pre>
               </div>
             </li>
             <li>
               <p class="step-n mono">03</p>
-              <h3>Start it</h3>
-              <p>Open the dashboard on port 8443 and follow the setup checklist before you open any port.</p>
+              <h3>Open the dashboard</h3>
+              <p>Open the address the installer prints and follow the setup checklist before you open any port. Check the stack any time:</p>
               <div class="code">
                 <div class="code-bar mono"><span>shell</span><button class="copy" type="button" data-copy="c3" aria-label="Copy the commands of step 3">Copy</button></div>
-                <pre class="mono" id="c3">just up</pre>
+                <pre class="mono" id="c3">./scripts/status.sh</pre>
               </div>
             </li>
           </ol>
