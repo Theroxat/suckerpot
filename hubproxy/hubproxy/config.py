@@ -85,6 +85,9 @@ class Settings:
     password: str
     max_conns: int = 8
     bind: str = "0.0.0.0"  # noqa: S104 - internal network only, compose publishes nothing
+    # When set, listeners bind only to the single address this name resolves to (the internal
+    # network alias in compose) instead of ``bind``.
+    bind_host: str = ""
     proxy_port: int = 8888
     control_port: int = 8000
 
@@ -100,4 +103,7 @@ class Settings:
             raise ConfigError("HUBPROXY_MAX_CONNS must be an integer") from exc
         if not 1 <= max_conns <= 64:
             raise ConfigError("HUBPROXY_MAX_CONNS must be between 1 and 64")
-        return cls(allow=allow, password=password, max_conns=max_conns)
+        bind_host = env.get("HUBPROXY_BIND_HOST", "").strip().lower()
+        if bind_host and not re.fullmatch(r"[a-z0-9.-]{1,253}", bind_host):
+            raise ConfigError("HUBPROXY_BIND_HOST is not a valid host name or address")
+        return cls(allow=allow, password=password, max_conns=max_conns, bind_host=bind_host)

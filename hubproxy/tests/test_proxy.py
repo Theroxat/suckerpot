@@ -6,7 +6,16 @@ import logging
 import pytest
 
 from hubproxy import server
-from tests.helpers import ALLOW, GLOBAL_IP, Fakes, basic, connect_request, exchange, running
+from tests.helpers import (
+    ALLOW,
+    GLOBAL_IP,
+    Fakes,
+    basic,
+    client_hello,
+    connect_request,
+    exchange,
+    running,
+)
 
 
 def status_line(raw: bytes) -> str:
@@ -19,9 +28,15 @@ async def test_allowed_connect_tunnels_bytes() -> None:
         writer.write(connect_request())
         await writer.drain()
         assert await reader.readuntil(b"\r\n\r\n") == b"HTTP/1.1 200 Connection established\r\n\r\n"
-        writer.write(b"hello")
+        hello = client_hello()
+        writer.write(hello + b"hello")
         await writer.drain()
-        assert await reader.read(100) == b"echo:hello"
+        got = b""
+        async with asyncio.timeout(3):
+            while len(got) < 5 + len(hello) + 5:
+                got += await reader.read(65536)
+        assert got == b"echo:" + hello + b"hello"[:0] + got[5 + len(hello) :]
+        assert got.endswith(b"hello")
         writer.close()
         assert fakes.dialled == [(GLOBAL_IP, 443)]
         assert fakes.resolved == [ALLOW]  # resolved once, then the vetted IP is used
