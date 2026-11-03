@@ -1421,13 +1421,17 @@ services:
       HUBPROXY_ALLOW: ${HUBPROXY_ALLOW:-}
       HUBPROXY_PASSWORD: ${EGRESS_PROXY_PASSWORD:-}
       HUBPROXY_MAX_CONNS: "8"
+      # Listen only on the hub-proxy network (the alias below exists on that network only),
+      # never on the uplink. Refuses to start unless it resolves to exactly one address.
+      HUBPROXY_BIND_HOST: hubproxy-internal
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=1m
     # Docker's embedded resolver is needed to resolve the allowed names.
     networks:
       hub-uplink:
         gw_priority: 100
-      hub-proxy: {}
+      hub-proxy:
+        aliases: [hubproxy-internal]
     mem_limit: 48m
     memswap_limit: 48m
     cpus: 0.25

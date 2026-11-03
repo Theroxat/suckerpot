@@ -20,6 +20,7 @@ from contextlib import suppress
 from .addrs import is_global_unicast
 from .config import HTTPS_PORT, Settings
 from .httpwire import HEAD_LIMIT, BadRequest, Head, parse_head
+from .sni import HelloError, read_client_hello
 
 HEAD_TIMEOUT = 5.0
 RESOLVE_TIMEOUT = 5.0
@@ -73,6 +74,16 @@ async def default_connector(
     return await asyncio.open_connection(ip, port)
 
 
+async def resolve_bind_host(name: str) -> str:
+    """Resolve ``name`` to exactly one IPv4 address, or raise OSError (fail closed)."""
+    loop = asyncio.get_running_loop()
+    infos = await loop.getaddrinfo(name, None, family=socket.AF_INET, type=socket.SOCK_STREAM)
+    addrs = {str(info[4][0]) for info in infos}
+    if len(addrs) != 1:
+        raise OSError(f"HUBPROXY_BIND_HOST must resolve to exactly one address, got {len(addrs)}")
+    return addrs.pop()
+
+
 def _digest(value: bytes) -> bytes:
     return hashlib.sha256(value).digest()
 
@@ -98,11 +109,19 @@ class HubProxy:
 
     async def start(self) -> None:
         s = self.settings
+        proxy_host: str | list[str] = s.bind
+        control_host: str | list[str] = s.bind
+        if s.bind_host:
+            # Fail closed: exactly one address, only on the internal network. The control
+            # listener also answers on loopback for the container healthcheck.
+            addr = await resolve_bind_host(s.bind_host)
+            proxy_host = addr
+            control_host = [addr, "127.0.0.1"]
         proxy = await asyncio.start_server(
-            self._handle_proxy, s.bind, s.proxy_port, limit=HEAD_LIMIT, backlog=32
+            self._handle_proxy, proxy_host, s.proxy_port, limit=HEAD_LIMIT, backlog=32
         )
         control = await asyncio.start_server(
-            self._handle_control, s.bind, s.control_port, limit=HEAD_LIMIT, backlog=8
+            self._handle_control, control_host, s.control_port, limit=HEAD_LIMIT, backlog=8
         )
         self._servers = [proxy, control]
 
@@ -203,6 +222,18 @@ class HubProxy:
         up_reader, up_writer = upstream
         try:
             await self._answer(writer, _ESTABLISHED)
+            # The TLS server name must be the CONNECT host: no domain fronting through the CDN.
+            try:
+                first_flight, sni = await read_client_hello(reader)
+            except HelloError:
+                self.counters["refused_sni"] += 1
+                return
+            if sni != host:
+                self.counters["refused_sni"] += 1
+                return
+            up_writer.write(first_flight)
+            async with asyncio.timeout(IDLE_TIMEOUT):
+                await up_writer.drain()
             self.counters["allowed"] += 1
             await self._relay(reader, writer, up_reader, up_writer)
         finally:

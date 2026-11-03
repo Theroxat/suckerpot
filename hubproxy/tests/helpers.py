@@ -97,3 +97,31 @@ async def exchange(port: int, payload: bytes, read: int = 4096) -> bytes:
             return await reader.read(read)
     finally:
         writer.close()
+
+
+def _ext(etype: int, data: bytes) -> bytes:
+    return etype.to_bytes(2, "big") + len(data).to_bytes(2, "big") + data
+
+
+def sni_ext(*names: str) -> bytes:
+    entries = b"".join(b"\x00" + len(n).to_bytes(2, "big") + n.encode() for n in names)
+    return _ext(0, len(entries).to_bytes(2, "big") + entries)
+
+
+def client_hello_body(extensions: bytes | None, session_id: bytes = b"") -> bytes:
+    body = b"\x03\x03" + bytes(32) + bytes([len(session_id)]) + session_id
+    body += b"\x00\x04\x13\x01\x13\x02" + b"\x01\x00"
+    if extensions is not None:
+        body += len(extensions).to_bytes(2, "big") + extensions
+    return body
+
+
+def records(body: bytes, split: int | None = None, msg_type: int = 1) -> bytes:
+    msg = bytes([msg_type]) + len(body).to_bytes(3, "big") + body
+    parts = [msg] if split is None else [msg[:split], msg[split:]]
+    return b"".join(b"\x16\x03\x01" + len(p).to_bytes(2, "big") + p for p in parts)
+
+
+def client_hello(sni: str | None = ALLOW, split: int | None = None) -> bytes:
+    exts = _ext(43, b"\x02\x03\x04") + (sni_ext(sni) if sni is not None else b"")
+    return records(client_hello_body(exts), split)
