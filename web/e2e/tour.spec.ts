@@ -66,7 +66,7 @@ test("setup checklist in Settings", async ({ page }, info) => {
   await page.goto("/settings")
   const list = page.getByRole("list", { name: "Setup checklist" })
   await expect(list).toBeVisible()
-  await expect(list.getByRole("listitem")).toHaveCount(8)
+  await expect(list.getByRole("listitem")).toHaveCount(9)
   await expect(list.getByText("Needs attention")).toBeVisible()
   await expect(
     page.getByText(/The host firewall can't be seen from inside the stack/),
