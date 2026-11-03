@@ -180,8 +180,8 @@
                 download, an exploit attempt, or many password guesses.
               </li>
               <li>
-                A malware host needs a downloaded file that matches a known malware family, seen by at least two
-                sensors. A URL that appears in a command is not enough on its own.
+                A malware host needs a downloaded file that matches a known malware family or is an executable program
+                or script, seen by at least two sensors. A URL that appears in a command is not enough on its own.
               </li>
               <li>
                 A command server needs high confidence from the network, and at least two different malware samples
@@ -368,7 +368,7 @@
           <div class="policy">
             <ul class="checks">
               <li>Only confirmed entries are reported. A scan or a bare connection is never reported.</li>
-              <li>An operator reviews each report before it is sent.</li>
+              <li>By default, an operator reviews each report before it is sent.</li>
               <li>
                 Reports go to the abuse contact of the network owner. We find that contact through the public registry
                 data (RDAP).
@@ -384,7 +384,9 @@
             <h3>abuse.ch</h3>
             <p>
               Confirmed malware hosts and command servers can also go to abuse.ch, where URLhaus and ThreatFox list them
-              for everyone. Submission to abuse.ch is optional and off by default.
+              for everyone. Submission to abuse.ch is optional and off by default. Malware download addresses may be
+              submitted automatically once confirmed; command servers are only ever submitted after an operator
+              approves them. The record of a finished submission is kept for 365 days.
             </p>
           </div>
         </div>
