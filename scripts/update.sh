@@ -2,7 +2,13 @@
 # Safe update of an installed Selfhostr: backup first, then new code, new images, restart, health
 # check. Called by `just update [vX.Y.Z]`. See docs/design/m28.md section 6.
 #
-#   scripts/update.sh [--yes] [--no-backup] [--skip-verify] [--force] [vX.Y.Z]
+#   scripts/update.sh [--yes] [--no-backup] [--skip-verify] [--force] [--auto] [vX.Y.Z]
+#
+# --auto is for scripts/auto-update.sh: no prompt at all, a signed release manifest is mandatory
+# (and the release must be old enough), and nothing is printed about a manual rollback.
+#
+# In images mode the signed release manifest (scripts/verify-release.sh) is checked before the
+# code changes. A release older than v0.6.0 has none: a manual update warns and goes on.
 #
 # A database dump is taken first and recorded in .suckerpot-state/last-update.json, together with
 # the commit and version you were on, so `just rollback` can put everything back. Migrations are
@@ -22,6 +28,7 @@ assume_yes=0
 no_backup=0
 skip_verify=0
 force=0
+auto=0
 target=""
 while [ $# -gt 0 ]; do
   case $1 in
@@ -29,14 +36,20 @@ while [ $# -gt 0 ]; do
     --no-backup) no_backup=1 ;;
     --skip-verify) skip_verify=1 ;;
     --force) force=1 ;;
+    --auto) auto=1; assume_yes=1 ;;
     -h | --help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     v[0-9]*) target=$1 ;;
-    *) echo "update: unknown argument: $1 (usage: update.sh [--yes] [--no-backup] [--skip-verify] [--force] [vX.Y.Z])" >&2; exit 2 ;;
+    *) echo "update: unknown argument: $1 (usage: update.sh [--yes] [--no-backup] [--skip-verify] [--force] [--auto] [vX.Y.Z])" >&2; exit 2 ;;
   esac
   shift
 done
 if [ -n "$target" ] && ! [[ $target =~ ^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
   echo "update: the version must look like v1.2.3" >&2
+  exit 2
+fi
+
+if [ "$auto" = 1 ] && { [ "$no_backup" = 1 ] || [ "$skip_verify" = 1 ] || [ "$force" = 1 ]; }; then
+  echo "update: --auto cannot be combined with --no-backup, --skip-verify or --force" >&2
   exit 2
 fi
 
@@ -56,9 +69,19 @@ env_drop_loaded
 
 mode=$(env_get SUCKERPOT_INSTALL_MODE source)
 case $mode in images | source) ;; *) die "SUCKERPOT_INSTALL_MODE must be images or source" ;; esac
+stack_mode=$(env_get SUCKERPOT_STACK_MODE full)
+case $stack_mode in full | participant) ;; *) die "SUCKERPOT_STACK_MODE must be full or participant" ;; esac
 dport=$(env_get DASHBOARD_PORT 8443)
 bind=$(env_get DASHBOARD_BIND 127.0.0.1)
 [ "$bind" = 0.0.0.0 ] && bind=127.0.0.1
+
+# One update or rollback at a time (the automatic updater holds this lock and says so).
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR"
+if [ "${SELFHOSTR_UPDATE_LOCK_HELD:-}" != 1 ]; then
+  exec 9> "$STATE_DIR/update.lock"
+  flock -n 9 || die "another update or rollback is running (lock $STATE_DIR/update.lock)"
+fi
 
 # Safe characters only, for anything that ends up in the state file.
 clean() { printf %s "$1" | tr -cd 'A-Za-z0-9._:/@=,+-'; }
@@ -111,6 +134,26 @@ if [ -n "$target" ]; then
   if [ "$target" = "$from_version" ] && [ "$(git rev-parse "$target^{commit}")" = "$from_ref" ]; then
     echo "Already on $target. Nothing to update."
     exit 0
+  fi
+fi
+
+# The signed release manifest (M32): images mode only. Source mode builds what it has checked out.
+if [ -n "$target" ] && [ "$mode" = images ]; then
+  if [ "$skip_verify" = 1 ]; then
+    echo "      warning: --skip-verify, the signed release manifest was NOT checked" >&2
+  else
+    vr_args=()
+    [ "$auto" = 1 ] && vr_args+=(--auto)
+    vr_rc=0
+    bash scripts/verify-release.sh ${vr_args[@]+"${vr_args[@]}"} "$target" || vr_rc=$?
+    case $vr_rc in
+      0) ;;
+      3)
+        [ "$auto" = 0 ] || die "$target has no signed release manifest; an automatic update refuses it"
+        echo "      warning: $target has no signed release manifest (older than v0.6.0); going on" >&2
+        ;;
+      *) die "the signed release manifest of $target could not be verified (exit $vr_rc); nothing was changed. Retry with --skip-verify only if you accept the risk" ;;
+    esac
   fi
 fi
 
@@ -181,10 +224,14 @@ on_exit() {
   rc=$?
   if [ "$rc" -ne 0 ] && [ "$changed" = 1 ]; then
     echo >&2
-    echo "update FAILED after the code was changed. Nothing was rolled back automatically." >&2
-    echo "  To go back to $from_version and restore the database dump '${dump:-none}':" >&2
-    echo "      just rollback" >&2
-    echo "  (events received since the dump are lost by a rollback)" >&2
+    if [ "$auto" = 1 ]; then
+      echo "update FAILED after the code was changed (the automatic updater rolls back)." >&2
+    else
+      echo "update FAILED after the code was changed. Nothing was rolled back automatically." >&2
+      echo "  To go back to $from_version and restore the database dump '${dump:-none}':" >&2
+      echo "      just rollback" >&2
+      echo "  (events received since the dump are lost by a rollback)" >&2
+    fi
   fi
 }
 trap on_exit EXIT
@@ -238,18 +285,28 @@ fi
 
 # ---------------------------------------------------------------- 8. health
 step 8 "Checking health"
-ok=0
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if curl -fsS --max-time 5 "http://$bind:$dport/healthz" > /dev/null 2>&1; then ok=1; break; fi
-  sleep 3
-done
-[ "$ok" = 1 ] || die "the dashboard does not answer on http://$bind:$dport/healthz"
+if [ "$stack_mode" = participant ]; then
+  # No dashboard in this mode: the version check is on ingest, and the network client must answer.
+  health_service=ingest
+else
+  health_service=api
+  ok=0
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if curl -fsS --max-time 5 "http://$bind:$dport/healthz" > /dev/null 2>&1; then ok=1; break; fi
+    sleep 3
+  done
+  [ "$ok" = 1 ] || die "the dashboard does not answer on http://$bind:$dport/healthz"
+fi
 if docker compose ps --format '{{.Service}} {{.Health}}' | grep -qE ' (unhealthy|starting)$'; then
   die "a service is not healthy (docker compose ps)"
 fi
-running=$(docker compose exec -T api printenv SUCKERPOT_RUNNING_VERSION 2> /dev/null | tr -d '\r' || true)
+running=$(docker compose exec -T "$health_service" printenv SUCKERPOT_RUNNING_VERSION 2> /dev/null | tr -d '\r' || true)
 if [ "$running" != "$expected" ]; then
-  die "the api reports version '${running:-unknown}' but '$expected' was expected"
+  die "the $health_service reports version '${running:-unknown}' but '$expected' was expected"
+fi
+if [ "$stack_mode" = participant ]; then
+  docker compose exec -T ingest python -m ingest.network.cli status --json > /dev/null 2>&1 \
+    || die "the network client of ingest does not answer (ingest.network.cli status)"
 fi
 
 # ---------------------------------------------------------------- 9. done
@@ -262,6 +319,6 @@ chmod 600 "$tmp"
 mv "$tmp" "$STATE"
 echo
 echo "Selfhostr is now on $expected (commit ${new_ref:0:9})."
-if [ -n "$dump" ]; then
+if [ -n "$dump" ] && [ "$auto" = 0 ]; then
   echo "Rollback, if you need it: just rollback   (restores $dump and the previous version)"
 fi

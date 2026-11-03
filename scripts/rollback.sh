@@ -3,7 +3,10 @@
 # version, and the database as it was in the dump taken just before the update.
 # Called by `just rollback`.
 #
-#   scripts/rollback.sh
+#   scripts/rollback.sh [--yes]
+#
+# --yes skips both confirmations. Only scripts/auto-update.sh uses it, after a failed automatic
+# update.
 #
 # THIS REPLACES THE DATABASE with the dump. Events received between the dump and now are lost.
 # It asks you to type "rollback"; restoring the dump then asks its own confirmation.
@@ -13,7 +16,15 @@ cd "$(dirname "$0")/.."
 # shellcheck source=scripts/lib/env.sh
 . scripts/lib/env.sh
 
-STATE=.suckerpot-state/last-update.json
+assume_yes=0
+case "${1:-}" in
+  "") ;;
+  --yes | -y) assume_yes=1 ;;
+  *) echo "rollback: unknown argument: $1 (usage: rollback.sh [--yes])" >&2; exit 2 ;;
+esac
+
+STATE_DIR=.suckerpot-state
+STATE=$STATE_DIR/last-update.json
 die() { echo "rollback: $*" >&2; exit 1; }
 
 [ -f .env ] || die ".env not found"
@@ -22,6 +33,13 @@ env_drop_loaded
 # restore-db.sh reads the volume prefix from the environment (just loads it from .env).
 SUCKERPOT_VOLUME_PREFIX=$(env_get SUCKERPOT_VOLUME_PREFIX)
 export SUCKERPOT_VOLUME_PREFIX
+# One update or rollback at a time (the automatic updater holds this lock and says so).
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR"
+if [ "${SELFHOSTR_UPDATE_LOCK_HELD:-}" != 1 ]; then
+  exec 9> "$STATE_DIR/update.lock"
+  flock -n 9 || die "another update or rollback is running (lock $STATE_DIR/update.lock)"
+fi
 [ -f "$STATE" ] || die "no update to roll back ($STATE not found)"
 
 from_version=$(state_get "$STATE" from_version)
@@ -54,9 +72,11 @@ echo "  images:   $mode mode, then $([ "$mode" = images ] && echo 'pull' || echo
 echo "  database: REPLACED by the dump $dump"
 echo
 echo "Events received since that dump are lost."
-printf 'Type "rollback" to continue: '
-read -r answer || answer=""
-[ "$answer" = "rollback" ] || { echo "aborted"; exit 1; }
+if [ "$assume_yes" = 0 ]; then
+  printf 'Type "rollback" to continue: '
+  read -r answer || answer=""
+  [ "$answer" = "rollback" ] || { echo "aborted"; exit 1; }
+fi
 
 echo "[1/4] Restoring the previous code"
 if [ -n "$from_branch" ] && [ "$(git rev-parse -q --verify "refs/heads/$from_branch" 2> /dev/null || true)" = "$(git rev-parse "$from_ref^{commit}")" ]; then
@@ -81,7 +101,11 @@ else
 fi
 
 echo "[3/4] Restoring the database from $dump"
-bash scripts/restore-db.sh "volume:$dump"
+if [ "$assume_yes" = 1 ]; then
+  bash scripts/restore-db.sh --yes "volume:$dump"
+else
+  bash scripts/restore-db.sh "volume:$dump"
+fi
 
 echo "[4/4] Starting"
 bash scripts/check-ports.sh --dotenv-only

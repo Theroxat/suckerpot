@@ -2,6 +2,8 @@
 
 import re
 import stat
+import subprocess
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -20,7 +22,16 @@ POSTGRES_PASSWORD=ownerpassword-aaaaaaaaaaaaaaaaaaaa
 """
 
 
+RELEASE_STUB = """#!/bin/sh
+echo "verify-release $*" >> "$SHIM_LOG"
+exit "${SHIM_RELEASE_RC:-0}"
+"""
+
+
 def prepare(sb: Sandbox, mode: str = "images", branch: str = "") -> None:
+    stub = sb.root / "scripts" / "verify-release.sh"
+    stub.write_text(RELEASE_STUB)
+    stub.chmod(0o755)
     sb.write_env(ENV.replace("images", mode))
     sb.git_mode("normal")
     sb.git_set("head", OLD)
@@ -366,3 +377,157 @@ def test_rollback_releases_the_unfinished_update_lock(sandbox: Sandbox) -> None:
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert '"completed": true' in state.read_text()
     assert '"completed": false' not in state.read_text()
+
+
+# ------------------------------------------------------------ signed release manifest (M32)
+
+
+def test_update_checks_the_signed_manifest_before_the_code_changes(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    rc, out = run_update(sandbox, "--yes")
+    assert rc == 0, out
+    calls = sandbox.calls()
+    assert "verify-release v0.9.0" in calls
+    first = next(i for i, c in enumerate(calls) if c.startswith("verify-release"))
+    assert first < next(i for i, c in enumerate(calls) if c.startswith("git checkout"))
+    assert first < next(i for i, c in enumerate(calls) if "backup-service.sh" in c)
+
+
+def test_a_bad_manifest_stops_a_manual_update_before_anything_changes(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    sandbox.env["SHIM_RELEASE_RC"] = "6"
+    rc, out = run_update(sandbox, "--yes")
+    assert rc != 0
+    assert "release manifest" in out and "could not be verified" in out
+    assert not any(
+        "backup-service.sh" in c or c.startswith("git checkout") for c in sandbox.calls()
+    )
+
+
+def test_a_release_without_manifest_warns_manually_and_is_refused_automatically(
+    sandbox: Sandbox,
+) -> None:
+    prepare(sandbox)
+    sandbox.env["SHIM_RELEASE_RC"] = "3"
+    rc, out = run_update(sandbox, "--yes")
+    assert rc == 0, out
+    assert "no signed release manifest" in out
+    prepare(sandbox)
+    sandbox.env["SHIM_RELEASE_RC"] = "3"
+    sandbox.log.write_text("")
+    rc, out = run_update(sandbox, "--auto", "v0.9.0")
+    assert rc != 0
+    assert "refuses it" in out
+    assert not any(c.startswith("git checkout") for c in sandbox.calls())
+
+
+def test_skip_verify_skips_the_manifest_with_a_warning(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    sandbox.env["SHIM_RELEASE_RC"] = "6"
+    rc, out = run_update(sandbox, "--yes", "--skip-verify")
+    assert rc == 0, out
+    assert "manifest was NOT checked" in out
+    assert not any(c.startswith("verify-release") for c in sandbox.calls())
+
+
+def test_source_mode_has_no_manifest_to_check(sandbox: Sandbox) -> None:
+    prepare(sandbox, mode="source")
+    sandbox.env["SHIM_RUNNING_VERSION"] = "v0.8.0"  # a source build reports its describe string
+    rc, out = run_update(sandbox, "--yes", "v0.9.0")
+    assert rc == 0, out
+    assert not any(c.startswith("verify-release") for c in sandbox.calls())
+
+
+def test_auto_flag_is_strict_and_prompt_free(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    for bad in ("--no-backup", "--skip-verify", "--force"):
+        rc, out = run_update(sandbox, "--auto", bad, "v0.9.0")
+        assert rc == 2 and "cannot be combined" in out
+    rc, out = run_update(sandbox, "--auto", "v0.9.0")
+    assert rc == 0, out
+    assert "verify-release --auto v0.9.0" in sandbox.calls()
+    assert "just rollback" not in out
+
+
+INGEST_SHIM = """#!/bin/sh
+case "$*" in
+  "compose exec -T ingest printenv SUCKERPOT_RUNNING_VERSION")
+    echo "docker $*" >> "$SHIM_LOG"; echo "${SHIM_INGEST_VERSION:-}"; exit 0 ;;
+  "compose exec -T ingest python -m ingest.network.cli status --json")
+    echo "docker $*" >> "$SHIM_LOG"; exit "${SHIM_NETWORK_CLI_RC:-0}" ;;
+esac
+exec "$(dirname "$0")/docker.real" "$@"
+"""
+
+
+def participant(sb: Sandbox) -> None:
+    """Switches the sandbox to a participant install (no api) with a docker fake that knows ingest."""
+    real = sb.shim / "docker"
+    real.rename(sb.shim / "docker.real")
+    real.write_text(INGEST_SHIM)
+    real.chmod(0o755)
+    env = sb.root / ".env"
+    env.write_text(env.read_text() + "SUCKERPOT_STACK_MODE=participant\n")
+    sb.env["SHIM_INGEST_VERSION"] = "v0.9.0"
+
+
+def test_participant_health_checks_ingest_and_the_network_client(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    participant(sandbox)
+    rc, out = run_update(sandbox, "--yes")
+    assert rc == 0, out
+    calls = sandbox.calls()
+    assert "docker compose exec -T ingest printenv SUCKERPOT_RUNNING_VERSION" in calls
+    assert "docker compose exec -T ingest python -m ingest.network.cli status --json" in calls
+    assert not any("api printenv" in c for c in calls)
+    assert not any(c.startswith("curl") for c in calls)  # no dashboard to ask
+
+
+def test_participant_update_fails_when_the_network_client_does_not_answer(
+    sandbox: Sandbox,
+) -> None:
+    prepare(sandbox)
+    participant(sandbox)
+    sandbox.env["SHIM_NETWORK_CLI_RC"] = "1"
+    rc, out = run_update(sandbox, "--yes")
+    assert rc != 0
+    assert "network client of ingest does not answer" in out
+
+
+def test_full_mode_health_is_unchanged(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    rc, out = run_update(sandbox, "--yes")
+    assert rc == 0, out
+    calls = sandbox.calls()
+    assert "docker compose exec -T api printenv SUCKERPOT_RUNNING_VERSION" in calls
+    assert not any("ingest.network.cli" in c for c in calls)
+    assert any(c.startswith("curl") and "/healthz" in c for c in calls)
+
+
+def test_a_second_update_cannot_run_while_the_lock_is_held(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    state = sandbox.root / ".suckerpot-state"
+    state.mkdir(exist_ok=True)
+    held = subprocess.Popen(  # noqa: S603
+        ["flock", str(state / "update.lock"), "sleep", "20"],  # noqa: S607
+    )
+    try:
+        time.sleep(0.5)
+        rc, out = run_update(sandbox, "--yes")
+        assert rc != 0
+        assert "another update or rollback is running" in out
+        assert not any("backup-service.sh" in c for c in sandbox.calls())
+    finally:
+        held.kill()
+        held.wait()
+
+
+def test_rollback_yes_skips_both_confirmations(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    sandbox.write_env(ENV.replace("v0.8.0", "v0.9.0"))
+    write_state(sandbox)
+    (sandbox.root / "scripts" / "restore-db.sh").write_text('echo "restore-db $*" >> "$SHIM_LOG"\n')
+    proc = sandbox.run("scripts/rollback.sh", "--yes", stdin="")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "restore-db --yes volume:suckerpot-preupdate-20261101T020000Z.dump" in sandbox.calls()
+    assert sandbox.run("scripts/rollback.sh", "--bogus").returncode == 2

@@ -60,6 +60,28 @@ version=${1:-$(get SUCKERPOT_VERSION '')}
 printf '%s' "$version" | grep -Eq '^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$' \
   || die "'$version' is not a release version (vX.Y.Z); a source build has nothing to verify"
 
+# hubproxy exists from M32 on (v0.6.0). An older release does not have the image, so it is neither
+# verified nor pulled for it: that keeps a rollback to a pre-M32 release working. The signal is the
+# release tree (hubproxy/Dockerfile in the tag); a tag this checkout does not know falls back to
+# the version number. A participant install cannot run without hubproxy, so it refuses such a target.
+ships_hubproxy=0
+if git rev-parse -q --verify "refs/tags/$version" > /dev/null 2>&1; then
+  if git cat-file -e "$version:hubproxy/Dockerfile" > /dev/null 2>&1; then ships_hubproxy=1; fi
+elif [ "$(printf '%s\n%s\n' "${version#v}" 0.6.0 | sort -V | head -n 1)" = 0.6.0 ]; then
+  ships_hubproxy=1
+fi
+if [ "$ships_hubproxy" = 0 ]; then
+  if [ "$(get SUCKERPOT_STACK_MODE full)" = participant ]; then
+    die "$version has no hubproxy image; a participant install needs a release from v0.6.0 on"
+  fi
+  case " $IMAGES " in
+    *" hubproxy "*)
+      if [ "$only" = hubproxy ]; then die "$version has no hubproxy image"; fi
+      IMAGES=$(printf '%s\n' "$IMAGES" | sed 's/ hubproxy / /; s/^hubproxy //; s/ hubproxy$//')
+      ;;
+  esac
+fi
+
 prefix=$(get SUCKERPOT_IMAGE_PREFIX ghcr.io/theroxat/suckerpot)
 printf '%s' "$prefix" | grep -Eq '^ghcr\.io/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$' \
   || die "SUCKERPOT_IMAGE_PREFIX must look like ghcr.io/<owner>/<name>"
