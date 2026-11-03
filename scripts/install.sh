@@ -24,9 +24,18 @@
 #                                      https tunnel: plain http, cookies lose Secure; not for the internet)
 #                      [--dry-run --env-out PATH]
 #
+#   Participant mode (docs/design/m32.md): sensors, database, ingest and the network node, no
+#   dashboard, no admin account, no VPN needed (the hub is reached through hubproxy):
+#   scripts/install.sh --participant [--yes] [--pseudonym NAME | --no-pseudonym]
+#                      [--country CC [--show-country]] [--wg-conf PATH [--verifier]]
+#                      [--no-auto-update] [--feeds] [--self-address ADDR] [--sensors LIST]
+#   scripts/install.sh --full         on a participant install: switch to full mode (keeps data)
+#   scripts/install.sh --repair       existing install: volumes, start and schedule steps again
+#
 # --yes takes the defaults; it reads the admin password from stdin with --admin-password-stdin
-# or generates one and prints it once. --dry-run --env-out writes the would-be .env to PATH with
-# a placeholder admin hash and makes no Docker call (used by the tests).
+# or generates one and prints it once. With --participant, --yes is the consent to join.
+# --dry-run --env-out writes the would-be .env to PATH with a placeholder admin hash and makes
+# no Docker call (used by the tests).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -68,6 +77,16 @@ allow_lan=0
 wg_conf=""
 dry_run=0
 env_out=""
+stack=""
+pseudonym_arg=""
+no_pseudonym=0
+country=""
+show_country=0
+verifier=0
+no_auto_update=0
+feeds=0
+self_address=""
+repair=0
 
 need_value() { [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value"; }
 while [ $# -gt 0 ]; do
@@ -91,11 +110,23 @@ while [ $# -gt 0 ]; do
     --allow-lan) allow_lan=1 ;;
     --dry-run) dry_run=1 ;;
     --env-out) need_value "$@"; env_out=$2; shift ;;
+    --participant) [ "$stack" != full ] || die "--participant and --full exclude each other"; stack=participant ;;
+    --full) [ "$stack" != participant ] || die "--participant and --full exclude each other"; stack=full ;;
+    --pseudonym) need_value "$@"; pseudonym_arg=$2; shift ;;
+    --no-pseudonym) no_pseudonym=1 ;;
+    --country) need_value "$@"; country=$2; shift ;;
+    --show-country) show_country=1 ;;
+    --verifier) verifier=1 ;;
+    --no-auto-update) no_auto_update=1 ;;
+    --feeds) feeds=1 ;;
+    --self-address) need_value "$@"; self_address=$2; shift ;;
+    --repair) repair=1 ;;
     -h | --help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown option: $1 (see --help)" ;;
   esac
   shift
 done
+
 
 if [ "$dry_run" = 1 ] && [ -z "$env_out" ]; then die "--dry-run needs --env-out PATH"; fi
 if [ "$dry_run" = 0 ] && [ -n "$env_out" ]; then die "--env-out is only for --dry-run"; fi
@@ -110,10 +141,14 @@ if [ "$assume_yes" = 0 ]; then
   exec 3< "$tty"
 fi
 
+# noask is 1 when no question may be asked: --yes, or participant mode (its only prompt is the
+# consent screen). Questions then take their default.
+noask=$assume_yes
+
 # ask VAR "question" "default": sets VAR to the answer (the default with --yes or on Enter).
 ask() {
   local __var=$1 __q=$2 __d=$3 __ans=""
-  if [ "$assume_yes" = 1 ]; then
+  if [ "$noask" = 1 ]; then
     printf -v "$__var" %s "$__d"
     return 0
   fi
@@ -133,20 +168,109 @@ if in_linked_worktree; then
 fi
 
 target=${env_out:-.env}
+existing=0
+switching=0
 if [ -e .env ]; then
-  die "Selfhostr is already installed here (.env exists). Use \`just update\`."
+  [ "$dry_run" = 0 ] || die "Selfhostr is already installed here (.env exists). The dry run needs a checkout without .env."
+  existing=1
+  cur_stack=$(env_get SUCKERPOT_STACK_MODE full)
+  case $cur_stack in full | participant) ;; *) die "SUCKERPOT_STACK_MODE in .env must be full or participant" ;; esac
+  if [ "$repair" = 1 ]; then
+    [ -z "$stack" ] || [ "$stack" = "$cur_stack" ] \
+      || die "--repair keeps the mode of the install ($cur_stack); use --full to switch a participant install"
+    stack=$cur_stack
+  elif [ -z "$stack" ] || [ "$stack" = "$cur_stack" ]; then
+    echo "Selfhostr is already installed here in $cur_stack mode (.env exists). Nothing was changed."
+    echo "Update: just update. Start the steps again without changing settings: ./scripts/install.sh --repair"
+    if [ -f scripts/status.sh ]; then bash scripts/status.sh || true; fi
+    exit 0
+  elif [ "$cur_stack" = participant ] && [ "$stack" = full ]; then
+    switching=1
+  else
+    die "switching a full install to participant mode would remove the dashboard; not supported"
+  fi
+else
+  [ "$repair" = 0 ] || die "--repair needs an existing install (no .env here)"
 fi
-if [ "$dry_run" = 1 ] && [ -e "$env_out" ]; then
-  die "$env_out already exists; the dry run does not overwrite files"
-fi
-[ -f .env.example ] || die ".env.example not found: run this from a Selfhostr checkout"
+stack=${stack:-full}
+fresh=$((1 - existing))
+# dash is 1 when the dashboard questions apply: a fresh full install, or the switch to full mode.
+dash=0
+if [ "$stack" = full ] && [ "$repair" = 0 ]; then dash=1; fi
 
-project=${project:-suckerpot}
-prefix=${prefix:-$project}
+# Flags that belong to one mode only.
+if [ "$stack" = participant ]; then
+  bad=()
+  [ -z "$bind" ] || bad+=(--dashboard-bind)
+  [ -z "$dport" ] || bad+=(--dashboard-port)
+  [ -z "$public_host" ] || bad+=(--public-host)
+  [ -z "$admin_user" ] || bad+=(--admin-user)
+  [ "$pw_stdin" = 0 ] || bad+=(--admin-password-stdin)
+  [ "$allow_lan" = 0 ] || bad+=(--allow-lan)
+  [ "${#bad[@]}" -eq 0 ] || die "these flags need --full: ${bad[*]}"
+  noask=1
+else
+  bad=()
+  [ -z "$pseudonym_arg" ] || bad+=(--pseudonym)
+  [ "$no_pseudonym" = 0 ] || bad+=(--no-pseudonym)
+  [ -z "$country" ] || bad+=(--country)
+  [ "$show_country" = 0 ] || bad+=(--show-country)
+  [ "$verifier" = 0 ] || bad+=(--verifier)
+  [ "$no_auto_update" = 0 ] || bad+=(--no-auto-update)
+  [ "$feeds" = 0 ] || bad+=(--feeds)
+  [ -z "$self_address" ] || bad+=(--self-address)
+  [ "${#bad[@]}" -eq 0 ] || die "these flags need --participant: ${bad[*]}"
+fi
+if [ "$existing" = 1 ]; then
+  # An existing install keeps its settings: only the switch to full mode asks (dashboard) questions.
+  bad=()
+  [ -z "$version" ] || bad+=(--version)
+  [ -z "$mode" ] || bad+=(--source/--images)
+  [ -z "$project" ] || bad+=(--project)
+  [ -z "$prefix" ] || bad+=(--prefix)
+  [ -z "$sensors_arg" ] || bad+=(--sensors)
+  [ -z "$wg_conf" ] || bad+=(--wg-conf)
+  [ "$lowmem" = auto ] || bad+=(--lowmem)
+  [ "${#bad[@]}" -eq 0 ] || die "an existing install keeps its settings; these flags are only for a fresh install: ${bad[*]}. Change settings with: just set, just sensors, ./scripts/participant.sh"
+  if [ "$repair" = 1 ] && [ "$pw_stdin" = 1 ]; then die "--repair does not change settings: --admin-password-stdin"; fi
+fi
+
+if [ "$stack" = participant ] && [ "$fresh" = 1 ]; then
+  # shellcheck source=scripts/lib/pseudonym.sh
+  . scripts/lib/pseudonym.sh
+  [ -f docker-compose.participant.yml ] || die "this checkout has no docker-compose.participant.yml: participant mode needs a current release"
+  [ -f config/network-defaults.env ] || die "this checkout has no config/network-defaults.env: participant mode needs a current release"
+  [ "$no_pseudonym" = 0 ] || [ -z "$pseudonym_arg" ] || die "--pseudonym and --no-pseudonym exclude each other"
+  if [ -n "$pseudonym_arg" ]; then
+    pseudonym_valid "$pseudonym_arg" || die "bad --pseudonym"
+  fi
+  if [ -n "$country" ]; then
+    [[ $country =~ ^[A-Za-z]{2}$ ]] || die "--country must be a two-letter country code"
+    country=$(printf %s "$country" | tr '[:lower:]' '[:upper:]')
+  fi
+  [ "$show_country" = 0 ] || [ -n "$country" ] || die "--show-country needs --country CC"
+  [ "$verifier" = 0 ] || [ -n "$wg_conf" ] || die "--verifier needs --wg-conf: a verifier fetches files, and only through a VPN"
+  [[ -z $self_address || $self_address =~ ^[0-9A-Fa-f.:,]+$ ]] || die "the public address has unexpected characters"
+fi
+
+if [ "$existing" = 0 ]; then
+  [ -f .env.example ] || die ".env.example not found: run this from a Selfhostr checkout"
+  if [ "$dry_run" = 1 ] && [ -e "$env_out" ]; then
+    die "$env_out already exists; the dry run does not overwrite files"
+  fi
+  project=${project:-suckerpot}
+  prefix=${prefix:-$project}
+else
+  project=$(env_get COMPOSE_PROJECT_NAME)
+  prefix=$(env_get SUCKERPOT_VOLUME_PREFIX)
+  mode=$(env_get SUCKERPOT_INSTALL_MODE source)
+  version=${version:-$(env_get SUCKERPOT_VERSION)}
+fi
 [ -n "$project" ] && [ -n "$prefix" ] || die "project and prefix must not be empty"
 valid_project_name "$project" || die "bad project name '$project': use lowercase letters, digits, - and _ (at most 41 characters), and not sp-it-*, sp-test or sp-ci"
 valid_project_name "$prefix" || die "bad volume prefix '$prefix': use lowercase letters, digits, - and _ (at most 41 characters), and not sp-it-*, sp-test or sp-ci"
 
+mem_kb=0
 if [ "$dry_run" = 1 ]; then
   note "dry run: Docker, memory, disk and volume checks skipped"
 else
@@ -160,162 +284,212 @@ else
   meminfo=${SELFHOSTR_MEMINFO:-/proc/meminfo}
   mem_kb=$(awk '/^MemTotal:/ {print $2}' "$meminfo" 2> /dev/null || true)
   [[ ${mem_kb:-} =~ ^[0-9]+$ ]] || die "cannot read the memory size from $meminfo"
-  if [ "$mem_kb" -lt $((2 * 1024 * 1024 - 65536)) ]; then
-    die "less than 2 GiB of memory: Selfhostr needs at least 2 GiB (with --lowmem on)"
-  fi
+  if [ "$fresh" = 1 ]; then
+    if [ "$mem_kb" -lt $((2 * 1024 * 1024 - 65536)) ]; then
+      die "less than 2 GiB of memory: Selfhostr needs at least 2 GiB (with --lowmem on)"
+    fi
 
-  root=$(docker info --format '{{.DockerRootDir}}' 2> /dev/null || true)
-  free_kb=${SELFHOSTR_FREE_DISK_KB:-$(df -Pk "${root:-/}" 2> /dev/null | awk 'NR==2 {print $4}')}
-  [[ ${free_kb:-} =~ ^[0-9]+$ ]] || die "cannot read the free disk space"
-  if [ "$free_kb" -lt $((15 * 1024 * 1024)) ]; then
-    die "less than 15 GiB free under Docker's data folder"
-  elif [ "$free_kb" -lt $((30 * 1024 * 1024)) ]; then
-    warn "less than 30 GiB free under Docker's data folder; logs and payloads need room"
-  fi
+    root=$(docker info --format '{{.DockerRootDir}}' 2> /dev/null || true)
+    free_kb=${SELFHOSTR_FREE_DISK_KB:-$(df -Pk "${root:-/}" 2> /dev/null | awk 'NR==2 {print $4}')}
+    [[ ${free_kb:-} =~ ^[0-9]+$ ]] || die "cannot read the free disk space"
+    if [ "$free_kb" -lt $((15 * 1024 * 1024)) ]; then
+      die "less than 15 GiB free under Docker's data folder"
+    elif [ "$free_kb" -lt $((30 * 1024 * 1024)) ]; then
+      warn "less than 30 GiB free under Docker's data folder; logs and payloads need room"
+    fi
 
-  # Never adopt or mix with an existing install: its database password lives inside the data.
-  if [ -n "$(docker volume ls -q --filter "name=^${prefix}_" 2> /dev/null | head -n 1)" ]; then
-    die "Data volumes named '${prefix}_*' already exist. Restore your old .env, or pick another --prefix. (They are never adopted: the database password lives inside the data.)"
+    # Never adopt or mix with an existing install: its database password lives inside the data.
+    if [ -n "$(docker volume ls -q --filter "name=^${prefix}_" 2> /dev/null | head -n 1)" ]; then
+      die "Data volumes named '${prefix}_*' already exist. Restore your old .env, or pick another --prefix. (They are never adopted: the database password lives inside the data.)"
+    fi
+    if [ -n "$(docker ps -a -q --filter "label=com.docker.compose.project=$project" 2> /dev/null | head -n 1)" ]; then
+      die "Containers of the compose project '$project' already exist. Pick another --project, or remove that stack yourself first."
+    fi
   fi
-  if [ -n "$(docker ps -a -q --filter "label=com.docker.compose.project=$project" 2> /dev/null | head -n 1)" ]; then
-    die "Containers of the compose project '$project' already exist. Pick another --project, or remove that stack yourself first."
+  if [ "$stack" = participant ] && ! command -v crontab > /dev/null 2>&1 && ! command -v systemctl > /dev/null 2>&1; then
+    warn "neither crontab nor systemctl was found: automatic updates cannot be scheduled (update by hand with: just update)"
   fi
 fi
 
 # ---------------------------------------------------------------- 2. questions
 step 2 "Settings"
 
-if [ -z "$mode" ]; then
-  ask a "Install mode: images (download) or source (build here)" images
-  case $a in images | source) mode=$a ;; *) die "install mode must be images or source" ;; esac
-fi
-
-if [ -z "$sensors_arg" ]; then
-  ask sensors_arg "Sensors: recommended, all, or a list like ssh,web" recommended
-fi
 chosen=()
-case $sensors_arg in
-  recommended) chosen=("${RECOMMENDED_SENSORS[@]}") ;;
-  all) chosen=("${SENSORS[@]}") ;;
-  *)
-    IFS=, read -r -a chosen <<< "$sensors_arg"
-    [ "${#chosen[@]}" -gt 0 ] || die "no sensor chosen"
-    for s in "${chosen[@]}"; do
-      is_sensor "$s" || die "unknown sensor '$s' (known: ${SENSORS[*]})"
-    done
-    ;;
-esac
 sensor_on() {
   local s
   for s in "${chosen[@]}"; do [ "$s" = "$1" ] && return 0; done
   return 1
 }
+pseudonym=""
+self_addr=""
+update_check=false
+keep_auto=yes
+wg_private="" wg_peer="" wg_addr="" wg_dns="" wg_ep_ip="" wg_ep_port=""
 
-if [ -z "$bind" ] && [ -z "$public_host" ]; then
-  ask a "Dashboard reached [l]ocally or through an SSH tunnel, or through an [h]ttps tunnel such as cloudflared" l
-  case $a in
-    l | local) ;;
-    h | https)
-      ask public_host "Public host name of the dashboard (for example dash.example.org)" ""
-      [ -n "$public_host" ] || die "a host name is required for an https tunnel"
+if [ "$fresh" = 1 ]; then
+  if [ -z "$mode" ]; then
+    if [ "$stack" = participant ]; then
+      mode=images
+    else
+      ask a "Install mode: images (download) or source (build here)" images
+      case $a in images | source) mode=$a ;; *) die "install mode must be images or source" ;; esac
+    fi
+  fi
+
+  if [ -z "$sensors_arg" ]; then
+    if [ "$stack" = participant ]; then
+      sensors_arg=recommended
+    else
+      ask sensors_arg "Sensors: recommended, all, or a list like ssh,web" recommended
+    fi
+  fi
+  case $sensors_arg in
+    recommended) chosen=("${RECOMMENDED_SENSORS[@]}") ;;
+    all) chosen=("${SENSORS[@]}") ;;
+    *)
+      IFS=, read -r -a chosen <<< "$sensors_arg"
+      [ "${#chosen[@]}" -gt 0 ] || die "no sensor chosen"
+      for s in "${chosen[@]}"; do
+        is_sensor "$s" || die "unknown sensor '$s' (known: ${SENSORS[*]})"
+      done
       ;;
-    *) die "answer l or h" ;;
   esac
 fi
-bind=${bind:-127.0.0.1}
-dport=${dport:-8443}
-[[ $bind =~ ^[0-9.]{7,15}$ ]] || die "--dashboard-bind must be an IPv4 address"
-[[ $dport =~ ^[0-9]{1,5}$ ]] && [ "$dport" -ge 1 ] && [ "$dport" -le 65535 ] || die "--dashboard-port must be a port number"
-if [[ $bind != 127.* ]] && [ -z "$public_host" ] && [ "$allow_lan" = 0 ]; then
-  die "--dashboard-bind $bind would publish the login page over plain http. Keep 127.0.0.1 (reach it with an SSH tunnel), give --public-host for an https tunnel, or pass --allow-lan if you accept it on a trusted network only."
-fi
-if [ -n "$public_host" ]; then
-  [[ $public_host =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$ ]] || die "bad --public-host"
-fi
 
-if [ -z "$admin_user" ]; then ask admin_user "Admin user name" admin; fi
-[[ $admin_user =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "the admin user name may only contain letters, digits, . _ -"
+if [ "$dash" = 1 ]; then
+  if [ -z "$bind" ] && [ -z "$public_host" ]; then
+    ask a "Dashboard reached [l]ocally or through an SSH tunnel, or through an [h]ttps tunnel such as cloudflared" l
+    case $a in
+      l | local) ;;
+      h | https)
+        ask public_host "Public host name of the dashboard (for example dash.example.org)" ""
+        [ -n "$public_host" ] || die "a host name is required for an https tunnel"
+        ;;
+      *) die "answer l or h" ;;
+    esac
+  fi
+  bind=${bind:-127.0.0.1}
+  dport=${dport:-8443}
+  [[ $bind =~ ^[0-9.]{7,15}$ ]] || die "--dashboard-bind must be an IPv4 address"
+  [[ $dport =~ ^[0-9]{1,5}$ ]] && [ "$dport" -ge 1 ] && [ "$dport" -le 65535 ] || die "--dashboard-port must be a port number"
+  if [[ $bind != 127.* ]] && [ -z "$public_host" ] && [ "$allow_lan" = 0 ]; then
+    die "--dashboard-bind $bind would publish the login page over plain http. Keep 127.0.0.1 (reach it with an SSH tunnel), give --public-host for an https tunnel, or pass --allow-lan if you accept it on a trusted network only."
+  fi
+  if [ -n "$public_host" ]; then
+    [[ $public_host =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$ ]] || die "bad --public-host"
+  fi
+
+  if [ -z "$admin_user" ]; then ask admin_user "Admin user name" admin; fi
+  [[ $admin_user =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "the admin user name may only contain letters, digits, . _ -"
+fi
 
 pw=""
 pw_generated=0
-if [ "$pw_stdin" = 1 ]; then
-  IFS= read -r pw || true
-elif [ "$assume_yes" = 1 ]; then
-  pw=$(gen_secret 24)
-  pw_generated=1
-else
-  printf '  Admin password (at least 12 characters, empty = generate one): ' >&2
-  IFS= read -rs pw <&3 || pw=""
-  echo >&2
-  if [ -z "$pw" ]; then
+if [ "$dash" = 1 ]; then
+  if [ "$pw_stdin" = 1 ]; then
+    IFS= read -r pw || true
+  elif [ "$noask" = 1 ]; then
     pw=$(gen_secret 24)
     pw_generated=1
   else
-    printf '  Repeat the password: ' >&2
-    IFS= read -rs pw2 <&3 || pw2=""
+    printf '  Admin password (at least 12 characters, empty = generate one): ' >&2
+    IFS= read -rs pw <&3 || pw=""
     echo >&2
-    [ "$pw" = "$pw2" ] || die "the two passwords differ"
-    unset pw2
+    if [ -z "$pw" ]; then
+      pw=$(gen_secret 24)
+      pw_generated=1
+    else
+      printf '  Repeat the password: ' >&2
+      IFS= read -rs pw2 <&3 || pw2=""
+      echo >&2
+      [ "$pw" = "$pw2" ] || die "the two passwords differ"
+      unset pw2
+    fi
+  fi
+  [ "${#pw}" -ge 12 ] || die "the admin password must have at least 12 characters"
+fi
+
+if [ "$fresh" = 1 ]; then
+  if [ "$lowmem" = auto ]; then
+    if [ "$dry_run" = 1 ]; then
+      lowmem=off
+    elif [ "$mem_kb" -lt $((6 * 1024 * 1024)) ]; then
+      if [ "$stack" = participant ]; then
+        # Participant mode asks nothing: the low-memory overlay is used when the machine needs it.
+        if [ -f docker-compose.lowmem.yml ]; then lowmem=on; else lowmem=off; fi
+      else
+        ask a "This machine has less than 6 GiB of memory. Use the low-memory mode? (yes/no)" yes
+        case $a in y | yes) lowmem=on ;; *) lowmem=off ;; esac
+      fi
+    else
+      lowmem=off
+    fi
+  fi
+  if [ "$lowmem" = on ] && [ ! -f docker-compose.lowmem.yml ]; then
+    die "this checkout has no docker-compose.lowmem.yml, so --lowmem on is not possible"
   fi
 fi
-[ "${#pw}" -ge 12 ] || die "the admin password must have at least 12 characters"
 
-if [ "$lowmem" = auto ]; then
-  if [ "$dry_run" = 1 ]; then
-    lowmem=off
-  elif [ "$mem_kb" -lt $((6 * 1024 * 1024)) ]; then
-    ask a "This machine has less than 6 GiB of memory. Use the low-memory mode? (yes/no)" yes
-    case $a in y | yes) lowmem=on ;; *) lowmem=off ;; esac
+if [ "$stack" = full ] && [ "$fresh" = 1 ]; then
+  ask update_check "Check once a day whether a newer release exists? (one anonymous request through the VPN, never installs anything) (y or n)" n
+  case $update_check in y | Y | yes | true) update_check=true ;; *) update_check=false ;; esac
+fi
+if [ "$switching" = 1 ]; then
+  if [ "$(env_get AUTO_UPDATE_ENABLED false)" = true ]; then
+    ask keep_auto "Keep the automatic daily updates? (yes/no)" yes
+    case $keep_auto in n | no) keep_auto=no ;; *) keep_auto=yes ;; esac
+  fi
+fi
+
+if [ "$fresh" = 1 ]; then
+  if [ -z "$wg_conf" ] && [ "$stack" = full ]; then
+    ask wg_conf "Path to a WireGuard .conf from your VPN provider (empty = upload it later in the dashboard)" ""
+  fi
+  if [ -n "$wg_conf" ]; then
+    if [ "$stack" = full ]; then
+      wg_parse_conf "$wg_conf" " Upload it in the dashboard instead." || die "unusable WireGuard file"
+    else
+      wg_parse_conf "$wg_conf" " Check the file from your VPN provider." || die "unusable WireGuard file"
+    fi
+  fi
+
+  if [ "$stack" = full ]; then
+    ask self_addr "Your own public address, if you know it (the dashboard learns it from traffic otherwise; this script never looks it up)" ""
   else
-    lowmem=off
+    self_addr=$self_address
+  fi
+  [[ -z $self_addr || $self_addr =~ ^[0-9A-Fa-f.:,]+$ ]] || die "the public address has unexpected characters"
+elif [ "$switching" = 1 ]; then
+  note "the install keeps its sensors, ports, volumes, secrets and network membership"
+elif [ "$repair" = 1 ]; then
+  note "settings kept as installed"
+fi
+
+# Participant consent: shown before the only prompt. --yes is the consent and skips the prompt.
+if [ "$stack" = participant ] && [ "$fresh" = 1 ]; then
+  if [ "$no_pseudonym" = 1 ]; then
+    pseudonym=""
+  elif [ -n "$pseudonym_arg" ]; then
+    pseudonym=$pseudonym_arg
+  else
+    pseudonym=$(pseudonym_random) || die "could not make a pseudonym"
+  fi
+  vpn_flag=0
+  [ -z "$wg_conf" ] || vpn_flag=1
+  echo
+  consent_screen "$pseudonym" "$vpn_flag"
+  if [ "$assume_yes" = 1 ]; then
+    echo "--yes was given: this counts as your agreement to join as described above."
+    echo
+  else
+    printf 'Join the Selfhostr network as described? [y/N] ' >&2
+    IFS= read -r a <&3 || a=""
+    case $a in
+      y | Y | yes | YES | Yes) ;;
+      *) echo "Not joined. Nothing was installed." >&2; log "consent declined"; exit 1 ;;
+    esac
   fi
 fi
-if [ "$lowmem" = on ] && [ ! -f docker-compose.lowmem.yml ]; then
-  die "this checkout has no docker-compose.lowmem.yml, so --lowmem on is not possible"
-fi
-
-ask update_check "Check once a day whether a newer release exists? (one anonymous request through the VPN, never installs anything) (y or n)" n
-case $update_check in y | Y | yes | true) update_check=true ;; *) update_check=false ;; esac
-
-if [ -z "$wg_conf" ]; then ask wg_conf "Path to a WireGuard .conf from your VPN provider (empty = upload it later in the dashboard)" ""; fi
-wg_private="" wg_peer="" wg_addr="" wg_dns="" wg_ep_ip="" wg_ep_port=""
-if [ -n "$wg_conf" ]; then
-  [ -f "$wg_conf" ] || die "WireGuard file not found: $wg_conf"
-  # Plain key = value parser: nothing in the file is ever executed.
-  section=""
-  while IFS= read -r line || [ -n "$line" ]; do
-    line=${line%%#*}
-    line=${line//$'\r'/}
-    case $line in
-      *"["*"]"*) section=$(printf %s "$line" | tr -d '[] \t' | tr '[:upper:]' '[:lower:]'); continue ;;
-    esac
-    [[ $line == *=* ]] || continue
-    k=$(printf %s "${line%%=*}" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')
-    v=$(printf %s "${line#*=}" | sed -e 's/^[ \t]*//' -e 's/[ \t]*$//')
-    case $section:$k in
-      interface:privatekey) wg_private=$v ;;
-      interface:address) wg_addr=$(printf %s "$v" | tr -d ' ') ;;
-      interface:dns) wg_dns=$(printf %s "$v" | tr -d ' ') ;;
-      peer:publickey) wg_peer=$v ;;
-      peer:endpoint)
-        wg_ep_port=${v##*:}
-        wg_ep_ip=${v%:*}
-        ;;
-    esac
-  done < "$wg_conf"
-  [ -n "$wg_private" ] && [ -n "$wg_peer" ] && [ -n "$wg_addr" ] && [ -n "$wg_ep_ip" ] && [ -n "$wg_ep_port" ] \
-    || die "the WireGuard file lacks PrivateKey, Address, PublicKey or Endpoint. Upload it in the dashboard instead."
-  [[ $wg_ep_ip =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] \
-    || die "the WireGuard Endpoint must be an IPv4 address, not a host name. Upload the file in the dashboard instead."
-  [[ $wg_ep_port =~ ^[0-9]{1,5}$ ]] || die "bad WireGuard Endpoint port"
-  for v in "$wg_private" "$wg_peer" "$wg_addr" "$wg_dns"; do
-    [[ $v =~ ^[A-Za-z0-9+/=_.,:-]*$ ]] || die "the WireGuard file has unexpected characters. Upload it in the dashboard instead."
-  done
-fi
-
-self_addr=""
-ask self_addr "Your own public address, if you know it (the dashboard learns it from traffic otherwise; this script never looks it up)" ""
-[[ -z $self_addr || $self_addr =~ ^[0-9A-Fa-f.:,]+$ ]] || die "the public address has unexpected characters"
 
 # ---------------------------------------------------------------- 3. ports
 step 3 "Checking ports"
@@ -325,6 +499,8 @@ declare -A sensor_off=()
 busy_ports=""
 if [ "$dry_run" = 1 ]; then
   note "dry run: port check skipped"
+elif [ "$repair" = 1 ]; then
+  note "ports kept as installed"
 elif command -v ss > /dev/null 2>&1; then
   busy_ports=$(ss -Hltnu 2> /dev/null | awk '{n = split($5, a, ":"); print a[n]}' | sort -un | tr '\n' ' ' || true)
 else
@@ -333,65 +509,76 @@ fi
 is_busy() { [[ " $busy_ports " == *" $1 "* ]]; }
 
 ssh_moved=0
-for s in "${chosen[@]}"; do
-  while IFS=: read -r var def _; do
-    port=$def
-    if is_busy "$port"; then
-      if [ "$s" = ssh ] && [ "$port" = 22 ]; then
-        note "Port 22 is used on this machine (its own sshd, most likely)."
-        ask a "SSH sensor: [m]ap it to host port 2222 and forward router port 22 to it, leave it [o]ff, or [k]eep 22 (you moved the admin SSH yourself)" m
-        case $a in
-          m | map) port_override[$var]=2222; ssh_moved=1 ;;
-          o | off) sensor_off[$s]=1 ;;
-          k | keep) die "port 22 is still in use. Move your admin SSH first (this script never edits sshd_config), then run the installer again." ;;
-          *) die "answer m, o or k" ;;
-        esac
-        [ "$assume_yes" = 1 ] && [ -z "${sensor_off[$s]:-}" ] && note "Mapped the SSH sensor to host port 2222."
-      elif [ "$assume_yes" = 1 ]; then
-        warn "port $port ($var) is in use: the $s sensor is left off. Free the port and run: just sensors ..."
-        sensor_off[$s]=1
-      else
-        ask a "Port $port ($var) is in use. Another host port, or 'off' to skip the $s sensor" off
-        if [ "$a" = off ]; then
+if [ "$fresh" = 1 ]; then
+  for s in "${chosen[@]}"; do
+    while IFS=: read -r var def _; do
+      port=$def
+      if is_busy "$port"; then
+        if [ "$s" = ssh ] && [ "$port" = 22 ]; then
+          note "Port 22 is used on this machine (its own sshd, most likely)."
+          ask a "SSH sensor: [m]ap it to host port 2222 and forward router port 22 to it, leave it [o]ff, or [k]eep 22 (you moved the admin SSH yourself)" m
+          case $a in
+            m | map) port_override[$var]=2222; ssh_moved=1 ;;
+            o | off) sensor_off[$s]=1 ;;
+            k | keep) die "port 22 is still in use. Move your admin SSH first (this script never edits sshd_config), then run the installer again." ;;
+            *) die "answer m, o or k" ;;
+          esac
+          [ "$noask" = 1 ] && [ -z "${sensor_off[$s]:-}" ] && note "Mapped the SSH sensor to host port 2222."
+        elif [ "$noask" = 1 ]; then
+          warn "port $port ($var) is in use: the $s sensor is left off. Free the port and run: just sensors ..."
           sensor_off[$s]=1
-        elif [[ $a =~ ^[0-9]{1,5}$ ]] && [ "$a" -ge 1 ] && [ "$a" -le 65535 ] && ! is_busy "$a"; then
-          port_override[$var]=$a
         else
-          die "'$a' is not a free port"
+          ask a "Port $port ($var) is in use. Another host port, or 'off' to skip the $s sensor" off
+          if [ "$a" = off ]; then
+            sensor_off[$s]=1
+          elif [[ $a =~ ^[0-9]{1,5}$ ]] && [ "$a" -ge 1 ] && [ "$a" -le 65535 ] && ! is_busy "$a"; then
+            port_override[$var]=$a
+          else
+            die "'$a' is not a free port"
+          fi
         fi
       fi
-    fi
-  done < <(sensor_ports "$s")
-done
-if [ "$dry_run" = 0 ] && is_busy "$dport"; then
+    done < <(sensor_ports "$s")
+  done
+fi
+if [ "$dry_run" = 0 ] && [ "$stack" = full ] && [ "$repair" = 0 ] && is_busy "$dport"; then
   die "the dashboard port $dport is in use on this machine; pass --dashboard-port with a free port"
 fi
-if [ -z "$admin_ssh_port" ]; then
-  if [ "$ssh_moved" = 1 ] || { [ "$dry_run" = 0 ] && is_busy 22; }; then admin_ssh_port=22; fi
-  if [ "$assume_yes" = 0 ]; then
-    ask admin_ssh_port "Port of this machine's own admin SSH (so no sensor can take it; empty = none)" "$admin_ssh_port"
+if [ "$fresh" = 1 ]; then
+  if [ -z "$admin_ssh_port" ]; then
+    if [ "$ssh_moved" = 1 ] || { [ "$dry_run" = 0 ] && is_busy 22; }; then admin_ssh_port=22; fi
+    if [ "$noask" = 0 ]; then
+      ask admin_ssh_port "Port of this machine's own admin SSH (so no sensor can take it; empty = none)" "$admin_ssh_port"
+    fi
   fi
+  [[ -z $admin_ssh_port || $admin_ssh_port =~ ^[0-9]{1,5}$ ]] || die "bad admin SSH port"
 fi
-[[ -z $admin_ssh_port || $admin_ssh_port =~ ^[0-9]{1,5}$ ]] || die "bad admin SSH port"
 
 # ---------------------------------------------------------------- 4. secrets
 step 4 "Generating secrets"
 declare -A secret=()
-declare -A seen=()
-for name in "${SECRET_VARS[@]}"; do
-  while :; do
-    value=$(gen_for "$name")
-    [ -z "${seen[$value]:-}" ] && break
+if [ "$fresh" = 1 ]; then
+  declare -A seen=()
+  for name in "${SECRET_VARS[@]}"; do
+    while :; do
+      value=$(gen_for "$name")
+      [ -z "${seen[$value]:-}" ] && break
+    done
+    seen[$value]=1
+    secret[$name]=$value
   done
-  seen[$value]=1
-  secret[$name]=$value
-done
-unset seen
-note "${#SECRET_VARS[@]} secrets generated (written to .env only)"
+  unset seen
+  note "${#SECRET_VARS[@]} secrets generated (written to .env only)"
+else
+  note "secrets kept as installed"
+fi
 
-# ---------------------------------------------------------------- 5. admin hash
-step 5 "Hashing the admin password"
-version=${version:-}
+# ---------------------------------------------------------------- 5. admin hash / image check
+if [ "$stack" = participant ]; then
+  step 5 "Checking the images (no admin account in participant mode)"
+else
+  step 5 "Hashing the admin password"
+fi
 if [ "$mode" = images ] && [ -z "$version" ]; then
   version=$(git describe --tags --exact-match HEAD 2> /dev/null || true)
 fi
@@ -401,111 +588,224 @@ if [ "$mode" = images ]; then
   fi
   [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ || ( $dry_run = 1 && $version = dev ) ]] || die "--version must look like v1.2.3"
 fi
-image_prefix=${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}
+if [ "$existing" = 1 ]; then
+  image_prefix=$(env_get SUCKERPOT_IMAGE_PREFIX "${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}")
+else
+  image_prefix=${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}
+fi
 [[ $image_prefix =~ ^ghcr\.io/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$ ]] \
   || die "SUCKERPOT_IMAGE_PREFIX must look like ghcr.io/<owner>/<name>"
-if [ "$dry_run" = 1 ]; then
-  hash='$argon2id$v=19$m=65536,t=3,p=4$cGxhY2Vob2xkZXI$cGxhY2Vob2xkZXItaGFzaC1ub3QtcmVhbA'
-  note "dry run: placeholder hash"
-else
-  if [ "$mode" = images ]; then
-    api_image="${image_prefix}-api:${version}"
-    if [ "$skip_verify" = 1 ]; then
-      docker pull "$api_image" > /dev/null || die "could not pull $api_image"
-    else
-      # Verify before the image ever runs (it hashes the password): pulled by the verified digest.
-      SUCKERPOT_IMAGE_PREFIX=$image_prefix bash scripts/verify-images.sh --pull --only api "$version" \
-        || die "the api image could not be verified, so it was not run. Check the version, or only if you accept the risk: --skip-verify"
-    fi
+hash=""
+if [ "$stack" = participant ]; then
+  if [ "$repair" = 1 ]; then
+    note "nothing to do"
+  elif [ "$dry_run" = 1 ] || [ "$mode" = source ]; then
+    note "no image check needed here"
+  elif [ "$skip_verify" = 1 ]; then
+    docker pull "${image_prefix}-ingest:${version}" > /dev/null || die "could not pull ${image_prefix}-ingest:${version}"
   else
-    api_image=suckerpot-install-api
-    docker build -q -f api/Dockerfile -t "$api_image" . > /dev/null || die "could not build the api image"
+    SUCKERPOT_IMAGE_PREFIX=$image_prefix bash scripts/verify-images.sh --pull --only ingest "$version" \
+      || die "the ingest image could not be verified, so nothing was started. Check the version, or only if you accept the risk: --skip-verify"
   fi
-  hash=$(printf '%s\n' "$pw" | docker run --rm -i --network none --cap-drop ALL \
-    --security-opt no-new-privileges:true "$api_image" python -m api.hashpw --stdin) \
-    || die "could not hash the admin password"
-  hash=${hash//$'\r'/}
+  if [ "$fresh" = 1 ]; then
+    # Inert placeholders: the dashboard (api) never starts in participant mode, so nothing reads this
+    # hash. It is random, so it matches no password; it only satisfies the base file's required check.
+    hash="\$argon2id\$v=19\$m=65536,t=3,p=4\$$(gen_secret 22)\$$(gen_secret 43)"
+  fi
+elif [ "$dash" = 1 ]; then
+  if [ "$dry_run" = 1 ]; then
+    hash='$argon2id$v=19$m=65536,t=3,p=4$cGxhY2Vob2xkZXI$cGxhY2Vob2xkZXItaGFzaC1ub3QtcmVhbA'
+    note "dry run: placeholder hash"
+  else
+    if [ "$mode" = images ]; then
+      api_image="${image_prefix}-api:${version}"
+      if [ "$skip_verify" = 1 ]; then
+        docker pull "$api_image" > /dev/null || die "could not pull $api_image"
+      else
+        # Verify before the image ever runs (it hashes the password): pulled by the verified digest.
+        SUCKERPOT_IMAGE_PREFIX=$image_prefix bash scripts/verify-images.sh --pull --only api "$version" \
+          || die "the api image could not be verified, so it was not run. Check the version, or only if you accept the risk: --skip-verify"
+      fi
+    else
+      api_image=suckerpot-install-api
+      docker build -q -f api/Dockerfile -t "$api_image" . > /dev/null || die "could not build the api image"
+    fi
+    hash=$(printf '%s\n' "$pw" | docker run --rm -i --network none --cap-drop ALL \
+      --security-opt no-new-privileges:true "$api_image" python -m api.hashpw --stdin) \
+      || die "could not hash the admin password"
+    hash=${hash//$'\r'/}
+  fi
 fi
-case $hash in '$argon2'*) ;; *) die "the password hasher returned something unexpected" ;; esac
+if [ "$repair" = 0 ] && { [ "$stack" = participant ] && [ "$fresh" = 1 ] || [ "$dash" = 1 ]; }; then
+  case $hash in '$argon2'*) ;; *) die "the password hasher returned something unexpected" ;; esac
+fi
 if [ "$pw_stdin" = 1 ] || [ "$pw_generated" = 0 ]; then pw=""; fi
 
 # ---------------------------------------------------------------- 6. .env
-step 6 "Writing $target"
-umask 077
-tmp="${target}.tmp"
-rm -f "$tmp"
-trap 'rm -f "$tmp"' EXIT
-cp .env.example "$tmp"
-chmod 600 "$tmp"
-
-setv() { env_set_line "$tmp" "$1" "$2"; }
-
-setv COMPOSE_PROJECT_NAME "$project"
-setv SUCKERPOT_VOLUME_PREFIX "$prefix"
-for name in "${SECRET_VARS[@]}"; do setv "$name" "${secret[$name]}"; done
-unset secret
-setv ADMIN_USERNAME "$admin_user"
-setv ADMIN_PASSWORD_HASH "'$hash'"
-unset hash
-setv DASHBOARD_BIND "$bind"
-setv DASHBOARD_PORT "$dport"
-if [ -n "$public_host" ]; then
-  setv API_ALLOWED_HOSTS "$public_host"
-  setv API_ALLOWED_ORIGINS "https://$public_host"
-  setv COOKIE_SECURE true
-elif [ "$allow_lan" = 1 ] && [[ $bind != 127.* ]]; then
-  # Plain http on a network address: browsers refuse Secure cookies there.
-  setv COOKIE_SECURE false
+if [ "$repair" = 1 ]; then
+  step 6 "Keeping .env as it is"
 else
-  # http://127.0.0.1 and http://localhost accept Secure cookies, so the safe value stays on.
-  setv COOKIE_SECURE true
-fi
-[ -n "$admin_ssh_port" ] && setv ADMIN_SSH_PORT "$admin_ssh_port"
-[ -n "$self_addr" ] && setv INDICATORS_IGNORE "$self_addr"
-setv COMPOSE_PROFILES egress
-if [ -n "$wg_conf" ]; then
-  setv VPN_WG_PRIVATE_KEY "$wg_private"
-  setv VPN_WG_PEER_PUBLIC_KEY "$wg_peer"
-  setv VPN_WG_ADDRESSES "$wg_addr"
-  [ -n "$wg_dns" ] && setv VPN_WG_DNS "$wg_dns"
-  setv VPN_WG_ENDPOINT_IP "$wg_ep_ip"
-  setv VPN_WG_ENDPOINT_PORT "$wg_ep_port"
-  wg_private="" wg_peer=""
-fi
-
-printf '\n# Added by the Selfhostr installer\n' >> "$tmp"
-setv UPDATE_CHECK_ENABLED "$update_check"
-setv SUCKERPOT_INSTALL_MODE "$mode"
-if [ "$mode" = images ]; then
-  setv SUCKERPOT_IMAGE_PREFIX "$image_prefix"
-  setv SUCKERPOT_VERSION "$version"
-fi
-for s in "${SENSORS[@]}"; do
-  if sensor_on "$s" && [ -z "${sensor_off[$s]:-}" ]; then v=1; else v=0; fi
-  setv "$(sensor_var "$s")" "$v"
-done
-for var in "${!port_override[@]}"; do setv "$var" "${port_override[$var]}"; done
-if [ "$lowmem" = on ]; then setv COMPOSE_FILE docker-compose.yml:docker-compose.lowmem.yml; fi
-
-# Final checks on the file before it goes live.
-if grep -v '^[[:space:]]*#' "$tmp" | grep -q 'change-me'; then
+  step 6 "Writing $target"
+  umask 077
+  tmp="${target}.tmp"
   rm -f "$tmp"
-  die "a placeholder (change-me) is still in the generated file"
-fi
-ENV_FILE=$tmp
-export ENV_FILE
-for name in "${SECRET_VARS[@]}"; do
-  v=$(env_get "$name")
-  if [ "${#v}" -lt 24 ]; then
-    rm -f "$tmp"
-    die "$name is missing or shorter than 24 characters in the generated file"
+  trap 'rm -f "$tmp"' EXIT
+  if [ "$switching" = 1 ]; then cp .env "$tmp"; else cp .env.example "$tmp"; fi
+  chmod 600 "$tmp"
+
+  setv() { env_set_line "$tmp" "$1" "$2"; }
+
+  if [ "$switching" = 1 ]; then
+    # Only the lines that make the stack a participant stack change; secrets, volume prefix,
+    # sensors, ports, network lines and the update choice stay.
+    cf=$(env_get COMPOSE_FILE docker-compose.yml)
+    cf=${cf//:docker-compose.participant.yml/}
+    cf=${cf//docker-compose.participant.yml:/}
+    [ "$cf" != docker-compose.participant.yml ] || cf=docker-compose.yml
+    setv SUCKERPOT_STACK_MODE full
+    setv COMPOSE_FILE "$cf"
+    setv COMPOSE_PROFILES egress
+    setv EGRESS_MODE vpn
+    setv EGRESS_PROXY_URL http://vpn:8888
+    setv EGRESS_CONTROL_URL http://vpn:8000
+    env_del_line "$tmp" HUBPROXY_ALLOW
+    setv SELF_TERMS_AUTO_CONFIRM false
+    [ "$keep_auto" = yes ] || setv AUTO_UPDATE_ENABLED false
+  else
+    setv COMPOSE_PROJECT_NAME "$project"
+    setv SUCKERPOT_VOLUME_PREFIX "$prefix"
+    for name in "${SECRET_VARS[@]}"; do setv "$name" "${secret[$name]}"; done
+    unset secret
   fi
-done
-unset ENV_FILE
-mv "$tmp" "$target"
-trap - EXIT
-chmod 600 "$target"
-note "wrote $target (mode 0600)"
+  if [ -n "$hash" ]; then setv ADMIN_PASSWORD_HASH "'$hash'"; fi
+  unset hash
+  if [ "$dash" = 1 ]; then
+    setv ADMIN_USERNAME "$admin_user"
+    setv DASHBOARD_BIND "$bind"
+    setv DASHBOARD_PORT "$dport"
+    if [ -n "$public_host" ]; then
+      setv API_ALLOWED_HOSTS "$public_host"
+      setv API_ALLOWED_ORIGINS "https://$public_host"
+      setv COOKIE_SECURE true
+    elif [ "$allow_lan" = 1 ] && [[ $bind != 127.* ]]; then
+      # Plain http on a network address: browsers refuse Secure cookies there.
+      setv COOKIE_SECURE false
+    else
+      # http://127.0.0.1 and http://localhost accept Secure cookies, so the safe value stays on.
+      setv COOKIE_SECURE true
+    fi
+  fi
+  if [ "$fresh" = 1 ]; then
+    [ -n "$admin_ssh_port" ] && setv ADMIN_SSH_PORT "$admin_ssh_port"
+    [ -n "$self_addr" ] && setv INDICATORS_IGNORE "$self_addr"
+    if [ "$stack" = full ]; then setv COMPOSE_PROFILES egress; fi
+    if [ -n "$wg_conf" ]; then
+      setv VPN_WG_PRIVATE_KEY "$wg_private"
+      setv VPN_WG_PEER_PUBLIC_KEY "$wg_peer"
+      setv VPN_WG_ADDRESSES "$wg_addr"
+      [ -n "$wg_dns" ] && setv VPN_WG_DNS "$wg_dns"
+      setv VPN_WG_ENDPOINT_IP "$wg_ep_ip"
+      setv VPN_WG_ENDPOINT_PORT "$wg_ep_port"
+      wg_private="" wg_peer=""
+    fi
+
+    printf '\n# Added by the Selfhostr installer\n' >> "$tmp"
+    setv UPDATE_CHECK_ENABLED "$update_check"
+    setv SUCKERPOT_INSTALL_MODE "$mode"
+    if [ "$mode" = images ]; then
+      setv SUCKERPOT_IMAGE_PREFIX "$image_prefix"
+      setv SUCKERPOT_VERSION "$version"
+    fi
+    for s in "${SENSORS[@]}"; do
+      if sensor_on "$s" && [ -z "${sensor_off[$s]:-}" ]; then v=1; else v=0; fi
+      setv "$(sensor_var "$s")" "$v"
+    done
+    for var in "${!port_override[@]}"; do setv "$var" "${port_override[$var]}"; done
+
+    if [ "$stack" = full ]; then
+      if [ "$lowmem" = on ]; then setv COMPOSE_FILE docker-compose.yml:docker-compose.lowmem.yml; fi
+    else
+      # Participant mode (docs/design/m32.md section 4.1). The hub address and key are NOT copied:
+      # ingest reads the defaults baked into the signed image; an explicit value here would win.
+      cf=docker-compose.yml
+      if [ "$lowmem" = on ]; then cf="$cf:docker-compose.lowmem.yml"; fi
+      setv COMPOSE_FILE "$cf:docker-compose.participant.yml"
+      setv SUCKERPOT_STACK_MODE participant
+      if [ -n "$wg_conf" ]; then
+        setv COMPOSE_PROFILES egress
+        setv EGRESS_MODE vpn
+        setv EGRESS_PROXY_URL http://vpn:8888
+        setv EGRESS_CONTROL_URL http://vpn:8000
+      else
+        setv COMPOSE_PROFILES direct
+        setv EGRESS_MODE direct
+        setv EGRESS_PROXY_URL http://hubproxy:8888
+        setv EGRESS_CONTROL_URL http://hubproxy:8000
+        allow=$(hubproxy_allow "$feeds") || die "could not read the hub address from config/network-defaults.env"
+        setv HUBPROXY_ALLOW "$allow"
+      fi
+      if [ "$feeds" = 1 ]; then setv NETWORK_FEED_ENABLED true; fi
+      setv NETWORK_ENABLED true
+      setv NETWORK_CONSENT "$(consent_record)"
+      case $pseudonym in
+        *" "*) setv NETWORK_PSEUDONYM "'$pseudonym'" ;;
+        *) setv NETWORK_PSEUDONYM "$pseudonym" ;;
+      esac
+      if [ -n "$country" ]; then
+        setv NETWORK_COUNTRY "$country"
+        if [ "$show_country" = 1 ]; then setv NETWORK_SHOW_COUNTRY true; fi
+      fi
+      setv SELF_TERMS_AUTO_CONFIRM true
+      [ -n "$self_addr" ] && setv SELF_ADDRESS "$self_addr"
+      setv NETWORK_VERIFY_REVEALS true
+      setv DB_MAX_SIZE_GB 4
+      if [ "$verifier" = 1 ]; then
+        setv NETWORK_VERIFIER true
+        setv COLLECTOR_ENABLED true
+        setv COLLECTOR_VERIFY_ENABLED true
+      fi
+      if [ "$no_auto_update" = 1 ] || [ "$mode" != images ]; then
+        setv AUTO_UPDATE_ENABLED false
+        if [ "$mode" != images ] && [ "$no_auto_update" = 0 ]; then
+          note "automatic updates need the signed release images, so they stay off in source mode"
+        fi
+      else
+        setv AUTO_UPDATE_ENABLED true
+      fi
+    fi
+  fi
+
+  # Final checks on the file before it goes live.
+  if grep -v '^[[:space:]]*#' "$tmp" | grep -q 'change-me'; then
+    rm -f "$tmp"
+    die "a placeholder (change-me) is still in the generated file"
+  fi
+  ENV_FILE=$tmp
+  export ENV_FILE
+  for name in "${SECRET_VARS[@]}"; do
+    v=$(env_get "$name")
+    if [ "${#v}" -lt 24 ]; then
+      rm -f "$tmp"
+      die "$name is missing or shorter than 24 characters in the generated file"
+    fi
+  done
+  unset ENV_FILE
+  if [ "$switching" = 1 ]; then
+    # A backup of the participant database first. If it fails, .env is left exactly as it was.
+    note "taking a database backup before the switch"
+    if ! docker compose exec -T backup /bin/sh /backup-service.sh now preswitch; then
+      rm -f "$tmp"
+      die "the backup before the switch failed; nothing was changed"
+    fi
+    # Keep a copy of the participant .env until the switch has worked.
+    cp -p .env .env.participant.bak
+    chmod 600 .env.participant.bak
+  fi
+  mv "$tmp" "$target"
+  trap - EXIT
+  chmod 600 "$target"
+  note "wrote $target (mode 0600)"
+fi
 
 if [ "$dry_run" = 1 ]; then
   echo
@@ -522,13 +822,23 @@ step 8 "Checking the port layout and VPN settings"
 scripts/check-ports.sh
 # Empty VPN_WG_* values are valid (the vpn container idles until a file is uploaded), so this
 # always runs: it still checks the egress passwords and any WireGuard values that were written.
+# It does nothing unless the egress profile is on.
 scripts/check-vpn-env.sh
-if [ -z "$wg_conf" ]; then
+if [ "$stack" = participant ]; then
+  scripts/check-participant.sh
+elif [ -z "$(env_get VPN_WG_PRIVATE_KEY)" ]; then
   note "no WireGuard file given: upload it in the dashboard (Settings > VPN); the gate stays closed until then"
 fi
 
 # ---------------------------------------------------------------- 9. start
 step 9 "Starting Selfhostr (this can take several minutes)"
+up_extra=()
+if [ "$switching" = 1 ]; then
+  # hubproxy goes away, api and vpn start. A service of a profile that is no longer on is not an
+  # orphan to compose, so it is stopped by name.
+  docker compose --profile direct rm -sf hubproxy > /dev/null 2>&1 || true
+  up_extra=(--remove-orphans)
+fi
 if [ "$mode" = images ]; then
   if [ "$skip_verify" = 1 ]; then
     warn "--skip-verify: the image signatures were NOT checked"
@@ -538,24 +848,89 @@ if [ "$mode" = images ]; then
     # Our images are now local (pulled by verified digest); this fetches only the pinned third-party ones.
     docker compose pull --policy missing || die "could not pull the remaining images (database, VPN). Check your network, then run: docker compose pull --policy missing"
   fi
-  docker compose up -d --no-build --pull never --wait --wait-timeout 600 || die "the stack did not become healthy. See: docker compose ps, docker compose logs"
+  docker compose up -d --no-build --pull never --wait --wait-timeout 600 ${up_extra[@]+"${up_extra[@]}"} || die "the stack did not become healthy. See: docker compose ps, docker compose logs"
 else
   SUCKERPOT_BUILD_VERSION=$(git describe --tags --always --dirty 2> /dev/null || echo dev)
   SUCKERPOT_BUILD_COMMIT=$(git rev-parse --short HEAD 2> /dev/null || echo unknown)
   export SUCKERPOT_BUILD_VERSION SUCKERPOT_BUILD_COMMIT
-  docker compose up -d --build --wait --wait-timeout 900 || die "the stack did not become healthy. See: docker compose ps, docker compose logs"
+  docker compose up -d --build --wait --wait-timeout 900 ${up_extra[@]+"${up_extra[@]}"} || die "the stack did not become healthy. See: docker compose ps, docker compose logs"
 fi
-hbind=$bind
-[ "$hbind" = 0.0.0.0 ] && hbind=127.0.0.1
-ok=0
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if curl -fsS --max-time 5 "http://$hbind:$dport/healthz" > /dev/null 2>&1; then ok=1; break; fi
-  sleep 3
-done
-[ "$ok" = 1 ] || die "the dashboard does not answer on http://$hbind:$dport/healthz. See: docker compose logs api"
+if [ "$stack" = full ]; then
+  if [ "$repair" = 1 ]; then
+    bind=$(env_get DASHBOARD_BIND 127.0.0.1)
+    dport=$(env_get DASHBOARD_PORT 8443)
+    public_host=""
+  fi
+  hbind=$bind
+  [ "$hbind" = 0.0.0.0 ] && hbind=127.0.0.1
+  ok=0
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if curl -fsS --max-time 5 "http://$hbind:$dport/healthz" > /dev/null 2>&1; then ok=1; break; fi
+    sleep 3
+  done
+  [ "$ok" = 1 ] || die "the dashboard does not answer on http://$hbind:$dport/healthz. See: docker compose logs api"
+fi
 
 # ---------------------------------------------------------------- 10. summary
 step 10 "Done"
+
+# Automatic updates: the schedule is a line in the crontab of this user (or a systemd user timer).
+sched=off
+if [ "$stack" = participant ] || [ "$switching" = 1 ]; then
+  # shellcheck source=scripts/lib/schedule.sh
+  . scripts/lib/schedule.sh
+  if [ "$switching" = 1 ] && [ "$keep_auto" = no ]; then
+    schedule_remove || warn "could not remove the update schedule; see ./scripts/participant.sh auto-update off"
+  elif [ "$(env_get AUTO_UPDATE_ENABLED false)" = true ]; then
+    if sched=$(schedule_status 2> /dev/null); then
+      :
+    else
+      read -r sh sm < <(schedule_random_time)
+      if schedule_install "$sh" "$sm"; then
+        sched=$(schedule_status || echo off)
+      else
+        warn "could not schedule the automatic updates. Update by hand with: just update"
+        env_set_line .env AUTO_UPDATE_ENABLED false
+        sched=off
+      fi
+    fi
+  fi
+fi
+
+if [ "$stack" = participant ]; then
+  hub_host=$(url_host "$(env_get NETWORK_HUB_URL "$(network_default NETWORK_HUB_URL)")")
+  if [ "$fresh" = 0 ]; then
+    pseudonym=$(sed -n 's/^NETWORK_PSEUDONYM=//p' .env | tail -n 1 | tr -d "\"'\r")
+  fi
+  if [ -n "$(env_get VPN_WG_PRIVATE_KEY)" ]; then path="through your VPN"; else path="direct (no VPN)"; fi
+  echo
+  if [ "$repair" = 1 ]; then echo "Selfhostr is repaired and running in participant mode (${version:-source build})."; else echo "Selfhostr is running in participant mode (${version:-source build})."; fi
+  echo "  Pseudonym: ${pseudonym:-none}   Hub: ${hub_host:-unknown}   Path: $path"
+  echo
+  echo "Open these ports on your router or firewall, all to this machine:"
+  printf '  %-12s  ->  %-12s  %-9s  %s\n' "Router port" "This machine" "Protocol" "Sensor"
+  while read -r rp hp proto sname; do
+    printf '  %-12s  ->  %-12s  %-9s  %s\n' "$rp" "$hp" "$proto" "$sname"
+  done < <(ports_table)
+  adm=$(env_get ADMIN_SSH_PORT)
+  if [ -n "$adm" ]; then
+    echo "Never forward your admin SSH port ($adm on this machine)."
+  else
+    echo "Never forward the admin SSH port of this machine."
+  fi
+  echo
+  echo "Check it any time:      ./scripts/status.sh"
+  case $sched in
+    "cron "* | "systemd "*) echo "Automatic updates:      daily at ${sched#* } local time (off: ./scripts/participant.sh auto-update off)" ;;
+    *) echo "Automatic updates:      off (on: ./scripts/participant.sh auto-update on)" ;;
+  esac
+  if [ "$repair" = 0 ]; then
+    echo "The network counts your sensor from $(date -u -d '+14 days' +%Y-%m-%d) (14 days after joining)."
+  fi
+  echo "Take a snapshot of this machine now if you can."
+  exit 0
+fi
+
 echo
 echo "Selfhostr is running."
 if [ -n "$public_host" ]; then
@@ -567,12 +942,18 @@ else
     echo "    ssh -L $dport:127.0.0.1:$dport <you>@<this-host>"
   fi
 fi
-echo "  Admin user: $admin_user"
+echo "  Admin user: $(env_get ADMIN_USERNAME)"
 if [ "$pw_generated" = 1 ]; then
   echo "  Admin password (shown once, store it in your password manager now): $pw"
 fi
 pw=""
 echo
+if [ "$switching" = 1 ]; then
+  echo "Switched from participant mode to full mode. Your data and your network membership are kept."
+  echo "Without a VPN file the network worker waits until you upload one in Settings > VPN."
+  echo "The settings of the participant install are in .env.participant.bak (delete it once all is well)."
+  echo
+fi
 echo "Next steps:"
 echo "  1. Sign in. The setup opens by itself."
 echo "  2. Forward the ports listed on the Ports page of the dashboard on your router."

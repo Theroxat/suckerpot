@@ -20,7 +20,7 @@ SECRET_VARS=(
 NO_MIGRATE_SECRET_VARS=(POSTGRES_PASSWORD)
 
 # Non-secret variables env-migrate.sh adds (with this default) to an .env that lacks them.
-MIGRATE_DEFAULTS=(SUCKERPOT_INSTALL_MODE=source)
+MIGRATE_DEFAULTS=(SUCKERPOT_INSTALL_MODE=source SUCKERPOT_STACK_MODE=full AUTO_UPDATE_ENABLED=false)
 
 SENSORS=(ssh telnet web rdp redis docker mysql adb mssql smb sip synology)
 RECOMMENDED_SENSORS=(ssh telnet web redis docker adb)
@@ -29,8 +29,9 @@ RECOMMENDED_SENSORS=(ssh telnet web redis docker adb)
 SETTABLE_VARS=(
   '*_ENABLED' '*_HOST_PORT' DASHBOARD_BIND DASHBOARD_PORT COOKIE_SECURE
   API_ALLOWED_HOSTS API_ALLOWED_ORIGINS INDICATORS_IGNORE 'SITE_*' 'SENSOR_*'
-  NETWORK_ENABLED NETWORK_HUB_URL NETWORK_HUB_KEY
+  NETWORK_ENABLED NETWORK_HUB_URL NETWORK_HUB_KEY NETWORK_VERIFY_REVEALS NETWORK_VERIFIER
 )
+# NETWORK_CONSENT is deliberately absent: only scripts/participant.sh join writes it.
 
 # Prints "ENV_VAR:default_host_port:protocols" lines for a sensor (the single port table).
 sensor_ports() {
@@ -190,4 +191,151 @@ env_drop_loaded() {
     case $name in PATH | HOME | PWD | SHELL | USER | LANG | TERM | BASH_ENV | ENV | IFS | ENV_FILE) continue ;; esac
     unset "$name" 2> /dev/null || true
   done < <(sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' "$file")
+}
+
+# ----------------------------------------------------------------------- participant mode (M32)
+
+# Reads NAME from config/network-defaults.env (the public defaults shipped with each release).
+# Prints nothing when the file or the name is missing.
+network_default() {
+  [ -f config/network-defaults.env ] || return 0
+  sed -n "s/^$1=//p" config/network-defaults.env | tail -n 1 | tr -d "\"' \r"
+}
+
+# Prints the host name of an https URL (no port, no path).
+url_host() {
+  local h=${1#https://}
+  h=${h%%/*}
+  printf '%s' "${h%%:*}"
+}
+
+# Prints the HUBPROXY_ALLOW value: the hub host, plus the feed host when $1 is 1. The hub and feed
+# URLs come from .env when set there, else from the shipped defaults.
+hubproxy_allow() {
+  local hub feed out
+  hub=$(env_get NETWORK_HUB_URL "$(network_default NETWORK_HUB_URL)")
+  feed=$(env_get NETWORK_FEED_URL "$(network_default NETWORK_FEED_URL)")
+  hub=$(url_host "$hub")
+  [ -n "$hub" ] || return 1
+  out="$hub:443"
+  if [ "${1:-0}" = 1 ]; then
+    feed=$(url_host "$feed")
+    [ -n "$feed" ] || return 1
+    out="$out,$feed:443"
+  fi
+  printf '%s' "$out"
+}
+
+# Reads a WireGuard .conf as plain text (nothing in it is ever executed) and sets the globals
+# wg_private, wg_peer, wg_addr, wg_dns, wg_ep_ip and wg_ep_port. $2 is appended to the error text.
+# Prints the reason on stderr and returns 1 when the file cannot be used. Never prints a value.
+wg_parse_conf() {
+  local file=$1 hint=${2:-} section="" line k v
+  wg_private="" wg_peer="" wg_addr="" wg_dns="" wg_ep_ip="" wg_ep_port=""
+  [ -f "$file" ] || { echo "WireGuard file not found: $file" >&2; return 1; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%%#*}
+    line=${line//$'\r'/}
+    case $line in
+      *"["*"]"*) section=$(printf %s "$line" | tr -d '[] \t' | tr '[:upper:]' '[:lower:]'); continue ;;
+    esac
+    [[ $line == *=* ]] || continue
+    k=$(printf %s "${line%%=*}" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')
+    v=$(printf %s "${line#*=}" | sed -e 's/^[ \t]*//' -e 's/[ \t]*$//')
+    case $section:$k in
+      interface:privatekey) wg_private=$v ;;
+      interface:address) wg_addr=$(printf %s "$v" | tr -d ' ') ;;
+      interface:dns) wg_dns=$(printf %s "$v" | tr -d ' ') ;;
+      peer:publickey) wg_peer=$v ;;
+      peer:endpoint)
+        wg_ep_port=${v##*:}
+        wg_ep_ip=${v%:*}
+        ;;
+    esac
+  done < "$file"
+  if [ -z "$wg_private" ] || [ -z "$wg_peer" ] || [ -z "$wg_addr" ] || [ -z "$wg_ep_ip" ] || [ -z "$wg_ep_port" ]; then
+    echo "the WireGuard file lacks PrivateKey, Address, PublicKey or Endpoint.$hint" >&2
+    return 1
+  fi
+  if ! [[ $wg_ep_ip =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+    echo "the WireGuard Endpoint must be an IPv4 address, not a host name.$hint" >&2
+    return 1
+  fi
+  if ! [[ $wg_ep_port =~ ^[0-9]{1,5}$ ]]; then
+    echo "bad WireGuard Endpoint port" >&2
+    return 1
+  fi
+  for v in "$wg_private" "$wg_peer" "$wg_addr" "$wg_dns"; do
+    if ! [[ $v =~ ^[A-Za-z0-9+/=_.,:-]*$ ]]; then
+      echo "the WireGuard file has unexpected characters.$hint" >&2
+      return 1
+    fi
+  done
+  return 0
+}
+
+# Prints the router-port table of the enabled sensors from ${ENV_FILE:-.env}:
+# "router_port host_port protocol sensor" per line. The router port is the standard port of the
+# service; the host port is where the container is published on this machine.
+ports_table() {
+  local s var def proto host
+  for s in "${SENSORS[@]}"; do
+    [ "$(env_get "$(sensor_var "$s")" 1)" = 0 ] && continue
+    while IFS=: read -r var def proto; do
+      host=$(env_get "$var" "$def")
+      printf '%s %s %s %s\n' "$def" "$host" "$(printf %s "$proto" | tr 'a-z,' 'A-Z/')" "$s"
+    done < <(sensor_ports "$s")
+  done
+}
+
+# Removes every active assignment of NAME from FILE (comments and other lines stay).
+env_del_line() {
+  local file=$1 name=$2 tmp
+  tmp=$(mktemp "${file}.XXXXXX")
+  grep -v "^$name=" "$file" > "$tmp" || true
+  chmod --reference="$file" "$tmp" 2> /dev/null || chmod 600 "$tmp"
+  mv "$tmp" "$file"
+}
+
+# Version of the consent text, and what the participant agrees to share.
+CONSENT_VERSION=v1
+CONSENT_ITEMS=sources,payloads,c2,files,rechecks,verify_reveals
+
+# Prints the NETWORK_CONSENT record for today (UTC): version, consent list, day.
+consent_record() {
+  printf '%s:%s:%s' "$CONSENT_VERSION" "$CONSENT_ITEMS" "$(date -u +%Y-%m-%d)"
+}
+
+# Prints the consent screen. $1 = pseudonym (empty = none), $2 = 1 when a VPN is used.
+# The installer and `participant.sh join` print the same text.
+consent_screen() {
+  local pseudonym=$1 vpn=${2:-0}
+  echo "Selfhostr participant mode"
+  echo
+  echo "This machine will run honeypot sensors and share what they see with the Selfhostr network:"
+  echo "  - addresses that attacked your sensors, with the services they used, what they did and"
+  echo "    rounded counts, once a day and a few hours late;"
+  echo "  - download links attackers tried, as hashes; the clear link goes to the hub only when two or"
+  echo "    more sensors saw the same link, so a verifier can check it;"
+  echo "  - malware hashes and command-and-control addresses (only with a VPN and the collector);"
+  echo "  - takedown checks for addresses the network reported."
+  echo "Never shared: passwords, commands, your ports, your own address or names in any payload."
+  echo
+  if [ "$vpn" = 1 ]; then
+    echo "All of it leaves through your VPN: the hub sees the VPN's address, not this machine's."
+    echo "Remove the VPN at any time: ./scripts/participant.sh vpn --remove"
+  else
+    echo "Without a VPN, the hub (and the tunnel provider in front of it) sees this machine's public"
+    echo "address when it connects. The hub stores and logs none, but it is not hidden. Add a VPN at"
+    echo "any time: ./scripts/participant.sh vpn <file.conf>"
+  fi
+  echo "Updates: signed releases install themselves once a day (turn off: --no-auto-update)."
+  echo "Leave at any time: ./scripts/participant.sh leave"
+  echo
+  if [ -n "$pseudonym" ]; then
+    echo "Pseudonym: $pseudonym   (change: --pseudonym NAME, none: --no-pseudonym)"
+  else
+    echo "Pseudonym: none (the network shows an anonymous node number)"
+  fi
+  echo
 }
