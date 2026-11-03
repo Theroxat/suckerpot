@@ -46,6 +46,10 @@ MAX_FILES = 1000
 MAX_REVEALS = 200
 MAX_RECHECKS = 500
 MAX_TARGETS_PER_PULL = 1000
+MAX_VERIFY_REVEALS = 200
+MAX_VERIFY_TASKS = 20
+MAX_VERIFY_RESULTS = 50
+MAX_VERIFY_FILE_SIZE = 67_108_864  # 64 MiB
 
 _DOC_NETS = tuple(
     ipaddress.ip_network(n)
@@ -59,6 +63,8 @@ _EMBEDDING_NETS = tuple(
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _COUNTRY = re.compile(r"^[A-Z]{2}$")
 _TARGET_ID = re.compile(r"^t_[0-9a-f]{12}$")
+_VERIFY_ID = re.compile(r"^v_[0-9a-f]{12}$")
+_UTC_STAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 def parse_global_ip(value: str, *, allow_documentation: bool = False) -> str:
@@ -455,6 +461,78 @@ class RechecksRequest(ProtoModel):
 class AcceptedCount(ProtoModel):
     accepted: int
     rejected: int = 0
+
+
+# --- verification (design M32 section 6.2) ---
+
+VERIFY_OUTCOMES: tuple[str, ...] = (
+    "fetched",
+    "unreachable",
+    "http_error",
+    "too_large",
+    "timeout",
+    "refused",
+    "skipped",
+)
+VerifyId = Annotated[str, Field(pattern=_VERIFY_ID.pattern)]
+
+
+class VerifyRevealRef(ProtoModel):
+    """A blinded link the caller reported and the hub waits to see in clear."""
+
+    kind: Literal["url"]
+    value_b: Hex64
+
+
+class VerifyRevealsResponse(ProtoModel):
+    items: Annotated[list[VerifyRevealRef], Field(max_length=MAX_VERIFY_REVEALS)]
+
+
+class VerifyTask(ProtoModel):
+    id: VerifyId
+    url: Annotated[str, Field(min_length=1, max_length=2048)]
+    lease_until: Annotated[str, Field(pattern=_UTC_STAMP.pattern)]
+
+
+class VerifyTasksResponse(ProtoModel):
+    tasks: Annotated[list[VerifyTask], Field(max_length=MAX_VERIFY_TASKS)]
+
+    @model_validator(mode="after")
+    def _unique_ids(self) -> VerifyTasksResponse:
+        _unique([t.id for t in self.tasks])
+        return self
+
+
+class VerifyResult(ProtoModel):
+    id: VerifyId
+    outcome: Literal[
+        "fetched", "unreachable", "http_error", "too_large", "timeout", "refused", "skipped"
+    ]
+    sha256: Hex64 | None = None
+    size: Annotated[int, Field(ge=1, le=MAX_VERIFY_FILE_SIZE)] | None = None
+    file_type: FileTypeText | None = None
+    family: FamilyText | None = None
+
+    @model_validator(mode="after")
+    def _shape(self) -> VerifyResult:
+        fetched = (self.sha256, self.size, self.file_type)
+        if self.outcome == "fetched":
+            if any(v is None for v in fetched):
+                raise ValueError("a fetched result needs sha256, size and file_type")
+        elif any(v is not None for v in fetched) or self.family is not None:
+            raise ValueError("only a fetched result carries sha256, size, file_type or family")
+        return self
+
+
+class VerifyResultsRequest(ProtoModel):
+    protocol: ProtocolField
+    items: Annotated[list[VerifyResult], Field(max_length=MAX_VERIFY_RESULTS)]
+    pad: Pad = ""
+
+    @model_validator(mode="after")
+    def _unique_ids(self) -> VerifyResultsRequest:
+        _unique([i.id for i in self.items])
+        return self
 
 
 # --- network summary (section 7.1) ---
