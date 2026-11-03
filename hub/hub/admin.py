@@ -41,11 +41,18 @@ def _parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     g = sub.add_parser("gen-signing-key", help="make the hub signing key and print its public part")
-    g.add_argument("--out", required=True, help="file to write (mode 0400)")
+    g.add_argument("--out", help="file to write (mode 0400); with --alt defaults to the alt file")
     g.add_argument("--force", action="store_true", help="overwrite an existing file")
+    g.add_argument(
+        "--alt",
+        action="store_true",
+        help="make the alternate key for a rollover; never overwrites, even with --force",
+    )
 
     k = sub.add_parser("show-public-key", help="print the public key of a signing key file")
     k.add_argument("--key-file", default=os.environ.get("HUB_SIGNING_KEY_FILE", ""))
+    k.add_argument("--alt-key-file", default=os.environ.get("HUB_SIGNING_KEY_ALT_FILE", ""))
+    k.add_argument("--all", action="store_true", help="print the primary and alternate keys")
 
     r = sub.add_parser("reports")
     rs = r.add_subparsers(dest="action", required=True)
@@ -210,7 +217,9 @@ async def _audit(
     )
 
 
-def gen_signing_key(out_path: str, force: bool, out: Out) -> int:
+def gen_signing_key(out_path: str, force: bool, out: Out, *, alt: bool = False) -> int:
+    if alt:
+        force = False  # a rollover key is never replaced: the old one may still be pinned
     path = Path(out_path)
     seed = sign.generate_private_key()
     flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if force else os.O_EXCL)
@@ -224,7 +233,7 @@ def gen_signing_key(out_path: str, force: bool, out: Out) -> int:
     with os.fdopen(fd, "w", encoding="ascii") as fh:
         fh.write(sign.b64u_encode(seed) + "\n")
     path.chmod(0o400)
-    out(f"hub_key={sign.node_key(sign.public_key_of(seed))}")
+    out(f"{'hub_key_alt' if alt else 'hub_key'}={sign.node_key(sign.public_key_of(seed))}")
     return 0
 
 
@@ -258,7 +267,11 @@ async def run(
 ) -> int:
     args = _parser().parse_args(argv)
     if args.cmd == "gen-signing-key":
-        return gen_signing_key(args.out, args.force, out)
+        target = args.out or (os.environ.get("HUB_SIGNING_KEY_ALT_FILE", "") if args.alt else "")
+        if not target:
+            out("give --out (or set HUB_SIGNING_KEY_ALT_FILE with --alt)")
+            return 2
+        return gen_signing_key(target, args.force, out, alt=args.alt)
     if args.cmd == "gen-feed-key":
         return gen_feed_key(args.out, args.force, out)
     if args.cmd == "show-public-key":
@@ -268,6 +281,16 @@ async def run(
             out(str(exc))
             return 1
         out(f"hub_key={sign.node_key(sign.public_key_of(seed))}")
+        if args.all:
+            if not args.alt_key_file:
+                out("hub_key_alt=none")
+            else:
+                try:
+                    alt = load_signing_key(args.alt_key_file)
+                except ConfigError as exc:
+                    out(str(exc))
+                    return 1
+                out(f"hub_key_alt={sign.node_key(sign.public_key_of(alt))}")
         return 0
 
     engine = None

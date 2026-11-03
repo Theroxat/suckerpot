@@ -539,7 +539,8 @@ docker compose run --rm hub-admin <command>
 | Command | What it does |
 | --- | --- |
 | `gen-signing-key --out /keys/hub_signing_key` | Makes the signing key. Refuses to overwrite unless `--force` is given. The file is mode 0400 |
-| `show-public-key --key-file /keys/hub_signing_key` | Prints `hub_key=...` |
+| `show-public-key --key-file /keys/hub_signing_key [--all]` | Prints `hub_key=...`; `--all` also prints `hub_key_alt=...` from `--alt-key-file` (default `HUB_SIGNING_KEY_ALT_FILE`) |
+| `gen-signing-key --alt --out <file>` | Makes the alternate key for a rollover. Never overwrites, even with `--force`. Mode 0400 |
 | `reports list [--state queued\|approved\|sent\|failed\|cancelled]` | Lists reports |
 | `reports show <id>` | Shows a report's text and targets |
 | `reports approve <id>` | Approves a queued report. It is sent by the next worker cycle |
