@@ -11,7 +11,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidSignature
@@ -31,6 +31,8 @@ H_TIMESTAMP = "X-SPN-Timestamp"
 H_NONCE = "X-SPN-Nonce"
 H_SIGNATURE = "X-SPN-Signature"
 H_HUB_SIGNATURE = "X-SPN-Hub-Signature"
+H_HUB_SIGNATURE_ALT = "X-SPN-Hub-Signature-Alt"
+MAX_PINNED_KEYS = 3
 
 _B64U = re.compile(r"^[A-Za-z0-9_-]*$")
 
@@ -228,6 +230,57 @@ def require_response(
 ) -> None:
     if not verify_response(hub_key, signature, binding, status, body):
         raise ProtoError("hub_signature")
+
+
+def parse_key_set(text: str) -> tuple[str, ...]:
+    """Parse a pinned key set: 1 to 3 distinct comma-separated ``node_key`` texts (design M32 6.4).
+
+    Whitespace around entries is ignored. Raises ValueError on an empty set, an empty entry, a
+    duplicate, a malformed key or more than ``MAX_PINNED_KEYS`` keys. Placeholders are malformed.
+    """
+    parts = [p.strip() for p in text.split(",")]
+    if not 1 <= len(parts) <= MAX_PINNED_KEYS:
+        raise ValueError(f"expected 1 to {MAX_PINNED_KEYS} keys")
+    for part in parts:
+        parse_node_key(part)  # also refuses an empty entry
+    if len(set(parts)) != len(parts):
+        raise ValueError("duplicate key in the key set")
+    return tuple(parts)
+
+
+def verify_response_any(
+    hub_keys: Sequence[str],
+    signatures: Sequence[str | None],
+    binding: RequestBinding,
+    status: int,
+    body: bytes,
+) -> bool:
+    """True when any of ``signatures`` verifies under any key of the pinned set. Never raises.
+
+    ``signatures`` are the values of ``X-SPN-Hub-Signature`` and ``X-SPN-Hub-Signature-Alt``
+    (either may be missing). A set of more than ``MAX_PINNED_KEYS`` keys is refused.
+    """
+    if not 1 <= len(hub_keys) <= MAX_PINNED_KEYS:
+        return False
+    return any(
+        verify_response(key, sig, binding, status, body) for sig in signatures for key in hub_keys
+    )
+
+
+def require_response_any(
+    hub_keys: Sequence[str],
+    signatures: Sequence[str | None],
+    binding: RequestBinding,
+    status: int,
+    body: bytes,
+) -> None:
+    if not verify_response_any(hub_keys, signatures, binding, status, body):
+        raise ProtoError("hub_signature")
+
+
+def key_in_set(hub_keys: Sequence[str], key: str) -> bool:
+    """True when ``key`` (for example ``hub_key`` of ``/v1/info``) is one of the pinned keys."""
+    return key in hub_keys
 
 
 # --- request header checks (hub side, steps 2 and 3 of section 5.2) ---

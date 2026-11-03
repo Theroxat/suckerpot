@@ -15,6 +15,7 @@ ERROR_STATUS: dict[str, int] = {
     "challenge_expired": 400,
     "pseudonym_invalid": 400,
     "pseudonym_taken": 409,
+    "not_verifier": 403,
     "enrolment_closed": 503,
     "rate_limited": 429,
     "day_not_closed": 400,

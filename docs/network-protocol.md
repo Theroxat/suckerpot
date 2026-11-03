@@ -87,6 +87,8 @@ SPN1-RESP
 
 The node checks the signature against the pinned hub key. If the check fails, the node refuses the answer and records `hub_signature`.
 
+During a key rollover the hub also signs the same string with an alternate key and sends it in `X-SPN-Hub-Signature-Alt`. A node pins a set of 1 to 3 public keys and accepts an answer when either header verifies under any pinned key. A node that pins one key and reads only `X-SPN-Hub-Signature` keeps working until the hub swaps the primary key. `hub_key` of `GET /v1/info` is always the primary key, and a node checks that it belongs to its pinned set. See [Hub key set](#hub-key-set).
+
 The answer is bound to the whole request, not only to its nonce. A man in the middle cannot send its own request to the hub, keep the signed answer and replay it to a victim's nonce, because the answer also names the method, the path and the request signature.
 
 Which answers are signed:
@@ -111,6 +113,7 @@ Every error is a status code with the body `{"error": "<code>"}`.
 | `pseudonym_invalid` | 400 | The pseudonym breaks the rules in [Pseudonyms](#pseudonyms) |
 | `pseudonym_taken` | 409 | Another node has the pseudonym |
 | `enrolment_closed` | 503 | The daily enrolment cap is reached. Temporary |
+| `not_verifier` | 403 | The node does not hold the verifier role (`/v1/verify/tasks`, `/v1/verify/results`). Signed |
 | `rate_limited` | 429 | Too many requests. The `Retry-After` header gives seconds |
 | `day_not_closed` | 400 | The batch day has not ended in UTC yet |
 | `day_too_old` | 400 | The batch day is more than 3 days old |
@@ -149,6 +152,9 @@ The node records these codes itself. The hub never sends them.
 | POST | `/v1/reveals` | yes | `{protocol, items: [{kind, value_b, value}]}` (at most 200) returns `{accepted, rejected}` |
 | POST | `/v1/rechecks` | yes | `{protocol, day, items: [{id, state}]}` (at most 500) returns `{accepted}` |
 | GET | `/v1/network` | yes | returns the network summary |
+| GET | `/v1/verify/reveals` | yes | returns `{items: [{kind: "url", value_b}]}` (at most 200): links this node reported recently that wait for their clear value |
+| GET | `/v1/verify/tasks?limit=<1..20>` | yes, verifier | returns `{tasks: [{id, url, lease_until}]}`. Leases queued tasks. Others get `not_verifier` |
+| POST | `/v1/verify/results` | yes, verifier | `{protocol, items: [Result]}` (at most 50) returns `{accepted, rejected}` |
 
 `standing` is coarse: `new`, `good` or `low`. The reputation number is never sent.
 
@@ -294,6 +300,40 @@ A node reveals only hashes that the hub asked for, only values it holds, and onl
 - `protocol` is in every body where a body has one, and the path starts with `/v1`.
 - The hub rejects unknown fields. So an additive field goes into the hub first, then into the nodes.
 - A breaking change becomes `spn/2` under `/v2`. The hub serves both for at least six months, and `GET /v1/info` lists them in `protocols`.
+
+## Verification (added in M32, additive)
+
+The protocol string stays `spn/1`. No existing request or answer changes, so nodes from before M32 keep working. A hub that predates M32 answers `404` (unsigned) on the new paths, and a node treats that as "no verification" and retries once a day.
+
+### Early reveal
+
+`GET /v1/verify/reveals` lists the blinded links that this node reported in the last few days and that wait for a clear value. The node answers with the existing `POST /v1/reveals`, only for values it holds and only after the identity check. The hub validates the value exactly as for a confirmed target, and keeps it only for the verification task.
+
+### Tasks and results
+
+A node with the verifier role leases tasks with `GET /v1/verify/tasks` (lease of a few hours, `limit` 1 to 20) and later reports one `Result` per task in `POST /v1/verify/results`:
+
+```json
+{"id": "v_0123456789ab", "outcome": "fetched",
+ "sha256": "<64 hex>", "size": 48213, "file_type": "elf-arm", "family": "mirai"}
+```
+
+| Field | Rule |
+| --- | --- |
+| `id` | `^v_[0-9a-f]{12}$`. A task leased to the caller. Unique in a request |
+| `outcome` | `fetched`, `unreachable`, `http_error`, `too_large`, `timeout`, `refused` (the node's own guards said no) or `skipped` (a local cap) |
+| `sha256`, `size`, `file_type` | Required with `fetched`, refused otherwise. `size` is 1 to 67,108,864. `file_type` comes from the closed file type list |
+| `family` | Only with `fetched`, optional (null allowed). From the closed family list |
+
+Bodies are padded, unknown fields are refused, depth is at most 6 and the size cap is 64 KiB, as for every `spn/1` request. A request holds at most 50 results, and an answer at most 20 tasks. A participant adds about 4 signed requests an hour (`/v1/verify/reveals` every 15 minutes) and a verifier about 8.
+
+### Hub key set
+
+A node pins 1 to 3 hub public keys (`NETWORK_HUB_KEY` takes a comma-separated list). The hub signs with its primary key in `X-SPN-Hub-Signature` and, while it rolls its key over, with the alternate key in `X-SPN-Hub-Signature-Alt`. The roll-over has four phases: one key; both keys sent and a release that pins both; the hub swaps primary and alternate at least 30 days later; the old key is dropped from the release at least 90 days later. A node that still pins only the old key fails closed (`hub_signature`) after the swap. The feed key set works the same way.
+
+### Committed defaults
+
+Each release ships `suckerpot_netproto/data/network_defaults.env`, mirrored byte for byte at `config/network-defaults.env`. It holds the hub URL, the hub key set, the feed URL and the feed key set. An explicit value in `.env` wins, and an empty one counts as unset. A value written `<LIKE_THIS>` is a placeholder and means "not configured": the network cannot be joined, and the release workflow refuses to publish a release that still holds one.
 
 ## Golden test vectors
 
