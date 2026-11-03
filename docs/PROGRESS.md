@@ -189,3 +189,11 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - **Node.** An optional feed worker (`NETWORK_FEED_ENABLED`, off) downloads through the VPN, verifies signatures, rollback and expiry, and swaps entries in one transaction (migration 0029). The dashboard has a Network tab on Blocklists and a local mirror for firewalls (feed token kind `network`).
 - **Reviews.** Security review failed twice (an inbound delisting removing outbound hosts, SIP and typed `wget` hosts as attack evidence, high tier and payload links not k-supported, then payload hosts reportable without a fetch), then passed. UI review approved.
 - **Deployed.** Backup taken first; migration 0029 applied; every service healthy; no event lost. The feed worker stays off and no hub exists yet.
+
+## 2026-11-03 — M31 Hub pre-production and abuse.ch first
+
+- **Tunnel mode.** The hub can run behind a Cloudflare Tunnel on a host whose ports 80 and 443 are taken: Caddy on one private HTTP port, client addresses trusted only from the connector, and every outbound call (RDAP, range lists, abuse.ch, SMTP over CONNECT) through the VPN proxy, with no direct route and a startup refusal if one appears.
+- **abuse.ch first.** Confirmed malware URLs go to URLhaus (optionally automatic), C2s to ThreatFox only after manual approval; bodies carry the indicator and a family only. Payload hosts now need malware-like content everywhere.
+- **Site.** A blocklist policy page: listing rules, removal, data protection.
+- **Reviews.** Security review failed (one node could get an ordinary page submitted to URLhaus; disputed or delisted targets still submitted; trust of private ranges), then passed after fixes.
+- **Deployed.** Main stack: backup first, every service healthy, no event lost. Pre-production hub (temporary, on the same host behind the tunnel) migrated to h0008; feeds, reports and abuse.ch stay off or in review. Known flaky: the mssql `test_expensive_batches_from_two_ips_do_not_delay_a_victim` timing test fails under host load, on main as well.

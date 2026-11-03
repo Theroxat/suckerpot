@@ -374,3 +374,12 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 - Public read-only page through Cloudflare Tunnel, IPs masked.
 - LLM-backed SSH shell.
 - RDP: a fake Windows logon screen that records keystrokes.
+
+## M31 — Hub pre-production and abuse.ch first
+
+- [x] "Behind a tunnel" hub mode (`hub/docker-compose.tunnel.yml`, `hub/Caddyfile.tunnel`): one private HTTP port for a Cloudflare Tunnel connector, client address trusted only from `HUB_TRUSTED_PROXY`, worker and admin egress only through an authenticated proxy on an internal network, startup refusal when a default route exists (IPv4 and IPv6).
+- [x] Hub report mail through the proxy (HTTP CONNECT, TLS verified, no direct fallback; a proxy or VPN outage keeps reports queued).
+- [x] abuse.ch submission from the hub (migration `h0008`): URLhaus for URLs fetched as malware by 2 or more eligible nodes, ThreatFox for C2s only after a manual approval, feed exclusions and withdrawals on dispute or delisting, `HUB_ABUSECH_MODE` off by default.
+- [x] Payload hosts need malware-like content (a known family or an executable or script) before any report, feed entry or submission.
+- [x] Neutral names in generated rules and exports; public blocklist policy page on the site.
+- [ ] Move the hub to a dedicated server and regenerate its keys before the lists or reports go live; legal review of the policy.
