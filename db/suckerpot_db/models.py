@@ -814,6 +814,8 @@ class FetchTargetRow(Base):
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_sha256: Mapped[str | None] = mapped_column(Text)
+    # local | network_verify (M32, 0030): a verification fetch never spawns child targets.
+    origin: Mapped[str] = mapped_column(Text, server_default=text("'local'"), nullable=False)
 
 
 class FetchAttemptRow(Base):
@@ -1604,6 +1606,7 @@ class NetworkMembershipRow(Base):
     last_error_code: Mapped[str | None] = mapped_column(Text)
     requested_by: Mapped[str | None] = mapped_column(Text)
     requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    left_day: Mapped[date | None] = mapped_column(Date)  # M32 (0030): UTC day the node left
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=_now(), nullable=False
     )
@@ -1649,6 +1652,27 @@ class NetworkTargetRow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=_now(), nullable=False
     )
+
+
+class NetworkVerifyTaskRow(Base):
+    """A verification task leased from the hub (M32, 0030). Pruned 30 days after reporting."""
+
+    __tablename__ = "network_verify_tasks"
+
+    hub_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    url: Mapped[str] = mapped_column(Text)
+    host: Mapped[str] = mapped_column(Text)
+    # received | queued | done | reported | refused | skipped
+    state: Mapped[str] = mapped_column(Text)
+    fetch_target_id: Mapped[int | None] = mapped_column(BigInteger)
+    outcome: Mapped[str | None] = mapped_column(Text)
+    sha256: Mapped[str | None] = mapped_column(Text)
+    size: Mapped[int | None] = mapped_column(Integer)
+    file_type: Mapped[str | None] = mapped_column(Text)
+    family: Mapped[str | None] = mapped_column(Text)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class NetworkSummaryRow(Base):

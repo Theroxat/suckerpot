@@ -582,3 +582,87 @@ async def test_concurrent_fetches_cannot_overshoot_the_quarantine_cap(
     total = (await rows(owner, "SELECT COALESCE(sum(size), 0) AS n FROM samples"))[0].n
     assert total <= 1024 * 1024
     assert svc._reserved == 0
+
+
+async def add_verify_target(owner: AsyncEngine, url: str) -> int:
+    """A URL leased from the hub for verification (M32): depth 0, origin network_verify."""
+    async with owner.begin() as conn:
+        row = await conn.execute(
+            text(
+                "INSERT INTO fetch_targets (url, scheme, host, depth, status, first_seen, "
+                "next_attempt_at, origin) VALUES (:u, 'http', 'files.example.test', 0, "
+                "'pending', :n, :n, 'network_verify') RETURNING id"
+            ),
+            {"u": url, "n": NOW},
+        )
+        return int(row.scalar_one())
+
+
+async def test_verification_fetch_never_follows_links_or_creates_indicators(
+    owner: AsyncEngine, factories: Any, tmp_path: Path
+) -> None:
+    coll_f, ana_f = factories
+    s = settings(tmp_path)  # max_depth=2: depth alone would allow a child target
+    store = Quarantine(s.quarantine_dir)
+    store.prepare()
+    proxy = FakeProxy(handler_for({f"{HOST}/v.sh": Reply(body=SCRIPT)}))
+    await add_verify_target(owner, f"{HOST}/v.sh")
+    async with proxy.running():
+        gate = await open_gate(proxy.url)
+        svc = CollectorService(s, coll_f, store, gate, clock=Clock())
+        assert len(await svc.step()) == 1  # fetched with the shared quota and every guard
+        assert await AnalyzerService(s, ana_f, store, clock=Clock()).step() == 1
+    assert [u for u, _ in proxy.seen] == [f"{HOST}/v.sh"]
+    assert (await rows(owner, "SELECT count(*) AS n FROM fetch_targets"))[0].n == 1
+    links = await rows(owner, "SELECT kind, target_id, indicator_id FROM sample_links")
+    assert {r.kind for r in links} >= {"next_url"}
+    assert all(r.target_id is None and r.indicator_id is None for r in links)
+    assert (await rows(owner, "SELECT count(*) AS n FROM indicators"))[0].n == 0
+    spent = await rows(
+        owner, "SELECT count(*) AS n FROM enrichment_quota WHERE provider = 'collector'"
+    )
+    assert spent[0].n >= 1  # the shared daily quota was used
+
+
+async def test_a_local_sighting_keeps_the_normal_analysis(
+    owner: AsyncEngine, factories: Any, tmp_path: Path
+) -> None:
+    coll_f, ana_f = factories
+    s = settings(tmp_path)
+    store = Quarantine(s.quarantine_dir)
+    store.prepare()
+    proxy = FakeProxy(handler_for({f"{HOST}/v.sh": Reply(body=SCRIPT)}))
+    await add_verify_target(owner, f"{HOST}/v.sh")
+    await add_indicator(owner, f"{HOST}/v.sh")  # the node's own sighting of the same URL
+    async with proxy.running():
+        gate = await open_gate(proxy.url)
+        svc = CollectorService(s, coll_f, store, gate, clock=Clock())
+        await svc.sync_targets()
+        origin = (await rows(owner, "SELECT origin FROM fetch_targets"))[0].origin
+        assert origin == "local"  # local interest wins: children and indicators are allowed
+        await svc.step()
+        await AnalyzerService(s, ana_f, store, clock=Clock()).step()
+    hashes = await rows(owner, "SELECT count(*) AS n FROM indicators WHERE type = 'hash'")
+    assert hashes[0].n == 1
+
+
+async def test_verify_rows_are_refused_when_the_role_is_off(
+    owner: AsyncEngine, factories: Any, tmp_path: Path
+) -> None:
+    coll_f, _ = factories
+    s = settings(tmp_path, verify_enabled=False)
+    store = Quarantine(s.quarantine_dir)
+    store.prepare()
+    proxy = FakeProxy(
+        handler_for({f"{HOST}/v.sh": Reply(body=SCRIPT), f"{HOST}/l.sh": Reply(body=SCRIPT)})
+    )
+    await add_verify_target(owner, f"{HOST}/v.sh")
+    await add_indicator(owner, f"{HOST}/l.sh")
+    async with proxy.running():
+        gate = await open_gate(proxy.url)
+        await CollectorService(s, coll_f, store, gate, clock=Clock()).step()
+    assert [u for u, _ in proxy.seen] == [f"{HOST}/l.sh"]  # the local target still runs
+    row = (
+        await rows(owner, "SELECT status, last_error FROM fetch_targets WHERE origin <> 'local'")
+    )[0]
+    assert (row.status, row.last_error) == ("refused", "verify_disabled")
