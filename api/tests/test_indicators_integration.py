@@ -304,7 +304,7 @@ async def test_export_csv(client: httpx.AsyncClient) -> None:
     r = await client.get("/indicators/export", params={"format": "csv", "role": "download_host"})
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
-    assert r.headers["content-disposition"].startswith('attachment; filename="suckerpot-')
+    assert r.headers["content-disposition"].startswith('attachment; filename="indicators-')
     lines = r.text.strip().split("\n")
     assert lines[0].startswith("type,value,defanged,role")
     assert len(lines) == 1 + 3  # domain, url and solo; the old one is a contacted host

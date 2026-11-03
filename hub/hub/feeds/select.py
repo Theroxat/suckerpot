@@ -9,7 +9,8 @@ Pure functions over loaded rows. Inputs are M29 consensus targets in state ``con
 * **k-support.** Every published value (activity category, service, tag, family, port) and both
   dates need at least ``k`` distinct eligible nodes behind them, so one node's sighting changes
   nothing public (``hub.support`` holds the helpers).
-* **Outbound** needs a payload fetched with a known family by two nodes (or outside
+* **Outbound** needs a malware-like payload (known family or executable file type) fetched by
+  two nodes (or outside
   corroboration), or two distinct droppers that two nodes each named for a C2.
 
 ``evaluate`` returns the candidate (or ``None``) and whether an outside lookup could still turn
@@ -27,6 +28,7 @@ from datetime import date, timedelta
 
 from suckerpot_netproto.enums import FAMILIES_V1, SERVICES, is_valid_tag
 
+from ..malware import is_malware_like
 from ..never import split_host_port
 from ..support import first_day_supported, k_supported, last_day_supported
 
@@ -74,6 +76,7 @@ class Obs:
     attempts: int | None = None
     fetched: bool = False
     via: str | None = None
+    file_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -247,8 +250,8 @@ def _evaluate_inbound(t: TargetInput, ctx: SelectContext, corroborated: bool | N
 
 
 def _fetch_evidence(rows: Sequence[Obs]) -> bool:
-    """A payload fetched with a known malware family by at least two nodes."""
-    fetchers = {r.node for r in rows if r.fetched and any(f in FAMILIES_V1 for f in r.families)}
+    """A malware-like payload (known family or executable type) fetched by two nodes."""
+    fetchers = {r.node for r in rows if r.fetched and is_malware_like(r.families, r.file_type)}
     return len(fetchers) >= MIN_FETCHERS
 
 

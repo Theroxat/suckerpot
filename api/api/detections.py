@@ -279,7 +279,7 @@ async def export_rules(
     """All rules of one kind as a single file (Sigma: YAML documents; Suricata: .rules)."""
     rules = [r for r in await generate(db, days, min_sources, include_demo) if r.kind == kind]
     body = rulegen.sigma_file(rules) if kind == "sigma" else rulegen.suricata_file(rules)
-    name = "suckerpot-sigma.yml" if kind == "sigma" else "suckerpot.rules"
+    name = "sigma-rules.yml" if kind == "sigma" else "suricata.rules"
     return PlainTextResponse(
         body,
         media_type="text/plain; charset=utf-8",
