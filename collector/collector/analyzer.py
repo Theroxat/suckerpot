@@ -173,8 +173,27 @@ class AnalyzerService:
                     "errors": list(result.errors),
                 },
             )  # fmt: skip
+            if await self._verify_only(session, sha):
+                # M32: a sample fetched only for the network is described, never acted on: no
+                # local indicator, no child fetch target, no C2 indicator (design 8.6).
+                await self._links(session, sha, result.iocs, now, follow=False)
+                return
             await self._hash_indicator(session, sha, now)
             await self._links(session, sha, result.iocs, now)
+
+    @staticmethod
+    async def _verify_only(session: AsyncSession, sha: str) -> bool:
+        """True when every source of the sample is a network verification fetch."""
+        return bool(
+            await session.scalar(
+                text(
+                    "SELECT COALESCE(bool_and(t.origin = 'network_verify'), false) "
+                    "FROM sample_sources s JOIN fetch_targets t ON t.id = s.target_id "
+                    "WHERE s.sha256 = :sha"
+                ),
+                {"sha": sha},
+            )
+        )
 
     async def _hash_indicator(self, session: AsyncSession, sha: str, now: datetime) -> None:
         await session.execute(
@@ -189,7 +208,15 @@ class AnalyzerService:
             {"sha": sha, "now": now},
         )
 
-    async def _links(self, session: AsyncSession, sha: str, iocs: list[Ioc], now: datetime) -> None:
+    async def _links(
+        self,
+        session: AsyncSession,
+        sha: str,
+        iocs: list[Ioc],
+        now: datetime,
+        *,
+        follow: bool = True,
+    ) -> None:
         depth = int(
             await session.scalar(
                 text(
@@ -204,7 +231,9 @@ class AnalyzerService:
         for ioc in iocs:
             target_id: int | None = None
             indicator_id: int | None = None
-            if ioc.kind == "next_url":
+            if not follow:
+                pass  # recorded for display only
+            elif ioc.kind == "next_url":
                 if depth + 1 <= self.s.max_depth and next_urls < MAX_NEXT_URLS:
                     target_id = await self._next_target(session, ioc.value, sha, depth + 1, now)
                     next_urls += target_id is not None

@@ -75,6 +75,8 @@ class SampleItem(BaseModel):
     yara: list[str]
     stored: bool
     analysis_status: str
+    # "network_verify" when every source was fetched for the network (M32), else "local".
+    origin: str = "local"
 
 
 class SamplePage(BaseModel):
@@ -161,6 +163,11 @@ SELECT s.sha256, s.kind, s.arch, s.bits, s.family, s.severity, s.size, s.first_s
           JOIN fetch_targets t ON t.id = x.target_id
           JOIN indicator_sessions l ON l.indicator_id = t.indicator_id
          WHERE x.sha256 = s.sha256) AS sessions,
+       CASE WHEN EXISTS (SELECT 1 FROM sample_sources x WHERE x.sha256 = s.sha256)
+             AND NOT EXISTS (SELECT 1 FROM sample_sources x
+                             JOIN fetch_targets t ON t.id = x.target_id
+                             WHERE x.sha256 = s.sha256 AND t.origin <> 'network_verify')
+            THEN 'network_verify' ELSE 'local' END AS origin,
        COALESCE(jsonb_path_query_array(a.yara, '$[*].rule'), '[]'::jsonb) AS yara
 FROM samples s
 LEFT JOIN sample_analysis a ON a.sha256 = s.sha256
@@ -183,6 +190,7 @@ def _item(r: Any) -> SampleItem:
         yara=[str(y) for y in (r.yara or [])][:50],
         stored=r.stored,
         analysis_status=r.analysis_status,
+        origin=r.origin,
     )
 
 

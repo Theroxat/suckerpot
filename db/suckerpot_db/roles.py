@@ -151,7 +151,8 @@ DECLARE
                   'takedown_target_links', 'abusech_submission', 'abusech_submissions',
                   'outcome_rollup_monthly', 'network_membership',
                   'network_submissions', 'network_targets', 'network_summary',
-                  'network_feed_state', 'network_feed_entries']
+                  'network_feed_state', 'network_feed_entries',
+                  'network_verify_tasks']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -335,6 +336,18 @@ BEGIN
             'GRANT USAGE ON SEQUENCE %s TO %I',
             pg_get_serial_sequence('public.network_submissions', 'id'), r);
     END IF;
+    IF to_regclass('public.network_verify_tasks') IS NOT NULL THEN
+        -- M32: the verifier worker owns the task table. It also queues the verification fetches:
+        -- an INSERT limited to the columns it needs (origin is set explicitly; the collector
+        -- owns status, attempts and results).
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON network_verify_tasks TO %I', r);
+        EXECUTE format(
+            'GRANT INSERT (url, scheme, host, depth, status, first_seen, next_attempt_at, origin) '
+            'ON fetch_targets TO %I', r);
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE %s TO %I',
+            pg_get_serial_sequence('public.fetch_targets', 'id'), r);
+    END IF;
     IF to_regclass('public.network_feed_state') IS NOT NULL THEN
         -- M30: the feed worker owns the public feed mirror (state row and entries).
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON network_feed_state TO %I', r);
@@ -405,7 +418,8 @@ DECLARE
                   'takedown_target_links', 'abusech_submission', 'abusech_submissions',
                   'outcome_rollup_monthly', 'network_membership',
                   'network_submissions', 'network_targets', 'network_summary',
-                  'network_feed_state', 'network_feed_entries']
+                  'network_feed_state', 'network_feed_entries',
+                  'network_verify_tasks']
         ) AS c WHERE to_regclass('public.' || c) IS NOT NULL
     );
 BEGIN
@@ -577,6 +591,10 @@ BEGIN
         EXECUTE format(
             'GRANT SELECT ON network_submissions, network_targets, network_summary TO %I', r);
     END IF;
+    IF to_regclass('public.network_verify_tasks') IS NOT NULL THEN
+        -- M32: the dashboard shows verification counts; it never writes a task.
+        EXECUTE format('GRANT SELECT ON network_verify_tasks TO %I', r);
+    END IF;
     IF to_regclass('public.network_feed_state') IS NOT NULL THEN
         -- M30: the API serves the feed status, entries and the local mirror; it never writes them.
         EXECUTE format('GRANT SELECT ON network_feed_state, network_feed_entries TO %I', r);
@@ -627,6 +645,7 @@ BEGIN
             'GRANT SELECT, INSERT, UPDATE ON fetch_targets, fetch_attempts, samples, '
             'sample_sources TO %I', r);
         EXECUTE format('GRANT DELETE ON fetch_attempts TO %I', r);
+        -- M32: the table grant above already covers fetch_targets.origin (verification rows).
         EXECUTE format(
             'GRANT SELECT, INSERT, UPDATE ON enrichment_quota, enrichment_status TO %I', r);
         -- Only its own rows; the policies hide and refuse every other provider and status.

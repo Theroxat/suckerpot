@@ -49,6 +49,11 @@ class Target:
     host: str
     attempts: int
     fetches: int
+    origin: str = "local"  # M32: "network_verify" rows are fetched for the network only
+
+
+VERIFY_ORIGIN = "network_verify"
+VERIFY_DISABLED = "verify_disabled"
 
 
 def _utcnow() -> datetime:
@@ -129,7 +134,8 @@ class CollectorService:
                         CASE WHEN CAST(:status AS text) = 'pending'
                              THEN CAST(:now AS timestamptz) END)
                 ON CONFLICT (url) DO UPDATE
-                    SET indicator_id = COALESCE(fetch_targets.indicator_id, EXCLUDED.indicator_id)
+                    SET indicator_id = COALESCE(fetch_targets.indicator_id, EXCLUDED.indicator_id),
+                        origin = 'local'
                 """
             ),
             {
@@ -252,7 +258,7 @@ class CollectorService:
                 await session.execute(
                     text(
                         """
-                        SELECT id, url, host, attempts, fetches FROM fetch_targets
+                        SELECT id, url, host, attempts, fetches, origin FROM fetch_targets
                         WHERE status = 'pending' AND next_attempt_at <= :now
                         ORDER BY next_attempt_at, id LIMIT :n
                         """
@@ -264,6 +270,10 @@ class CollectorService:
 
     async def _handle(self, target: Target) -> tuple[int, str] | None:
         async with self._sem, self._host_locks[target.host]:
+            if target.origin == VERIFY_ORIGIN and not self.s.verify_enabled:
+                # The collector's owner stopped the verifier role: nothing is fetched, no quota.
+                await self._refuse(target, VERIFY_DISABLED)
+                return target.id, fx.REFUSED
             try:
                 normalize_url(target.url, deny_nets=self.s.deny_nets, deny_hosts=self.s.deny_hosts)
             except UrlRefused as exc:
@@ -291,6 +301,9 @@ class CollectorService:
                 # counted by neither the reservation nor the database.
                 self._reserved -= budget
             return target.id, result.outcome
+
+    async def _refuse(self, target: Target, code: str) -> None:
+        await self._record(target, FetchResult(fx.REFUSED, code), self._clock())
 
     async def _claim_bytes(self) -> int:
         """Reserve room in quarantine for one download, so concurrent fetches cannot overshoot."""

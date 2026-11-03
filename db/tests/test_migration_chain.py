@@ -77,11 +77,11 @@ def revisions() -> dict[str, tuple[str | None, str]]:
     return out
 
 
-def test_the_chain_is_linear_up_to_0029() -> None:
+def test_the_chain_is_linear_up_to_0030() -> None:
     revs = revisions()
     assert len(revs) == len({d for d, _ in revs.values()})  # no two revisions share a parent
     heads = set(revs) - {d for d, _ in revs.values() if d}
-    assert heads == {"0029"}
+    assert heads == {"0030"}
     for n in range(11, 23):
         assert revs[f"{n:04d}"][0] == f"{n - 1:04d}"
     # 0023 and 0024 were never released; 0025 (M28) is chained on 0022.
@@ -93,6 +93,8 @@ def test_the_chain_is_linear_up_to_0029() -> None:
     assert revs["0028"][0] == "0027"
     # M30 (community feed) follows 0028, which is deployed.
     assert revs["0029"][0] == "0028"
+    # M32 (participant mode) follows 0029.
+    assert revs["0030"][0] == "0029"
 
 
 def test_every_new_revision_has_a_downgrade() -> None:
@@ -534,3 +536,15 @@ def test_m28_setup_progress_grants() -> None:
     assert _grants(_GRANTS_API)["setup_progress"] == {"SELECT", "INSERT", "UPDATE"}
     assert "setup_progress" not in _grants(_GRANTS_INGEST)
     assert "setup_progress" not in _grants(_GRANTS_COLLECTOR)
+
+
+def test_the_participant_migration_is_additive_and_leaves_the_hypertables_alone() -> None:
+    script = (VERSIONS / "0030_network_participant.py").read_text()
+    assert "ADD COLUMN left_day date NULL" in script
+    assert "ADD COLUMN origin text NOT NULL DEFAULT 'local'" in script
+    assert "CREATE TABLE network_verify_tasks" in script
+    for table in ("events", "sessions"):
+        assert f"ALTER TABLE {table}" not in script
+    assert "network_verify_tasks" in set(models.Base.metadata.tables)
+    assert "origin" in models.Base.metadata.tables["fetch_targets"].columns
+    assert "left_day" in models.Base.metadata.tables["network_membership"].columns

@@ -41,6 +41,7 @@ NETWORK_PRUNE_PROC = "suckerpot_network_prune"  # created by migration 0028
 NETWORK_PAYLOAD_DAYS = 7
 NETWORK_SUBMISSION_DAYS = 90
 NETWORK_TARGET_DAYS = 180
+NETWORK_VERIFY_DAYS = 30  # verification tasks, after reported_at (migration 0030)
 TAKEDOWN_PRUNE_PROC = "suckerpot_takedown_prune"  # created by migration 0027
 DEFAULT_TAKEDOWN_CHECK_DAYS = 400
 TAKEDOWN_TARGET_DAYS = 400
@@ -320,6 +321,7 @@ def apply_policies(
             "payload_days": NETWORK_PAYLOAD_DAYS,
             "submission_days": NETWORK_SUBMISSION_DAYS,
             "target_days": NETWORK_TARGET_DAYS,
+            "verify_days": NETWORK_VERIFY_DAYS,
         },
     )
 

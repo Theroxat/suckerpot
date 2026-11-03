@@ -83,8 +83,8 @@ async def seed_all() -> None:
             await conn.execute(
                 text(
                     "INSERT INTO fetch_targets (url, scheme, host, parent_sha256, depth, status, "
-                    "first_seen, last_sha256) VALUES (:u, 'http', '198.51.100.8', :p, 1, "
-                    "'fetched', :t, :h) RETURNING id"
+                    "first_seen, last_sha256, origin) VALUES (:u, 'http', '198.51.100.8', :p, 1, "
+                    "'fetched', :t, :h, 'network_verify') RETURNING id"
                 ),
                 {"u": URL2, "p": SHA, "t": NOW, "h": CHILD},
             )
@@ -222,8 +222,11 @@ async def test_detail_chain_and_malware_join(client: httpx.AsyncClient) -> None:
     assert d["analysis"]["yara"][0]["rule"] == "mirai_generic"
     assert d["links"][0]["kind"] == "c2_ip" and d["links"][0]["port"] == 23
     assert d["sources"][0]["url"] == URL2
+    # M32: a sample fetched only for the network says so; one with a local source does not.
+    assert d["item"]["origin"] == "network_verify"
     top = (await client.get(f"/api/v1/samples/{SHA}")).json()
     assert top["analysis"] is None
+    assert top["item"]["origin"] == "local"
     assert {s["session_id"] for s in top["recent_sessions"]} == {"s1", "s2"}
     assert top["sources"][0]["sessions"] == 2 and top["sources"][0]["sensors"] == ["ssh", "telnet"]
     assert (await client.get(f"/api/v1/samples/{'0' * 64}")).status_code == 404
