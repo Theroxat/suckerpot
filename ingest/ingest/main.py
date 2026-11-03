@@ -14,7 +14,7 @@ from suckerpot_db.diskguard import max_db_bytes
 from suckerpot_db.secretbox import SecretBox, SecretError, box_from_env
 from suckerpot_db.trusted_exits import self_networks_provider, trusted_exit_provider
 
-from ingest.abuse import AbuseWorker
+from ingest.abuse import AbuseWorker, selfterms
 from ingest.abuse.selfterms import TermsCache
 from ingest.abusech import AbusechSubmitWorker
 from ingest.abusech.body import load_malpedia
@@ -45,6 +45,7 @@ from ingest.network.feed import FeedWorker, SqlFeedStore
 from ingest.network.feed_client import FeedSettings
 from ingest.network.source import SqlSource
 from ingest.network.store import SqlStore
+from ingest.network.verifier import SqlVerifyStore
 from ingest.replies import ReplyWorker
 from ingest.reports import ReportWorker
 from ingest.scanners import load_scanners
@@ -74,9 +75,15 @@ def build_network_worker(features: FeatureSettings, factory: Any) -> NetworkWork
         network = NetworkSettings()
     terms = TermsCache(factory)
     builder = BatchBuilder(SqlSource(factory), terms, max_sources=network.max_sources)
+
+    async def learn() -> int:
+        # Participant mode has no abuse worker to learn the own address (M32 8.4).
+        return await selfterms.learn(factory)
+
     return NetworkWorker(
-        features, network, SqlStore(factory), terms, builder, box=load_secret_box()
-    )
+        features, network, SqlStore(factory), terms, builder, box=load_secret_box(),
+        verify_store=SqlVerifyStore(factory), learn=learn,
+    )  # fmt: skip
 
 
 def build_feed_worker(features: FeatureSettings, factory: Any) -> FeedWorker:

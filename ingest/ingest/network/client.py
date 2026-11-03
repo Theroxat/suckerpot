@@ -47,6 +47,10 @@ class HubUnavailable(Exception):
     """The hub could not be reached (timeout, refused, oversized or unreadable answer)."""
 
 
+class HubNoVerify(HubUnavailable):
+    """A pre-M32 hub: the verification endpoints answer an unsigned 404 (retry once a day)."""
+
+
 class HubClient:
     """One node's view of the hub. Build it with the node identity once it exists."""
 
@@ -82,7 +86,7 @@ class HubClient:
         self, method: str, target: str, body: bytes, headers: dict[str, str]
     ) -> tuple[int, bytes, Mapping[str, str]]:
         url = self._url(target)
-        if not gate_open(self._gate):
+        if not gate_open(self._gate, host=self.settings.hub_host):
             raise EgressClosed("egress_closed")
         owned = self._client is None
         client = self._client or make_client(
@@ -133,7 +137,13 @@ class HubClient:
             nonce = sign.new_nonce()
             headers[sign.H_NONCE] = nonce
         status, raw, resp_headers = await self._send(method, target, body, headers)
-        if status >= 400 and not resp_headers.get(sign.H_HUB_SIGNATURE):
+        if (
+            status == 404
+            and target.startswith(f"{API_PREFIX}/verify/")
+            and not any(_signatures(resp_headers))
+        ):
+            raise HubNoVerify("hub_no_verify")
+        if status >= 400 and not any(_signatures(resp_headers)):
             # The hub does not sign an answer to a request it could not authenticate: that is
             # "not authenticated", never a statement by the hub. Try again later.
             raise HubUnavailable("unsigned error")
@@ -146,7 +156,7 @@ class HubClient:
             request_body=body,
             status=status,
             body=raw,
-            hub_signature=resp_headers.get(sign.H_HUB_SIGNATURE),
+            hub_signatures=_signatures(resp_headers),
         )
         if status >= 400:
             raise _hub_error(status, raw, resp_headers)
@@ -165,9 +175,11 @@ class HubClient:
         request_body: bytes,
         status: int,
         body: bytes,
-        hub_signature: str | None,
+        hub_signatures: tuple[str | None, str | None],
     ) -> None:
         """The ONE place that checks the hub's answer signature (raises ``hub_signature``).
+
+        Either signature header (primary, alternate) may verify under any pinned key (N19).
 
         The answer is bound to the whole request (method, target, node key, nonce, request
         signature or body hash). A newer netproto that binds more changes this method only.
@@ -176,7 +188,7 @@ class HubClient:
             binding = sign.RequestBinding.signed(method, target, node_key, nonce, request_signature)
         else:
             binding = sign.RequestBinding.unsigned(method, target, nonce, request_body)
-        sign.require_response(self.settings.hub_key, hub_signature, binding, status, body)
+        sign.require_response_any(self.settings.hub_keys, hub_signatures, binding, status, body)
 
     # -- unsigned ---------------------------------------------------------------------------
 
@@ -263,8 +275,31 @@ class HubClient:
             wire.AcceptedCount,
         )
 
+    async def verify_reveals(self) -> wire.VerifyRevealsResponse:
+        return await self._call(  # type: ignore[no-any-return]
+            "GET", f"{API_PREFIX}/verify/reveals", None, wire.VerifyRevealsResponse
+        )
+
+    async def verify_tasks(self, limit: int) -> wire.VerifyTasksResponse:
+        n = max(1, min(int(limit), wire.MAX_VERIFY_TASKS))
+        return await self._call(  # type: ignore[no-any-return]
+            "GET", f"{API_PREFIX}/verify/tasks?limit={n}", None, wire.VerifyTasksResponse
+        )
+
+    async def verify_results(self, items: list[dict[str, Any]]) -> wire.AcceptedCount:
+        return await self._call(  # type: ignore[no-any-return]
+            "POST",
+            f"{API_PREFIX}/verify/results",
+            {"protocol": PROTOCOL, "items": items},
+            wire.AcceptedCount,
+        )
+
     async def network(self) -> wire.NetworkSummary:
         return await self._call("GET", f"{API_PREFIX}/network", None, wire.NetworkSummary)  # type: ignore[no-any-return]
+
+
+def _signatures(headers: Mapping[str, str]) -> tuple[str | None, str | None]:
+    return headers.get(sign.H_HUB_SIGNATURE), headers.get(sign.H_HUB_SIGNATURE_ALT)
 
 
 def _hub_error(status: int, raw: bytes, headers: Mapping[str, str]) -> HubError:

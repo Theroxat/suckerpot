@@ -51,7 +51,7 @@ async def pull(client: HubClient, store: Store, cursor: str | None) -> PullResul
     return out
 
 
-def _clear_by_blind(kind: str, values: list[str]) -> dict[str, str]:
+def clear_by_blind(kind: str, values: list[str]) -> dict[str, str]:
     out: dict[str, str] = {}
     for v in values:
         try:
@@ -68,8 +68,30 @@ async def mark_mine(store: Store, pending: set[str]) -> None:
         return
     wanted: set[str] = set()
     for kind in ("url", "domain"):
-        wanted |= set(_clear_by_blind(kind, await store.recent_values(kind))) & pending
+        wanted |= set(clear_by_blind(kind, await store.recent_values(kind))) & pending
     await store.mark_mine_blinded(wanted)
+
+
+def guarded_reveal_items(
+    known: dict[tuple[str, str], str], terms: SelfTerms, *, allow_documentation: bool = False
+) -> list[dict[str, str]]:
+    """The reveal items (kind, hash, clear value) that pass the identity guard, at most
+    ``MAX_REVEALS``. Shared by the M29 reveals and the early reveals for verification (N6, N17)."""
+    items: list[dict[str, str]] = []
+    ctx = GuardContext(allow_documentation=allow_documentation)
+    for (kind, value_b), clear in known.items():
+        item = {"kind": kind, "value_b": value_b, "value": clear}
+        if mentions_self(clear, terms):
+            continue
+        result = guard(clear, terms, fmt="text", ctx=ctx)
+        if not set(result.codes) <= {"no_self_address"}:
+            continue
+        if not set(guard(item, terms, fmt="json", ctx=ctx).codes) <= {"no_self_address"}:
+            continue
+        items.append(item)
+        if len(items) >= MAX_REVEALS:
+            break
+    return items
 
 
 async def answer_reveals(
@@ -93,23 +115,10 @@ async def answer_reveals(
         return 0
     known: dict[tuple[str, str], str] = {}
     for kind in {k for k, _ in wanted}:
-        for value_b, clear in _clear_by_blind(kind, await store.reveal_values(kind)).items():
+        for value_b, clear in clear_by_blind(kind, await store.reveal_values(kind)).items():
             if (kind, value_b) in wanted:
                 known[(kind, value_b)] = clear
-    items: list[dict[str, str]] = []
-    ctx = GuardContext(allow_documentation=allow_documentation)
-    for (kind, value_b), clear in known.items():
-        item = {"kind": kind, "value_b": value_b, "value": clear}
-        if mentions_self(clear, terms):
-            continue
-        result = guard(clear, terms, fmt="text", ctx=ctx)
-        if not set(result.codes) <= {"no_self_address"}:
-            continue
-        if not set(guard(item, terms, fmt="json", ctx=ctx).codes) <= {"no_self_address"}:
-            continue
-        items.append(item)
-        if len(items) >= MAX_REVEALS:
-            break
+    items = guarded_reveal_items(known, terms, allow_documentation=allow_documentation)
     if not items:
         return 0
     await client.reveals(items)

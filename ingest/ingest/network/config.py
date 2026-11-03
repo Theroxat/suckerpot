@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
-from suckerpot_netproto import sign
+from suckerpot_netproto import defaults, sign
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 MIN_SUBMIT_DELAY_H = 2
@@ -41,10 +41,31 @@ class NetworkSettings:
     delay_min_h: float = 2.0
     delay_max_h: float = 20.0
     max_sources: int = 5000
+    # M32 (participant and verifier). ``hub_key`` may hold a pinned set of up to three keys.
+    stack_mode: str = "full"
+    egress_mode: str = "vpn"
+    consent: str = ""
+    pseudonym: str = ""
+    country: str = ""
+    show_country: bool = False
+    verify_reveals: bool = False
+    verifier: bool = False
+    verify_daily_cap: int = 100
+    verify_host_daily_cap: int = 3
+    collector_enabled: bool = False
 
     @property
     def hub_configured(self) -> bool:
         return bool(self.hub_url and self.hub_key)
+
+    @property
+    def hub_keys(self) -> tuple[str, ...]:
+        """The pinned hub key set (N19). Empty while no hub is configured."""
+        return sign.parse_key_set(self.hub_key) if self.hub_key else ()
+
+    @property
+    def participant(self) -> bool:
+        return self.stack_mode == "participant"
 
     @property
     def hub_host(self) -> str:
@@ -55,6 +76,19 @@ class NetworkSettings:
         e = os.environ if env is None else env
         url = e.get("NETWORK_HUB_URL", "").strip().rstrip("/")
         key = e.get("NETWORK_HUB_KEY", "").strip()
+        if not url and not key:
+            # Committed defaults (M32 D5) apply only when the operator set neither value: a
+            # half-set pair is an error, never mixed with a default of the other half.
+            url = defaults.effective(e, "NETWORK_HUB_URL").rstrip("/")
+            key = defaults.effective(e, "NETWORK_HUB_KEY")
+            if not (url and key):  # a placeholder half means "not configured", never half a pair
+                url = key = ""
+        stack_mode = e.get("SUCKERPOT_STACK_MODE", "").strip().lower() or "full"
+        if stack_mode not in ("full", "participant"):
+            raise ValueError("SUCKERPOT_STACK_MODE must be full or participant")
+        egress_mode = e.get("EGRESS_MODE", "").strip().lower() or "vpn"
+        if egress_mode not in ("vpn", "direct"):
+            raise ValueError("EGRESS_MODE must be vpn or direct")
         settings = cls(
             enabled=e.get("NETWORK_ENABLED", "false").strip().lower() in TRUE_VALUES,
             hub_url=url,
@@ -63,6 +97,17 @@ class NetworkSettings:
             delay_min_h=float(_int(e, "NETWORK_SUBMIT_DELAY_MIN_H", 2, MIN_SUBMIT_DELAY_H, 23)),
             delay_max_h=float(_int(e, "NETWORK_SUBMIT_DELAY_MAX_H", 20, 1, 23)),
             max_sources=_int(e, "NETWORK_MAX_SOURCES", 5000, 1, 5000),
+            stack_mode=stack_mode,
+            egress_mode=egress_mode,
+            consent=e.get("NETWORK_CONSENT", "").strip(),
+            pseudonym=e.get("NETWORK_PSEUDONYM", "").strip(),
+            country=e.get("NETWORK_COUNTRY", "").strip().upper(),
+            show_country=_flag(e, "NETWORK_SHOW_COUNTRY"),
+            verify_reveals=_flag(e, "NETWORK_VERIFY_REVEALS"),
+            verifier=_flag(e, "NETWORK_VERIFIER"),
+            verify_daily_cap=_int(e, "NETWORK_VERIFY_DAILY_CAP", 100, 0, 5000),
+            verify_host_daily_cap=_int(e, "NETWORK_VERIFY_HOST_DAILY_CAP", 3, 0, 100),
+            collector_enabled=_flag(e, "COLLECTOR_ENABLED"),
         )
         if settings.delay_min_h >= settings.delay_max_h:
             raise ValueError("NETWORK_SUBMIT_DELAY_MIN_H must be below NETWORK_SUBMIT_DELAY_MAX_H")
@@ -76,10 +121,14 @@ class NetworkSettings:
                 raise ValueError("NETWORK_HUB_URL must not hold credentials")
             check_hub_host(parts.hostname)
             try:
-                sign.parse_node_key(key)
+                _ = settings.hub_keys  # parsing is the check: 1 to 3 base64url keys
             except ValueError:
                 raise ValueError("NETWORK_HUB_KEY must be a base64url public key") from None
         return settings
+
+
+def _flag(env: Mapping[str, str], name: str) -> bool:
+    return env.get(name, "false").strip().lower() in TRUE_VALUES
 
 
 def _int(env: Mapping[str, str], name: str, default: int, low: int, high: int) -> int:
