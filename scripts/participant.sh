@@ -206,12 +206,25 @@ case $cmd in
     ;;
 
   auto-update)
-    [ $# -eq 1 ] || die "usage: auto-update on|off"
+    [ $# -ge 1 ] || die "usage: auto-update on|off [--yes]"
+    au_mode=$1
+    shift
+    while [ $# -gt 0 ]; do
+      case $1 in
+        --yes | -y) assume_yes=1 ;;
+        *) die "usage: auto-update on|off [--yes]" ;;
+      esac
+      shift
+    done
     # shellcheck source=scripts/lib/schedule.sh
     . scripts/lib/schedule.sh
-    case $1 in
+    case $au_mode in
       on)
         [ "$install_mode" = images ] || die "automatic updates need the signed release images (this install builds from source)"
+        if [ "$stack" != participant ]; then
+          echo "Warning: update checks (GitHub, ghcr.io, Sigstore) go out from this machine's own address, not through the VPN." >&2
+          confirm "Turn on automatic updates anyway?" || die "not turned on; nothing was changed"
+        fi
         if sched=$(schedule_status 2> /dev/null); then
           note "already scheduled: $sched"
         else

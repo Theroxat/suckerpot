@@ -6,7 +6,7 @@ leave stores ``network_membership.left_day`` and a restart never re-joins. A rec
 this release does not know (``consent_outdated``) never joins; the participant re-runs
 ``participant.sh join`` to agree again.
 
-Format: ``v1:sources,payloads,c2,files,rechecks[,verify_reveals]:2026-11-03``.
+Format: ``v2:sources,payloads,c2,files,rechecks[,verify_reveals]:2026-11-03``.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 from datetime import date
 
-CONSENT_VERSION = "v1"
+CONSENT_VERSION = "v2"
 REQUIRED_ITEMS = frozenset({"sources", "payloads", "c2", "files", "rechecks"})
 OPTIONAL_ITEMS = frozenset({"verify_reveals"})
 

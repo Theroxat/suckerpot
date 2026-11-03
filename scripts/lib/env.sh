@@ -298,7 +298,7 @@ env_del_line() {
 }
 
 # Version of the consent text, and what the participant agrees to share.
-CONSENT_VERSION=v1
+CONSENT_VERSION=v2
 CONSENT_ITEMS=sources,payloads,c2,files,rechecks,verify_reveals
 
 # Prints the NETWORK_CONSENT record for today (UTC): version, consent list, day.
@@ -329,7 +329,9 @@ consent_screen() {
     echo "address when it connects. The hub stores and logs none, but it is not hidden. Add a VPN at"
     echo "any time: ./scripts/participant.sh vpn <file.conf>"
   fi
-  echo "Updates: signed releases install themselves once a day (turn off: --no-auto-update)."
+  echo "Updates: signed releases install themselves once a day (turn off: --no-auto-update). The"
+  echo "update checks contact GitHub, ghcr.io and Sigstore from this machine's own address, even"
+  echo "with a VPN. Without a VPN, the hub name is also looked up through your normal DNS resolver."
   echo "Leave at any time: ./scripts/participant.sh leave"
   echo
   if [ -n "$pseudonym" ]; then

@@ -30,6 +30,8 @@ skip_verify=0
 force=0
 auto=0
 target=""
+target_commit=""
+expect_file=""
 while [ $# -gt 0 ]; do
   case $1 in
     --yes | -y) assume_yes=1 ;;
@@ -131,6 +133,7 @@ if [ -z "$target" ]; then
 fi
 if [ -n "$target" ]; then
   git rev-parse -q --verify "refs/tags/$target" > /dev/null || die "tag $target not found"
+  target_commit=$(git rev-parse "refs/tags/$target^{commit}")
   if [ "$target" = "$from_version" ] && [ "$(git rev-parse "$target^{commit}")" = "$from_ref" ]; then
     echo "Already on $target. Nothing to update."
     exit 0
@@ -145,9 +148,16 @@ if [ -n "$target" ] && [ "$mode" = images ]; then
     vr_args=()
     [ "$auto" = 1 ] && vr_args+=(--auto)
     vr_rc=0
-    bash scripts/verify-release.sh ${vr_args[@]+"${vr_args[@]}"} "$target" || vr_rc=$?
+    vr_out=$(bash scripts/verify-release.sh ${vr_args[@]+"${vr_args[@]}"} "$target") || vr_rc=$?
+    printf '%s\n' "$vr_out"
     case $vr_rc in
-      0) ;;
+      0)
+        # What was verified is what gets checked out, and what the images are compared with.
+        target_commit=$(printf '%s\n' "$vr_out" | sed -n 's/^commit=//p' | head -n 1)
+        [[ $target_commit =~ ^[0-9a-f]{40}$ ]] || die "the release check returned no commit"
+        expect_file=$(mktemp)
+        printf '%s\n' "$vr_out" | grep '^image\.' > "$expect_file" || true
+        ;;
       3)
         [ "$auto" = 0 ] || die "$target has no signed release manifest; an automatic update refuses it"
         echo "      warning: $target has no signed release manifest (older than v0.6.0); going on" >&2
@@ -222,6 +232,7 @@ mv "$tmp" "$STATE"
 changed=0
 on_exit() {
   rc=$?
+  [ -z "$expect_file" ] || rm -f "$expect_file"
   if [ "$rc" -ne 0 ] && [ "$changed" = 1 ]; then
     echo >&2
     if [ "$auto" = 1 ]; then
@@ -242,9 +253,13 @@ changed=1
 if [ "$pull_branch" = 1 ]; then
   git pull --ff-only --quiet || die "git pull --ff-only failed"
 else
-  git checkout --quiet "$target" || die "could not check out $target"
+  # By commit, never by name: a local branch of the same name or a re-pointed tag must not win.
+  git checkout --quiet --detach "$target_commit" || die "could not check out $target"
 fi
 new_ref=$(git rev-parse HEAD)
+if [ "$pull_branch" = 0 ] && [ "$new_ref" != "$target_commit" ]; then
+  die "the checkout is at ${new_ref:0:12}, not the verified ${target_commit:0:12}"
+fi
 [ -f scripts/lib/env.sh ] && . scripts/lib/env.sh
 
 # ---------------------------------------------------------------- 5. environment
@@ -262,7 +277,7 @@ if [ "$mode" = images ]; then
     docker compose pull
   else
     # Verify the digest, pull exactly that digest, tag it: what runs is what was verified.
-    bash scripts/verify-images.sh --pull "$target" || die "the image signatures could not be verified; nothing was started. Run just rollback to go back, or retry with --skip-verify only if you accept the risk"
+    bash scripts/verify-images.sh --pull ${expect_file:+--expect "$expect_file"} "$target" || die "the image signatures could not be verified; nothing was started. Run just rollback to go back, or retry with --skip-verify only if you accept the risk"
     docker compose pull --policy missing
   fi
   expected=$target

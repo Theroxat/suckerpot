@@ -112,7 +112,16 @@ case $vr_rc in
   *) record refused manifest_invalid ;;
 esac
 
-bash scripts/verify-images.sh "$target" || record refused images_unverified
+expect=$(mktemp "$STATE_DIR/.expect.XXXXXX")
+printf '%s\n' "$vr_out" > "$expect"
+vi_rc=0
+bash scripts/verify-images.sh --expect "$expect" "$target" || vi_rc=$?
+rm -f "$expect"
+case $vi_rc in
+  0) ;;
+  7) record refused digest_mismatch ;;
+  *) record refused images_unverified ;;
+esac
 
 head_before=$(git rev-parse HEAD)
 up_rc=0

@@ -28,7 +28,7 @@ NOW = datetime.now(UTC)
 ENV = {
     "SUCKERPOT_STACK_MODE": "participant",
     "NETWORK_ENABLED": "true",
-    "NETWORK_CONSENT": "v1:sources,payloads,c2,files,rechecks:2026-11-03",
+    "NETWORK_CONSENT": "v2:sources,payloads,c2,files,rechecks:2026-11-03",
     "NETWORK_VERIFIER": "true",
 }
 

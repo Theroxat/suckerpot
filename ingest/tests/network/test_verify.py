@@ -101,7 +101,7 @@ async def test_flag_off_asks_nothing() -> None:
 async def test_participant_needs_the_item_in_the_consent() -> None:
     store = member_store()
     store.reveal_pool["url"] = [URL]
-    plain = "v1:sources,payloads,c2,files,rechecks:2026-11-03"
+    plain = "v2:sources,payloads,c2,files,rechecks:2026-11-03"
     worker, hub = rig(store, stack_mode="participant", consent=plain, verify_reveals=True)
     hub.verify_refs = [URL_B]
     await worker.run_once()

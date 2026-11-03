@@ -82,7 +82,7 @@ echo "[1/4] Restoring the previous code"
 if [ -n "$from_branch" ] && [ "$(git rev-parse -q --verify "refs/heads/$from_branch" 2> /dev/null || true)" = "$(git rev-parse "$from_ref^{commit}")" ]; then
   git checkout --quiet "$from_branch"
 else
-  git checkout --quiet "$from_ref"
+  git checkout --quiet --detach "$from_ref"
 fi
 
 echo "[2/4] Restoring the images"

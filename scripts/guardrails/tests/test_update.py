@@ -24,6 +24,11 @@ POSTGRES_PASSWORD=ownerpassword-aaaaaaaaaaaaaaaaaaaa
 
 RELEASE_STUB = """#!/bin/sh
 echo "verify-release $*" >> "$SHIM_LOG"
+echo "commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+for n in redis migrate ingest api collector hubproxy demo sensor-ssh sensor-rdp sensor-telnet sensor-web \
+  sensor-redis sensor-docker sensor-mysql sensor-mssql sensor-adb sensor-smb sensor-sip sensor-synology; do
+  echo "image.$n=sha256:0000000000000000000000000000000000000000000000000000000000000000"
+done
 exit "${SHIM_RELEASE_RC:-0}"
 """
 
@@ -59,7 +64,7 @@ def test_update_images_mode_full_flow(sandbox: Sandbox) -> None:
     # Backup first, then code, then images, then start.
     order = [
         joined.index("backup-service.sh now preupdate"),
-        joined.index("git checkout --quiet v0.9.0"),
+        joined.index("git checkout --quiet --detach " + NEW),
         joined.index("cosign"),
         joined.index("docker compose up -d --no-build --pull never --wait --wait-timeout 600"),
     ]
@@ -97,7 +102,7 @@ def test_update_to_a_given_version(sandbox: Sandbox) -> None:
     sandbox.env["SHIM_RUNNING_VERSION"] = "v0.7.0"
     rc, out = run_update(sandbox, "--yes", "v0.7.0")
     assert rc == 0, out
-    assert "git checkout --quiet v0.7.0" in sandbox.calls()
+    assert f"git checkout --quiet --detach {NEW}" in sandbox.calls()
 
 
 def test_update_refuses_an_unknown_or_malformed_version(sandbox: Sandbox) -> None:
@@ -221,7 +226,7 @@ def test_rollback_restores_code_images_and_dump(sandbox: Sandbox) -> None:
     assert "restore-db volume:suckerpot-preupdate-20261101T020000Z.dump" in calls_of(sandbox)
     calls = sandbox.calls()
     joined = "\n".join(calls)
-    assert f"git checkout --quiet {OLD}" in calls
+    assert f"git checkout --quiet --detach {OLD}" in calls
     assert "SUCKERPOT_VERSION=v0.8.0" in (sandbox.root / ".env").read_text()
     assert "docker compose pull --policy missing" in calls
     order = [
@@ -295,6 +300,7 @@ def test_update_verifies_before_anything_runs_and_fails_closed(sandbox: Sandbox)
     assert rc != 0
     assert "signatures could not be verified" in out
     assert not any(c.startswith("docker compose up") for c in sandbox.docker_calls())
+    sandbox.git_set("head", OLD)
     rc, out = run_update(sandbox, "--yes", "--skip-verify", "--force")
     assert rc == 0, out
     assert "NOT checked" in out
