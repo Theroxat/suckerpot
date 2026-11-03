@@ -309,3 +309,29 @@ async def test_abusech_cancel_one_or_all_verified_and_list_shows_basis(env: Env)
         ).all()
     assert [r.state for r in states] == ["rejected", "rejected", "rejected", "sent"]  # sent stays
     assert len(await audit(env, "abusech.cancel")) == 3  # the usage errors write nothing
+
+
+async def test_alt_signing_key_is_never_overwritten_and_show_all_labels_both(tmp_path: Any) -> None:
+    lines: list[str] = []
+    primary, alt = tmp_path / "primary", tmp_path / "alt"
+    assert await admin.run(["gen-signing-key", "--out", str(primary)], out=lines.append) == 0
+    assert await admin.run(["gen-signing-key", "--alt", "--out", str(alt)], out=lines.append) == 0
+    assert lines[0].startswith("hub_key=") and lines[1].startswith("hub_key_alt=")
+    assert oct(alt.stat().st_mode & 0o777) == "0o400"
+    before = alt.read_text()
+    code = await admin.run(
+        ["gen-signing-key", "--alt", "--force", "--out", str(alt)], out=lines.append
+    )
+    assert code == 1 and alt.read_text() == before
+    lines.clear()
+    argv = ["show-public-key", "--all", "--key-file", str(primary), "--alt-key-file", str(alt)]
+    assert await admin.run(argv, out=lines.append) == 0
+    assert [x.split("=")[0] for x in lines] == ["hub_key", "hub_key_alt"]
+    assert lines[1].split("=")[1] != lines[0].split("=")[1]
+    lines.clear()
+    assert (
+        await admin.run(["show-public-key", "--all", "--key-file", str(primary)], out=lines.append)
+        == 0
+    )
+    assert lines[1] == "hub_key_alt=none"
+    assert await admin.run(["gen-signing-key", "--alt"], out=lines.append) == 2
