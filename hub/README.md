@@ -54,6 +54,13 @@ Three database roles keep the parts apart. `hub_api` can write nodes, nonces, ch
 
    The volumes are external on purpose. Compose cannot delete them, and `docker compose down -v` does not touch them.
 
+   The backup service runs as uid 999 and the feed writer as uid 10001, so give them their volumes (the feeds volume is `<prefix>_feeds`):
+
+   ```bash
+   docker run --rm -v hubprod_backups:/v alpine chown 999:999 /v
+   docker run --rm -v hubprod_feeds:/v alpine chown 10001:10001 /v
+   ```
+
 2. Create the environment file from the template, and fill in every empty value. Use 24 or more characters for each password, all different, with letters, digits, `-` and `_` only.
 
    ```bash
