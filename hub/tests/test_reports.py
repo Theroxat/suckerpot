@@ -135,7 +135,16 @@ async def test_payload_hosts_are_reported_only_with_fetched_evidence(env: Env) -
         "tags": [],
         "attempts": None,
     }
-    await observe(env.worker, nodes[:2], "payload_ip", host, [D1, D2], fetched=True, **common)
+    await observe(
+        env.worker,
+        nodes[:2],
+        "payload_ip",
+        host,
+        [D1, D2],
+        fetched=True,
+        file_type="elf-arm",
+        **common,
+    )
     await observe(env.worker, nodes[2:], "payload_ip", host, [D1, D2], **common)
     async with env.worker() as s:
         await consensus.run_consensus(s, env.settings, TODAY, never=Never(), corroborate=None)
@@ -169,7 +178,7 @@ async def test_a_host_typed_into_honeypots_is_never_reported(env: Env) -> None:
     # One fetching node is not enough either.
     await observe(
         env.worker, nodes[:1], "payload_ip", host, [TODAY - timedelta(days=3)],
-        services=[], activity=["download"], tags=[], attempts=None, fetched=True,
+        services=[], activity=["download"], tags=[], attempts=None, fetched=True, file_type="elf-arm",
     )  # fmt: skip
     async with env.worker() as s:
         assert await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env)) == set()
@@ -181,7 +190,14 @@ async def test_url_needs_two_fetching_nodes_and_a_revealed_value(env: Env) -> No
         env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
     )
     await observe(
-        env.worker, nodes, "url", "ab" * 32, [D1, D2], fetched=True, activity=["download"]
+        env.worker,
+        nodes,
+        "url",
+        "ab" * 32,
+        [D1, D2],
+        fetched=True,
+        file_type="script-sh",
+        activity=["download"],
     )
     await observe(
         env.worker, nodes, "url", "cd" * 32, [D1, D2], fetched=False, activity=["download"]
@@ -463,3 +479,49 @@ async def test_auto_mode_needs_cohorts_and_never_sends_c2(env: Env) -> None:
             (await s.execute(text("SELECT kind, state FROM reports"))).all()
         )
     assert states == {"attack_source": "approved", "c2": "queued"}
+
+
+@pytest.mark.integration
+async def test_fetching_an_ordinary_web_page_never_makes_a_host_reportable(env: Env) -> None:
+    """A compromised victim site serves HTML: ten nodes fetching it prove no malware. An ELF
+    fetched from another host does, and so does a known family without a file type."""
+    nodes = await add_nodes(
+        env.worker, 10, enrolled=[TODAY - timedelta(days=20 + 7 * i) for i in range(10)]
+    )
+    common: dict[str, Any] = {
+        "services": [],
+        "activity": ["download"],
+        "tags": [],
+        "attempts": None,
+    }
+    html_host, elf_host, fam_host = "192.0.2.130", "192.0.2.131", "192.0.2.132"
+    await observe(
+        env.worker, nodes, "payload_ip", html_host, [D1, D2], fetched=True, file_type="other",
+        **common,
+    )  # fmt: skip
+    await observe(
+        env.worker, nodes, "payload_ip", elf_host, [D1, D2], fetched=True, file_type="elf-x86_64",
+        **common,
+    )  # fmt: skip
+    await observe(
+        env.worker, nodes, "payload_ip", fam_host, [D1, D2], fetched=True, families=["mirai"],
+        **common,
+    )  # fmt: skip
+    await observe(
+        env.worker, nodes, "url", "ef" * 32, [D1, D2], fetched=True, file_type="other",
+        activity=["download"],
+    )  # fmt: skip
+    async with env.worker() as s:
+        await consensus.run_consensus(s, env.settings, TODAY, never=Never(), corroborate=None)
+        await s.execute(
+            text(
+                "UPDATE targets SET value = 'http://198.51.100.9/' || substr(value_b, 1, 4) "
+                "WHERE kind = 'url'"
+            )
+        )
+        await s.commit()
+        ids = await sel.reportable_ids(s, env.settings, TODAY, await _eligible(env))
+    assert ids == {
+        (await target(env.worker, "payload_ip", elf_host))["id"],
+        (await target(env.worker, "payload_ip", fam_host))["id"],
+    }

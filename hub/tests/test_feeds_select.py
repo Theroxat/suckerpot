@@ -167,6 +167,16 @@ def test_payload_host_needs_two_fetchers_with_a_family() -> None:
     assert select.evaluate(target("payload_ip", IP, odd), ctx(ids), None).candidate is None
 
 
+def test_payload_host_needs_malware_like_content_not_just_a_fetch() -> None:
+    ids = nodes(5)
+    base: dict[str, Any] = {"activity": ("download",), "fetched": True}
+    for ft in (None, "other", "archive"):
+        html = rows(ids, file_type=ft, **base)
+        assert select.evaluate(target("payload_ip", IP, html), ctx(ids), None).candidate is None
+    elf = rows(ids, file_type="elf-arm", **base)
+    assert select.evaluate(target("payload_ip", IP, elf), ctx(ids), None).candidate is not None
+
+
 def test_url_typed_by_many_but_never_fetched_is_not_listed() -> None:
     ids = nodes(50)
     typed = rows(ids, activity=("download",), services=("ssh",), fetched=False)

@@ -3,7 +3,8 @@
 Reportable:
 * ``ip``: severe activity (login_success, command, download, exploit) seen by at least
   ``HUB_MIN_NODES`` nodes, or an ``attempts`` bucket of 3 or more from that many nodes;
-* ``url``: fetched by at least two nodes, and its value revealed;
+* ``url``: a malware-like file (known family or executable type) fetched by at least two
+  nodes, and its value revealed;
 * ``c2_ip`` and ``c2_domain``: confirmed (a domain needs its revealed value);
 * ``domain``: only with a revealed value and a fetched payload from two nodes.
 
@@ -28,6 +29,7 @@ from suckerpot_netproto.enums import SEVERE_ACTIVITIES
 
 from .. import consensus
 from ..config import Settings
+from ..malware import SQL_MALWARE_LIKE, sql_params
 from ..never import Never
 from . import render
 from .rdap import Resolver
@@ -78,7 +80,7 @@ async def reportable_ids(
     since = today - timedelta(days=s.window_days)
     rows = await session.execute(
         text(
-            """
+            f"""
             SELECT t.id FROM targets t
             LEFT JOIN reports r ON r.id = t.report_id
             WHERE t.state = 'confirmed' AND t.value IS NOT NULL
@@ -103,17 +105,18 @@ async def reportable_ids(
                 OR (t.kind = 'payload_ip'
                     AND (SELECT count(DISTINCT o.node_id) FROM observations o
                          WHERE o.kind = 'payload_ip' AND o.value = t.value AND o.day >= :since
-                           AND o.node_id = ANY(:eligible) AND o.fetched) >= :fetched
+                           AND o.node_id = ANY(:eligible) AND o.fetched
+                           AND {SQL_MALWARE_LIKE}) >= :fetched
                     AND (SELECT count(DISTINCT o.node_id) FROM observations o
                          WHERE o.kind = 'payload_ip' AND o.value = t.value AND o.day >= :since
                            AND o.node_id = ANY(:eligible)) >= :min_nodes)
                 OR (t.kind IN ('url', 'domain') AND (
                       SELECT count(DISTINCT o.node_id) FROM observations o
                        WHERE o.kind = t.kind AND o.value = coalesce(t.value_b, t.value)
-                         AND o.day >= :since AND o.fetched
+                         AND o.day >= :since AND o.fetched AND {SQL_MALWARE_LIKE}
                          AND o.node_id = ANY(:eligible)) >= :fetched)
               )
-            """
+            """  # noqa: S608 (SQL_MALWARE_LIKE is a module constant)
         ),
         {
             "since": since,
@@ -121,6 +124,7 @@ async def reportable_ids(
             "severe": sorted(SEVERE_ACTIVITIES),
             "min_nodes": s.min_nodes,
             "fetched": MIN_FETCHED_NODES,
+            **sql_params(),
             "cancel_old": today - timedelta(days=CANCEL_BLOCK_DAYS),
         },
     )

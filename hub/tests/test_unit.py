@@ -368,3 +368,16 @@ def test_a_scanner_named_in_wget_commands_is_never_listed_inbound() -> None:
     t = select.TargetInput("t_000000000001", "ip", "192.0.2.4", "confirmed", days[0], False, obs)
     ctx = select.SelectContext(k=5, today=date(2026, 11, 1), cohort_of={})
     assert select.evaluate(t, ctx, True).candidate is None
+
+
+def test_malware_like_needs_a_known_family_or_an_executable_type() -> None:
+    from hub.malware import is_malware_like
+
+    assert is_malware_like([], "elf-arm")
+    assert is_malware_like(None, "pe")
+    assert is_malware_like([], "script-sh")
+    assert is_malware_like(["mirai"], None)
+    assert not is_malware_like([], None)
+    assert not is_malware_like([], "other")
+    assert not is_malware_like([], "archive")
+    assert not is_malware_like(["not-a-family"], "other")
