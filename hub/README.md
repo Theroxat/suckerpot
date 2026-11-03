@@ -94,6 +94,37 @@ Three database roles keep the parts apart. `hub_api` can write nodes, nonces, ch
 
 Pull the new code, then run `docker compose up -d --build` from `hub/`. Migrations run again on their own. The worker runs one copy only. Keep it that way.
 
+## Behind a tunnel
+
+Use this mode when the host already uses ports 80 and 443, or when you do not want to expose the host at all. A Cloudflare Tunnel connector (`cloudflared`, on another machine) sends plain HTTP to one host port and Cloudflare ends TLS. The worker reaches the internet only through an existing authenticated HTTP proxy, such as a VPN gateway.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --build
+```
+
+Set these in `.env` (see the end of `.env.example`). The overlay needs Docker Compose 2.24 or newer.
+
+| Variable | Meaning |
+| --- | --- |
+| `HUB_BIND` | Host address Caddy listens on. Use a private address that only the tunnel machine can reach |
+| `HUB_HTTP_PORT` | Host port that maps to Caddy's port 8080 |
+| `HUB_EGRESS_NETWORK` | Name of the existing Docker network the proxy is on. It must already exist |
+| `HUB_EGRESS_PROXY` | The proxy URL, for example `http://user:change-me@vpn:8888` |
+
+What the overlay changes:
+
+- **Caddy** loads `Caddyfile.tunnel` instead of `Caddyfile`. It serves plain HTTP on 8080 for both names, needs no capability and no sysctl, and is the only service with a published port. A test keeps `Caddyfile.tunnel` identical to `Caddyfile` apart from the site addresses, the trust settings and the forwarding header.
+- **Client addresses.** Caddy trusts the `Cf-Connecting-Ip` header from private peers only, and rewrites `X-Forwarded-For` with that address for `hub-api`. The rate limits then work per client and not per tunnel. This is why `HUB_BIND` must not be a public address: anyone who could reach the port could name any address. The main `Caddyfile` has no such trust.
+- **Outbound traffic.** `hub-worker` and `hub-admin` join the proxy's network and get `HTTPS_PROXY` and `HTTP_PROXY`. The `hub-out` network is unused, so no service has a direct route out. RDAP, the corroboration sources and the range lists all go through the proxy.
+
+In the Cloudflare dashboard, add two public hostnames to the tunnel, one for `HUB_DOMAIN` and one for `HUB_FEEDS_DOMAIN`. Both point at `http://<host>:<HUB_HTTP_PORT>`, where `<host>` is `HUB_BIND`.
+
+Things to know:
+
+- **Cloudflare sees client addresses and request contents.** It ends TLS, so it handles every request. The "no client address is logged" promise covers the hub only. Turn off Cloudflare logging and analytics for these hostnames where you can, and tell members that this mode puts a third party in the path.
+- **SMTP is off in this mode.** `smtplib` cannot use an HTTP proxy and the worker has no direct route. When a proxy variable is set, the mailer refuses to send before any connection, logs the code `smtp_needs_direct_route` (never the password), and leaves every approved report queued. Reports are sent again when you switch back to the direct mode, or after a proxy-aware sender exists.
+- **Keep the proxy credentials secret.** They live in `.env`, which is never committed.
+
 ## Configuration
 
 Set these in `hub/.env`. The defaults are the values in the code, and in `.env.example` where the template sets them.

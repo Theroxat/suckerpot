@@ -1,0 +1,5 @@
+# Signing keys and local overrides never go in git.
+secrets/
+.env
+Caddyfile.local
+docker-compose.local.yml
