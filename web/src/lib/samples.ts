@@ -62,7 +62,18 @@ export interface SampleItem {
   yara: string[]
   stored: boolean
   analysis_status: SampleStatus
+  /** `network_verify`: fetched only to verify a link other nodes reported, it did not attack this node. */
+  origin: SampleOrigin
 }
+
+export type SampleOrigin = "local" | "network_verify"
+
+/** Plain-English label and explanation of a sample origin. Only the network check is flagged. */
+export const NETWORK_CHECK = {
+  label: "Network check",
+  explain:
+    "Fetched to verify a link that other nodes in the network reported. It did not attack this node.",
+} as const
 
 export interface SampleFilters {
   kind?: string

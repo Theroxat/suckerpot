@@ -32,6 +32,7 @@ function sample(over: Partial<SampleItem>): SampleItem {
     yara: [],
     stored: true,
     analysis_status: "done",
+    origin: "local",
     ...over,
   }
 }
