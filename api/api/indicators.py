@@ -391,7 +391,7 @@ def render_stix(items: list[IndicatorOut], now: datetime) -> dict[str, Any]:
             "modified": _stamp(i.last_seen),
             "name": i.defanged[:200],
             "description": (
-                f"Seen {i.sightings} time(s) by a SuckerPot honeypot ({i.role.replace('_', ' ')}). "
+                f"Seen {i.sightings} time(s) by a honeypot ({i.role.replace('_', ' ')}). "
                 "Observed passively; nobody contacted this indicator."
             ),
             "indicator_types": ["malicious-activity" if i.known else "anomalous-activity"],
@@ -430,9 +430,9 @@ async def export_indicators(
     stamp = now.strftime("%Y%m%d")
     if format == "stix":
         body = json.dumps(render_stix(items, now), separators=(",", ":"))
-        media, name = "application/stix+json;version=2.1", f"suckerpot-indicators-{stamp}.json"
+        media, name = "application/stix+json;version=2.1", f"indicators-{stamp}.json"
     else:
-        body, media, name = render_csv(items), "text/csv; charset=utf-8", f"suckerpot-{stamp}.csv"
+        body, media, name = render_csv(items), "text/csv; charset=utf-8", f"indicators-{stamp}.csv"
     return Response(
         body,
         media_type=media,
