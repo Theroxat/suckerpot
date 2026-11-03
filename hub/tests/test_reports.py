@@ -295,28 +295,10 @@ async def test_recipient_and_global_daily_caps(env: Env) -> None:
     assert out.sent == 1 and out.deferred.get("daily_cap") == 1
 
 
-async def test_smtp_fails_closed_behind_an_http_proxy(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Tunnel mode: smtplib cannot use the proxy, so the mailer refuses before any connection."""
-    for v in send.PROXY_VARS:
-        monkeypatch.delenv(v, raising=False)
-        monkeypatch.delenv(v.lower(), raising=False)
-    monkeypatch.setenv("HTTPS_PROXY", "http://user:proxy-secret@vpn:8888")
-    s = Settings(
-        smtp_host="smtp.example.org", smtp_from="r@example.org", smtp_password="smtp-secret"
-    )
-    mailer = send.smtp_mailer(s, lambda: datetime(2026, 11, 1, tzinfo=UTC))
-    with caplog.at_level("DEBUG"), pytest.raises(send.SendBlocked) as err:
-        await mailer("abuse@example.net", "s", "b", None)
-    assert err.value.args == ("smtp_needs_direct_route",)
-    assert "smtp-secret" not in caplog.text and "proxy-secret" not in caplog.text
-
-
 @pytest.mark.integration
-async def test_blocked_send_keeps_reports_queued(env: Env) -> None:
-    async def blocked(to: str, subject: str, body: str, xarf: str | None) -> None:
-        raise send.SendBlocked("smtp_needs_direct_route")
+async def test_deferred_send_keeps_reports_queued(env: Env) -> None:
+    async def deferred(to: str, subject: str, body: str, xarf: str | None) -> None:
+        raise send.SendDeferred("proxy_unreachable")
 
     async with env.worker() as s:
         await s.execute(
@@ -327,9 +309,9 @@ async def test_blocked_send_keeps_reports_queued(env: Env) -> None:
             {"d": TODAY},
         )
         await s.commit()
-        out = await send.send_due(s, env.settings, env.clock(), TODAY, blocked)
+        out = await send.send_due(s, env.settings, env.clock(), TODAY, deferred)
         row = (await s.execute(text("SELECT state, error_code FROM reports"))).one()
-    assert out.failed == 0 and out.deferred == {"smtp_needs_direct_route": 1}
+    assert out.failed == 0 and out.deferred == {"proxy_unreachable": 1}
     assert (row.state, row.error_code) == ("approved", None)
 
 

@@ -9,19 +9,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import smtplib
+import socket
 import ssl
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from email.message import EmailMessage
 from email.utils import format_datetime, make_msgid
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings
+from .tunnel import TunnelError, connect_via_proxy, proxy_url_from_env
 
 log = logging.getLogger("hub.reports")
 
@@ -33,20 +35,39 @@ class SendError(Exception):
     """The message is a short constant code (never a server answer)."""
 
 
-class SendBlocked(SendError):
-    """No route for mail in this deployment: the report must stay approved and queued."""
+class SendDeferred(SendError):
+    """The mail could not be tried or its outcome is a proxy or network outage, not a verdict.
 
-
-PROXY_VARS = ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY")
-
-
-def _egress_is_proxied() -> bool:
-    """True when outbound traffic must go through an HTTP proxy (tunnel mode, see the README).
-
-    smtplib cannot use an HTTP proxy, and in that mode the container has no direct route out, so a
-    send could only fail. Refusing up front keeps the report queued instead of marking it failed.
+    The report stays approved and queued; nothing is stored. Only a definitive SMTP rejection by
+    the server marks a report failed.
     """
-    return any(os.environ.get(v) or os.environ.get(v.lower()) for v in PROXY_VARS)
+
+
+class _TunnelSMTP(smtplib.SMTP):
+    """Plain SMTP over a CONNECT tunnel; the caller does STARTTLS."""
+
+    def __init__(self, proxy: str, **kwargs: Any) -> None:
+        self._proxy = proxy  # must exist before the base class connects
+        super().__init__(**kwargs)
+
+    def _get_socket(self, host: str, port: int, timeout: float) -> socket.socket:
+        return connect_via_proxy(self._proxy, host, port, timeout=timeout)
+
+
+class _TunnelSMTP_SSL(smtplib.SMTP_SSL):
+    """Implicit-TLS SMTP over a CONNECT tunnel; the certificate is checked against the host."""
+
+    def __init__(self, proxy: str, **kwargs: Any) -> None:
+        self._proxy = proxy
+        super().__init__(**kwargs)
+
+    def _get_socket(self, host: str, port: int, timeout: float) -> socket.socket:
+        raw = connect_via_proxy(self._proxy, host, port, timeout=timeout)
+        try:
+            return self.context.wrap_socket(raw, server_hostname=host)
+        except BaseException:
+            raw.close()
+            raise
 
 
 @dataclass
@@ -75,29 +96,72 @@ def build_message(
     return msg
 
 
+def _deliver_direct(s: Settings, msg: EmailMessage) -> None:
+    context = ssl.create_default_context()
+    try:
+        if s.smtp_port == 465:
+            with smtplib.SMTP_SSL(s.smtp_host, s.smtp_port, context=context, timeout=30) as c:
+                _login_and_send(c, s, msg)
+        else:
+            with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=30) as c:
+                if s.smtp_starttls:
+                    c.starttls(context=context)
+                _login_and_send(c, s, msg)
+    except (smtplib.SMTPException, OSError, ssl.SSLError) as exc:
+        raise SendError(type(exc).__name__) from None
+
+
+def _deliver_proxied(s: Settings, msg: EmailMessage, proxy: str) -> None:
+    """Through the CONNECT tunnel only, TLS always (implicit on 465, else STARTTLS), certificate
+    and host name checked against the SMTP host. There is no direct connection and no fallback."""
+    context = ssl.create_default_context()
+    stage = "connect"
+    try:
+        server: smtplib.SMTP
+        if s.smtp_port == 465:
+            server = _TunnelSMTP_SSL(proxy, context=context, timeout=30)
+        else:
+            server = _TunnelSMTP(proxy, timeout=30)
+        server.connect(s.smtp_host, s.smtp_port)
+        with server:
+            if s.smtp_port != 465:
+                server.starttls(context=context)  # fails when unsupported: no plain text
+            if s.smtp_user:
+                stage = "auth"
+                server.login(s.smtp_user, s.smtp_password)
+            stage = "send"
+            server.send_message(msg)
+    except TunnelError as exc:
+        raise SendDeferred(exc.code) from None
+    except ssl.SSLError as exc:
+        raise SendError(type(exc).__name__) from None
+    except (smtplib.SMTPServerDisconnected, OSError) as exc:
+        # The link broke. Before DATA nothing was sent, so the report stays queued; once DATA may
+        # have started the outcome is unknown, and a repeat could duplicate the mail.
+        if stage != "send":
+            raise SendDeferred("smtp_link_down") from None
+        raise SendError(type(exc).__name__) from None
+    except smtplib.SMTPException as exc:
+        raise SendError(type(exc).__name__) from None
+
+
 def smtp_mailer(s: Settings, clock: Callable[[], datetime]) -> Mailer:
-    """A mailer for the configured server: implicit TLS on 465, STARTTLS otherwise."""
+    """A mailer for the configured server: implicit TLS on 465, STARTTLS otherwise.
+
+    With a proxy variable set (tunnel mode) every connection goes through the proxy.
+    """
 
     def deliver(to: str, subject: str, body: str, xarf: str | None) -> None:
         msg = build_message(s, to, subject, body, xarf, clock())
-        context = ssl.create_default_context()
-        try:
-            if s.smtp_port == 465:
-                with smtplib.SMTP_SSL(s.smtp_host, s.smtp_port, context=context, timeout=30) as c:
-                    _login_and_send(c, s, msg)
-            else:
-                with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=30) as c:
-                    if s.smtp_starttls:
-                        c.starttls(context=context)
-                    _login_and_send(c, s, msg)
-        except (smtplib.SMTPException, OSError, ssl.SSLError) as exc:
-            raise SendError(type(exc).__name__) from None
+        proxy = proxy_url_from_env()  # read at send time, never cached
+        if proxy is None:
+            _deliver_direct(s, msg)
+        else:
+            _deliver_proxied(s, msg, proxy)
 
     async def send(to: str, subject: str, body: str, xarf: str | None) -> None:
         if not (s.smtp_host and s.smtp_from):
             raise SendError("smtp_not_configured")
-        if _egress_is_proxied():
-            raise SendBlocked("smtp_needs_direct_route")
         await asyncio.to_thread(deliver, to, subject, body, xarf)
 
     return send
@@ -150,9 +214,9 @@ async def send_due(
         subject, body = split_stored(r.body_text)
         try:
             await mailer(r.recipient, subject, body, r.xarf)
-        except SendBlocked as exc:
-            # Nothing was tried and nothing is stored: the same reports are due next run.
-            code = str(exc.args[0] if exc.args else "blocked")
+        except SendDeferred as exc:
+            # An outage, not a verdict: nothing is stored, the same reports are due next run.
+            code = str(exc.args[0] if exc.args else "deferred")
             log.warning("report mail not sent: %s", code)
             result.deferred[code] = len(rows) - rows.index(r)
             break

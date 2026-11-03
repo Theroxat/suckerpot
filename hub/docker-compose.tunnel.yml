@@ -7,7 +7,7 @@
 # What changes: Caddy serves plain HTTP on one unprivileged port (Caddyfile.tunnel), and the
 # worker and the admin CLI reach the internet only through the proxy. No service keeps a direct
 # route out (hub-out is unused). Needs Docker Compose 2.24 or newer (!override, !reset).
-# SMTP cannot use an HTTP proxy, so report mail stays queued in this mode (hub/README.md).
+# Report mail also goes through the proxy (a CONNECT tunnel, then TLS), never direct (hub/README.md).
 
 services:
   caddy:
