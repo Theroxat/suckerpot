@@ -133,9 +133,18 @@ class Settings:
     # Filled into the public README.txt: the feed host name and the delisting mailbox (optional).
     feeds_domain: str = "feeds.example.org"
     delist_mailbox: str = ""
+    # abuse.ch submissions (URLhaus, ThreatFox). Off until a mode and an Auth-Key are both set.
+    abusech_mode: str = "off"
+    abusech_auth_key: str = field(default="", repr=False)
+    abusech_daily_cap: int = 50
     # External corroboration (optional keys; empty disables the source).
     abuseipdb_key: str = field(default="", repr=False)
     greynoise_key: str = field(default="", repr=False)
+
+    @property
+    def abusech_active(self) -> bool:
+        """Submissions are queued and sent only with a mode other than off AND an Auth-Key."""
+        return self.abusech_mode != "off" and bool(self.abusech_auth_key)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -146,7 +155,13 @@ class Settings:
         feed_mode = e.get("HUB_FEED_MODE", "off") or "off"
         if feed_mode not in {"off", "review", "auto"}:
             raise ConfigError("HUB_FEED_MODE must be off, review or auto")
+        abusech_mode = e.get("HUB_ABUSECH_MODE", "off") or "off"
+        if abusech_mode not in {"off", "review", "auto"}:
+            raise ConfigError("HUB_ABUSECH_MODE must be off, review or auto")
         return cls(
+            abusech_mode=abusech_mode,
+            abusech_auth_key=e.get("HUB_ABUSECH_AUTH_KEY", ""),
+            abusech_daily_cap=_int(e, "HUB_ABUSECH_DAILY_CAP", 50, 0),
             feed_mode=feed_mode,
             feed_dir=e.get("HUB_FEED_DIR", "/srv/feeds") or "/srv/feeds",
             feed_signing_key_file=e.get("HUB_FEED_SIGNING_KEY_FILE", ""),

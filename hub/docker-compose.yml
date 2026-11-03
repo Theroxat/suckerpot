@@ -152,6 +152,10 @@ services:
       HUB_SMTP_STARTTLS: ${HUB_SMTP_STARTTLS:-true}
       HUB_ABUSEIPDB_KEY: ${HUB_ABUSEIPDB_KEY:-}
       HUB_GREYNOISE_KEY: ${HUB_GREYNOISE_KEY:-}
+      # abuse.ch submissions (URLhaus, ThreatFox).
+      HUB_ABUSECH_MODE: ${HUB_ABUSECH_MODE:-off}
+      HUB_ABUSECH_AUTH_KEY: ${HUB_ABUSECH_AUTH_KEY:-}
+      HUB_ABUSECH_DAILY_CAP: ${HUB_ABUSECH_DAILY_CAP:-50}
     healthcheck:
       test: ["CMD", "python", "-m", "hub.worker", "--health"]
       interval: 60s

@@ -4,6 +4,7 @@
 * batch markers: 14 days; nonces and challenges: until they expire (10 minutes);
 * contributor links: when the target is resolved or after 30 days;
 * takedown votes: 30 days; weekly statistics: 8 weeks;
+* abuse.ch submissions: finished ones 365 days, like reports;
 * feeds: removed entries 90 days, runs 30 days, delisting evidence 30 days after the decision,
   decided delisting requests 180 days (open ones wait for their decision, without contact and
   evidence after 180 days), expired allow-list
@@ -112,6 +113,14 @@ async def run_retention(
         session,
         "reports",
         "DELETE FROM reports WHERE state IN ('sent', 'failed', 'cancelled') AND created_day < :c",
+        {"c": today - timedelta(days=REPORT_DAYS)},
+        out,
+    )
+    await _delete(
+        session,
+        "abusech_submissions",
+        "DELETE FROM abusech_submissions WHERE state IN ('sent', 'failed', 'rejected') "
+        "AND created_day < :c",
         {"c": today - timedelta(days=REPORT_DAYS)},
         out,
     )
