@@ -55,10 +55,12 @@ test("settings tabs", async ({ page }, info) => {
     "Keys",
     "Users",
     "Audit",
+    "Sensors & ports",
     "Alert channels",
     "Feeds",
     "Reporting",
     "VPN",
+    "Network",
   ])
   await page.getByRole("tab", { name: "Alert channels" }).click()
   await expect(page).toHaveURL(/tab=alerts/)
