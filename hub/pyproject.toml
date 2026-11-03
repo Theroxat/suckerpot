@@ -55,7 +55,7 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 [tool.mypy]
 strict = true
 python_version = "3.13"
-exclude = ["^\\.venv/"]
+exclude = ["^\\.venv/", "^secrets/"]
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]

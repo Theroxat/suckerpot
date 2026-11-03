@@ -126,9 +126,7 @@ def test_a_signed_old_enough_release_is_installed(sandbox: Sandbox) -> None:
     assert "update --yes --auto v0.9.0 lock_held=1" in calls
     # Both checks run before the update.
     first_images = next(i for i, c in enumerate(calls) if c.startswith("verify-images"))
-    assert first_images < calls.index(
-        "update --yes --auto v0.9.0 lock_held=1"
-    )
+    assert first_images < calls.index("update --yes --auto v0.9.0 lock_held=1")
     assert (result(sandbox)["last_result"], result(sandbox)["to"]) == ("updated", "v0.9.0")
     assert result(sandbox)["from"] == "v0.8.0"
     assert "updated" in proc.stdout

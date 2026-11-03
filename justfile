@@ -266,8 +266,8 @@ hub-integration:
     #!/usr/bin/env bash
     set -euo pipefail
     project="hubtest-$$"
-    trap 'docker compose -f hub/docker-compose.test.yml -p "$project" down -v --remove-orphans >/dev/null 2>&1' EXIT
-    docker compose -f hub/docker-compose.test.yml -p "$project" up -d --wait hub-db
+    trap 'docker compose --env-file /dev/null -f hub/docker-compose.test.yml -p "$project" down -v --remove-orphans >/dev/null 2>&1' EXIT
+    docker compose --env-file /dev/null -f hub/docker-compose.test.yml -p "$project" up -d --wait hub-db
     docker run --rm --user "$(id -u):$(id -g)" --network "${project}_default" \
       -v "$PWD:/work" -v "{{uv_cache}}:/cache" -w /work/hub \
       -e HOME=/tmp -e UV_CACHE_DIR=/cache -e UV_LINK_MODE=copy -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
