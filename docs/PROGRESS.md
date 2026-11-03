@@ -206,3 +206,9 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - **Releases.** Hub and feed public keys ship in the release; nodes pin up to three hub keys and the hub can sign with an alternate key for a rollover. Participants update daily from a cosign-signed release manifest bound to the tag's commit and image digests, 48 h minimum age, rollback on a failed health check.
 - **Tests.** End-to-end participant install against a throwaway test hub (48 checks); it found that leaving kept the node at the hub and that switching to full mode failed at its backup, both fixed. Releasing the real keys showed the feed key was validated as a hub key set; fixed.
 - **Reviews.** Security review PASS with six low findings (domain fronting through the hub edge, checkout by tag name, manifest digests unchecked, a decoy self address opening the reveal guard, the firewall rule, consent wording), all fixed. UI review asked for a clearer network-check badge; fixed.
+
+## 2026-11-03 — v0.6.0 released
+
+- Tag `v0.6.0` pushed; the release workflow built the 19 images for amd64 and arm64, signed them, passed the smoke install and attached the signed release manifest.
+- Verified on a separate machine: `scripts/verify-release.sh v0.6.0` (signer, commit, network defaults hash) and `just verify-images v0.6.0` (all 19 signatures) pass.
+- The participant end-to-end job that failed once on CI passed on the next run with no code change: a CI flake, not a regression.
