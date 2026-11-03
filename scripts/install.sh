@@ -628,6 +628,8 @@ elif [ "$dash" = 1 ]; then
       fi
     else
       api_image=suckerpot-install-api
+      # The end-to-end test must not retag anything that a live install may use.
+      [ "${SELFHOSTR_TEST_INSTALL:-}" != 1 ] || api_image="local/${project}-install-api:test"
       docker build -q -f api/Dockerfile -t "$api_image" . > /dev/null || die "could not build the api image"
     fi
     hash=$(printf '%s\n' "$pw" | docker run --rm -i --network none --cap-drop ALL \
@@ -775,6 +777,16 @@ else
     fi
   fi
 
+  if [ "${SELFHOSTR_TEST_INSTALL:-}" = 1 ] && [ "$switching" = 0 ]; then
+    # End-to-end test: the overlay that makes the stack hermetic (local images, local volumes, no
+    # published port, no network with a route out). valid_project_name already limited this to
+    # sp-it-participant-* names.
+    ENV_FILE=$tmp
+    cf=$(env_get COMPOSE_FILE docker-compose.yml)
+    unset ENV_FILE
+    setv COMPOSE_FILE "$cf:docker-compose.participant-it.yml"
+  fi
+
   # Final checks on the file before it goes live.
   if grep -v '^[[:space:]]*#' "$tmp" | grep -q 'change-me'; then
     rm -f "$tmp"
@@ -815,7 +827,13 @@ fi
 
 # ---------------------------------------------------------------- 7. volumes
 step 7 "Creating the data volumes"
-SUCKERPOT_VOLUME_PREFIX=$prefix bash scripts/ensure-volumes.sh
+if [ "${SELFHOSTR_TEST_INSTALL:-}" = 1 ]; then
+  # End-to-end test (scripts/e2e/participant.sh): the test overlay makes every volume local to the
+  # throwaway project, so there is nothing to create here.
+  note "test install: volumes are local to the throwaway project"
+else
+  SUCKERPOT_VOLUME_PREFIX=$prefix bash scripts/ensure-volumes.sh
+fi
 
 # ---------------------------------------------------------------- 8. guards
 step 8 "Checking the port layout and VPN settings"

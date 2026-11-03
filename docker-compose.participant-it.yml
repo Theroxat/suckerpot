@@ -1,0 +1,133 @@
+# Overlay for the participant end-to-end test (scripts/e2e/participant.sh, CI job
+# `participant-e2e`). NEVER part of a real install: only the test installer mode
+# (SELFHOSTR_TEST_INSTALL=1, project name sp-it-participant-<random>) puts it into COMPOSE_FILE.
+#
+# It lets the real installer and the real stack run on a machine that also holds a live stack,
+# and keeps every packet on the machine:
+#   - images get a name scoped to the throwaway project (live images are never retagged);
+#   - every data volume is local to the throwaway project, never an external one;
+#   - no sensor publishes a host port (the live stack owns them);
+#   - every network is internal (no route out), loses its fixed network and bridge name (the live
+#     stack owns those) and gets a fixed small subnet (Docker's default address pools may be
+#     exhausted on a busy host). Exceptions: the dashboard network, which must publish the
+#     dashboard port on 127.0.0.1 after the switch to full mode, and the pre-made, internal "hub
+#     gate" network that stands in for hubproxy's uplink (only the test hub lives on it);
+#   - the ingest container trusts the test hub's CA: the script builds a bundle (the image's own
+#     certificates plus the test CA) and mounts it over certifi's bundle, for ingest only.
+services:
+  # Fixes the owner of two volumes, as scripts/ensure-volumes.sh does for the real external ones.
+  backups-init:
+    image: timescale/timescaledb:2.22.1-pg17
+    user: "0:0"
+    entrypoint: ["sh", "-c", "chown 70:70 /b && chown 10001:10001 /v"]
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - backups:/b
+      - vpn-config:/v
+    networks: [backend]
+    restart: "no"
+  backup:
+    depends_on:
+      backups-init:
+        condition: service_completed_successfully
+  migrate:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-migrate:test"
+  ingest:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-ingest:test"
+    volumes:
+      - ./e2e-ca-bundle.pem:/opt/venv/lib/python3.13/site-packages/certifi/cacert.pem:ro
+  api:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-api:test"
+  collector:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-collector:test"
+  analyzer:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-collector:test"
+  hubproxy:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-hubproxy:test"
+  sensor-ssh:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-ssh:test"
+    ports: !reset []
+  sensor-rdp:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-rdp:test"
+    ports: !reset []
+  sensor-telnet:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-telnet:test"
+    ports: !reset []
+  sensor-web:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-web:test"
+    ports: !reset []
+  sensor-redis:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-redis:test"
+    ports: !reset []
+  sensor-docker:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-docker:test"
+    ports: !reset []
+  sensor-mysql:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-mysql:test"
+    ports: !reset []
+  sensor-mssql:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-mssql:test"
+    ports: !reset []
+  sensor-adb:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-adb:test"
+    ports: !reset []
+  sensor-smb:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-smb:test"
+    ports: !reset []
+  sensor-sip:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-sip:test"
+    ports: !reset []
+  sensor-synology:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-sensor-synology:test"
+    ports: !reset []
+
+networks:
+  backend: { ipam: { config: [{ subnet: 198.19.1.0/28 }] } }
+  tools: { ipam: { config: [{ subnet: 198.19.2.0/28 }] } }
+  ingress: !override { internal: true, ipam: { config: [{ subnet: 198.19.3.0/28 }] } }
+  vpn-uplink: !override { internal: true, ipam: { config: [{ subnet: 198.19.4.0/28 }] } }
+  egress-proxy: !override { internal: true, ipam: { config: [{ subnet: 198.19.5.0/28 }] } }
+  hub-proxy: !override { internal: true, ipam: { config: [{ subnet: 198.19.6.0/28 }] } }
+  samples: !override { internal: true, ipam: { config: [{ subnet: 198.19.7.0/28 }] } }
+  dashboard: !override { ipam: { config: [{ subnet: 198.19.8.0/28 }] } }
+  # Created by the script before the stack starts: internal, with a public-looking subnet that the
+  # test hub sits on. hubproxy refuses private addresses, and that rule stays untouched.
+  hub-uplink: !override
+    name: "${E2E_UPLINK_NET:?E2E_UPLINK_NET must be set}"
+    external: true
+  sensors-ssh: { ipam: { config: [{ subnet: 198.19.11.0/28 }] } }
+  sensors-rdp: { ipam: { config: [{ subnet: 198.19.12.0/28 }] } }
+  sensors-telnet: { ipam: { config: [{ subnet: 198.19.13.0/28 }] } }
+  sensors-web: { ipam: { config: [{ subnet: 198.19.14.0/28 }] } }
+  sensors-redis: { ipam: { config: [{ subnet: 198.19.15.0/28 }] } }
+  sensors-docker: { ipam: { config: [{ subnet: 198.19.16.0/28 }] } }
+  sensors-mysql: { ipam: { config: [{ subnet: 198.19.17.0/28 }] } }
+  sensors-mssql: { ipam: { config: [{ subnet: 198.19.18.0/28 }] } }
+  sensors-adb: { ipam: { config: [{ subnet: 198.19.19.0/28 }] } }
+  sensors-smb: { ipam: { config: [{ subnet: 198.19.20.0/28 }] } }
+  sensors-sip: { ipam: { config: [{ subnet: 198.19.21.0/28 }] } }
+  sensors-synology: { ipam: { config: [{ subnet: 198.19.22.0/28 }] } }
+
+# Project-local volumes with an explicit "test-" name (never external, never equal to a live name).
+volumes:
+  redis-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_redis-data" }
+  db-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_db-data" }
+  ssh-hostkeys: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_ssh-hostkeys" }
+  rdp-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_rdp-data" }
+  telnet-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_telnet-data" }
+  web-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_web-data" }
+  redis-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_redis-sensor-data" }
+  docker-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_docker-sensor-data" }
+  mysql-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_mysql-sensor-data" }
+  mssql-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_mssql-sensor-data" }
+  adb-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_adb-sensor-data" }
+  smb-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_smb-sensor-data" }
+  sip-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_sip-sensor-data" }
+  synology-sensor-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_synology-sensor-data" }
+  geoip-data: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_geoip-data" }
+  quarantine: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_quarantine" }
+  vpn-config: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_vpn-config" }
+  backups: !override { name: "test-${SUCKERPOT_VOLUME_PREFIX:?SUCKERPOT_VOLUME_PREFIX must be set}_backups" }

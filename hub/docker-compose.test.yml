@@ -21,6 +21,7 @@ x-test-env: &test-env
   HUB_ALLOW_DEFAULT_SECRETS: "1"
   HUB_POW_DIFFICULTY: "8"
   HUB_NODE_MIN_AGE_DAYS: "14"
+  HUB_VERIFY_MODE: auto
 
 services:
   hub-db:
@@ -152,6 +153,42 @@ services:
     depends_on:
       feeds-init:
         condition: service_completed_successfully
+
+  # Participant end-to-end test only (scripts/e2e/participant.sh): the TLS edge of the throwaway hub.
+  # Caddy's internal CA signs the certificate of hub.selfhostr.io, which is an alias on the pre-made,
+  # internal "uplink" network that the test participant's hubproxy shares. No real DNS record, no
+  # public certificate, no published port; the name never leaves the throwaway Docker networks.
+  hub-edge:
+    profiles: [participant-e2e]
+    image: caddy:2.11.2-alpine@sha256:834468128c7696cec0ceea6172f7d692daf645ae51983ca76e39da54a97c570d
+    <<: *hardening
+    user: "65532:65532"
+    cap_add: [NET_BIND_SERVICE]  # the binary's file capability; see docker-compose.yml
+    volumes:
+      - ./Caddyfile.test:/etc/caddy/Caddyfile:ro
+    tmpfs:
+      - /data:rw,noexec,nosuid,nodev,size=8m,uid=65532,gid=65532
+      - /config:rw,noexec,nosuid,nodev,size=8m,uid=65532,gid=65532
+    networks:
+      default: {}
+      uplink:
+        ipv4_address: ${E2E_HUB_IP:-11.251.77.10}
+        aliases: [hub.selfhostr.io]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "443"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    mem_limit: 64m
+    depends_on:
+      hub-api:
+        condition: service_started
+
+networks:
+  # Only used by hub-edge (profile participant-e2e): internal, created by the script.
+  uplink:
+    external: true
+    name: ${E2E_UPLINK_NET:-hubtest-uplink-unset}
 
 volumes:
   keys:

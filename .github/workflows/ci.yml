@@ -344,3 +344,18 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  # Participant install, end to end (docs/design/m32.md section 11.3): the real installer in a
+  # temporary copy, a throwaway test hub with TLS from its own CA, containment checks, enrolment, an
+  # accepted batch, leave, and the switch to full mode. Hermetic: unique compose project, local
+  # volumes, internal networks only; the real hub is never contacted. Image pulls and the base images
+  # of the builds are the only traffic to the internet.
+  participant-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Participant end-to-end test
+        run: scripts/e2e/participant.sh

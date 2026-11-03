@@ -666,6 +666,26 @@ def test_leave_that_is_not_confirmed_changes_nothing(installed: Sandbox) -> None
     assert (installed.root / ".env").read_text() == before
 
 
+def test_leave_ignores_a_nested_off_state(installed: Sandbox) -> None:
+    # The real status holds nested objects with their own "state" (verifier, consent): an "off"
+    # there must not count as "the node has left" while the top-level state is still member.
+    (installed.shim / "cli-state.json").write_text(
+        '{"network": {"verifier": {"enabled": false, "state": "off"}}, "state": "member"}'
+    )
+    before = (installed.root / ".env").read_text()
+    proc = installed.run("scripts/participant.sh", "leave")
+    assert proc.returncode != 0
+    assert (installed.root / ".env").read_text() == before
+
+
+def test_leave_accepts_the_top_level_state_next_to_nested_ones(installed: Sandbox) -> None:
+    (installed.shim / "cli-state.json").write_text(
+        '{"network": {"verifier": {"state": "off"}, "consent": {"state": "valid"}}, "state": "left"}'
+    )
+    proc = installed.run("scripts/participant.sh", "leave")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
 def test_join_shows_the_consent_and_writes_a_fresh_record(
     installed: Sandbox, parse_env: Callable[[Path], dict[str, str]]
 ) -> None:

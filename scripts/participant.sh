@@ -68,9 +68,39 @@ revert() {
   chmod 600 .env
 }
 
+# Prints the TOP-LEVEL "state" string of a JSON document on stdin. A grep over the whole document
+# is wrong: the nested verifier, consent and membership objects have their own "state" keys, and
+# an "off" there would end the wait before the worker has told the hub.
+json_top_state() {
+  awk 'BEGIN { RS = "\001" }
+  {
+    n = length($0); depth = 0; instr = 0; esc = 0; tok = ""; want = 0
+    for (i = 1; i <= n; i++) {
+      c = substr($0, i, 1)
+      if (instr) {
+        if (esc) { esc = 0; tok = tok c }
+        else if (c == "\\") esc = 1
+        else if (c == "\"") {
+          instr = 0
+          if (depth == 1) {
+            if (want) { print tok; exit }
+            j = i + 1
+            while (substr($0, j, 1) == " ") j++
+            if (substr($0, j, 1) == ":" && tok == "state") want = 1
+          }
+        } else tok = tok c
+      } else if (c == "\"") { instr = 1; tok = "" }
+      else if (c == "{" || c == "[") depth++
+      else if (c == "}" || c == "]") depth--
+    }
+  }'
+}
+
+# True when the top-level state of the network status is off, left or not_joined.
 cli_state_off() {
-  docker compose exec -T ingest python -m ingest.network.cli status --json 2> /dev/null \
-    | grep -Eq '"state"[[:space:]]*:[[:space:]]*"(off|left|not_joined)"'
+  local st
+  st=$(docker compose exec -T ingest python -m ingest.network.cli status --json 2> /dev/null | json_top_state) || return 1
+  case $st in off | left | not_joined) return 0 ;; *) return 1 ;; esac
 }
 
 do_leave() {
