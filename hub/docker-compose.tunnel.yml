@@ -11,7 +11,8 @@
 
 services:
   caddy:
-    cap_add: !reset []
+    # cap_add stays as in the base file: the Caddy binary carries the file capability
+    # cap_net_bind_service, and the kernel refuses to execute it without that capability.
     sysctls: !reset []
     # Bind to a private address: the tunnel connector is trusted to name the client address.
     ports: !override
