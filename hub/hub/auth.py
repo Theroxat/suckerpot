@@ -213,6 +213,10 @@ def reply(
     binding = getattr(request.state, "binding", None)
     if binding is not None:  # never for a request whose authentication failed
         out[sign.H_HUB_SIGNATURE] = sign.sign_response(ctx.hub_private, binding, status, body)
+        if ctx.hub_private_alt is not None:  # key rollover: same canonical answer, second key
+            out[sign.H_HUB_SIGNATURE_ALT] = sign.sign_response(
+                ctx.hub_private_alt, binding, status, body
+            )
     return Response(content=body, status_code=status, headers=out)
 
 

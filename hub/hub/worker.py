@@ -1,8 +1,9 @@
 """The hub worker: ``python -m hub.worker [--once | --health]``.
 
 Every cycle (hourly by default): built-in never-list entries, consensus, takedown votes,
-never-list re-check, expiry, daily jobs (reputation, statistics and the network summary),
-retention, then grouped reports (queue, auto-approve in ``auto`` mode, send what is approved),
+never-list re-check, expiry, link verification tasks (when enabled), daily jobs (reputation,
+statistics and the network summary), retention, then grouped reports (queue, auto-approve in
+``auto`` mode, send what is approved),
 then the abuse.ch submissions (same three steps) when a mode and an Auth-Key are set.
 A failing step is logged by type only and never stops the others.
 """
@@ -19,7 +20,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from . import abusech, consensus, egress_check, reputation, retention, stats
+from . import abusech, consensus, egress_check, reputation, retention, stats, verify
 from . import logging as hub_logging
 from .config import Settings
 from .db import make_engine, make_sessionmaker, utcnow
@@ -120,6 +121,20 @@ async def run_cycle(ctx: WorkerContext) -> CycleReport:
 
     await step("never_recheck", do_never)
     await step("expire", lambda ses: consensus.expire_stale(ses, today))
+
+    async def do_verify(ses: AsyncSession) -> object:
+        res = await verify.run(ses, s, now, never=await load_never(ses))
+        return {
+            "created": res.created,
+            "admitted": res.admitted,
+            "refused": res.refused,
+            "expired": res.expired,
+            "self_attested": res.self_attested,
+            "waiting": res.waiting,
+        }
+
+    if s.verify_enabled:
+        await step("verify", do_verify)
 
     if ctx.ranges is not None:
         refresh_ranges = ctx.ranges
