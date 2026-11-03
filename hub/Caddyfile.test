@@ -1,0 +1,26 @@
+# TEST ONLY (hub/docker-compose.test.yml, profile participant-e2e). The edge of a throwaway hub for
+# the participant end-to-end test: Caddy's own internal CA signs the certificate of the name the
+# nodes use (hub.selfhostr.io, an alias on a private, internal Docker network that only the test
+# stack shares: the name never reaches a real resolver). Never deploy this file.
+{
+	admin off
+	local_certs
+	skip_install_trust
+	auto_https disable_redirects
+	log {
+		output discard
+	}
+}
+
+hub.selfhostr.io {
+	tls internal
+	request_body {
+		max_size 1MiB
+	}
+	handle /v1/* {
+		reverse_proxy hub-api:8080
+	}
+	handle {
+		respond "Not Found" 404
+	}
+}

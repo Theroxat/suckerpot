@@ -3,6 +3,9 @@
 #
 #   backup-service.sh          loop: dump when the newest dump is older than 24 h, check hourly
 #   backup-service.sh now      dump once, right now, then exit (used by `just backup`)
+#   backup-service.sh now preswitch
+#                              same for the switch from participant to full mode (install.sh
+#                              --full): suckerpot-preswitch-<ts>.dump, the newest PREKEEP are kept
 #   backup-service.sh now preupdate
 #                              same, but the file is named suckerpot-preupdate-<ts>.dump and is
 #                              protected from the normal retention (the newest PREKEEP, default 2,
@@ -28,10 +31,10 @@ umask 077
 
 # Regular dumps only (suckerpot-<digits>T<digits>Z.dump): the pre-update dumps follow their own rule.
 list() { ls -1 "$DIR"/suckerpot-[0-9]*.dump 2>/dev/null | sort -r || true; }
-list_pre() { ls -1 "$DIR"/suckerpot-preupdate-*.dump 2>/dev/null | sort -r || true; }
+list_pre() { ls -1 "$DIR"/suckerpot-"${1:-preupdate}"-*.dump 2>/dev/null | sort -r || true; }
 prune_pre() {
   n=0
-  for f in $(list_pre); do
+  for f in $(list_pre "${1:-preupdate}"); do
     n=$((n + 1))
     if [ "$n" -gt "$PREKEEP" ]; then
       rm -f -- "$f"
@@ -93,8 +96,8 @@ make_room() {
 
 dump() {
   kind=${1:-regular}
-  if [ "$kind" = preupdate ]; then
-    name="suckerpot-preupdate-$(date -u +%Y%m%dT%H%M%SZ).dump"
+  if [ "$kind" = preupdate ] || [ "$kind" = preswitch ]; then
+    name="suckerpot-$kind-$(date -u +%Y%m%dT%H%M%SZ).dump"
   else
     name="suckerpot-$(date -u +%Y%m%dT%H%M%SZ).dump"
   fi
@@ -123,8 +126,8 @@ dump() {
   fi
   new=$(size "$DIR/$name")
   echo "backup: wrote $name ($new bytes)"
-  if [ "$kind" = preupdate ]; then
-    prune_pre
+  if [ "$kind" = preupdate ] || [ "$kind" = preswitch ]; then
+    prune_pre "$kind"
     return 0
   fi
   if [ "$((new * 2))" -lt "$previous" ]; then
@@ -161,7 +164,7 @@ locked_dump() {
 }
 
 if [ "${1:-}" = "now" ]; then
-  case ${2:-} in '' | preupdate) ;; *) echo "backup: unknown option ${2}" >&2; exit 2 ;; esac
+  case ${2:-} in '' | preupdate | preswitch) ;; *) echo "backup: unknown option ${2}" >&2; exit 2 ;; esac
   locked_dump "${2:-regular}"
   exit $?
 fi

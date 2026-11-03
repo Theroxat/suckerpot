@@ -151,6 +151,12 @@ in_linked_worktree() {
 # Succeeds for a name that is allowed as compose project or volume prefix.
 valid_project_name() {
   [[ $1 =~ ^[a-z0-9][a-z0-9_-]{0,40}$ ]] || return 1
+  # The end-to-end test (scripts/e2e/participant.sh) installs under an sp-it-* name. Only that
+  # one switch allows it, and then ONLY sp-it-* names are allowed, never a live name.
+  if [ "${SELFHOSTR_TEST_INSTALL:-}" = 1 ]; then
+    [[ $1 =~ ^sp-it-participant-[a-z0-9]{6,20}$ ]]
+    return
+  fi
   case $1 in sp-it-* | sp-test | sp-ci) return 1 ;; esac
   return 0
 }

@@ -167,6 +167,26 @@ def test_refuses_throwaway_and_bad_names(sandbox: Sandbox) -> None:
             assert not target.exists()
 
 
+def test_test_install_mode_accepts_only_the_e2e_name_shape(sandbox: Sandbox) -> None:
+    # scripts/e2e/participant.sh installs under sp-it-participant-<random> with this switch set;
+    # the switch must never open the door to a live-looking name, and the e2e name is refused
+    # without the switch.
+    env = {"SELFHOSTR_TEST_INSTALL": "1"}
+
+    def run(name: str, out: str, extra_env: dict[str, str] | None) -> int:
+        proc = sandbox.run(
+            "scripts/install.sh", "--yes", "--dry-run", "--env-out", str(sandbox.root / out),
+            "--sensors", "ssh", "--admin-password-stdin", "--project", name, "--prefix", name,
+            stdin=PASSWORD + "\n", extra_env=extra_env,
+        )  # fmt: skip
+        return proc.returncode
+
+    assert run("sp-it-participant-abcd1234", "ok.env", env) == 0
+    assert run("sp-it-participant-abcd1234", "no1.env", None) != 0
+    for name in ("suckerpot", "sp-it-abc123-1", "sp-ci", "sp-it-participant-AB"):
+        assert run(name, f"no-{abs(hash(name))}.env", env) != 0, name
+
+
 def test_refuses_a_linked_worktree(sandbox: Sandbox) -> None:
     sandbox.git_mode("linked")
     target, rc, out = dry_run(sandbox)
