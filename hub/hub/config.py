@@ -137,6 +137,18 @@ class Settings:
     abusech_mode: str = "off"
     abusech_auth_key: str = field(default="", repr=False)
     abusech_daily_cap: int = 50
+    # Link verification (design M32 section 7). Off: no task, no early reveal.
+    verify_mode: str = "off"
+    verify_min_reporters: int = 2
+    verify_daily_cap: int = 200
+    verify_host_daily_cap: int = 5
+    verify_lease_hours: int = 6
+    verify_max_attempts: int = 2
+    verify_url_max_age_days: int = 3
+    verify_delay_min_h: int = 6
+    verify_delay_max_h: int = 30
+    # Second hub key for a signing-key rollover (answers carry both signatures); empty = none.
+    signing_key_alt_file: str = ""
     # External corroboration (optional keys; empty disables the source).
     abuseipdb_key: str = field(default="", repr=False)
     greynoise_key: str = field(default="", repr=False)
@@ -145,6 +157,10 @@ class Settings:
     def abusech_active(self) -> bool:
         """Submissions are queued and sent only with a mode other than off AND an Auth-Key."""
         return self.abusech_mode != "off" and bool(self.abusech_auth_key)
+
+    @property
+    def verify_enabled(self) -> bool:
+        return self.verify_mode in ("review", "auto")
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -158,7 +174,25 @@ class Settings:
         abusech_mode = e.get("HUB_ABUSECH_MODE", "off") or "off"
         if abusech_mode not in {"off", "review", "auto"}:
             raise ConfigError("HUB_ABUSECH_MODE must be off, review or auto")
+        verify_mode = e.get("HUB_VERIFY_MODE", "off") or "off"
+        if verify_mode not in {"off", "review", "auto"}:
+            raise ConfigError("HUB_VERIFY_MODE must be off, review or auto")
+        delay_min = _int(e, "HUB_VERIFY_DELAY_MIN_H", 6, 0, 720)
+        delay_max = _int(e, "HUB_VERIFY_DELAY_MAX_H", 30, 0, 720)
+        if delay_max < delay_min:
+            raise ConfigError("HUB_VERIFY_DELAY_MAX_H must not be below HUB_VERIFY_DELAY_MIN_H")
         return cls(
+            verify_mode=verify_mode,
+            # Never below 2: one reporter must not be able to steer the verifier.
+            verify_min_reporters=_int(e, "HUB_VERIFY_MIN_REPORTERS", 2, 2, 1000),
+            verify_daily_cap=_int(e, "HUB_VERIFY_DAILY_CAP", 200, 0),
+            verify_host_daily_cap=_int(e, "HUB_VERIFY_HOST_DAILY_CAP", 5, 0),
+            verify_lease_hours=_int(e, "HUB_VERIFY_LEASE_HOURS", 6, 1, 168),
+            verify_max_attempts=_int(e, "HUB_VERIFY_MAX_ATTEMPTS", 2, 1, 10),
+            verify_url_max_age_days=_int(e, "HUB_VERIFY_URL_MAX_AGE_DAYS", 3, 1, 14),
+            verify_delay_min_h=delay_min,
+            verify_delay_max_h=delay_max,
+            signing_key_alt_file=e.get("HUB_SIGNING_KEY_ALT_FILE", ""),
             abusech_mode=abusech_mode,
             abusech_auth_key=e.get("HUB_ABUSECH_AUTH_KEY", ""),
             abusech_daily_cap=_int(e, "HUB_ABUSECH_DAILY_CAP", 50, 0),

@@ -27,6 +27,8 @@ class AppContext:
     node_limiter: Counter
     reveal_limiter: Counter
     never: NeverCache = field(default_factory=NeverCache)
+    # Alternate key of a signing-key rollover: answers carry a second signature (design M32 6.4).
+    hub_private_alt: bytes | None = None
 
     @property
     def hub_key(self) -> str:

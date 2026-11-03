@@ -17,6 +17,7 @@ from starlette.responses import Response
 from suckerpot_netproto import ProtoError, blind, buckets, models
 from suckerpot_netproto.models import parse_global_ip
 
+from .. import verify
 from ..auth import authenticate, reply
 from ..context import get_ctx
 from ..models import TakedownVote, Target
@@ -181,31 +182,48 @@ async def reveals(request: Request) -> Response:
         accepted = rejected = 0
         for item in req.items:
             canonical = blind.verify_reveal(item.kind, item.value, item.value_b)
-            if canonical is None or not _reveal_acceptable(
+            if canonical is None:
+                rejected += 1
+                continue
+            listable = _reveal_acceptable(
                 item.kind, canonical, ctx.settings.allow_documentation
-            ):
-                rejected += 1
-                continue
-            if (item.kind == "url" and never.has_url(canonical)) or (
-                item.kind == "domain" and never.has_domain(canonical)
-            ):
-                rejected += 1
-                continue
-            kinds = ("url",) if item.kind == "url" else ("domain", "c2_domain")
-            if caller.suspended:
-                accepted += 1  # never told
-                continue
-            result = await session.execute(
-                update(Target)
-                .where(
-                    Target.value_b == item.value_b,
-                    Target.kind.in_(kinds),
-                    Target.value.is_(None),
-                    Target.state.in_(OPEN_STATES),
-                )
-                .values(value=canonical, updated_at=ctx.now())
+            ) and not (
+                (item.kind == "url" and never.has_url(canonical))
+                or (item.kind == "domain" and never.has_domain(canonical))
             )
-            if cast(CursorResult[Any], result).rowcount:
+            if listable:
+                if caller.suspended:
+                    accepted += 1  # never told
+                    continue
+                kinds = ("url",) if item.kind == "url" else ("domain", "c2_domain")
+                result = await session.execute(
+                    update(Target)
+                    .where(
+                        Target.value_b == item.value_b,
+                        Target.kind.in_(kinds),
+                        Target.value.is_(None),
+                        Target.state.in_(OPEN_STATES),
+                    )
+                    .values(value=canonical, updated_at=ctx.now())
+                )
+                if cast(CursorResult[Any], result).rowcount:
+                    accepted += 1
+                    continue
+            # Early reveal (M32): a link this node reported that a verification task waits for. The
+            # clear value goes to verify_tasks only, never into the candidate target (D10).
+            if (
+                item.kind == "url"
+                and not caller.suspended
+                and await verify.accept_reveal(
+                    session,
+                    ctx.settings,
+                    caller.node_id,
+                    item.value_b,
+                    canonical,
+                    ctx.today(),
+                    never,
+                )
+            ):
                 accepted += 1
             else:
                 rejected += 1

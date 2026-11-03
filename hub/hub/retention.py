@@ -9,6 +9,8 @@
   decided delisting requests 180 days (open ones wait for their decision, without contact and
   evidence after 180 days), expired allow-list
   rows and payload links straight away;
+* verification tasks (clear link included) and their attestations: 14 days after the task ended;
+  the daily counters stay;
 * nodes with no request for 30 days are deleted with everything linked to them.
 """
 
@@ -32,6 +34,7 @@ FEED_REMOVED_DAYS = 90
 FEED_RUN_DAYS = 30
 DELIST_EVIDENCE_DAYS = 30
 DELIST_REQUEST_DAYS = 180
+VERIFY_TASK_DAYS = 14  # clear links go with their task (H9); attestations cascade
 
 
 @dataclass
@@ -186,6 +189,13 @@ async def run_retention(
         # drop it from the operator queue (security review L3).
         "DELETE FROM delist_requests WHERE created_day < :c AND decided_day IS NOT NULL",
         {"c": today - timedelta(days=DELIST_REQUEST_DAYS)},
+        out,
+    )
+    await _delete(
+        session,
+        "verify_tasks",
+        "DELETE FROM verify_tasks WHERE ended_day < :c",
+        {"c": today - timedelta(days=VERIFY_TASK_DAYS)},
         out,
     )
     await _delete(

@@ -377,3 +377,72 @@ class DelistRequest(Base):
     decided_day: Mapped[date | None] = mapped_column(Date)
     # The list an accepted decision applies to; NULL for every list (migration h0006).
     scope: Mapped[str | None] = mapped_column(Text)
+
+
+class NodeRole(Base):
+    """A role granted by an operator (``verifier``). Migration h0009."""
+
+    __tablename__ = "node_roles"
+
+    node_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nodes.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(Text, primary_key=True)
+    granted_day: Mapped[date] = mapped_column(Date)
+
+
+class VerifyTask(Base):
+    """A link a verifier fetches. ``url`` is the clear link (deleted with the task, H9); the only
+    node reference is the live lease. ``site`` is the lower-cased host of ``url``."""
+
+    __tablename__ = "verify_tasks"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    url_b: Mapped[str] = mapped_column(Text, unique=True)
+    url: Mapped[str | None] = mapped_column(Text)
+    site: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(Text)
+    refusal: Mapped[str | None] = mapped_column(Text)
+    reporters: Mapped[int] = mapped_column(Integer)
+    reporter_cohorts: Mapped[int] = mapped_column(Integer)
+    last_report_day: Mapped[date] = mapped_column(Date)
+    created_day: Mapped[date] = mapped_column(Date)
+    revealed_day: Mapped[date | None] = mapped_column(Date)
+    release_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_node: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nodes.id", ondelete="SET NULL")
+    )
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    ended_day: Mapped[date | None] = mapped_column(Date)
+
+
+class VerifyAttestation(Base):
+    __tablename__ = "verify_attestations"
+
+    task_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("verify_tasks.id", ondelete="CASCADE"), primary_key=True
+    )
+    node_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nodes.id", ondelete="CASCADE"), primary_key=True
+    )
+    day: Mapped[date] = mapped_column(Date)
+    outcome: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str | None] = mapped_column(Text)
+    size: Mapped[int | None] = mapped_column(Integer)
+    file_type: Mapped[str | None] = mapped_column(Text)
+    family: Mapped[str | None] = mapped_column(Text)
+    malware_like: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+
+
+class VerifyDaily(Base):
+    __tablename__ = "verify_daily"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    created: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    revealed: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    refused: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    queued: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    attested: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    malware_like: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    expired: Mapped[int] = mapped_column(Integer, server_default=text("0"))

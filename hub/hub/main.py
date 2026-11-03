@@ -20,7 +20,7 @@ from .config import Settings, load_signing_key
 from .context import AppContext, get_ctx
 from .db import make_engine, make_sessionmaker, utcnow
 from .ratelimit import AddressLimiter, Counter
-from .routes import delist, enrol, info, lookup, network, node, observations, targets
+from .routes import delist, enrol, info, lookup, network, node, observations, targets, verify
 
 log = logging.getLogger("hub")
 
@@ -30,12 +30,16 @@ def build_context(
     engine: AsyncEngine,
     *,
     hub_private: bytes | None = None,
+    hub_private_alt: bytes | None = None,
     clock: Callable[[], datetime] = utcnow,
 ) -> AppContext:
+    if hub_private_alt is None and settings.signing_key_alt_file:
+        hub_private_alt = load_signing_key(settings.signing_key_alt_file)
     return AppContext(
         settings=settings,
         sessionmaker=make_sessionmaker(engine),
         hub_private=hub_private or load_signing_key(settings.signing_key_file),
+        hub_private_alt=hub_private_alt,
         clock=clock,
         address_limiter=AddressLimiter(
             per_min=settings.unsigned_per_min,
@@ -55,11 +59,14 @@ def create_app(
     *,
     engine: AsyncEngine | None = None,
     hub_private: bytes | None = None,
+    hub_private_alt: bytes | None = None,
     clock: Callable[[], datetime] = utcnow,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
     engine = engine or make_engine(settings.database_url)
-    ctx = build_context(settings, engine, hub_private=hub_private, clock=clock)
+    ctx = build_context(
+        settings, engine, hub_private=hub_private, hub_private_alt=hub_private_alt, clock=clock
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -97,7 +104,7 @@ def create_app(
             await session.execute(text("SELECT 1"))
         return Response(content='{"ok":true}', media_type="application/json")
 
-    for module in (info, enrol, node, observations, targets, network, delist, lookup):
+    for module in (info, enrol, node, observations, targets, network, delist, lookup, verify):
         app.include_router(module.router, prefix="/v1")
     return app
 

@@ -64,13 +64,20 @@ API_GRANTS = (
     "SELECT ON feed_entries",
     "SELECT, INSERT, DELETE ON delist_challenges",
     "SELECT, INSERT ON delist_requests",
+    # Link verification (M32): the API checks roles, reveals a link into a task, leases tasks and
+    # stores attestations. Creation, counters and expiry belong to the worker.
+    "SELECT ON node_roles",
+    "SELECT ON verify_tasks",
+    "UPDATE (url, site, state, refusal, revealed_day, release_at, lease_node, lease_until, "
+    "attempts, ended_day) ON verify_tasks",
+    "SELECT, INSERT ON verify_attestations",
 )
 WORKER_TABLES = (
     "nodes, enrol_challenges, nonces, batches, observations, targets, target_contributors, "
     "takedown_votes, reports, recipient_log, node_stats_weekly, network_daily, network_summary, "
     "never_list, hub_audit, worker_state, payload_links, target_hosts, feed_entries, feed_runs, "
     "feed_daily, feed_allow, feed_auto_ranges, delist_challenges, delist_requests, "
-    "abusech_submissions"
+    "abusech_submissions, node_roles, verify_tasks, verify_attestations, verify_daily"
 )
 
 
