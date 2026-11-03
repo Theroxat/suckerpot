@@ -41,6 +41,7 @@
           <a href="#sensors" class="hide-sm">Sensors</a>
           <a href="#anonymity" class="hide-sm">Anonymity</a>
           <a href="#network" class="hide-sm">Network</a>
+          <a href="#join" class="hide-sm">Join</a>
           <a href="#faq" class="hide-sm">FAQ</a>
           <a href="#install" class="btn btn-sm">Install</a>
           <button id="theme" class="icon-btn" type="button" aria-label="Switch between dark and light theme">
@@ -385,6 +386,35 @@ line 12   names this host    <span class="g-stop">stop</span>
             </svg>
             <figcaption class="mono"><span class="net-cap-line">One host, five witnesses, one report.</span><span class="fine">Planned design. Node names are made up.</span></figcaption>
           </figure>
+        </div>
+      </section>
+
+      <!-- Help the network -->
+      <section class="section" id="join" aria-labelledby="join-title">
+        <div class="wrap">
+          <header class="sec-head">
+            <p class="eyebrow mono">Help the network</p>
+            <h2 id="join-title">Three commands. No dashboard. No VPN needed.</h2>
+            <p class="sec-lede">
+              Want to help and nothing else? Run the sensors on a spare machine, open the ports the installer prints, and
+              you are in. Choosing this mode is your consent to join.
+            </p>
+          </header>
+
+          <div class="code">
+            <div class="code-bar mono"><span>shell</span><button class="copy" type="button" data-copy="cj" aria-label="Copy the commands to join the network">Copy</button></div>
+            <pre class="mono" id="cj">git clone --depth 1 --branch v0.6.0 https://github.com/Theroxat/suckerpot.git
+cd suckerpot
+./scripts/install.sh --participant</pre>
+          </div>
+
+          <ul class="checks">
+            <li>Sensors, database and the network node only, in about 2 GiB of memory.</li>
+            <li>Without a VPN, the hub and the tunnel provider in front of it see your home address. The hub never stores it. Add a VPN any time.</li>
+            <li>Signed releases install themselves once a day, at least 48 hours after they are published. One command turns it off.</li>
+            <li>Leave any time with <span class="mono">./scripts/participant.sh leave</span>.</li>
+          </ul>
+          <p class="fine"><a href="https://github.com/Theroxat/suckerpot/blob/main/docs/participate.md">Read the full guide</a></p>
         </div>
       </section>
 

@@ -113,6 +113,18 @@ Open http://127.0.0.1:8443. The dashboard binds to loopback by default (`DASHBOA
 
 **Before you expose anything**, follow the go-live checklist in [docs/deployment.md](docs/deployment.md) and apply [scripts/host/firewall.nft](scripts/host/firewall.nft). Set the admin password hash in `.env` (see [docs/deployment.md](docs/deployment.md)) and keep the dashboard port filtered upstream. Set `INDICATORS_IGNORE` in `.env` to your public IP and host names, so they are never recorded as attack infrastructure.
 
+## Join the network
+
+Want to help the Selfhostr network and nothing else? Three commands, no dashboard, no VPN needed:
+
+```bash
+git clone --depth 1 --branch v0.6.0 https://github.com/Theroxat/suckerpot.git
+cd suckerpot
+./scripts/install.sh --participant
+```
+
+Then open the ports the installer prints. Choosing this mode is your consent to join. Without a VPN, the hub (and the tunnel provider in front of it) sees your home address; the hub never stores it, and you can add a VPN later with `./scripts/participant.sh vpn <file>`. Signed releases install themselves once a day, at least 48 hours after they are published; turn that off with `./scripts/participant.sh auto-update off`. Check the state with `./scripts/status.sh`. Details: [docs/participate.md](docs/participate.md).
+
 ## Configuration
 
 Everything is set through environment variables in `.env`. The most important ones:

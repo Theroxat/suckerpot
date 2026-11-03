@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added (M32, planned v0.6.0, release date to be set)
+
+- Participant mode (M32). `./scripts/install.sh --participant` installs sensors, database, ingest and the network node only: no dashboard, no admin account, no wizard, no API key and no VPN needed. Choosing it is the consent to join; a random pseudonym is generated. Three commands, then open the printed ports. Guide: [Join the network](docs/participate.md). `--full` switches an existing participant install to the full product and keeps its data.
+- `hubproxy` (profile `direct`, M32): a small allow-list proxy that lets a participant without a VPN reach the hub and nothing else. Ingest keeps no route out. The overlay is `docker-compose.participant.yml`.
+- Honest privacy note: without a VPN the hub, and a tunnel provider in front of it, see the participant's home address. The hub never stores it. A VPN can be added at any time with `./scripts/participant.sh vpn <file>`.
+- `scripts/participant.sh` (`status`, `leave`, `join`, `vpn`, `auto-update`, `uninstall`) and `scripts/status.sh` (sensors, network state, what was sent, updates; exit codes 0, 1, 2; `--json`, `--last-batch`).
+- Automatic signed updates (M32). A daily job in the user's crontab runs `scripts/auto-update.sh`: it verifies a signed release manifest and the image signatures, accepts only releases at least 48 hours old and of the same major version, takes a backup, and rolls back and blocks a release that fails. On by default in participant mode, off in full mode. Turn off: `./scripts/participant.sh auto-update off`. A compromised release channel would reach every auto-updating participant. See [Updates](docs/updates.md#automatic-updates).
+- Verifier nodes (M32). When two nodes report the same download link, the hub can ask a verifier to fetch it through its VPN and attest its hash, size, type and family. The role is opt-in on the node and granted by the hub operator. An attestation never counts as a sighting.
+- The hub address and key ship inside each release, with a key rollover that auto-updating participants follow.
+- Documentation: [Join the network](docs/participate.md) (new), participant mode in [Install](docs/install.md), participants and verifiers in [The network](docs/network.md), a "Help the network" section on the project site.
+
 ### Added
 
 - Community blocklist feeds (M30). The hub publishes five free, signed lists for firewalls: `inbound`, `inbound-high`, `outbound`, `outbound-high` and `outbound-domains`. They come as plain text (IPv4 and IPv6 files too), nftables, ipset, MikroTik, CSV, JSON and STIX 2.1. An entry needs observations from at least five independent sensors (k-support). Inbound entries need TCP evidence. Outbound entries need a fetched payload with a known malware family, or a high-confidence command server seen in two samples. Tor exit relays, CDN ranges, public resolvers and shared hosting names are never listed. A hold, expiry, size caps and a change breaker sit between the data and the files. Every file is signed with minisign, with a feed key that is separate from the hub key. The hub feed is off by default (`HUB_FEED_MODE=off`). Operators: [hub/README.md](hub/README.md#public-feeds). Users: [Community blocklist feeds](docs/feeds.md), with steps for OPNsense, pfSense and pfBlockerNG, nftables, ipset, MikroTik, MISP and DNS filters. The lists are CC0 1.0.

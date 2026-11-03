@@ -23,6 +23,17 @@ Selfhostr is built to be attacked. Install it on a dedicated machine that holds 
 
 The memory figures are sizing targets. Check the real use on your host with `docker stats` after the first day.
 
+## Participant mode and full mode
+
+| Mode | What runs | Use it when |
+| --- | --- | --- |
+| `full` (default) | Everything: sensors, database, ingest, API and dashboard, and the VPN service | You want the dashboard, reports and blocklists |
+| `participant` (`--participant`) | Sensors, database, ingest and the network node. No dashboard, no admin account, no VPN needed | You only want to help the network. See [Join the network](participate.md) |
+
+Participant mode has its own flags: `--pseudonym`, `--no-pseudonym`, `--country`, `--show-country`, `--verifier`, `--no-auto-update`, `--feeds`, `--self-address` and `--repair`. It refuses the dashboard flags (`--dashboard-*`, `--public-host`, `--admin-*`, `--allow-lan`). Choosing it is your consent to join the network.
+
+To switch an existing participant install to full mode, run `./scripts/install.sh --full`. It asks the dashboard questions, takes a backup and keeps your data. The other way (full to participant) is not supported. Running the installer again on an existing install only prints its status. Add `--repair` to run the volume, start and schedule steps again.
+
 ## Two install modes
 
 | Mode | What runs | Use it when |
@@ -326,6 +337,7 @@ This traffic shows the host's address to the registry and to GitHub. It is outsi
 
 ## Next steps
 
+- [Join the network in three commands](participate.md)
 - [Updates and rollback](updates.md)
 - [Configuration](configuration.md#install-updates-and-sensor-switches-m28)
 - [Deployment](deployment.md)
