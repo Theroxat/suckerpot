@@ -54,6 +54,8 @@ services:
     image: "local/${COMPOSE_PROJECT_NAME:?}-collector:test"
   demo:
     image: "local/${COMPOSE_PROJECT_NAME:?}-demo:test"
+  hubproxy:
+    image: "local/${COMPOSE_PROJECT_NAME:?}-hubproxy:test"
 
 # Project-local volumes with an explicit "test-" name. The base file declares every data volume as
 # external and named <prefix>_<volume>; a test run must never mount those, and a plain

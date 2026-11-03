@@ -1,0 +1,2073 @@
+{
+ "networks": {
+  "backend": {
+   "internal": true
+  },
+  "dashboard": {
+   "driver_opts": {
+    "com.docker.network.bridge.enable_ip_masquerade": "false",
+    "com.docker.network.bridge.name": "sp-dashboard"
+   },
+   "name": "sp-dashboard"
+  },
+  "egress-proxy": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-egress"
+   },
+   "internal": true
+  },
+  "ingress": {
+   "driver_opts": {
+    "com.docker.network.bridge.enable_icc": "false",
+    "com.docker.network.bridge.enable_ip_masquerade": "false",
+    "com.docker.network.bridge.name": "sp-ingress"
+   },
+   "name": "sp-ingress"
+  },
+  "samples": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-samples"
+   },
+   "internal": true
+  },
+  "sensors-adb": {
+   "internal": true
+  },
+  "sensors-docker": {
+   "internal": true
+  },
+  "sensors-mssql": {
+   "internal": true
+  },
+  "sensors-mysql": {
+   "internal": true
+  },
+  "sensors-rdp": {
+   "internal": true
+  },
+  "sensors-redis": {
+   "internal": true
+  },
+  "sensors-sip": {
+   "internal": true
+  },
+  "sensors-smb": {
+   "internal": true
+  },
+  "sensors-ssh": {
+   "internal": true
+  },
+  "sensors-synology": {
+   "internal": true
+  },
+  "sensors-telnet": {
+   "internal": true
+  },
+  "sensors-web": {
+   "internal": true
+  },
+  "tools": {
+   "internal": true
+  },
+  "vpn-uplink": {
+   "driver_opts": {
+    "com.docker.network.bridge.enable_icc": "false",
+    "com.docker.network.bridge.name": "sp-vpn"
+   },
+   "name": "sp-vpn"
+  }
+ },
+ "services": {
+  "analyzer": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "collector/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "python",
+    "-m",
+    "collector",
+    "analyze"
+   ],
+   "cpus": 0.5,
+   "depends_on": {
+    "migrate": {
+     "condition": "service_completed_successfully"
+    }
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "ANALYZER_MEMORY_MB": "${ANALYZER_MEMORY_MB:-384}",
+    "ANALYZER_TIMEOUT_S": "${ANALYZER_TIMEOUT_S:-60}",
+    "API_ALLOWED_HOSTS": "${API_ALLOWED_HOSTS:-}",
+    "COLLECTOR_DENY_CIDRS": "${COLLECTOR_DENY_CIDRS:-}",
+    "COLLECTOR_ENABLED": "${COLLECTOR_ENABLED:-false}",
+    "COLLECTOR_MAX_DEPTH": "${COLLECTOR_MAX_DEPTH:-2}",
+    "COLLECTOR_POLL_S": "${COLLECTOR_POLL_S:-15}",
+    "INDICATORS_IGNORE": "${INDICATORS_IGNORE:-}",
+    "POSTGRES_DB": "${POSTGRES_DB:-suckerpot}",
+    "POSTGRES_HOST": "db",
+    "POSTGRES_PASSWORD": "${POSTGRES_ANALYZER_PASSWORD:-}",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_USER": "${POSTGRES_ANALYZER_USER:-suckerpot_analyzer}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "collector.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-collector:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "512m",
+   "memswap_limit": "512m",
+   "networks": [
+    "samples"
+   ],
+   "pids_limit": 16,
+   "profiles": [
+    "egress"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "quarantine:/quarantine:ro"
+   ]
+  },
+  "api": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "api/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpus": 1.0,
+   "depends_on": {
+    "migrate": {
+     "condition": "service_completed_successfully"
+    }
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "ABUSECH_SUBMIT_ENABLED": "${ABUSECH_SUBMIT_ENABLED:-false}",
+    "ABUSE_NO_ANSWER_DAYS": "${ABUSE_NO_ANSWER_DAYS:-14}",
+    "ABUSE_REPLIES_ENABLED": "${ABUSE_REPLIES_ENABLED:-false}",
+    "ABUSE_REPORTS_ENABLED": "${ABUSE_REPORTS_ENABLED:-false}",
+    "ADB_HOST_PORT": "${ADB_HOST_PORT:-5555}",
+    "ADMIN_PASSWORD_HASH": "${ADMIN_PASSWORD_HASH:?ADMIN_PASSWORD_HASH must be set in .env (docker compose run --rm api python -m api.hashpw)}",
+    "ADMIN_USERNAME": "${ADMIN_USERNAME:-admin}",
+    "ALERTS_DASHBOARD_URL": "${ALERTS_DASHBOARD_URL:-}",
+    "API_ALLOWED_HOSTS": "${API_ALLOWED_HOSTS:-}",
+    "API_ALLOWED_ORIGINS": "${API_ALLOWED_ORIGINS:-}",
+    "API_ENABLE_DOCS": "${API_ENABLE_DOCS:-false}",
+    "AUTH_TRUSTED_PROXIES": "${AUTH_TRUSTED_PROXIES:-}",
+    "BLOCKLIST_NEVER": "${BLOCKLIST_NEVER:-}",
+    "COLLECTOR_DAILY_QUOTA": "${COLLECTOR_DAILY_QUOTA:-500}",
+    "COLLECTOR_ENABLED": "${COLLECTOR_ENABLED:-false}",
+    "COOKIE_SECURE": "${COOKIE_SECURE:-true}",
+    "DASHBOARD_PORT": "${DASHBOARD_PORT:-8443}",
+    "DOCKER_HOST_PORT": "${DOCKER_HOST_PORT:-2375}",
+    "EGRESS_DENY_ASNS": "${EGRESS_DENY_ASNS:-}",
+    "FEEDS_ENABLED": "${FEEDS_ENABLED:-false}",
+    "HTTPS_HOST_PORT": "${HTTPS_HOST_PORT:-443}",
+    "HTTP_HOST_PORT": "${HTTP_HOST_PORT:-80}",
+    "INDICATORS_IGNORE": "${INDICATORS_IGNORE:-}",
+    "LOGIN_RATE": "${LOGIN_RATE:-5}",
+    "LOGIN_RATE_GLOBAL": "${LOGIN_RATE_GLOBAL:-30}",
+    "LOGIN_RATE_USER": "${LOGIN_RATE_USER:-10}",
+    "MSSQL_HOST_PORT": "${MSSQL_HOST_PORT:-1433}",
+    "MYSQL_HOST_PORT": "${MYSQL_HOST_PORT:-3306}",
+    "NETWORK_ENABLED": "${NETWORK_ENABLED:-false}",
+    "NETWORK_FEED_ENABLED": "${NETWORK_FEED_ENABLED:-false}",
+    "NETWORK_FEED_URL": "${NETWORK_FEED_URL:-}",
+    "NETWORK_HUB_KEY": "${NETWORK_HUB_KEY:-}",
+    "NETWORK_HUB_URL": "${NETWORK_HUB_URL:-}",
+    "POSTGRES_DB": "${POSTGRES_DB:-suckerpot}",
+    "POSTGRES_HOST": "db",
+    "POSTGRES_PASSWORD": "${POSTGRES_API_PASSWORD:?POSTGRES_API_PASSWORD must be set in .env}",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_USER": "${POSTGRES_API_USER:-suckerpot_api}",
+    "QUARANTINE_MAX_MB": "${QUARANTINE_MAX_MB:-2048}",
+    "RDP_HOSTNAME": "${RDP_HOSTNAME:-}",
+    "RDP_HOST_PORT": "${RDP_HOST_PORT:-3389}",
+    "REDIS_HOST_PORT": "${REDIS_HOST_PORT:-6379}",
+    "SENSOR_ADB": "${SENSOR_ADB:-1}",
+    "SENSOR_DOCKER": "${SENSOR_DOCKER:-1}",
+    "SENSOR_MSSQL": "${SENSOR_MSSQL:-1}",
+    "SENSOR_MYSQL": "${SENSOR_MYSQL:-1}",
+    "SENSOR_RDP": "${SENSOR_RDP:-1}",
+    "SENSOR_REDIS": "${SENSOR_REDIS:-1}",
+    "SENSOR_SIP": "${SENSOR_SIP:-1}",
+    "SENSOR_SMB": "${SENSOR_SMB:-1}",
+    "SENSOR_SSH": "${SENSOR_SSH:-1}",
+    "SENSOR_SYNOLOGY": "${SENSOR_SYNOLOGY:-1}",
+    "SENSOR_TELNET": "${SENSOR_TELNET:-1}",
+    "SENSOR_WEB": "${SENSOR_WEB:-1}",
+    "SESSION_SECRET": "${SESSION_SECRET:?SESSION_SECRET must be set in .env (openssl rand -base64 48)}",
+    "SESSION_TTL_HOURS": "${SESSION_TTL_HOURS:-12}",
+    "SETTINGS_ENCRYPTION_KEY": "${SETTINGS_ENCRYPTION_KEY:-}",
+    "SIP_HOST_PORT": "${SIP_HOST_PORT:-5060}",
+    "SITE_HOME_LABEL": "${SITE_HOME_LABEL:-}",
+    "SITE_HOME_LAT": "${SITE_HOME_LAT:-}",
+    "SITE_HOME_LON": "${SITE_HOME_LON:-}",
+    "SITE_TIMEZONE": "${SITE_TIMEZONE:-UTC}",
+    "SMB_DOMAIN": "${SMB_DOMAIN:-}",
+    "SMB_HOSTNAME": "${SMB_HOSTNAME:-}",
+    "SMB_HOST_PORT": "${SMB_HOST_PORT:-445}",
+    "SSH_HOSTNAME": "${SSH_HOSTNAME:-srv-web01}",
+    "SSH_HOST_PORT": "${SSH_HOST_PORT:-22}",
+    "SUCKERPOT_ALLOW_DEFAULT_SECRETS": "${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}",
+    "SYNOLOGY_HTTPS_HOST_PORT": "${SYNOLOGY_HTTPS_HOST_PORT:-5001}",
+    "SYNOLOGY_HTTP_HOST_PORT": "${SYNOLOGY_HTTP_HOST_PORT:-5000}",
+    "TAKEDOWN_ENABLED": "${TAKEDOWN_ENABLED:-false}",
+    "TELNET_HOST_PORT": "${TELNET_HOST_PORT:-23}",
+    "UPDATE_CHECK_ENABLED": "${UPDATE_CHECK_ENABLED:-false}",
+    "UPDATE_CHECK_REPO": "${UPDATE_CHECK_REPO:-Theroxat/suckerpot}",
+    "VPN_CONFIG_DIR": "/vpn-config",
+    "VPN_WG_ENDPOINT_IP": "${VPN_WG_ENDPOINT_IP:-}",
+    "WEB_HOSTNAME": "${WEB_HOSTNAME:-srv-web01}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "15s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "api.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-api:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "512m",
+   "memswap_limit": "512m",
+   "networks": [
+    "backend",
+    "dashboard"
+   ],
+   "oom_score_adj": 300,
+   "pids_limit": 100,
+   "ports": [
+    "${DASHBOARD_BIND:-127.0.0.1}:${DASHBOARD_PORT:-8443}:8000"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "quarantine:/quarantine:ro",
+    "vpn-config:/vpn-config"
+   ]
+  },
+  "backup": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpus": 0.5,
+   "depends_on": {
+    "db": {
+     "condition": "service_healthy"
+    }
+   },
+   "entrypoint": [
+    "/bin/sh",
+    "/backup-service.sh"
+   ],
+   "environment": {
+    "BACKUP_KEEP": "${BACKUP_KEEP:-7}",
+    "POSTGRES_DB": "${POSTGRES_DB:-suckerpot}",
+    "POSTGRES_HOST": "db",
+    "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_USER": "${POSTGRES_USER:-suckerpot}"
+   },
+   "healthcheck": {
+    "interval": "5m",
+    "retries": 3,
+    "start_interval": "15s",
+    "start_period": "10m",
+    "test": [
+     "CMD-SHELL",
+     "! test -e /backups/.shrunk && find /backups -maxdepth 1 -name 'suckerpot-*.dump' -mmin -1560 | grep -q ."
+    ],
+    "timeout": "10s"
+   },
+   "image": "timescale/timescaledb:2.22.1-pg17",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "256m",
+   "networks": [
+    "backend"
+   ],
+   "pids_limit": 64,
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=8m,uid=70,gid=70"
+   ],
+   "user": "70:70",
+   "volumes": [
+    "./scripts/backup-service.sh:/backup-service.sh:ro",
+    "backups:/backups"
+   ]
+  },
+  "collector": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "collector/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "python",
+    "-m",
+    "collector",
+    "fetch"
+   ],
+   "cpus": 0.5,
+   "depends_on": {
+    "migrate": {
+     "condition": "service_completed_successfully"
+    },
+    "vpn": {
+     "condition": "service_started"
+    }
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "API_ALLOWED_HOSTS": "${API_ALLOWED_HOSTS:-}",
+    "API_ALLOWED_ORIGINS": "${API_ALLOWED_ORIGINS:-}",
+    "COLLECTOR_CONCURRENCY": "${COLLECTOR_CONCURRENCY:-2}",
+    "COLLECTOR_CONNECT_TIMEOUT_S": "${COLLECTOR_CONNECT_TIMEOUT_S:-10}",
+    "COLLECTOR_DAILY_QUOTA": "${COLLECTOR_DAILY_QUOTA:-500}",
+    "COLLECTOR_DENY_CIDRS": "${COLLECTOR_DENY_CIDRS:-}",
+    "COLLECTOR_ENABLED": "${COLLECTOR_ENABLED:-false}",
+    "COLLECTOR_HOST_INTERVAL_S": "${COLLECTOR_HOST_INTERVAL_S:-10}",
+    "COLLECTOR_HOURLY_QUOTA": "${COLLECTOR_HOURLY_QUOTA:-60}",
+    "COLLECTOR_MAX_BYTES": "${COLLECTOR_MAX_BYTES:-16777216}",
+    "COLLECTOR_MAX_DEPTH": "${COLLECTOR_MAX_DEPTH:-2}",
+    "COLLECTOR_MAX_REDIRECTS": "${COLLECTOR_MAX_REDIRECTS:-3}",
+    "COLLECTOR_POLL_S": "${COLLECTOR_POLL_S:-15}",
+    "COLLECTOR_REFETCH_HOURS": "${COLLECTOR_REFETCH_HOURS:-24}",
+    "COLLECTOR_TIMEOUT_S": "${COLLECTOR_TIMEOUT_S:-60}",
+    "EGRESS_ALLOWED_CIDRS": "${EGRESS_ALLOWED_CIDRS:-}",
+    "EGRESS_CHECK_INTERVAL_S": "${EGRESS_CHECK_INTERVAL_S:-300}",
+    "EGRESS_CONTROL_URL": "${EGRESS_CONTROL_URL:-http://vpn:8000}",
+    "EGRESS_ECHO_URLS": "${EGRESS_ECHO_URLS:-https://api.ipify.org,https://icanhazip.com}",
+    "EGRESS_PROXY_PASSWORD": "${EGRESS_PROXY_PASSWORD:-}",
+    "EGRESS_PROXY_URL": "${EGRESS_PROXY_URL:-http://vpn:8888}",
+    "INDICATORS_IGNORE": "${INDICATORS_IGNORE:-}",
+    "POSTGRES_DB": "${POSTGRES_DB:-suckerpot}",
+    "POSTGRES_HOST": "db",
+    "POSTGRES_PASSWORD": "${POSTGRES_COLLECTOR_PASSWORD:-}",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_USER": "${POSTGRES_COLLECTOR_USER:-suckerpot_collector}",
+    "QUARANTINE_MAX_MB": "${QUARANTINE_MAX_MB:-2048}",
+    "QUARANTINE_RETENTION_DAYS": "${QUARANTINE_RETENTION_DAYS:-90}",
+    "TAKEDOWN_ENABLED": "${TAKEDOWN_ENABLED:-false}",
+    "TAKEDOWN_HTTP_DAILY_QUOTA": "${TAKEDOWN_HTTP_DAILY_QUOTA:-200}",
+    "VPN_WG_DNS": "${VPN_WG_DNS:-}",
+    "VPN_WG_ENDPOINT_IP": "${VPN_WG_ENDPOINT_IP:-}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "collector.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-collector:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "256m",
+   "memswap_limit": "256m",
+   "networks": [
+    "samples",
+    "egress-proxy"
+   ],
+   "pids_limit": 32,
+   "profiles": [
+    "egress"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "quarantine:/quarantine"
+   ]
+  },
+  "db": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "postgres",
+    "-c",
+    "shared_buffers=256MB",
+    "-c",
+    "effective_cache_size=768MB",
+    "-c",
+    "work_mem=8MB",
+    "-c",
+    "maintenance_work_mem=64MB",
+    "-c",
+    "max_connections=50",
+    "-c",
+    "timescaledb.max_background_workers=4",
+    "-c",
+    "timescaledb.telemetry_level=off",
+    "-c",
+    "log_min_duration_statement=1000"
+   ],
+   "cpus": 1.0,
+   "environment": {
+    "POSTGRES_DB": "${POSTGRES_DB:-suckerpot}",
+    "POSTGRES_INITDB_ARGS": "--auth-host=scram-sha-256 --auth-local=scram-sha-256",
+    "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}",
+    "POSTGRES_USER": "${POSTGRES_USER:-suckerpot}"
+   },
+   "healthcheck": {
+    "interval": "10s",
+    "retries": 10,
+    "start_period": "30s",
+    "test": [
+     "CMD-SHELL",
+     "pg_isready -q -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""
+    ],
+    "timeout": "5s"
+   },
+   "image": "timescale/timescaledb:2.22.1-pg17",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "1g",
+   "memswap_limit": "1g",
+   "networks": [
+    "backend",
+    "samples"
+   ],
+   "oom_score_adj": -500,
+   "pids_limit": 200,
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "shm_size": "256m",
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=64m,uid=70,gid=70",
+    "/var/run/postgresql:rw,noexec,nosuid,nodev,size=1m,uid=70,gid=70"
+   ],
+   "user": "70:70",
+   "volumes": [
+    "db-data:/var/lib/postgresql/data"
+   ]
+  },
+  "ingest": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "ingest/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpus": 1.0,
+   "depends_on": {
+    "migrate": {
+     "condition": "service_completed_successfully"
+    },
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "ABUSECH_AUTH_KEY": "${ABUSECH_AUTH_KEY:-}",
+    "ABUSECH_DAILY_QUOTA": "${ABUSECH_DAILY_QUOTA:-1000}",
+    "ABUSECH_SUBMIT_ENABLED": "${ABUSECH_SUBMIT_ENABLED:-false}",
+    "ABUSEIPDB_API_KEY": "${ABUSEIPDB_API_KEY:-}",
+    "ABUSEIPDB_DAILY_QUOTA": "${ABUSEIPDB_DAILY_QUOTA:-1000}",
+    "ABUSE_BUILD_INTERVAL_S": "${ABUSE_BUILD_INTERVAL_S:-3600}",
+    "ABUSE_LOOKBACK_DAYS": "${ABUSE_LOOKBACK_DAYS:-7}",
+    "ABUSE_MAX_OPEN_DRAFTS": "${ABUSE_MAX_OPEN_DRAFTS:-200}",
+    "ABUSE_MAX_SUBJECTS": "${ABUSE_MAX_SUBJECTS:-100}",
+    "ABUSE_MIN_LOGIN_ATTEMPTS": "${ABUSE_MIN_LOGIN_ATTEMPTS:-50}",
+    "ABUSE_RDAP_DAILY_QUOTA": "${ABUSE_RDAP_DAILY_QUOTA:-1000}",
+    "ABUSE_RDAP_HOURLY_QUOTA": "${ABUSE_RDAP_HOURLY_QUOTA:-200}",
+    "ABUSE_REPLIES_ENABLED": "${ABUSE_REPLIES_ENABLED:-false}",
+    "ABUSE_REPLY_DAILY_CAP": "${ABUSE_REPLY_DAILY_CAP:-500}",
+    "ABUSE_REPLY_EXCERPT_CHARS": "${ABUSE_REPLY_EXCERPT_CHARS:-2000}",
+    "ABUSE_REPLY_MATCH_DAYS": "${ABUSE_REPLY_MATCH_DAYS:-120}",
+    "ABUSE_REPLY_MAX_BYTES": "${ABUSE_REPLY_MAX_BYTES:-262144}",
+    "ABUSE_REPLY_MAX_PER_POLL": "${ABUSE_REPLY_MAX_PER_POLL:-50}",
+    "ABUSE_REPLY_POLL_DEADLINE_S": "${ABUSE_REPLY_POLL_DEADLINE_S:-120}",
+    "ABUSE_REPORTS_ENABLED": "${ABUSE_REPORTS_ENABLED:-false}",
+    "ABUSE_REPORTS_INCLUDE_DEMO": "${ABUSE_REPORTS_INCLUDE_DEMO:-false}",
+    "ABUSE_RESEND_DAYS": "${ABUSE_RESEND_DAYS:-14}",
+    "ABUSE_ROUND_TIMES": "${ABUSE_ROUND_TIMES:-true}",
+    "ABUSE_SETTLE_MIN": "${ABUSE_SETTLE_MIN:-30}",
+    "ABUSE_SEVERE_TAGS": "${ABUSE_SEVERE_TAGS:-}",
+    "ADB_HOST_PORT": "${ADB_HOST_PORT:-5555}",
+    "ALERTS_DASHBOARD_URL": "${ALERTS_DASHBOARD_URL:-}",
+    "ALERTS_ENABLED": "${ALERTS_ENABLED:-false}",
+    "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY:-}",
+    "API_ALLOWED_HOSTS": "${API_ALLOWED_HOSTS:-}",
+    "API_ALLOWED_ORIGINS": "${API_ALLOWED_ORIGINS:-}",
+    "ATTACK_ENABLED": "${ATTACK_ENABLED:-false}",
+    "AUTH_TRUSTED_PROXIES": "${AUTH_TRUSTED_PROXIES:-}",
+    "BLOCKLIST_ENABLED": "${BLOCKLIST_ENABLED:-false}",
+    "BLOCKLIST_MAX_ROWS": "${BLOCKLIST_MAX_ROWS:-20000}",
+    "BLOCKLIST_NEVER": "${BLOCKLIST_NEVER:-}",
+    "BLOCKLIST_WINDOW_DAYS": "${BLOCKLIST_WINDOW_DAYS:-30}",
+    "CAMPAIGNS_ENABLED": "${CAMPAIGNS_ENABLED:-false}",
+    "CAMPAIGN_LINK_CAP": "${CAMPAIGN_LINK_CAP:-500}",
+    "CAMPAIGN_MIN_SOURCES": "${CAMPAIGN_MIN_SOURCES:-2}",
+    "CVE_GITHUB_DAILY_QUOTA": "${CVE_GITHUB_DAILY_QUOTA:-100}",
+    "CVE_NVD_DAILY_QUOTA": "${CVE_NVD_DAILY_QUOTA:-200}",
+    "CVE_WATCH_ENABLED": "${CVE_WATCH_ENABLED:-true}",
+    "DB_MAX_SIZE_GB": "${DB_MAX_SIZE_GB:-10}",
+    "DOCKER_HOST_PORT": "${DOCKER_HOST_PORT:-2375}",
+    "EGRESS_ALLOWED_CIDRS": "${EGRESS_ALLOWED_CIDRS:-}",
+    "EGRESS_CHECK_INTERVAL_S": "${EGRESS_CHECK_INTERVAL_S:-300}",
+    "EGRESS_CONTROL_URL": "${EGRESS_CONTROL_URL:-http://vpn:8000}",
+    "EGRESS_DENY_ASNS": "${EGRESS_DENY_ASNS:-}",
+    "EGRESS_ECHO_URLS": "${EGRESS_ECHO_URLS:-https://api.ipify.org,https://icanhazip.com}",
+    "EGRESS_PROXY_PASSWORD": "${EGRESS_PROXY_PASSWORD:-}",
+    "EGRESS_PROXY_URL": "${EGRESS_PROXY_URL:-http://vpn:8888}",
+    "GEOIP_FAKE_FOR_PRIVATE": "${GEOIP_FAKE_FOR_PRIVATE:-false}",
+    "GEOIP_PROVIDER": "${GEOIP_PROVIDER:-auto}",
+    "GEOIP_REFRESH_DAYS": "${GEOIP_REFRESH_DAYS:-30}",
+    "GITHUB_ADVISORY_TOKEN": "${GITHUB_ADVISORY_TOKEN:-}",
+    "GREYNOISE_API_KEY": "${GREYNOISE_API_KEY:-}",
+    "GREYNOISE_DAILY_QUOTA": "${GREYNOISE_DAILY_QUOTA:-50}",
+    "HTTPS_HOST_PORT": "${HTTPS_HOST_PORT:-443}",
+    "HTTP_HOST_PORT": "${HTTP_HOST_PORT:-80}",
+    "INDICATORS_ENABLED": "${INDICATORS_ENABLED:-true}",
+    "INDICATORS_IGNORE": "${INDICATORS_IGNORE:-}",
+    "INDICATORS_KEEP_DOCUMENTATION": "${INDICATORS_KEEP_DOCUMENTATION:-false}",
+    "INDICATORS_LINK_CAP": "${INDICATORS_LINK_CAP:-500}",
+    "INGEST_STREAMS": "${INGEST_STREAMS:-events:ssh,events:telnet,events:web,events:rdp,events:redis,events:docker,events:mysql,events:mssql,events:adb,events:smb,events:sip,events:synology}",
+    "INTEL_INTERVAL_S": "${INTEL_INTERVAL_S:-30}",
+    "LLM_DAILY_QUOTA": "${LLM_DAILY_QUOTA:-50}",
+    "LLM_ENABLED": "${LLM_ENABLED:-false}",
+    "LLM_MODEL": "${LLM_MODEL:-claude-haiku-5-5}",
+    "LLM_MONTHLY_TOKEN_CAP": "${LLM_MONTHLY_TOKEN_CAP:-2000000}",
+    "MAXMIND_ACCOUNT_ID": "${MAXMIND_ACCOUNT_ID:-}",
+    "MAXMIND_LICENSE_KEY": "${MAXMIND_LICENSE_KEY:-}",
+    "MSSQL_HOST_PORT": "${MSSQL_HOST_PORT:-1433}",
+    "MYSQL_HOST_PORT": "${MYSQL_HOST_PORT:-3306}",
+    "NETWORK_ENABLED": "${NETWORK_ENABLED:-false}",
+    "NETWORK_FEED_ENABLED": "${NETWORK_FEED_ENABLED:-false}",
+    "NETWORK_FEED_INTERVAL_S": "${NETWORK_FEED_INTERVAL_S:-3600}",
+    "NETWORK_FEED_KEY": "${NETWORK_FEED_KEY:-}",
+    "NETWORK_FEED_LISTS": "${NETWORK_FEED_LISTS:-inbound,outbound,outbound-domains}",
+    "NETWORK_FEED_URL": "${NETWORK_FEED_URL:-}",
+    "NETWORK_HUB_KEY": "${NETWORK_HUB_KEY:-}",
+    "NETWORK_HUB_URL": "${NETWORK_HUB_URL:-}",
+    "NETWORK_INTERVAL_S": "${NETWORK_INTERVAL_S:-900}",
+    "NETWORK_MAX_SOURCES": "${NETWORK_MAX_SOURCES:-5000}",
+    "NETWORK_SUBMIT_DELAY_MAX_H": "${NETWORK_SUBMIT_DELAY_MAX_H:-20}",
+    "NETWORK_SUBMIT_DELAY_MIN_H": "${NETWORK_SUBMIT_DELAY_MIN_H:-2}",
+    "NVD_API_KEY": "${NVD_API_KEY:-}",
+    "POSTGRES_DB": "${POSTGRES_DB:-suckerpot}",
+    "POSTGRES_HOST": "db",
+    "POSTGRES_PASSWORD": "${POSTGRES_INGEST_PASSWORD:?POSTGRES_INGEST_PASSWORD must be set in .env}",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_USER": "${POSTGRES_INGEST_USER:-suckerpot_ingest}",
+    "RDP_HOSTNAME": "${RDP_HOSTNAME:-}",
+    "RDP_HOST_PORT": "${RDP_HOST_PORT:-3389}",
+    "REDIS_HOST": "redis",
+    "REDIS_HOST_PORT": "${REDIS_HOST_PORT:-6379}",
+    "REDIS_PASSWORD": "${REDIS_INGEST_PASSWORD:?REDIS_INGEST_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "ingest",
+    "REPORTS_ENABLED": "${REPORTS_ENABLED:-false}",
+    "REPUTATION_INTERVAL_S": "${REPUTATION_INTERVAL_S:-30}",
+    "REPUTATION_MIN_EVENTS": "${REPUTATION_MIN_EVENTS:-10}",
+    "SCRIPTS_ENABLED": "${SCRIPTS_ENABLED:-false}",
+    "SETTINGS_ENCRYPTION_KEY": "${SETTINGS_ENCRYPTION_KEY:-}",
+    "SIP_HOST_PORT": "${SIP_HOST_PORT:-5060}",
+    "SITE_TIMEZONE": "${SITE_TIMEZONE:-UTC}",
+    "SMB_DOMAIN": "${SMB_DOMAIN:-}",
+    "SMB_HOSTNAME": "${SMB_HOSTNAME:-}",
+    "SMB_HOST_PORT": "${SMB_HOST_PORT:-445}",
+    "SMTP_FROM": "${SMTP_FROM:-}",
+    "SMTP_HOST": "${SMTP_HOST:-}",
+    "SMTP_PASSWORD": "${SMTP_PASSWORD:-}",
+    "SMTP_PORT": "${SMTP_PORT:-}",
+    "SMTP_SECURITY": "${SMTP_SECURITY:-starttls}",
+    "SMTP_USER": "${SMTP_USER:-}",
+    "SSH_HOSTNAME": "${SSH_HOSTNAME:-srv-web01}",
+    "SSH_HOST_PORT": "${SSH_HOST_PORT:-22}",
+    "SYNOLOGY_HTTPS_HOST_PORT": "${SYNOLOGY_HTTPS_HOST_PORT:-5001}",
+    "SYNOLOGY_HTTP_HOST_PORT": "${SYNOLOGY_HTTP_HOST_PORT:-5000}",
+    "TAKEDOWN_ABUSEIPDB_DAILY_QUOTA": "${TAKEDOWN_ABUSEIPDB_DAILY_QUOTA:-50}",
+    "TAKEDOWN_ENABLED": "${TAKEDOWN_ENABLED:-false}",
+    "TAKEDOWN_INTEL_DAILY_QUOTA": "${TAKEDOWN_INTEL_DAILY_QUOTA:-100}",
+    "TAKEDOWN_INTERVAL_S": "${TAKEDOWN_INTERVAL_S:-600}",
+    "TAKEDOWN_QUIET_DAYS": "${TAKEDOWN_QUIET_DAYS:-7}",
+    "TAKEDOWN_TRACK_DAYS": "${TAKEDOWN_TRACK_DAYS:-30}",
+    "TELNET_HOST_PORT": "${TELNET_HOST_PORT:-23}",
+    "UPDATE_CHECK_ENABLED": "${UPDATE_CHECK_ENABLED:-false}",
+    "UPDATE_CHECK_REPO": "${UPDATE_CHECK_REPO:-Theroxat/suckerpot}",
+    "VIRUSTOTAL_API_KEY": "${VIRUSTOTAL_API_KEY:-}",
+    "VIRUSTOTAL_DAILY_QUOTA": "${VIRUSTOTAL_DAILY_QUOTA:-400}",
+    "VPN_WG_DNS": "${VPN_WG_DNS:-}",
+    "VPN_WG_ENDPOINT_IP": "${VPN_WG_ENDPOINT_IP:-}",
+    "WEB_HOSTNAME": "${WEB_HOSTNAME:-srv-web01}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "ingest.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-ingest:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "384m",
+   "memswap_limit": "384m",
+   "networks": [
+    "backend",
+    "egress-proxy"
+   ],
+   "oom_score_adj": -200,
+   "pids_limit": 100,
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "geoip-data:/data/geoip"
+   ]
+  },
+  "migrate": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "db/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpus": 0.5,
+   "depends_on": {
+    "db": {
+     "condition": "service_healthy"
+    }
+   },
+   "environment": {
+    "ABUSE_REPLY_EXCERPT_DAYS": "${ABUSE_REPLY_EXCERPT_DAYS:-180}",
+    "ABUSE_REPORT_RETENTION_DAYS": "${ABUSE_REPORT_RETENTION_DAYS:-730}",
+    "CAMPAIGNS_MAX_ROWS": "${CAMPAIGNS_MAX_ROWS:-50000}",
+    "DB_MAX_SIZE_GB": "${DB_MAX_SIZE_GB:-10}",
+    "INDICATORS_MAX_ROWS": "${INDICATORS_MAX_ROWS:-500000}",
+    "POSTGRES_ANALYZER_PASSWORD": "${POSTGRES_ANALYZER_PASSWORD:-}",
+    "POSTGRES_ANALYZER_USER": "${POSTGRES_ANALYZER_USER:-suckerpot_analyzer}",
+    "POSTGRES_API_PASSWORD": "${POSTGRES_API_PASSWORD:?POSTGRES_API_PASSWORD must be set in .env}",
+    "POSTGRES_API_USER": "${POSTGRES_API_USER:-suckerpot_api}",
+    "POSTGRES_COLLECTOR_PASSWORD": "${POSTGRES_COLLECTOR_PASSWORD:-}",
+    "POSTGRES_COLLECTOR_USER": "${POSTGRES_COLLECTOR_USER:-suckerpot_collector}",
+    "POSTGRES_DB": "${POSTGRES_DB:-suckerpot}",
+    "POSTGRES_HOST": "db",
+    "POSTGRES_INGEST_PASSWORD": "${POSTGRES_INGEST_PASSWORD:?POSTGRES_INGEST_PASSWORD must be set in .env}",
+    "POSTGRES_INGEST_USER": "${POSTGRES_INGEST_USER:-suckerpot_ingest}",
+    "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_USER": "${POSTGRES_USER:-suckerpot}",
+    "RETENTION_DAYS": "${RETENTION_DAYS:-90}",
+    "SCRIPTS_MAX_ROWS": "${SCRIPTS_MAX_ROWS:-100000}",
+    "SUCKERPOT_ALLOW_DEFAULT_SECRETS": "${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}",
+    "TAKEDOWN_CHECK_RETENTION_DAYS": "${TAKEDOWN_CHECK_RETENTION_DAYS:-400}"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-migrate:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "256m",
+   "networks": [
+    "backend"
+   ],
+   "pids_limit": 64,
+   "read_only": true,
+   "restart": "no",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001"
+  },
+  "redis": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": "./redis"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpus": 0.5,
+   "environment": {
+    "REDIS_DEMO_PASSWORD": "${REDIS_DEMO_PASSWORD:?REDIS_DEMO_PASSWORD must be set in .env}",
+    "REDIS_HEALTH_PASSWORD": "${REDIS_HEALTH_PASSWORD:?REDIS_HEALTH_PASSWORD must be set in .env}",
+    "REDIS_INGEST_PASSWORD": "${REDIS_INGEST_PASSWORD:?REDIS_INGEST_PASSWORD must be set in .env}",
+    "REDIS_MAXMEMORY_MB": "${REDIS_MAXMEMORY_MB:-192}",
+    "REDIS_PASSWORD": "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_ADB_PASSWORD": "${REDIS_SENSOR_ADB_PASSWORD:?REDIS_SENSOR_ADB_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_DOCKER_PASSWORD": "${REDIS_SENSOR_DOCKER_PASSWORD:?REDIS_SENSOR_DOCKER_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_MSSQL_PASSWORD": "${REDIS_SENSOR_MSSQL_PASSWORD:?REDIS_SENSOR_MSSQL_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_MYSQL_PASSWORD": "${REDIS_SENSOR_MYSQL_PASSWORD:?REDIS_SENSOR_MYSQL_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_RDP_PASSWORD": "${REDIS_SENSOR_RDP_PASSWORD:?REDIS_SENSOR_RDP_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_REDIS_PASSWORD": "${REDIS_SENSOR_REDIS_PASSWORD:?REDIS_SENSOR_REDIS_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_SIP_PASSWORD": "${REDIS_SENSOR_SIP_PASSWORD:?REDIS_SENSOR_SIP_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_SMB_PASSWORD": "${REDIS_SENSOR_SMB_PASSWORD:?REDIS_SENSOR_SMB_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_SSH_PASSWORD": "${REDIS_SENSOR_SSH_PASSWORD:?REDIS_SENSOR_SSH_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_SYNOLOGY_PASSWORD": "${REDIS_SENSOR_SYNOLOGY_PASSWORD:?REDIS_SENSOR_SYNOLOGY_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_TELNET_PASSWORD": "${REDIS_SENSOR_TELNET_PASSWORD:?REDIS_SENSOR_TELNET_PASSWORD must be set in .env}",
+    "REDIS_SENSOR_WEB_PASSWORD": "${REDIS_SENSOR_WEB_PASSWORD:?REDIS_SENSOR_WEB_PASSWORD must be set in .env}",
+    "SUCKERPOT_ALLOW_DEFAULT_SECRETS": "${SUCKERPOT_ALLOW_DEFAULT_SECRETS:-0}"
+   },
+   "healthcheck": {
+    "interval": "10s",
+    "retries": 5,
+    "start_period": "5s",
+    "test": [
+     "CMD-SHELL",
+     "REDISCLI_AUTH=\"$$REDIS_HEALTH_PASSWORD\" redis-cli --user health ping | grep -q PONG"
+    ],
+    "timeout": "3s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-redis:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "384m",
+   "memswap_limit": "384m",
+   "networks": [
+    "sensors-ssh",
+    "sensors-rdp",
+    "sensors-telnet",
+    "sensors-web",
+    "sensors-redis",
+    "sensors-docker",
+    "sensors-mysql",
+    "sensors-mssql",
+    "sensors-adb",
+    "sensors-smb",
+    "sensors-sip",
+    "sensors-synology",
+    "tools",
+    "backend"
+   ],
+   "oom_score_adj": -500,
+   "pids_limit": 64,
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/run/redis:rw,noexec,nosuid,nodev,size=1m,mode=0700,uid=999,gid=999"
+   ],
+   "user": "999:999",
+   "volumes": [
+    "redis-data:/data"
+   ]
+  },
+  "sensor-adb": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/adb/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_ADB:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN_LOW:-3000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:adb",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_ADB_PASSWORD:?REDIS_SENSOR_ADB_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "sensor-adb",
+    "SENSOR_DATA_DIR": "/data",
+    "SENSOR_MAX_CONNECTIONS": "${ADB_MAX_CONNECTIONS:-200}",
+    "SENSOR_MAX_PER_IP": "${ADB_MAX_PER_IP:-8}",
+    "SENSOR_PORT": "5555",
+    "SENSOR_PUBLIC_PORT": "${ADB_HOST_PORT:-5555}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "adb_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-adb:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "192m",
+   "memswap_limit": "192m",
+   "networks": [
+    "ingress",
+    "sensors-adb"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${ADB_HOST_PORT:-5555}:5555"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "adb-sensor-data:/data"
+   ]
+  },
+  "sensor-docker": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/docker/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_DOCKER:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "DOCKER_DATA_DIR": "/data",
+    "DOCKER_MAX_CONNECTIONS": "${DOCKER_MAX_CONNECTIONS:-200}",
+    "DOCKER_MAX_PER_IP": "${DOCKER_MAX_PER_IP:-8}",
+    "DOCKER_MEMORY_LIMIT_MB": "160",
+    "DOCKER_PORT": "2375",
+    "DOCKER_PUBLIC_PORT": "${DOCKER_HOST_PORT:-2375}",
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN_LOW:-3000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:docker",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_DOCKER_PASSWORD:?REDIS_SENSOR_DOCKER_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "sensor-docker"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "docker_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-docker:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "160m",
+   "memswap_limit": "160m",
+   "networks": [
+    "ingress",
+    "sensors-docker"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${DOCKER_HOST_PORT:-2375}:2375"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "docker-sensor-data:/data"
+   ]
+  },
+  "sensor-mssql": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/mssql/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_MSSQL:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN_LOW:-3000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:mssql",
+    "MSSQL_PUBLIC_PORT": "${MSSQL_HOST_PORT:-1433}",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_MSSQL_PASSWORD:?REDIS_SENSOR_MSSQL_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "sensor-mssql",
+    "SENSOR_DATA_DIR": "/data",
+    "SENSOR_MAX_CONNECTIONS": "${MSSQL_MAX_CONNECTIONS:-200}",
+    "SENSOR_MAX_PER_IP": "${MSSQL_MAX_PER_IP:-8}",
+    "SENSOR_MEMORY_LIMIT": "167772160",
+    "SENSOR_PORT": "1433"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "mssql_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-mssql:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "160m",
+   "memswap_limit": "160m",
+   "networks": [
+    "ingress",
+    "sensors-mssql"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${MSSQL_HOST_PORT:-1433}:1433"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "mssql-sensor-data:/data"
+   ]
+  },
+  "sensor-mysql": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/mysql/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_MYSQL:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN_LOW:-3000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:mysql",
+    "MYSQL_PUBLIC_PORT": "${MYSQL_HOST_PORT:-3306}",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_MYSQL_PASSWORD:?REDIS_SENSOR_MYSQL_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "sensor-mysql",
+    "SENSOR_DATA_DIR": "/data",
+    "SENSOR_MAX_CONNECTIONS": "${MYSQL_MAX_CONNECTIONS:-200}",
+    "SENSOR_MAX_PER_IP": "${MYSQL_MAX_PER_IP:-8}",
+    "SENSOR_MEMORY_LIMIT": "167772160",
+    "SENSOR_MYSQL_ACCOUNTS": "${MYSQL_ACCOUNTS:-root:,root:root,admin:admin,mysql:mysql}",
+    "SENSOR_PORT": "3306"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "mysql_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-mysql:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "160m",
+   "memswap_limit": "160m",
+   "networks": [
+    "ingress",
+    "sensors-mysql"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${MYSQL_HOST_PORT:-3306}:3306"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "mysql-sensor-data:/data"
+   ]
+  },
+  "sensor-rdp": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/rdp/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_RDP:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN:-10000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:rdp",
+    "RDP_DATA_DIR": "/data",
+    "RDP_HOSTNAME": "${RDP_HOSTNAME:-}",
+    "RDP_MAX_CONNECTIONS": "${RDP_MAX_CONNECTIONS:-200}",
+    "RDP_MAX_PER_IP": "${RDP_MAX_PER_IP:-8}",
+    "RDP_MAX_TLS_PER_IP": "${RDP_MAX_TLS_PER_IP:-4}",
+    "RDP_PORT": "3389",
+    "RDP_PUBLIC_PORT": "${RDP_HOST_PORT:-3389}",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_RDP_PASSWORD:?REDIS_SENSOR_RDP_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "sensor-rdp",
+    "SENSOR_RDP_ACCOUNTS": "${RDP_ACCOUNTS:-administrator:P@ssw0rd,administrator:123456,admin:admin}",
+    "SENSOR_RDP_NLA_MODE": "${RDP_NLA_MODE:-required}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "rdp_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-rdp:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "128m",
+   "memswap_limit": "128m",
+   "networks": [
+    "ingress",
+    "sensors-rdp"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${RDP_HOST_PORT:-3389}:3389"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "rdp-data:/data"
+   ]
+  },
+  "sensor-redis": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/redis/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_REDIS:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN_LOW:-3000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:redis",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_REDIS_PASSWORD:?REDIS_SENSOR_REDIS_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_PUBLIC_PORT": "${REDIS_HOST_PORT:-6379}",
+    "REDIS_USER": "sensor-redis",
+    "SENSOR_DATA_DIR": "/data",
+    "SENSOR_MAX_CONNECTIONS": "${REDIS_MAX_CONNECTIONS:-200}",
+    "SENSOR_MAX_PER_IP": "${REDIS_MAX_PER_IP:-8}",
+    "SENSOR_MEMORY_LIMIT": "201326592",
+    "SENSOR_PORT": "6379"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "redis_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-redis:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "192m",
+   "memswap_limit": "192m",
+   "networks": [
+    "ingress",
+    "sensors-redis"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${REDIS_HOST_PORT:-6379}:6379"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "redis-sensor-data:/data"
+   ]
+  },
+  "sensor-sip": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/sip/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_SIP:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN_LOW:-3000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:sip",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_SIP_PASSWORD:?REDIS_SENSOR_SIP_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "sensor-sip",
+    "SENSOR_DATA_DIR": "/data",
+    "SENSOR_MAX_CONNECTIONS": "${SIP_MAX_CONNECTIONS:-200}",
+    "SENSOR_MAX_PER_IP": "${SIP_MAX_PER_IP:-8}",
+    "SENSOR_MEMORY_LIMIT": "167772160",
+    "SENSOR_PORT": "5060",
+    "SENSOR_SIP_OWN_IPS": "${SIP_OWN_IPS:-}",
+    "SIP_PUBLIC_PORT": "${SIP_HOST_PORT:-5060}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "sip_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-sip:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "160m",
+   "memswap_limit": "160m",
+   "networks": [
+    "ingress",
+    "sensors-sip"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${SIP_HOST_PORT:-5060}:5060/udp",
+    "0.0.0.0:${SIP_HOST_PORT:-5060}:5060/tcp"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "sip-sensor-data:/data"
+   ]
+  },
+  "sensor-smb": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/smb/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_SMB:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN_LOW:-3000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:smb",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_SMB_PASSWORD:?REDIS_SENSOR_SMB_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "sensor-smb",
+    "SMB_DATA_DIR": "/data",
+    "SMB_DOMAIN": "${SMB_DOMAIN:-}",
+    "SMB_HOSTNAME": "${SMB_HOSTNAME:-}",
+    "SMB_MAX_CONNECTIONS": "${SMB_MAX_CONNECTIONS:-200}",
+    "SMB_MAX_PER_IP": "${SMB_MAX_PER_IP:-10}",
+    "SMB_MEMORY_LIMIT": "167772160",
+    "SMB_PORT": "4450",
+    "SMB_PUBLIC_PORT": "${SMB_HOST_PORT:-445}",
+    "SMB_SMB1_MODE": "${SMB_SMB1_MODE:-steer}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "smb_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-smb:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "160m",
+   "memswap_limit": "160m",
+   "networks": [
+    "ingress",
+    "sensors-smb"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${SMB_HOST_PORT:-445}:4450"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "smb-sensor-data:/data"
+   ]
+  },
+  "sensor-ssh": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/ssh/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_SSH:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN:-10000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:ssh",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_SSH_PASSWORD:?REDIS_SENSOR_SSH_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "sensor-ssh",
+    "SSH_ACCEPT_CREDENTIALS": "${SSH_ACCEPT_CREDENTIALS:-root:root,root:123456,root:password,admin:admin,ubuntu:ubuntu,pi:raspberry,user:user}",
+    "SSH_ACCEPT_RANDOM_PROB": "${SSH_ACCEPT_RANDOM_PROB:-0.0}",
+    "SSH_BANNER": "${SSH_BANNER:-SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.14}",
+    "SSH_HOSTKEY_DIR": "/data/host_keys",
+    "SSH_HOSTNAME": "${SSH_HOSTNAME:-srv-web01}",
+    "SSH_MAX_AUTH_ATTEMPTS": "${SSH_MAX_AUTH_ATTEMPTS:-6}",
+    "SSH_MAX_CONNECTIONS": "${SSH_MAX_CONNECTIONS:-200}",
+    "SSH_MAX_PER_IP": "${SSH_MAX_PER_IP:-5}",
+    "SSH_MEMORY_LIMIT_MB": "256",
+    "SSH_PORT": "2222",
+    "SSH_PUBLIC_PORT": "${SSH_HOST_PORT:-22}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "ssh_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-ssh:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "256m",
+   "memswap_limit": "256m",
+   "networks": [
+    "ingress",
+    "sensors-ssh"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${SSH_HOST_PORT:-22}:2222"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "ssh-hostkeys:/data"
+   ]
+  },
+  "sensor-synology": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/synology/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_SYNOLOGY:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN_LOW:-3000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:synology",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_SYNOLOGY_PASSWORD:?REDIS_SENSOR_SYNOLOGY_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "sensor-synology",
+    "SYNOLOGY_CONN_BURST": "${SYNOLOGY_CONN_BURST:-20}",
+    "SYNOLOGY_CONN_RATE": "${SYNOLOGY_CONN_RATE:-5}",
+    "SYNOLOGY_DATA_DIR": "/data",
+    "SYNOLOGY_EVENTS_PER_SEC": "${SYNOLOGY_EVENTS_PER_SEC:-20}",
+    "SYNOLOGY_GLOBAL_EVENTS_PER_SEC": "${SYNOLOGY_GLOBAL_EVENTS_PER_SEC:-200}",
+    "SYNOLOGY_HTTPS_PORT": "5001",
+    "SYNOLOGY_HTTPS_PUBLIC_PORT": "${SYNOLOGY_HTTPS_HOST_PORT:-5001}",
+    "SYNOLOGY_HTTP_PORT": "5000",
+    "SYNOLOGY_HTTP_PUBLIC_PORT": "${SYNOLOGY_HTTP_HOST_PORT:-5000}",
+    "SYNOLOGY_HTTP_REDIRECT": "${SYNOLOGY_HTTP_REDIRECT:-false}",
+    "SYNOLOGY_MAX_CONNECTIONS": "${SYNOLOGY_MAX_CONNECTIONS:-200}",
+    "SYNOLOGY_MAX_PER_IP": "${SYNOLOGY_MAX_PER_IP:-8}",
+    "SYNOLOGY_MEMORY_BUDGET_MB": "${SYNOLOGY_MEMORY_BUDGET_MB:-80}",
+    "SYNOLOGY_MEMORY_LIMIT_MB": "160"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "synology_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-synology:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "160m",
+   "memswap_limit": "160m",
+   "networks": [
+    "ingress",
+    "sensors-synology"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${SYNOLOGY_HTTP_HOST_PORT:-5000}:5000",
+    "0.0.0.0:${SYNOLOGY_HTTPS_HOST_PORT:-5001}:5001"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "synology-sensor-data:/data"
+   ]
+  },
+  "sensor-telnet": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/telnet/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_TELNET:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN:-10000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:telnet",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_TELNET_PASSWORD:?REDIS_SENSOR_TELNET_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "sensor-telnet",
+    "TELNET_PUBLIC_PORT": "${TELNET_HOST_PORT:-23}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "telnet_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-telnet:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "256m",
+   "memswap_limit": "256m",
+   "networks": [
+    "ingress",
+    "sensors-telnet"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${TELNET_HOST_PORT:-23}:2323"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "telnet-data:/data"
+   ]
+  },
+  "sensor-web": {
+   "build": {
+    "args": {
+     "BUILD_KIND": "source",
+     "COMMIT": "${SUCKERPOT_BUILD_COMMIT:-unknown}",
+     "VERSION": "${SUCKERPOT_BUILD_VERSION:-dev}"
+    },
+    "context": ".",
+    "dockerfile": "sensors/web/Dockerfile"
+   },
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpu_shares": 256,
+   "cpus": 0.5,
+   "depends_on": {
+    "redis": {
+     "condition": "service_healthy"
+    }
+   },
+   "deploy": {
+    "replicas": "${SENSOR_WEB:-1}"
+   },
+   "dns": [
+    "127.0.0.1"
+   ],
+   "environment": {
+    "EVENTS_MAXLEN": "${EVENTS_MAXLEN:-10000}",
+    "EVENTS_MAX_BYTES_BURST": "${EVENTS_MAX_BYTES_BURST:-2000000}",
+    "EVENTS_MAX_BYTES_PER_SEC": "${EVENTS_MAX_BYTES_PER_SEC:-200000}",
+    "EVENTS_STREAM": "events:web",
+    "REDIS_HOST": "redis",
+    "REDIS_PASSWORD": "${REDIS_SENSOR_WEB_PASSWORD:?REDIS_SENSOR_WEB_PASSWORD must be set in .env}",
+    "REDIS_PORT": "6379",
+    "REDIS_USER": "sensor-web",
+    "WEB_DATA_DIR": "/data",
+    "WEB_HOSTNAME": "${WEB_HOSTNAME:-srv-web01}",
+    "WEB_HTTPS_PORT": "8443",
+    "WEB_HTTPS_PUBLIC_PORT": "${HTTPS_HOST_PORT:-443}",
+    "WEB_HTTP_PORT": "8080",
+    "WEB_HTTP_PUBLIC_PORT": "${HTTP_HOST_PORT:-80}",
+    "WEB_MAX_CONNECTIONS": "${WEB_MAX_CONNECTIONS:-200}",
+    "WEB_MAX_PER_IP": "${WEB_MAX_PER_IP:-10}",
+    "WEB_MEMORY_LIMIT_MB": "256",
+    "WEB_PHP_VERSION": "${WEB_PHP_VERSION:-8.3.6}",
+    "WEB_WP_VERSION": "${WEB_WP_VERSION:-6.8.1}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "20s",
+    "test": [
+     "CMD",
+     "python",
+     "-m",
+     "web_sensor.healthcheck"
+    ],
+    "timeout": "5s"
+   },
+   "image": "${SUCKERPOT_IMAGE_PREFIX:-local/${COMPOSE_PROJECT_NAME:-unset}}-sensor-web:${SUCKERPOT_VERSION:-dev}",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "256m",
+   "memswap_limit": "256m",
+   "networks": [
+    "ingress",
+    "sensors-web"
+   ],
+   "oom_score_adj": 800,
+   "pids_limit": 128,
+   "ports": [
+    "0.0.0.0:${HTTP_HOST_PORT:-80}:8080",
+    "0.0.0.0:${HTTPS_HOST_PORT:-443}:8443"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    "web-data:/data"
+   ]
+  },
+  "vpn": {
+   "cap_add": [
+    "NET_ADMIN"
+   ],
+   "cap_drop": [
+    "ALL"
+   ],
+   "cpus": 0.5,
+   "depends_on": {
+    "api": {
+     "condition": "service_started"
+    }
+   },
+   "devices": [
+    "/dev/net/tun:/dev/net/tun"
+   ],
+   "dns": [
+    "127.0.0.1"
+   ],
+   "entrypoint": [
+    "/bin/sh",
+    "/vpn/entrypoint.sh"
+   ],
+   "environment": {
+    "BLOCK_ADS": "off",
+    "BLOCK_MALICIOUS": "off",
+    "BLOCK_SURVEILLANCE": "off",
+    "DNS_KEEP_NAMESERVER": "off",
+    "DNS_UPSTREAM_IPV6": "off",
+    "HEALTH_RESTART_VPN": "on",
+    "HEALTH_SMALL_CHECK_TYPE": "dns",
+    "HEALTH_TARGET_ADDRESSES": "1.1.1.1:443,9.9.9.9:443",
+    "HTTPPROXY": "on",
+    "HTTPPROXY_LISTENING_ADDRESS": ":8888",
+    "HTTPPROXY_LOG": "off",
+    "HTTPPROXY_PASSWORD": "${EGRESS_PROXY_PASSWORD:-}",
+    "HTTPPROXY_STEALTH": "on",
+    "HTTPPROXY_USER": "egress",
+    "HTTP_CONTROL_SERVER_ADDRESS": ":8000",
+    "HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH": "/gluetun/auth/config.toml",
+    "HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE": "{}",
+    "HTTP_CONTROL_SERVER_LOG": "off",
+    "PGID": "65534",
+    "PUBLICIP_ENABLED": "on",
+    "PUBLICIP_FILE": "/gluetun/ip",
+    "PUID": "65534",
+    "SHADOWSOCKS": "off",
+    "TZ": "UTC",
+    "UPDATER_PERIOD": "0",
+    "VERSION_INFORMATION": "off",
+    "VPN_INTERFACE": "wg0",
+    "VPN_SERVICE_PROVIDER": "custom",
+    "VPN_TYPE": "wireguard",
+    "WIREGUARD_ADDRESSES": "${VPN_WG_ADDRESSES:-}",
+    "WIREGUARD_ENDPOINT_IP": "${VPN_WG_ENDPOINT_IP:-}",
+    "WIREGUARD_ENDPOINT_PORT": "${VPN_WG_ENDPOINT_PORT:-}",
+    "WIREGUARD_IMPLEMENTATION": "userspace",
+    "WIREGUARD_PERSISTENT_KEEPALIVE_INTERVAL": "25s",
+    "WIREGUARD_PRIVATE_KEY": "${VPN_WG_PRIVATE_KEY:-}",
+    "WIREGUARD_PUBLIC_KEY": "${VPN_WG_PEER_PUBLIC_KEY:-}"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "start_period": "30s",
+    "test": [
+     "CMD",
+     "/bin/sh",
+     "/vpn/health.sh"
+    ],
+    "timeout": "5s"
+   },
+   "image": "qmcgaw/gluetun:v3.41.1@sha256:1a5bf4b4820a879cdf8d93d7ef0d2d963af56670c9ebff8981860b6804ebc8ab",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "3",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "256m",
+   "memswap_limit": "256m",
+   "networks": {
+    "egress-proxy": {},
+    "vpn-uplink": {
+     "gw_priority": 100
+    }
+   },
+   "pids_limit": 64,
+   "profiles": [
+    "egress"
+   ],
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "sysctls": {
+    "net.ipv4.conf.all.src_valid_mark": "1"
+   },
+   "tmpfs": [
+    "/tmp:rw,noexec,nosuid,nodev,size=8m,mode=0755",
+    "/gluetun:rw,noexec,nosuid,nodev,size=8m,mode=0755",
+    "/run/wireguard:rw,noexec,nosuid,nodev,size=1m"
+   ],
+   "volumes": [
+    "./vpn/control-auth.toml:/gluetun/auth/config.toml:ro",
+    "./vpn/entrypoint.sh:/vpn/entrypoint.sh:ro",
+    "./vpn/health.sh:/vpn/health.sh:ro",
+    "vpn-config:/vpn-config:ro"
+   ]
+  }
+ }
+}
