@@ -31,7 +31,7 @@ class GateTransport(httpx.AsyncBaseTransport):
         self._inner = inner
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        self._gate.require_open()  # raises EgressClosed: nothing is sent
+        self._gate.require_open(request.url.host)  # raises EgressClosed: nothing is sent
         try:
             response = await self._inner.handle_async_request(request)
         except _PROXY_ERRORS:

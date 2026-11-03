@@ -85,7 +85,7 @@ def connect_via_proxy(
 
 
 def open_tunnel_sync(gate: EgressGate, host: str, port: int, *, timeout: float) -> socket.socket:
-    gate.require_open()
+    gate.require_open(host)
     try:
         sock = connect_via_proxy(gate.settings, host, port, timeout=timeout)
     except TunnelError as exc:
