@@ -42,6 +42,8 @@ from suckerpot_netproto.enums import FAMILIES_V1
 from . import consensus
 from .config import Settings
 from .feeds.filter import Exclusions, RangesStale, load_exclusions, parse_network
+from .feeds.select import DOMAINS as OUTBOUND_DOMAINS
+from .feeds.select import OUTBOUND
 from .malware import EXECUTABLE_FILE_TYPES, SQL_MALWARE_LIKE, sql_params
 from .never import Never
 
@@ -424,7 +426,9 @@ def excluded_reason(excl: Exclusions, kind: str, indicator: str) -> str | None:
     """Why the feeds would not carry this host (allow-list, delisting, never-list, reserved,
     CDN, Tor), reusing ``hub.feeds.filter``."""
     host, is_domain = _host_of(kind, indicator)
-    return excl.classify(host, is_domain=is_domain)
+    # Scoped like the outbound feeds: an inbound-only delisting does not stop a submission.
+    list_id = OUTBOUND_DOMAINS if is_domain else OUTBOUND
+    return excl.classify(host, is_domain=is_domain, list_id=list_id)
 
 
 async def load_excl(session: AsyncSession, s: Settings, today: date) -> tuple[Exclusions, bool]:
