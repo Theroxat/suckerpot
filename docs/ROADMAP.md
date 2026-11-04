@@ -408,4 +408,5 @@ Owner decision (2026-11-04): joining the network is the recommended default and 
 - [x] Full installer asks "Join the Selfhostr network? [Y/n]" (default yes, `--no-network` declines) and writes the consent record; ingest joins from it in full mode too, through the VPN only, after a self address is confirmed. A leave is never undone by a restart.
 - [x] Dashboard: the join dialog shows what is shared and asks only for the password; leave is one button; a node that left can join again; setup step 8 has the join button.
 - [x] Setup wizard sensor list read from the `(sensor, ts)` index (it timed out on busy systems).
-- [ ] Security review, UI review, deploy, release.
+- [x] Security review (PASS; the stale consent record, upgrade pin, end-of-input and wording findings fixed), deploy.
+- [ ] Release.
