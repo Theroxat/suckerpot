@@ -410,3 +410,12 @@ Owner decision (2026-11-04): joining the network is the recommended default and 
 - [x] Setup wizard sensor list read from the `(sensor, ts)` index (it timed out on busy systems).
 - [x] Security review (PASS; the stale consent record, upgrade pin, end-of-input and wording findings fixed), deploy.
 - [x] Release (v0.7.0).
+
+## Move to Selfhostr (v0.8.0)
+
+Owner decision (2026-11-04): SuckerPot is the product and the network; Selfhostr is the small organisation that makes it.
+
+- [x] Repository moved to `github.com/selfhostr/suckerpot`; release images under `ghcr.io/selfhostr/suckerpot-*`, signed by the new repository's release workflow. `scripts/env-migrate.sh` rewrites the old default prefix; installs on v0.7.1 make the move once by hand (`docs/updates.md`).
+- [x] Hub at `suckerpot-hub.selfhostr.io`, feeds at `suckerpot-feeds.selfhostr.io/v1`, same keys.
+- [x] Site, docs and mock-data demo at `suckerpot.selfhostr.io` (maintained outside the repo); Read the Docs, GitHub Pages and `site/` removed.
+- [x] Release (v0.8.0).

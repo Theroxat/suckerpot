@@ -230,3 +230,11 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - The dashboard read the hub address only from `.env`, so Settings → Network said "No network hub is configured" on every installer-made install. The API now uses `suckerpot_netproto.defaults.effective`, like ingest.
 - A repeated join while one is pending now explains itself instead of showing a generic error; the "new" standing text no longer states a fixed two-week delay.
 - The owner's node joined the network through the dashboard; enrolment went through the VPN (egress-check PASS).
+
+## 2026-11-04 — v0.8.0 (move to Selfhostr)
+
+- Repository transferred to `selfhostr/suckerpot`; every link, default image prefix (`ghcr.io/selfhostr/suckerpot`), update source and signature identity follow it. The checks stay strict: exact repository, `release.yml`, exact tag.
+- Network defaults point at `suckerpot-hub.selfhostr.io` and `suckerpot-feeds.selfhostr.io/v1`; the hub keys are unchanged. The product name in these hostnames is visible in DNS and SNI, documented in `docs/network.md`.
+- Docs moved from Read the Docs to `suckerpot.selfhostr.io/docs/`, the mock-data demo to `/demo/`; `site/`, the Pages and Sphinx workflows are removed. README screenshots refreshed on mock data.
+- Full compose build healthy (20/20), egress-check PASS, CI green on the new repository.
+

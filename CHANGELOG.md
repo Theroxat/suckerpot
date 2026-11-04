@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-04
+
 ### Changed
 
 - The offline mock-data demo moved to https://suckerpot.selfhostr.io/demo/. GitHub Pages and `site/` are removed from the repo (the product site is maintained separately).
@@ -207,7 +209,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Isolation: four networks with an internal backend, one Redis ACL user per sensor limited to `XADD` on its own stream, least-privilege database roles, no outbound route for the API, non-root read-only containers with all capabilities dropped.
 - The first review of the M1 stack found unbounded stream growth, egress, poison-message and default-credential issues; all were fixed and the second pass passed.
 
-[Unreleased]: https://github.com/selfhostr/suckerpot/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/selfhostr/suckerpot/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/selfhostr/suckerpot/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/selfhostr/suckerpot/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/selfhostr/suckerpot/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/selfhostr/suckerpot/compare/v0.5.0...v0.6.0
