@@ -301,7 +301,7 @@ export const STANDING_TEXT: Record<NetworkStanding, { label: string; sentence: s
   new: {
     label: "New",
     sentence:
-      "The network is still getting to know this sensor. It counts toward confirmations after two weeks of regular batches.",
+      "The network is still getting to know this sensor. It starts counting toward confirmations on the date shown under Eligibility, as long as it keeps sending batches.",
   },
   good: {
     label: "Good",
@@ -516,6 +516,9 @@ export const NETWORK_MESSAGES = {
   closed: "The network is not accepting new members today. Try again tomorrow.",
   unavailable: "The network is not available on this system. It must be switched on in .env first.",
   forbidden: "Only an administrator can change this.",
+  already:
+    "This system has already asked to join. It joins at the next check, within 15 minutes. Close this window.",
+  notMember: "This system is not part of the network, so there is nothing to change.",
   generic: "The change could not be made. Try again in a moment.",
 } as const
 
@@ -542,6 +545,8 @@ export function toNetworkError(e: unknown): UserError {
   if (reason === "enrolment_closed") return new UserError("invalid", NETWORK_MESSAGES.closed)
   if (reason === "network_disabled" || e.status === 503)
     return new UserError("invalid", NETWORK_MESSAGES.unavailable)
+  if (reason === "already_member") return new UserError("invalid", NETWORK_MESSAGES.already)
+  if (reason === "not_member") return new UserError("invalid", NETWORK_MESSAGES.notMember)
   if (e.status === 403) return new UserError("invalid", NETWORK_MESSAGES.forbidden)
   return new UserError("invalid", NETWORK_MESSAGES.generic)
 }
