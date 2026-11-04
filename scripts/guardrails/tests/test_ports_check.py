@@ -257,7 +257,7 @@ def test_install_does_not_fail_when_the_database_cannot_be_read(psb: Sandbox) ->
 def test_reachable_ports_do_not_prompt(psb: Sandbox) -> None:
     wrap_docker(psb, DB_ROWS)
     (psb.shim / "db-rows").write_text("web 1.1.1.1\n")
-    rc, out, err = _install(psb, answers="y\n")
+    rc, out, err = _install(psb, answers="y\nn\n")
     assert rc == 0, err
     assert "Ports are open" in out
     assert "Ports not reachable yet" not in err
@@ -266,7 +266,7 @@ def test_reachable_ports_do_not_prompt(psb: Sandbox) -> None:
 
 def test_prompt_continue_is_the_default(psb: Sandbox) -> None:
     wrap_docker(psb, DB_ROWS)
-    rc, out, err = _install(psb, answers="y\n\n")
+    rc, out, err = _install(psb, answers="y\nn\n\n")
     assert rc == 0, err
     assert err.count("Ports not reachable yet. [r]echeck now") == 1
     assert "[c]ontinue and open them later? [c]" in err
@@ -285,7 +285,7 @@ def test_prompt_recheck_loops_until_reached(psb: Sandbox) -> None:
         '  "compose exec -T ingest python -I -c"*)\n'
         '    exec "$SHIM_PYTHON" -I -c "$8" ;;',
     )
-    rc, out, err = _install(psb, answers="y\nr\nr\n")
+    rc, out, err = _install(psb, answers="y\nn\nr\nr\n")
     assert rc == 0, err
     assert err.count("Ports not reachable yet. [r]echeck now") == 2
     assert "Ports are open: the internet reaches this machine." in out
@@ -294,7 +294,7 @@ def test_prompt_recheck_loops_until_reached(psb: Sandbox) -> None:
 
 def test_prompt_ends_on_end_of_input(psb: Sandbox) -> None:
     wrap_docker(psb, DB_ROWS)
-    rc, out, _ = _install(psb, answers="y\n")
+    rc, out, _ = _install(psb, answers="y\nn\n")
     assert rc == 0
     assert "Check again any time" in out
 

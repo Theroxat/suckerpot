@@ -9,7 +9,9 @@
 #   scripts/participant.sh vpn --remove              back to the direct path (no VPN)
 #   scripts/participant.sh ports-check [--wait SECONDS] [--since ISO | --since-install]
 #                                                    does the internet reach your sensors? (no outside connection)
-#   scripts/participant.sh auto-update on|off        install or remove the daily update schedule
+#   scripts/participant.sh firewall [install|uninstall|status]
+#                                                    render and load the host firewall (sudo), or remove it
+#   scripts/participant.sh auto-update on|off       install or remove the daily update schedule
 #   scripts/participant.sh uninstall [--yes]         leave, stop the stack, remove the schedule
 #
 # join, leave, vpn and uninstall are for participant installs. auto-update and ports-check work on any install.
@@ -244,6 +246,35 @@ case $cmd in
     rc=0
     ports_check_cli "$@" || rc=$?
     exit "$rc"
+    ;;
+
+  firewall)
+    # Renders the host firewall for this install and loads it (sudo), or removes it.
+    # shellcheck source=scripts/lib/firewall.sh
+    . scripts/lib/firewall.sh
+    sub=${1:-install}
+    fw_mode=participant
+    [ "$stack" = participant ] || fw_mode=full
+    case $sub in
+      install)
+        tty=${SELFHOSTR_TTY:-/dev/tty}
+        if [ -r "$tty" ]; then
+          exec 4< "$tty"
+          fw_step "$fw_mode" 4
+        else
+          fw_step "$fw_mode"
+        fi
+        ;;
+      uninstall) bash scripts/host/install-firewall.sh --uninstall ;;
+      status)
+        if command -v nft > /dev/null 2>&1 && nft list table inet suckerpot_host > /dev/null 2>&1; then
+          echo "participant: the host firewall table is loaded."
+        else
+          echo "participant: the host firewall table is not loaded (or reading it needs root: sudo nft list table inet suckerpot_host)."
+        fi
+        ;;
+      *) die "usage: firewall [install|uninstall|status]" ;;
+    esac
     ;;
 
   auto-update)

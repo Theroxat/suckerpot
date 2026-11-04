@@ -479,6 +479,11 @@ def test_bad_image_prefix_is_refused(sandbox: Sandbox) -> None:
 # --------------------------------------------------------------------- participant mode (M32)
 
 PARTICIPANT_FILES = [
+    "scripts/lib/firewall.sh",
+    "scripts/host/render-firewall.sh",
+    "scripts/host/install-firewall.sh",
+    "scripts/host/firewall-participant.nft",
+    "scripts/host/firewall.nft",
     "scripts/lib/pseudonym.sh",
     "scripts/lib/schedule.sh",
     "scripts/lib/status_render.py",
@@ -509,6 +514,10 @@ def add_participant_files(sb: Sandbox) -> None:
         dest = sb.root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / rel, dest)
+    # Never the real loader: it would run sudo. test_firewall_step.py checks how it is called.
+    loader = sb.root / "scripts/host/install-firewall.sh"
+    loader.write_text('#!/bin/sh\necho "install-firewall $*" >> "$SHIM_LOG"\n')
+    loader.chmod(0o755)
     crontab = sb.shim / "crontab"
     crontab.write_text(CRONTAB_SHIM)
     crontab.chmod(0o755)
@@ -1200,4 +1209,3 @@ def test_participant_summary_recommends_forwards_over_a_dmz(psb: Sandbox) -> Non
     assert rc == 0, out
     assert "Use port forwards, not your router's DMZ" in out
     assert "the host firewall is loaded" in out
-    assert "FIREWALL-STEP" in (ROOT / "scripts/install.sh").read_text()

@@ -983,7 +983,10 @@ if [ "$stack" = participant ]; then
   echo "Use port forwards, not your router's DMZ. A DMZ puts every service of this machine on the"
   echo "internet, the real sshd included. It is acceptable only if this machine runs nothing else,"
   echo "its admin SSH port is not 22 and the host firewall is loaded."
-  # FIREWALL-STEP: the host firewall step of participant mode goes here (rendered rules, load, check).
+  # The host firewall (scripts/host/): offered here, never fatal, only asked on a terminal.
+  # shellcheck source=scripts/lib/firewall.sh
+  . scripts/lib/firewall.sh
+  if [ "$assume_yes" = 0 ]; then fw_step participant 3; else fw_step participant; fi
   echo
   echo "Check it any time:      ./scripts/status.sh"
   case $sched in
@@ -1060,5 +1063,5 @@ echo "Next steps:"
 echo "  1. Sign in. The setup opens by itself."
 echo "  2. Forward the ports listed on the Ports page of the dashboard on your router."
 echo "     Never forward the dashboard port ($dport) or your admin SSH port."
-echo "  3. Install the host firewall: docs/deployment.md#host-firewall"
+echo "  3. Install the host firewall: ./scripts/participant.sh firewall (details: docs/deployment.md#host-firewall)"
 echo "  4. Take a snapshot of the machine."
