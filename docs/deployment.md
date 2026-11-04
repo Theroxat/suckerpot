@@ -178,7 +178,7 @@ scripts/host/render-firewall.sh --participant --admin-ssh-port <port> --out ~/su
 scripts/host/install-firewall.sh ~/suckerpot-firewall.nft
 ```
 
-`render-firewall.sh` needs no root and changes nothing: it fills in the values, reads the resolvers hubproxy's DNS goes to, and writes the file with mode 0600. `install-firewall.sh` runs itself through `sudo`, refuses a file with a placeholder or one that `nft -c` refuses, installs it as `/etc/suckerpot-firewall.nft` with the dedicated `suckerpot-firewall.service` unit, loads it and checks that the table is there. Keep the rendered file out of git: it holds your admin port.
+`render-firewall.sh` needs no root and changes nothing: it fills in the values, reads the resolvers hubproxy's DNS goes to, and writes the file with mode 0600. It refuses (exit 2) when a host bridge that is not Docker's matches the rules' `br-*` or `sp-*` wildcard (a VM or LAN bridge called `br-lan`, say): the drops would hit it, and an admin SSH that arrives through it would be locked out. Rename the bridge, or pass `--allow-bridge NAME` when you are sure. `install-firewall.sh` runs itself through `sudo`, copies the file to a root-owned temporary file next to `/etc/suckerpot-firewall.nft`, refuses the copy if it holds a placeholder or `nft -c` refuses it, renames it into place, installs the dedicated `suckerpot-firewall.service` unit, loads it and checks that the table is there. Keep the rendered file out of git: it holds your admin port.
 
 ```{warning}
 Do **not** use the stock `nftables` service for this. On Debian and Ubuntu, `/etc/nftables.conf` starts with `flush ruleset`. Starting that service on a running host wipes Docker's own rules (NAT and published ports) until Docker restarts. The dedicated unit only touches its own table, so it never does that.
@@ -188,14 +188,15 @@ Do **not** use the stock `nftables` service for this. On Debian and Ubuntu, `/et
 
 | Rule | Effect |
 | --- | --- |
-| `input`, from `sp-ingress` and `sp-dashboard` | Containers on the sensor network and the dashboard network cannot open **new** connections to the host. |
-| `input`, from the internal networks (`sp-s-*`, `sp-backend`, `sp-tools`, `sp-egress`, `sp-samples`, `sp-hubproxy`) | They cannot open new connections to the host. On Docker Engine 28 or later the host has no address on these bridges at all (see below); the rule covers older engines. |
+| `input`, from `sp-ingress` and `sp-dashboard` | Containers on the sensor network and the dashboard network can send the host nothing but replies (new, invalid and untracked packets are dropped). |
+| `input`, from the internal networks (`sp-s-*`, `sp-backend`, `sp-tools`, `sp-egress`, `sp-samples`, `sp-hubproxy`) | Nor can these. On Docker Engine 28 or later the host has no address on these bridges at all (see below); the rule covers older engines. |
 | `input`, from `docker0`, `br-*` and `sp-*`, to the admin SSH port (and, in full mode, the dashboard port) | No container on any Docker network can reach them. |
-| `forward`, from `sp-ingress` and `sp-dashboard` | These containers cannot start new connections through the host: no LAN scanning, no outbound traffic, not even a one-way SYN or UDP packet, no traffic between sensors. Replies to inbound connections still go out. |
-| `input`, from `sp-vpn` | The `vpn` container cannot open new connections to the host. |
-| `forward`, from `sp-vpn` | The only new connection allowed is UDP to the WireGuard endpoint. Everything else is dropped, so the kill switch holds even if the container's own firewall fails. A participant without a VPN allows nothing. |
-| `forward`, from `sp-hubgate` (participant mode) | `hubproxy` may open TCP 443 to public unicast addresses and UDP 53 to the host's upstream resolvers (`HUBGATE_DNS`), nothing else: private, CGNAT, loopback, link-local, multicast and documentation ranges are dropped. |
+| `forward`, from `sp-ingress` and `sp-dashboard` | Everything that is not a reply is dropped: no LAN scanning, no outbound traffic, not even a one-way SYN or UDP packet, no traffic between sensors. Replies to inbound connections still go out. |
+| `input`, from `sp-vpn` | The `vpn` container can send the host nothing but replies. |
+| `forward`, from `sp-vpn` | The only new connection allowed is UDP to the WireGuard endpoint. Everything else is dropped, so the kill switch holds even if the container's own firewall fails. A participant without a VPN allows nothing but replies. |
+| `forward`, from `sp-hubgate` (participant mode) | `hubproxy` may open TCP 443 to public unicast addresses and UDP 53 to the host's upstream resolvers (`HUBGATE_DNS`), nothing else: private, CGNAT, loopback, link-local, multicast and documentation ranges are dropped, and so is anything else whatever its connection state. |
 | `forward`, IPv6 from `sp-*` | Dropped. The networks have no IPv6. |
+| `forward`, internal bridges (`sp-s-*`, `sp-backend`, `sp-hubproxy`, ...) | No rule but the IPv6 drop: a sensor and Redis, ingest and the database, ingest and hubproxy talk across these bridges, and Docker keeps them internal. |
 
 Nothing here affects traffic from the internet to the published sensor ports, or your own admin SSH from the LAN. Loopback and established connections are always accepted. Docker's own rules are left alone: the table only adds drops, at a priority ahead of Docker's chains.
 

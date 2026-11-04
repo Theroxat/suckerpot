@@ -28,10 +28,14 @@ For a full install, use `--full` and add `--dashboard-port <DASHBOARD_PORT>` and
 - `render-firewall.sh` needs no root and changes nothing. It fills in the values, reads the
   resolvers hubproxy's DNS goes to (see [DNS](#dns-from-sp-hubgate)), writes the file with
   mode 0600 and checks it with `nft -c` when it may (root only; otherwise it says it skipped
-  the check). Exit codes: 0 rendered, 1 `nft -c` refused the result, 2 bad arguments.
-- `install-firewall.sh FILE` re-runs itself with `sudo`. It refuses a file that still holds a
-  placeholder or that `nft -c` refuses, then copies it to `/etc/suckerpot-firewall.nft`,
-  installs and enables `suckerpot-firewall.service`, loads the table and checks it is there.
+  the check). It also refuses (exit 2) when a host bridge that is not Docker's matches the
+  rules' `br-*` or `sp-*` wildcard, see [Bridges](#bridges-that-are-not-dockers). Exit codes:
+  0 rendered, 1 `nft -c` refused the result, 2 bad arguments or a foreign bridge.
+- `install-firewall.sh FILE` re-runs itself with `sudo`. It first copies FILE to a root-owned
+  0600 temporary file next to `/etc/suckerpot-firewall.nft`, and checks only that copy: it
+  refuses one that still holds a placeholder or that `nft -c` refuses, then renames the copy
+  into place (atomic), installs and enables `suckerpot-firewall.service`, loads the table and
+  checks it is there. A change to FILE after the check is never what gets installed.
   `install-firewall.sh --uninstall` removes all of it. Exit codes: 0 done, 2 bad arguments,
   3 `nft` or `systemctl` missing, 4 file refused (nothing changed), 5 loading failed.
 
@@ -43,29 +47,48 @@ Participant (`firewall-participant.nft`):
 
 | Rule | Effect |
 | --- | --- |
-| input, from `sp-*` | No container on a SuckerPot network can open a new connection to the host. The one exception: UDP 53 from `sp-hubgate` to a listed resolver, if that resolver is the host itself. |
+| input, from `sp-*` | A container on a SuckerPot network can send the host nothing but replies: new, invalid and untracked packets are dropped. The one exception: a new UDP 53 query from `sp-hubgate` to a listed resolver, if that resolver is the host itself. |
 | input, from `docker0` and `br-*` to the admin SSH port | Containers of other Docker networks cannot reach the admin SSH port. |
-| forward, from `sp-ingress` (and `sp-dashboard`) | Sensors cannot start anything through the host: no outbound traffic, no LAN scan, not even a one-way SYN or UDP packet with a container source address. Replies to inbound connections still go out. |
-| forward, from `sp-hubgate` | `hubproxy` may open TCP 443 to public unicast addresses, and UDP 53 to the resolvers in `HUBGATE_DNS`. Private, shared (CGNAT), loopback, link-local, multicast and documentation ranges are dropped, and so is everything else. |
+| forward, from `sp-ingress` (and `sp-dashboard`) | Everything that is not a reply is dropped (new, invalid, untracked): no outbound traffic, no LAN scan, not even a one-way SYN or UDP packet with a container source address. Replies to inbound connections still go out. |
+| forward, from `sp-hubgate` | `hubproxy` may open TCP 443 to public unicast addresses, and UDP 53 to the resolvers in `HUBGATE_DNS`. Private, shared (CGNAT), loopback, link-local, multicast and documentation ranges are dropped, and so is everything else, whatever its connection state. |
 | forward, IPv6 from `sp-*` | Dropped. The networks have no IPv6. |
-| forward, from `sp-vpn` | Nothing new (a direct participant has no VPN). With `--vpn-endpoint`, UDP to that endpoint only. |
+| forward, from `sp-vpn` | Nothing but replies (a direct participant has no VPN). With `--vpn-endpoint`, new UDP to that endpoint only. |
+| forward, internal bridges (`sp-s-*`, `sp-backend`, `sp-hubproxy`) | No rule (except the IPv6 drop): their members (a sensor and Redis, ingest and the database, ingest and hubproxy) talk to each other across the bridge, and Docker keeps the networks internal. |
 
 Full (`firewall.nft`):
 
 | Rule | Effect |
 | --- | --- |
-| input, from `sp-ingress` and `sp-dashboard` | Containers of the sensor network and the dashboard network cannot open new connections to the host. |
-| input, from `sp-s-*`, `sp-backend` and `sp-tools` | The internal networks cannot open new connections to the host. On Docker Engine 28 or later the host has no address on these bridges at all (isolated gateway); this rule covers older engines. |
+| input, from `sp-ingress` and `sp-dashboard` | Containers of the sensor network and the dashboard network can send the host nothing but replies. |
+| input, from `sp-s-*`, `sp-backend` and `sp-tools` | Nor can the internal networks. On Docker Engine 28 or later the host has no address on these bridges at all (isolated gateway); this rule covers older engines. |
 | input, from `docker0`, `br-*` and `sp-*` to `protected_ports` | No container of any Docker network can reach the admin SSH port or the dashboard port of the host. |
-| forward, from `sp-ingress` and `sp-dashboard` | These containers cannot start new connections through the host: no LAN scanning, no outbound traffic, no traffic between sensors. Replies to inbound connections still go out. |
-| input, from `sp-egress`, `sp-samples` and `sp-hubproxy` | The proxy networks and the sample network cannot open new connections to the host. Without this, `CONNECT <bridge gateway>:<published port>` through a proxy would reach the host's published ports. |
-| input, from `sp-vpn` | The `vpn` container (anonymous egress) cannot open new connections to the host. |
-| forward, from `sp-vpn` | The only new connection allowed is UDP to the WireGuard endpoint (`VPN_ENDPOINT_IP`, `VPN_ENDPOINT_PORT`). Everything else is dropped, so the kill switch holds even if the container's own firewall fails. |
+| forward, from `sp-ingress` and `sp-dashboard` | Everything that is not a reply is dropped: no LAN scanning, no outbound traffic, no traffic between sensors. Replies to inbound connections still go out. |
+| input, from `sp-egress`, `sp-samples` and `sp-hubproxy` | The proxy networks and the sample network can send the host nothing but replies. Without this, `CONNECT <bridge gateway>:<published port>` through a proxy would reach the host's published ports. |
+| input, from `sp-vpn` | The `vpn` container (anonymous egress) can send the host nothing but replies. |
+| forward, from `sp-vpn` | The only new connection allowed is UDP to the WireGuard endpoint, and nothing that is not a reply passes otherwise (`VPN_ENDPOINT_IP`, `VPN_ENDPOINT_PORT`). Everything else is dropped, so the kill switch holds even if the container's own firewall fails. |
 | forward, from `sp-hubgate` | As for a participant: TCP 443 to public addresses and UDP 53 to `HUBGATE_DNS` only. Only matters with the `direct` profile. |
 | forward, IPv6 from `sp-*` | Dropped. |
 
+In both files, every input rule that names an `sp-*` bridge, and the last forward rule of each
+uplink (`sp-ingress`, `sp-dashboard`, `sp-vpn`, `sp-hubgate`), drops whatever is not a reply,
+not only new connections: an invalid or untracked packet never passes.
+
 Nothing here affects traffic from the internet to the published sensor ports, or your own
 admin SSH from the LAN: every rule names a Docker bridge.
+
+## Bridges that are not Docker's
+
+nftables only has trailing wildcards, so the rules match Docker's bridges as `br-*` and `sp-*`
+(Docker's own pattern, `br-` plus 12 hex digits, cannot be written exactly). A bridge of yours
+with such a name, for example a VM or LAN bridge called `br-lan`, would get the same drops, and
+if your admin SSH reaches the host through it you would lock yourself out.
+
+`render-firewall.sh` therefore lists the host's bridges (`ip -o link show type bridge`, or
+`/sys/class/net`, no root needed) and the ones Docker owns (`docker network ls` and
+`docker network inspect`), and refuses with exit 2 when a bridge matching `br-*` or `sp-*` is not
+Docker's. When Docker cannot be asked, a bridge counts as Docker's only if it is named
+`br-<12 hex digits>` or is one of SuckerPot's fixed `sp-*` names. Rename such a bridge, or, if you
+are sure nothing you need reaches this host through it, pass `--allow-bridge NAME` for each one.
 
 ## DNS from sp-hubgate
 

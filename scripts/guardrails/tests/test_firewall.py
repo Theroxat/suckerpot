@@ -10,6 +10,7 @@ import re
 import shutil
 import stat
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -49,15 +50,41 @@ def resolv(tmp_path: Path) -> Path:
     return path
 
 
-def render(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603
-        ["bash", str(RENDER), *args],  # noqa: S607
-        env={"PATH": PATH, **(env or {})},
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
+# Fake `ip` and `docker` for the renderer's bridge check: they print what the test puts in the
+# STUB_* variables and never touch the real host or daemon.
+IP_STUB = """#!/bin/sh
+[ "$*" = "-o link show type bridge" ] || exit 1
+printf '%s' "${STUB_IP_OUT:-}"
+"""
+DOCKER_STUB = """#!/bin/sh
+[ "${STUB_DOCKER_RC:-0}" = 0 ] || exit "$STUB_DOCKER_RC"
+case "$*" in
+  "network ls --filter driver=bridge --no-trunc -q") printf '%s' "${STUB_DOCKER_IDS:-}" ;;
+  "network inspect "*) printf '%s' "${STUB_DOCKER_INSPECT:-}" ;;
+  *) exit 1 ;;
+esac
+"""
+
+
+def _ip_lines(*names: str) -> str:
+    return "".join(
+        f"{i}: {n}: <BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state UP\\    link/ether\n"
+        for i, n in enumerate(names, start=3)
     )
+
+
+def render(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory() as stubs:
+        _write_exec(Path(stubs) / "ip", IP_STUB)
+        _write_exec(Path(stubs) / "docker", DOCKER_STUB)
+        return subprocess.run(  # noqa: S603
+            ["bash", str(RENDER), *args],  # noqa: S607
+            env={"PATH": f"{stubs}:{PATH}", **(env or {})},
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
 
 
 def _participant(resolv: Path, *extra: str) -> str:
@@ -124,7 +151,7 @@ def test_participant_sensors_start_nothing(resolv: Path) -> None:
     text = _participant(resolv)
     forward = _chain(text, "forward")
     assert forward[1] == "ct state established,related accept"
-    drop = 'iifname { "sp-ingress", "sp-dashboard" } ct state new counter drop'
+    drop = 'iifname { "sp-ingress", "sp-dashboard" } counter drop'
     assert drop in forward
     # Nothing from sp-ingress is ever accepted, before or after the drop.
     assert not [r for r in forward if _iif(r, "sp-ingress") and r.endswith("accept")]
@@ -134,13 +161,15 @@ def test_participant_sensors_start_nothing(resolv: Path) -> None:
 def test_participant_no_container_network_talks_to_the_host(resolv: Path) -> None:
     text = _participant(resolv)
     inp = _chain(text, "input")
-    drop = 'iifname "sp-*" ct state new counter drop'
+    drop = 'iifname "sp-*" counter drop'
     assert drop in inp
     for bridge in BRIDGE_NAMES.values():
         assert _iif(drop, bridge), bridge
     # The only accept from a SuckerPot bridge is DNS to the listed resolvers.
     accepts = [r for r in inp if r.endswith("accept") and "iifname" in r and '"lo"' not in r]
-    assert accepts == ['iifname "sp-hubgate" ip daddr $HUBGATE_DNS udp dport 53 counter accept']
+    assert accepts == [
+        'iifname "sp-hubgate" ct state new ip daddr $HUBGATE_DNS udp dport 53 counter accept'
+    ]
     assert inp.index(accepts[0]) < inp.index(drop)
     # Other Docker networks never reach the admin port; the LAN (no Docker bridge) is not matched.
     assert (
@@ -163,7 +192,7 @@ def test_participant_hubgate_allows_443_and_restricted_dns_only(resolv: Path) ->
         assert net in hub[1], net
     assert hub[2:] == [
         'iifname "sp-hubgate" ct state new tcp dport 443 counter accept',
-        'iifname "sp-hubgate" ct state new counter drop',
+        'iifname "sp-hubgate" counter drop',
     ]
     # IPv6 from the uplink is dropped before any of these.
     v6 = forward.index('iifname "sp-*" meta nfproto ipv6 counter drop')
@@ -183,10 +212,123 @@ def test_hubgate_dns_is_never_open_to_any_destination(template: Path) -> None:
 def test_participant_vpn_endpoint_is_optional(resolv: Path) -> None:
     forward = _chain(_participant(resolv), "forward")
     assert not [r for r in forward if "sp-vpn" in r and r.endswith("accept")]
-    assert 'iifname "sp-vpn" ct state new counter drop' in forward
+    assert 'iifname "sp-vpn" counter drop' in forward
     forward = _chain(_participant(resolv, "--vpn-endpoint", "203.0.113.10:51820"), "forward")
     accept = 'iifname "sp-vpn" ct state new ip daddr 203.0.113.10 udp dport 51820 counter accept'
-    assert forward.index(accept) == forward.index('iifname "sp-vpn" ct state new counter drop') - 1
+    assert forward.index(accept) == forward.index('iifname "sp-vpn" counter drop') - 1
+
+
+UPLINKS = ("sp-ingress", "sp-dashboard", "sp-vpn", "sp-hubgate")
+INTERNAL = (
+    "sp-s-ssh",
+    "sp-s-web",
+    "sp-backend",
+    "sp-tools",
+    "sp-hubproxy",
+    "sp-egress",
+    "sp-samples",
+)
+
+
+def _full(resolv: Path) -> str:
+    result = render("--full", "--admin-ssh-port", "2200", "--resolv-conf", str(resolv))
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+@pytest.mark.parametrize("mode", ["participant", "full"])
+def test_invalid_and_untracked_packets_never_pass(resolv: Path, mode: str) -> None:
+    text = _participant(resolv) if mode == "participant" else _full(resolv)
+    forward = _chain(text, "forward")
+    for bridge in UPLINKS:
+        rules = [r for r in forward if _iif(r, bridge) and "nfproto ipv6" not in r]
+        # The last word on every uplink is a drop that does not depend on the connection state.
+        assert rules[-1].endswith("counter drop") and "ct state" not in rules[-1], (bridge, rules)
+        # Before it, only new connections are accepted (replies passed at the top already).
+        for rule in rules[:-1]:
+            assert "ct state new" in rule, rule
+    inp = _chain(text, "input")
+    for bridge in BRIDGE_NAMES.values():
+        stateless = [r for r in inp if _iif(r, bridge) and r.endswith("counter drop")]
+        assert any("ct state" not in r and "dport" not in r for r in stateless), bridge
+        for rule in inp:
+            if _iif(rule, bridge) and rule.endswith("accept"):
+                assert "ct state new" in rule and "udp dport 53" in rule, rule
+
+
+@pytest.mark.parametrize("mode", ["participant", "full"])
+def test_same_bridge_traffic_on_internal_networks_is_left_alone(resolv: Path, mode: str) -> None:
+    text = _participant(resolv) if mode == "participant" else _full(resolv)
+    for rule in _chain(text, "forward"):
+        for bridge in INTERNAL:
+            if _iif(rule, bridge):
+                # Only the IPv6 drop may name an internal bridge (through the sp-* wildcard).
+                assert rule == 'iifname "sp-*" meta nfproto ipv6 counter drop', (bridge, rule)
+
+
+# --- Bridges that are not Docker's ------------------------------------------------------------
+
+DOCKER_ID = "a1b2c3d4e5f6" + "0" * 52
+
+
+def _bridges(resolv: Path, *extra: str, **env: str) -> subprocess.CompletedProcess[str]:
+    return render(
+        "--participant", "--admin-ssh-port", "2200", "--resolv-conf", str(resolv), *extra, env=env
+    )
+
+
+def test_docker_bridges_are_accepted(resolv: Path) -> None:
+    result = _bridges(
+        resolv,
+        STUB_IP_OUT=_ip_lines("docker0", "br-a1b2c3d4e5f6", "sp-ingress", "virbr0", "lxdbr0"),
+        STUB_DOCKER_IDS=f"{DOCKER_ID}\n{'f' * 64}\n{'e' * 64}\n",
+        STUB_DOCKER_INSPECT=(
+            f"{DOCKER_ID} <no value>\n{'f' * 64} sp-ingress\n{'e' * 64} docker0\n"
+        ),
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("name", ["br-lan", "br0x", "br-a1b2c3d4e5f6", "sp-vms"])
+def test_a_host_bridge_that_matches_a_wildcard_is_refused(resolv: Path, name: str) -> None:
+    # Docker answers and does not own the bridge (even br-<12 hex>: Docker's word wins).
+    result = _bridges(
+        resolv,
+        STUB_IP_OUT=_ip_lines("docker0", name),
+        STUB_DOCKER_IDS=f"{'e' * 64}\n",
+        STUB_DOCKER_INSPECT=f"{'e' * 64} docker0\n",
+    )
+    if not (name.startswith("br-") or name.startswith("sp-")):
+        assert result.returncode == 0, result.stderr  # br0x: no wildcard matches it
+        return
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert name in result.stderr and "lock yourself out" in result.stderr
+    assert "--allow-bridge" in result.stderr
+
+
+def test_allow_bridge_accepts_a_named_host_bridge(resolv: Path) -> None:
+    env = {"STUB_IP_OUT": _ip_lines("br-lan", "sp-vms"), "STUB_DOCKER_IDS": ""}
+    assert _bridges(resolv, "--allow-bridge", "br-lan", **env).returncode == 2
+    result = _bridges(resolv, "--allow-bridge", "br-lan", "--allow-bridge", "sp-vms", **env)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("name", "ok"),
+    [("br-a1b2c3d4e5f6", True), ("sp-backend", True), ("br-lan", False), ("sp-other", False)],
+)
+def test_without_docker_bridges_are_judged_by_name(resolv: Path, name: str, ok: bool) -> None:
+    result = _bridges(resolv, STUB_IP_OUT=_ip_lines(name), STUB_DOCKER_RC="1")
+    assert (result.returncode == 0) is ok, result.stderr
+    if not ok:
+        assert "judged by name only" in result.stderr
+
+
+def test_renderer_knows_every_fixed_bridge_name() -> None:
+    match = re.search(r'^SP_BRIDGES="([^"]+)"$', RENDER.read_text(), re.M)
+    assert match
+    assert set(match.group(1).split()) == set(BRIDGE_NAMES.values())
 
 
 # --- Arguments ---------------------------------------------------------------------------------
@@ -308,12 +450,12 @@ def test_full_rendering_keeps_the_owner_rules(resolv: Path) -> None:
     ):
         assert line in rules, line
     forward = _chain(text, "forward")
-    assert 'iifname { "sp-ingress", "sp-dashboard" } ct state new counter drop' in forward
+    assert 'iifname { "sp-ingress", "sp-dashboard" } counter drop' in forward
     assert 'iifname "sp-*" meta nfproto ipv6 counter drop' in forward
     inp = _chain(text, "input")
-    assert 'iifname { "sp-s-*", "sp-backend", "sp-tools" } ct state new counter drop' in inp
+    assert 'iifname { "sp-s-*", "sp-backend", "sp-tools" } counter drop' in inp
     # Every SuckerPot bridge is covered by a "new connection to the host" drop.
-    host_drops = [r for r in inp if r.endswith("ct state new counter drop")]
+    host_drops = [r for r in inp if r.endswith("counter drop") and "dport" not in r]
     for bridge in BRIDGE_NAMES.values():
         assert any(_iif(r, bridge) for r in host_drops), bridge
 
@@ -361,6 +503,19 @@ def test_rendered_ruleset_passes_nft_check(tmp_path: Path, resolv: Path, mode: s
 SHIM = """#!/bin/sh
 echo "$(basename "$0") $*" >> "$SHIM_LOG"
 """
+# Fake nft: `-c -f FILE` records a copy of what it checked, and can rewrite the user's source
+# file at that moment (SHIM_SWAP) to stand for a race between the check and the install.
+NFT_SHIM = (
+    SHIM
+    + """case "$1" in
+  -c)
+    cp "$3" "$SHIM_DIR/checked"
+    [ -z "${SHIM_SWAP:-}" ] || echo "table inet suckerpot_host { }  # swapped" > "$SHIM_SWAP"
+    exit "${SHIM_NFT_CHECK_RC:-0}" ;;
+esac
+exit 0
+"""
+)
 
 
 @pytest.fixture
@@ -371,21 +526,36 @@ def shims(tmp_path: Path) -> Path:
     _write_exec(shim / "sudo", SHIM)
     _write_exec(shim / "install", SHIM)
     _write_exec(shim / "systemctl", SHIM)
-    _write_exec(shim / "rm", SHIM)
-    _write_exec(
-        shim / "nft",
-        SHIM + 'case "$1" in -c) exit "${SHIM_NFT_CHECK_RC:-0}" ;; esac\nexit 0\n',
-    )
+    _write_exec(shim / "chown", SHIM)
+    _write_exec(shim / "nft", NFT_SHIM)
     return shim
 
 
+@pytest.fixture
+def fsroot(tmp_path: Path) -> Path:
+    """Stands for / : the installer writes <root>/etc/... and nothing else."""
+    root = tmp_path / "root"
+    (root / "etc" / "systemd" / "system").mkdir(parents=True)
+    return root
+
+
 def install(
-    shims: Path, *args: str, cwd: Path | None = None, **env: str
+    shims: Path,
+    fsroot: Path,
+    *args: str,
+    cwd: Path | None = None,
+    **env: str,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603
         ["bash", str(INSTALL), *args],  # noqa: S607
         cwd=cwd,
-        env={"PATH": f"{shims}:{PATH}", "SHIM_LOG": str(shims / "log"), **env},
+        env={
+            "PATH": f"{shims}:{PATH}",
+            "SHIM_LOG": str(shims / "log"),
+            "SHIM_DIR": str(shims),
+            "SUCKERPOT_FW_ROOT": str(fsroot),
+            **env,
+        },
         capture_output=True,
         text=True,
         timeout=30,
@@ -400,33 +570,35 @@ def _calls(shims: Path) -> list[str]:
     )
 
 
+def _leftovers(fsroot: Path) -> list[str]:
+    return [p.name for p in (fsroot / "etc").iterdir() if p.name.startswith(".suckerpot-firewall")]
+
+
 @pytest.fixture
 def rendered(tmp_path: Path, resolv: Path) -> Path:
     out = tmp_path / "fw.nft"
-    assert (
-        render(
-            "--participant",
-            "--admin-ssh-port",
-            "2200",
-            "--resolv-conf",
-            str(resolv),
-            "--out",
-            str(out),
-        ).returncode
-        == 0
+    result = render(
+        "--participant", "--admin-ssh-port", "2200", "--resolv-conf", str(resolv), "--out", str(out)
     )
+    assert result.returncode == 0, result.stderr
     return out
 
 
-def test_install_checks_then_installs_and_loads(shims: Path, rendered: Path) -> None:
-    result = install(shims, str(rendered))
+def test_install_checks_a_private_copy_then_moves_it_into_place(
+    shims: Path, fsroot: Path, rendered: Path
+) -> None:
+    original = rendered.read_text()
+    result = install(shims, fsroot, str(rendered))
     assert result.returncode == 0, result.stderr
     calls = _calls(shims)
-    assert calls[0] == f"nft -c -f {rendered}"
-    assert calls[1] == f"install -m 0600 -o root -g root {rendered} /etc/suckerpot-firewall.nft"
+    tmp = re.fullmatch(
+        rf"nft -c -f ({re.escape(str(fsroot))}/etc/\.suckerpot-firewall\.\w+)", calls[1]
+    )
+    assert calls[0].startswith("chown root:root ") and tmp, calls
+    assert calls[0] == f"chown root:root {tmp.group(1)}"
     assert calls[2] == (
         f"install -m 0644 -o root -g root {HOST}/suckerpot-firewall.service "
-        "/etc/systemd/system/suckerpot-firewall.service"
+        f"{fsroot}/etc/systemd/system/suckerpot-firewall.service"
     )
     assert calls[3:] == [
         "systemctl daemon-reload",
@@ -434,54 +606,79 @@ def test_install_checks_then_installs_and_loads(shims: Path, rendered: Path) -> 
         "systemctl restart suckerpot-firewall.service",
         "nft list table inet suckerpot_host",
     ]
+    target = fsroot / "etc" / "suckerpot-firewall.nft"
+    assert target.read_text() == original == (shims / "checked").read_text()
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert _leftovers(fsroot) == []
     assert "--uninstall" in result.stdout
 
 
-def test_install_refuses_a_placeholder(shims: Path, tmp_path: Path) -> None:
+def test_a_file_changed_after_the_check_is_not_what_gets_installed(
+    shims: Path, fsroot: Path, rendered: Path
+) -> None:
+    original = rendered.read_text()
+    result = install(shims, fsroot, str(rendered), SHIM_SWAP=str(rendered))
+    assert result.returncode == 0, result.stderr
+    assert "swapped" in rendered.read_text()
+    assert (fsroot / "etc" / "suckerpot-firewall.nft").read_text() == original
+
+
+def test_install_refuses_a_placeholder(shims: Path, fsroot: Path, tmp_path: Path) -> None:
     raw = tmp_path / "raw.nft"
     shutil.copy(PARTICIPANT_TEMPLATE, raw)
-    result = install(shims, str(raw))
+    result = install(shims, fsroot, str(raw))
     assert result.returncode == 4
-    assert _calls(shims) == []
+    assert [c for c in _calls(shims) if not c.startswith("chown ")] == []
+    assert not (fsroot / "etc" / "suckerpot-firewall.nft").exists()
+    assert _leftovers(fsroot) == []
 
 
-def test_install_refuses_what_nft_refuses(shims: Path, rendered: Path) -> None:
-    result = install(shims, str(rendered), SHIM_NFT_CHECK_RC="1")
+def test_install_refuses_what_nft_refuses(shims: Path, fsroot: Path, rendered: Path) -> None:
+    result = install(shims, fsroot, str(rendered), SHIM_NFT_CHECK_RC="1")
     assert result.returncode == 4
-    assert _calls(shims) == [f"nft -c -f {rendered}"]
+    assert [c.split()[0] for c in _calls(shims)] == ["chown", "nft"]
+    assert not (fsroot / "etc" / "suckerpot-firewall.nft").exists()
+    assert _leftovers(fsroot) == []
 
 
-def test_install_refuses_a_foreign_file(shims: Path, tmp_path: Path) -> None:
+def test_install_refuses_a_foreign_file(shims: Path, fsroot: Path, tmp_path: Path) -> None:
     other = tmp_path / "other.nft"
     other.write_text("flush ruleset\n")
-    assert install(shims, str(other)).returncode == 4
-    assert _calls(shims) == []
+    assert install(shims, fsroot, str(other)).returncode == 4
+    assert [c for c in _calls(shims) if not c.startswith("chown ")] == []
+    assert _leftovers(fsroot) == []
 
 
-def test_install_needs_nft(shims: Path, rendered: Path) -> None:
+def test_install_needs_nft(shims: Path, fsroot: Path, rendered: Path) -> None:
     if shutil.which("nft", path=PATH):
         pytest.skip("a real nft is installed")
     (shims / "nft").unlink()
-    result = install(shims, str(rendered))
+    result = install(shims, fsroot, str(rendered))
     assert result.returncode == 3, result.stderr
     assert _calls(shims) == []
 
 
-def test_install_reruns_itself_through_sudo(shims: Path, rendered: Path, tmp_path: Path) -> None:
-    result = install(shims, rendered.name, cwd=tmp_path, SHIM_UID="1000")
+def test_install_reruns_itself_through_sudo(
+    shims: Path, fsroot: Path, rendered: Path, tmp_path: Path
+) -> None:
+    result = install(shims, fsroot, rendered.name, cwd=tmp_path, SHIM_UID="1000")
     assert result.returncode == 0, result.stderr
     assert _calls(shims) == [f"sudo -- {HOST}/install-firewall.sh {rendered}"]
 
 
 @pytest.mark.parametrize("args", [[], ["a", "b"]])
-def test_install_usage(shims: Path, args: list[str]) -> None:
-    assert install(shims, *args).returncode == 2
+def test_install_usage(shims: Path, fsroot: Path, args: list[str]) -> None:
+    assert install(shims, fsroot, *args).returncode == 2
 
 
-def test_uninstall(shims: Path) -> None:
-    result = install(shims, "--uninstall")
+def test_uninstall(shims: Path, fsroot: Path) -> None:
+    (fsroot / "etc" / "suckerpot-firewall.nft").write_text("x")
+    unit = fsroot / "etc" / "systemd" / "system" / "suckerpot-firewall.service"
+    unit.write_text("x")
+    result = install(shims, fsroot, "--uninstall")
     assert result.returncode == 0
     calls = _calls(shims)
     assert calls[0] == "systemctl disable --now suckerpot-firewall.service"
     assert "nft delete table inet suckerpot_host" in calls
     assert calls[-1] == "systemctl daemon-reload"
+    assert not unit.exists() and not (fsroot / "etc" / "suckerpot-firewall.nft").exists()

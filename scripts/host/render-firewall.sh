@@ -16,6 +16,18 @@
 #   --vpn-endpoint IP:PORT
 #                      participant with a VPN, or full mode with the egress profile: the one
 #                      WireGuard endpoint sp-vpn may reach. Without it, sp-vpn may open nothing.
+#   --allow-bridge NAME
+#                      accept a bridge that is not Docker's but matches br-* or sp-* (repeat it);
+#                      see "Bridges" below. Only when you know what that bridge carries.
+#
+# Bridges: the rules match Docker bridges by name with the wildcards "br-*" and "sp-*" (nft only
+# has trailing wildcards, so Docker's own br-<12 hex> pattern cannot be written exactly). A host
+# bridge of yours with such a name (a VM or LAN bridge called br-lan, say) would get the same
+# drops, and if your admin SSH reaches the host through it you would be locked out. So the
+# renderer lists the host's bridges (`ip -o link show type bridge`, or /sys/class/net) and the
+# ones Docker owns (`docker network ls` / `docker network inspect`), and refuses (exit 2) when a
+# matching bridge is not Docker's. When Docker cannot be asked, a bridge counts as Docker's only
+# if it is named br-<12 hex digits> or is one of SuckerPot's fixed sp-* names.
 #
 # The ruleset goes to stdout, or to --out FILE (mode 0600; the admin port is private). When nft is
 # installed and allowed to (root), the result is syntax-checked with `nft -c -f`; otherwise the
@@ -53,6 +65,9 @@ out=""
 resolv_conf=/etc/resolv.conf
 systemd_resolv_conf=/run/systemd/resolve/resolv.conf
 dns=()
+allow_bridges=()
+# SuckerPot's fixed bridge names (docker-compose.yml; scripts/guardrails checks they match).
+SP_BRIDGES="sp-ingress sp-dashboard sp-vpn sp-hubgate sp-egress sp-hubproxy sp-samples sp-backend sp-tools sp-s-ssh sp-s-rdp sp-s-telnet sp-s-web sp-s-redis sp-s-docker sp-s-mysql sp-s-mssql sp-s-adb sp-s-smb sp-s-sip sp-s-synology"
 
 need_value() { { [ "$#" -ge 2 ] && [ -n "$2" ]; } || die "$1 needs a value"; }
 
@@ -63,9 +78,10 @@ while [ "$#" -gt 0 ]; do
       mode=${1#--}
       shift
       ;;
-    --admin-ssh-port | --dashboard-port | --vpn-endpoint | --out | --dns | --resolv-conf | --systemd-resolv-conf)
+    --admin-ssh-port | --dashboard-port | --vpn-endpoint | --out | --dns | --resolv-conf | --systemd-resolv-conf | --allow-bridge)
       need_value "$@"
       case $1 in
+        --allow-bridge) allow_bridges+=("$2") ;;
         --admin-ssh-port) admin_port=$2 ;;
         --dashboard-port) dashboard_port=$2 ;;
         --vpn-endpoint) vpn_endpoint=$2 ;;
@@ -100,6 +116,62 @@ if [ -n "$vpn_endpoint" ]; then
   [ "$vpn_ip" != "$vpn_endpoint" ] || die "--vpn-endpoint must be IP:PORT"
   valid_ipv4 "$vpn_ip" || die "--vpn-endpoint: '$vpn_ip' is not an IPv4 address"
   valid_port "$vpn_port" || die "--vpn-endpoint: '$vpn_port' is not a port"
+fi
+
+# --- Bridges: refuse to match a host bridge that is not Docker's --------------------------------
+
+# The host's bridge interfaces, one per line (no root needed).
+host_bridges() {
+  local dir
+  if command -v ip > /dev/null 2>&1; then
+    ip -o link show type bridge 2> /dev/null | awk -F': ' '{ sub(/@.*/, "", $2); print $2 }'
+    return 0
+  fi
+  for dir in "${SUCKERPOT_SYS_CLASS_NET:-/sys/class/net}"/*/bridge; do
+    [ -d "$dir" ] && basename "$(dirname "$dir")"
+  done
+  return 0
+}
+
+# Docker's bridge interfaces, one per line; fails when Docker cannot be asked.
+docker_bridges() {
+  local ids id name
+  command -v docker > /dev/null 2>&1 || return 1
+  ids=$(docker network ls --filter driver=bridge --no-trunc -q 2> /dev/null) || return 1
+  [ -n "$ids" ] || return 0
+  # shellcheck disable=SC2086 # one argument per network id
+  docker network inspect --format '{{.Id}} {{index .Options "com.docker.network.bridge.name"}}' \
+    $ids 2> /dev/null | while read -r id name; do
+    if [ -n "$name" ] && [ "$name" != "<no value>" ]; then echo "$name"; else echo "br-${id:0:12}"; fi
+  done
+}
+
+mapfile -t bridges < <(host_bridges)
+docker_known=()
+docker_ok=1
+if out_docker=$(docker_bridges); then
+  mapfile -t docker_known <<< "$out_docker"
+else
+  docker_ok=0
+fi
+foreign=()
+for b in "${bridges[@]}"; do
+  case $b in br-* | sp-*) ;; *) continue ;; esac
+  for a in "${allow_bridges[@]}"; do [ "$a" != "$b" ] || continue 2; done
+  if [ "$docker_ok" = 1 ]; then
+    for k in "${docker_known[@]}"; do [ "$k" != "$b" ] || continue 2; done
+  else
+    [[ $b =~ ^br-[0-9a-f]{12}$ ]] && continue
+    for k in $SP_BRIDGES; do [ "$k" != "$b" ] || continue 2; done
+  fi
+  foreign+=("$b")
+done
+if [ "${#foreign[@]}" -gt 0 ]; then
+  [ "$docker_ok" = 1 ] || note "Docker could not be asked which bridges it owns; judged by name only"
+  die "host bridge(s) ${foreign[*]} match the firewall's br-* or sp-* wildcard but are not Docker's.
+  The rules would drop their traffic to the host, and if your admin SSH arrives through one of
+  them you would lock yourself out. Rename the bridge, or, if you are sure nothing you need
+  crosses it towards this host, pass --allow-bridge NAME for each."
 fi
 
 # Nameservers of a resolv.conf file, in order.

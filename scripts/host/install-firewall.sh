@@ -15,9 +15,12 @@
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-target=/etc/suckerpot-firewall.nft
+# SUCKERPOT_FW_ROOT (tests only) prefixes the two system paths. sudo resets the environment, so
+# only a caller that is already root can set it.
+fw_root=${SUCKERPOT_FW_ROOT:-}
+target=$fw_root/etc/suckerpot-firewall.nft
 unit=suckerpot-firewall.service
-unit_path=/etc/systemd/system/$unit
+unit_path=$fw_root/etc/systemd/system/$unit
 
 usage() {
   echo "usage: install-firewall.sh FILE | --uninstall" >&2
@@ -54,13 +57,24 @@ fi
 
 src=$1
 { [ -f "$src" ] && [ -r "$src" ]; } || fail 2 "cannot read $src"
-if grep -q 'CHANGE_ME\|@[A-Z_]*@' "$src"; then
+
+# From here on, work on a root-owned private copy: the user's file could change between the
+# checks and the install. The copy sits next to the target, so the final rename is atomic.
+tmp=$(umask 077 && mktemp "$(dirname "$target")/.suckerpot-firewall.XXXXXX") ||
+  fail 5 "cannot create a temporary file next to $target"
+trap 'rm -f "$tmp"' EXIT
+cat -- "$src" > "$tmp"
+chown root:root "$tmp"
+chmod 0600 "$tmp"
+
+if grep -q 'CHANGE_ME\|@[A-Z_]*@' "$tmp"; then
   fail 4 "$src still holds a placeholder: render it with scripts/host/render-firewall.sh"
 fi
-grep -q '^table inet suckerpot_host' "$src" || fail 4 "$src is not a SuckerPot host firewall"
-nft -c -f "$src" || fail 4 "nft -c refused $src (nothing was changed)"
+grep -q '^table inet suckerpot_host' "$tmp" || fail 4 "$src is not a SuckerPot host firewall"
+nft -c -f "$tmp" || fail 4 "nft -c refused $src (nothing was changed)"
 
-install -m 0600 -o root -g root "$src" "$target"
+mv -f "$tmp" "$target"
+trap - EXIT
 install -m 0644 -o root -g root "$here/suckerpot-firewall.service" "$unit_path"
 systemctl daemon-reload
 systemctl enable "$unit" > /dev/null 2>&1 || fail 5 "systemctl enable $unit failed"
