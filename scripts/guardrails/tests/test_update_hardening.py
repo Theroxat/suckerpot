@@ -2,6 +2,8 @@
 
 import time
 
+import pytest
+
 from conftest import Sandbox
 from test_auto_update import (
     ENV,
@@ -12,6 +14,7 @@ from test_auto_update import (
     stage_auto,
     stage_release,
     verify,
+    write_exec,
 )
 
 
@@ -50,7 +53,7 @@ def test_a_download_problem_is_not_a_verdict(sandbox: Sandbox) -> None:
     stage_auto(sandbox)
     sandbox.env["SHIM_RELEASE_RC"] = "9"
     assert run_auto(sandbox).returncode == 1
-    assert result(sandbox)["error_code"] == "download_failed"
+    assert result(sandbox)["error_code"] == "verification_unavailable"
     assert not (sandbox.root / ".suckerpot-state" / "bad-versions").exists()
 
 
@@ -98,3 +101,82 @@ def test_a_young_newest_release_stops_the_run_without_marking_it_bad(sandbox: Sa
     assert result(sandbox)["error_code"] == "too_young"
     assert len([c for c in sandbox.calls() if c.startswith("verify-release")]) == 1
     assert not (sandbox.root / ".suckerpot-state" / "bad-versions").exists()
+
+
+# ---- what counts as a verdict on the release, and what is only a problem of this machine
+
+
+def _only_marked(sandbox: Sandbox) -> list[str]:
+    bad = sandbox.root / ".suckerpot-state" / "bad-versions"
+    return bad.read_text().split() if bad.exists() else []
+
+
+@pytest.mark.parametrize(("rc", "marked"), [(3, True), (5, True), (6, True)])
+def test_only_real_verdicts_mark_a_release_bad(sandbox: Sandbox, rc: int, marked: bool) -> None:
+    stage_auto(sandbox)
+    sandbox.git_set("tags", "v0.8.0\nv0.9.0\n")
+    sandbox.env["SHIM_RELEASE_RC"] = str(rc)
+    run_auto(sandbox)
+    assert (_only_marked(sandbox) == ["v0.9.0"]) is marked
+
+
+@pytest.mark.parametrize("rc", [1, 2, 4, 9, 11])
+def test_a_missing_verdict_or_a_local_problem_never_marks_a_release(
+    sandbox: Sandbox, rc: int
+) -> None:
+    stage_auto(sandbox)
+    sandbox.git_set("tags", "v0.8.0\nv0.9.0\n")
+    sandbox.env["SHIM_RELEASE_RC"] = str(rc)
+    run_auto(sandbox)
+    assert _only_marked(sandbox) == []
+    assert not (sandbox.root / ".suckerpot-state" / "bad-versions.log").exists()
+    assert len([c for c in sandbox.calls() if c.startswith("verify-release")]) == 1
+
+
+def test_a_bundle_answering_503_is_a_transient_problem(sandbox: Sandbox) -> None:
+    stage_release(sandbox)
+    write_exec(
+        sandbox.shim / "curl",
+        '#!/bin/sh\nfor a; do last=$a; done\ncase "$*" in\n'
+        '  *sigstore.json*) : > "$4"; printf 503 ;;\n'
+        "  *) cp \"$SHIM_DIR/assets/release-manifest.json\" \"$4\"; printf 200 ;;\n"
+        "esac\n",
+    )
+    proc = verify(sandbox, "--auto", "v0.9.0")
+    assert proc.returncode == 9 and "HTTP 503" in proc.stderr
+
+
+def test_cosign_naming_a_bad_identity_is_a_rejection(sandbox: Sandbox) -> None:
+    stage_release(sandbox)
+    sandbox.env["SHIM_COSIGN_RC"] = "1"
+    assert verify(sandbox, "--auto", "v0.9.0").returncode == 6
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        "Error: getting trusted root: Get https://tuf-repo-cdn.sigstore.dev: dial tcp: i/o timeout",
+        "error updating TUF root: no such host",
+        "something nobody has seen before",
+        "",
+    ],
+)
+def test_cosign_without_a_clear_rejection_is_no_verdict(sandbox: Sandbox, error: str) -> None:
+    stage_release(sandbox)
+    sandbox.env["SHIM_COSIGN_RC"] = "1"
+    sandbox.env["SHIM_COSIGN_ERR"] = error or " "
+    assert verify(sandbox, "--auto", "v0.9.0").returncode == 9
+
+
+@pytest.mark.parametrize("rc", ["125", "126", "127"])
+def test_a_verifier_container_that_cannot_start_is_no_verdict(sandbox: Sandbox, rc: str) -> None:
+    stage_release(sandbox)
+    sandbox.env["SHIM_COSIGN_RC"] = rc
+    assert verify(sandbox, "--auto", "v0.9.0").returncode == 9
+
+
+def test_a_verifier_image_that_cannot_be_pulled_is_no_verdict(sandbox: Sandbox) -> None:
+    stage_release(sandbox)
+    sandbox.env["SHIM_NO_COSIGN_IMAGE"] = "1"
+    assert verify(sandbox, "--auto", "v0.9.0").returncode == 9
+    assert not any("verify-blob" in c for c in sandbox.calls())

@@ -396,8 +396,9 @@ compose_up_recreating() {
     rm -f "$out"
     return 0
   fi
-  # Compose's wording differs between versions; "network" in the output of a failed up is the sign.
-  if ! grep -qi 'network' "$out"; then
+  # Only compose's own words for "this network cannot be reused as it is". A line such as
+  # "Network x Created" or an unhealthy container must not stop the stack.
+  if ! grep -qiE 'needs to be recreated|has active endpoints|network .*(config|option).*(changed|differ)|declared as external, but could not be found|incorrect label|network .* is still in use|resource is still in use' "$out"; then
     rm -f "$out"
     return "$rc"
   fi

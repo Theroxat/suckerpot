@@ -195,7 +195,7 @@ Rules:
 
 - Forward only the ports of the sensors you turned on. A sensor that is off publishes nothing.
 - Never forward the dashboard port (`DASHBOARD_PORT`, 8443 by default) or your own admin SSH port.
-- Do not put the machine in your router's DMZ in full mode. A DMZ forwards every port, the dashboard's included. In participant mode a DMZ is acceptable only if the machine runs nothing else, its admin SSH port is not 22 and the host firewall is loaded; port forwards are better. See [Deployment](deployment.md#forward-the-ports).
+- Do not put the machine in your router's DMZ in full mode. A DMZ forwards every port, the dashboard's included. In participant mode a DMZ is acceptable only if the machine runs nothing else, its admin SSH port is not 22, and you accept that the host firewall does not filter internet traffic to the machine's own services (use key-only SSH and a rule for the admin port); port forwards are better. See [Deployment](deployment.md#forward-the-ports).
 - If your router's WAN address is in `100.64.0.0/10` (carrier-grade NAT), forwarding cannot work. Ask your provider for a public address.
 - SuckerPot cannot test the forwarding from outside, and it does not try. Bots arrive within minutes. The Ports page shows **Receiving** once a sensor gets its first event.
 - To know whether the internet reaches your sensors, run `./scripts/participant.sh ports-check`. It makes no outside connection: it looks for sessions from public addresses already recorded by your sensors. See [Participate](participate.md#check-that-the-ports-are-open).

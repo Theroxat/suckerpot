@@ -20,10 +20,19 @@ fw_admin_port() {
     echo "$p ADMIN_SSH_PORT in .env"
     return 0
   fi
-  # systemd socket activation (Ubuntu 22.10+): the port is the socket's, not sshd_config's.
-  p=$(systemctl show ssh.socket -p Listen --value 2> /dev/null | sed -n 's/^.*:\([0-9]\{1,5\}\) (Stream).*$/\1/p' | head -n 1 || true)
+  # systemd socket activation (Ubuntu 22.10+): the port is the socket's, not sshd_config's. Only
+  # when the socket is the one in use.
+  if systemctl is-active --quiet ssh.socket 2> /dev/null; then
+    p=$(systemctl show ssh.socket -p Listen --value 2> /dev/null | sed -n 's/^.*:\([0-9]\{1,5\}\) (Stream).*$/\1/p' | head -n 1 || true)
+    if [[ $p =~ ^[1-9][0-9]{0,4}$ ]] && [ "$p" -le 65535 ]; then
+      echo "$p ssh.socket"
+      return 0
+    fi
+  fi
+  # The effective configuration, when sshd -T works without root (it usually does not).
+  p=$(sshd -T 2> /dev/null | sed -n 's/^port \([0-9]\{1,5\}\)$/\1/p' | head -n 1 || true)
   if [[ $p =~ ^[1-9][0-9]{0,4}$ ]] && [ "$p" -le 65535 ]; then
-    echo "$p ssh.socket"
+    echo "$p sshd -T"
     return 0
   fi
   p=$(cat /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2> /dev/null | sed -n 's/^[[:space:]]*Port[[:space:]]\{1,\}\([0-9]\{1,5\}\)[[:space:]]*$/\1/p' | head -n 1 || true)

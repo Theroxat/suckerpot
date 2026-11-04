@@ -319,7 +319,14 @@ if [ -f "$file" ]; then cp "$file" "$out"; printf 200; else : > "$out"; printf 4
 
 DOCKER_SHIM = r"""#!/bin/sh
 case "$*" in
-  *verify-blob*) echo "docker $*" >> "$SHIM_LOG"; exit "${SHIM_COSIGN_RC:-0}" ;;
+  "image inspect "*|"pull "*) [ -z "${SHIM_NO_COSIGN_IMAGE:-}" ] || exit 1 ;;
+  *verify-blob*)
+    echo "docker $*" >> "$SHIM_LOG"
+    rc=${SHIM_COSIGN_RC:-0}
+    if [ "$rc" != 0 ]; then
+      echo "${SHIM_COSIGN_ERR:-Error: none of the expected identities matched what was in the certificate}" >&2
+    fi
+    exit "$rc" ;;
 esac
 exec "$(dirname "$0")/docker.real" "$@"
 """
@@ -393,10 +400,10 @@ def test_a_bad_signature_is_refused_before_the_file_is_trusted(sandbox: Sandbox)
     assert proc.stdout == ""
 
 
-def test_a_missing_bundle_is_a_signature_failure(sandbox: Sandbox) -> None:
+def test_a_missing_bundle_means_not_signed(sandbox: Sandbox) -> None:
     stage_release(sandbox)
     (sandbox.shim / "assets" / "release-manifest.json.sigstore.json").unlink()
-    assert verify(sandbox, "--auto", "v0.9.0").returncode == 6
+    assert verify(sandbox, "--auto", "v0.9.0").returncode == 3
 
 
 def test_a_missing_manifest_is_only_tolerated_for_a_release_that_predates_them(

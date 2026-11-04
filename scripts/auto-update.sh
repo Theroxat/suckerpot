@@ -9,8 +9,8 @@
 #   - its signed release manifest verifies (scripts/verify-release.sh --auto): signed by the
 #     release workflow, its commit is the tag's commit, and the release is old enough (at least
 #     48 h, more if the manifest or AUTO_UPDATE_MIN_AGE_H in .env asks for more);
-#   - a release that fails verification (bad signature, manifest that does not match) is written
-#     to bad-versions with its reason (bad-versions.log) and the next newest candidate of the same
+#   - a release that is unsigned, whose manifest does not match its tag, or whose signature cosign
+#     rejects is written to bad-versions with its reason (bad-versions.log) and the next newest candidate of the same
 #     major version is tried, at most 3 per run; it never goes below the installed version;
 #   - its images verify (scripts/verify-images.sh).
 # Then it runs scripts/update.sh --yes --auto (backup first). If the update fails after the code
@@ -122,13 +122,16 @@ for tag in "${candidates[@]}"; do
   case $vr_rc in
     0) target=$tag; break ;;
     4) record refused too_young ;;
-    9) record failed download_failed ;;
+    # No verdict (network, Sigstore, Docker, disk): nothing is held against the release.
+    9) record failed verification_unavailable ;;
+    # A real verdict: unsigned, not matching its tag, or rejected by cosign. Never retried; the
+    # next release may be fine.
     3) last_code=not_signed ;;
     5) last_code=commit_mismatch ;;
     6) last_code=signature_invalid ;;
-    *) last_code=manifest_invalid ;;
+    # Anything else (a malformed answer, a usage or local error) says nothing about the release.
+    *) record refused manifest_invalid ;;
   esac
-  # A release that cannot be verified is never retried; the next one may be fine.
   mark_bad "$tag" "$last_code"
 done
 [ -n "$target" ] || record refused "${last_code:-manifest_invalid}"
