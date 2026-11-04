@@ -159,6 +159,8 @@ describe("errors", () => {
     expect(toNetworkError(new ApiError(409, "x", "pseudonym_taken")).reason).toBe("taken")
     expect(toNetworkError(new ApiError(422, "x", "consent_required")).detail).toMatch(/five boxes/)
     expect(toNetworkError(new ApiError(429, "x")).reason).toBe("rate-limited")
+    expect(toNetworkError(new ApiError(409, "x", "already_member")).detail).toMatch(/already asked/)
+    expect(toNetworkError(new ApiError(409, "x", "not_member")).detail).toMatch(/not part/)
     expect(toNetworkError(new Error("offline")).reason).toBe("network")
   })
 })

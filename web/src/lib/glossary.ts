@@ -148,7 +148,7 @@ export const GLOSSARY = {
   "eligible-node": {
     term: "Eligible node",
     short:
-      "A sensor the network trusts enough to count: at least two weeks old, sending a batch most days, and not often wrong. New sensors become eligible by waiting.",
+      "A sensor the network trusts enough to count: old enough by the hub's published rules, sending a batch most days, and not often wrong. New sensors become eligible by waiting.",
   },
   "inbound-list": {
     term: "Inbound list",

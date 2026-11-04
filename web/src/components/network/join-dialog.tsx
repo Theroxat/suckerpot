@@ -1,7 +1,8 @@
 import { ChevronRight } from "lucide-react"
 import { useId, useState } from "react"
 import { AdminActionDialog } from "@/components/users/admin-action-dialog"
-import { ALL_CONSENTS, networkApi, validatePseudonym } from "@/lib/network"
+import { ALL_CONSENTS, NETWORK_MESSAGES, networkApi, validatePseudonym } from "@/lib/network"
+import { UserError } from "@/lib/users"
 import { ProfileFields, type Profile } from "./profile-fields"
 import { useRefreshNetwork } from "./use-network"
 import { WhatYouShare } from "./what-you-share"
@@ -57,15 +58,21 @@ export function JoinDialog({
         return null
       }}
       run={async (password) => {
-        await networkApi.join(
-          {
-            pseudonym: profile.pseudonym,
-            country: profile.country,
-            showCountry: profile.showCountry,
-            accept: [...ALL_CONSENTS],
-          },
-          password,
-        )
+        try {
+          await networkApi.join(
+            {
+              pseudonym: profile.pseudonym,
+              country: profile.country,
+              showCountry: profile.showCountry,
+              accept: [...ALL_CONSENTS],
+            },
+            password,
+          )
+        } catch (e) {
+          // A join is already recorded: show the pending state behind the dialog.
+          if (e instanceof UserError && e.detail === NETWORK_MESSAGES.already) void refresh()
+          throw e
+        }
       }}
       onDone={() => {
         void refresh()
