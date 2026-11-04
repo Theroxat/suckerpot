@@ -44,7 +44,9 @@ The installer ends with a table like this (example):
 | 80 | 80 | TCP | web |
 | 443 | 443 | TCP | web |
 
-The first column is the port on your router. The second is the port on this machine. They are the same unless port 22 is busy on the machine: then the SSH sensor uses port 2222 and the table shows `22` and `2222`. Forward each router port to this machine on your router or firewall. Never forward your own admin SSH port. The installer never edits your `sshd_config`. More on ports: [Install SuckerPot](install.md#ports-to-forward).
+The first column is the port on your router. The second is the port on this machine. They are the same unless port 22 is busy on the machine: then the SSH sensor uses port 2222 and the table shows `22` and `2222`. Forward each router port to this machine on your router or firewall. Never forward your own admin SSH port. The installer never edits your `sshd_config`.
+
+Use port forwards, not your router's DMZ. A DMZ sends every port of this machine to the internet: the real `sshd` on port 22 and anything else that listens. It also cannot do the "router 22 to machine 2222" mapping above. A DMZ is acceptable only if this machine runs nothing else, its admin SSH port is not 22 and the [host firewall](deployment.md#host-firewall) is loaded. More on ports: [Install SuckerPot](install.md#ports-to-forward).
 
 ### Check that the ports are open
 
@@ -83,7 +85,7 @@ It never shares passwords, commands, your ports, your own address or any name of
 
 Without a VPN, the hub sees your home address when your machine connects. A tunnel provider in front of the hub sees it too. The hub does not store it and does not log it, but the address is not hidden.
 
-Only one small service, `hubproxy`, has a route out in this mode. It forwards connections to the hub host and nothing else. The ingest service, which parses attacker data, has no route out. Your sensors never download anything.
+In this mode the stack has no VPN to keep it from using your home connection, so the only thing that holds the services back is the network layout and the host firewall. `hubproxy` is the one service meant to have a route out. It forwards connections to the hub host and nothing else. The ingest service, which parses attacker data, is not meant to have one, and your sensors never download anything. This is only enforced if the host firewall is loaded; without it, a compromised container on a host with Docker older than 28 could reach the internet on its own. Load the host firewall.
 
 A VPN can be added at any time:
 

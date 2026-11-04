@@ -14,7 +14,7 @@ SuckerPot is built to be attacked. Install it on a dedicated machine that holds 
 | --- | --- | --- |
 | Operating system | Linux, on `x86_64` (amd64) or `aarch64` (arm64) | A VM or a small server is fine. See [low-memory hosts](#low-memory-hosts) for small machines. |
 | Shell tools | Bash 4 or newer, `git`, `curl`, and the usual GNU tools (`awk`, `sed`, `tr`, `base64`) | `ss` (from iproute2) is used for the port check. Without it the check is skipped. |
-| Docker Engine | 24 or newer | Your user must run `docker` without `sudo`. The installer tells you how to add the group if not. |
+| Docker Engine | 24 or newer, 28 or newer recommended | Before 28 the internal networks are not isolated from the host (the installer warns). Your user must run `docker` without `sudo`. The installer tells you how to add the group if not. |
 | Docker Compose | v2.24 or newer | The Compose plugin (`docker compose version` must work). |
 | Memory | 2 GiB minimum | Use [low-memory mode](#low-memory-hosts) below 6 GiB. The installer refuses below about 2 GiB. |
 | Free disk | 15 GiB minimum under Docker's data folder | The installer warns below 30 GiB. Logs and captured payloads need room. |
@@ -195,7 +195,7 @@ Rules:
 
 - Forward only the ports of the sensors you turned on. A sensor that is off publishes nothing.
 - Never forward the dashboard port (`DASHBOARD_PORT`, 8443 by default) or your own admin SSH port.
-- Do not put the machine in your router's DMZ. A DMZ forwards every port, the dashboard's included. See [Deployment](deployment.md#forward-the-ports).
+- Do not put the machine in your router's DMZ in full mode. A DMZ forwards every port, the dashboard's included. In participant mode a DMZ is acceptable only if the machine runs nothing else, its admin SSH port is not 22 and the host firewall is loaded; port forwards are better. See [Deployment](deployment.md#forward-the-ports).
 - If your router's WAN address is in `100.64.0.0/10` (carrier-grade NAT), forwarding cannot work. Ask your provider for a public address.
 - SuckerPot cannot test the forwarding from outside, and it does not try. Bots arrive within minutes. The Ports page shows **Receiving** once a sensor gets its first event.
 - To know whether the internet reaches your sensors, run `./scripts/participant.sh ports-check`. It makes no outside connection: it looks for sessions from public addresses already recorded by your sensors. See [Participate](participate.md#check-that-the-ports-are-open).
