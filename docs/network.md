@@ -358,5 +358,5 @@ The lists are public, so they are visible to everyone, attackers included.
 | [Network protocol](network-protocol.md) | You build a client or want to check a signature |
 | [Join the network in three commands](participate.md) | You want to help the network with a small install |
 | `hub/README.md` | You run a hub |
-| [Configuration](configuration.md#selfhostr-network-m29) | You want every `NETWORK_*` variable |
+| [Configuration](configuration.md#suckerpot-network-m29) | You want every `NETWORK_*` variable |
 | [M29 design](design/m29.md) | You want the full analysis and the decisions |
