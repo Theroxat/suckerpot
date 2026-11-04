@@ -2,7 +2,9 @@
 
 from suckerpot_guardrails.compose import (
     active_services,
+    check_bridge_names,
     check_compose,
+    check_hardening,
     check_hubproxy_allow,
     check_participant,
     check_participant_overlay,
@@ -14,7 +16,9 @@ from suckerpot_guardrails.compose import (
 
 __all__ = [
     "active_services",
+    "check_bridge_names",
     "check_compose",
+    "check_hardening",
     "check_hubproxy_allow",
     "check_participant",
     "check_participant_overlay",

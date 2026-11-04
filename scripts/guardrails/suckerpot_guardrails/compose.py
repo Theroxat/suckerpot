@@ -42,6 +42,60 @@ ADMIN_SSH_PORT = "22222"
 PROXY_ENV = {"http_proxy", "https_proxy", "all_proxy", "no_proxy"}
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
+BRIDGE_NAME = "com.docker.network.bridge.name"
+GATEWAY_MODE = "com.docker.network.bridge.gateway_mode_ipv4"
+# Linux interface names hold at most 15 characters.
+MAX_BRIDGE_NAME = 15
+
+# The fixed bridge name of every network in a real install (base file, with or without the
+# low-memory and participant overlays). The host firewall (scripts/host/*.nft) matches these.
+# Test overlays drop them, so a throwaway project never clashes with a live stack.
+BRIDGE_NAMES: dict[str, str] = {
+    "ingress": "sp-ingress",
+    "dashboard": "sp-dashboard",
+    "vpn-uplink": "sp-vpn",
+    "hub-uplink": "sp-hubgate",
+    "egress-proxy": "sp-egress",
+    "hub-proxy": "sp-hubproxy",
+    "samples": "sp-samples",
+    "backend": "sp-backend",
+    "tools": "sp-tools",
+    **{
+        f"sensors-{s}": f"sp-s-{s}"
+        for s in "ssh rdp telnet web redis docker mysql mssql adb smb sip synology".split()
+    },
+}
+
+# --- Container hardening (every service of every supported rendering) --------------------------
+# Each exemption names the service and the reason; anything not listed here gets the full rule.
+ROOT_ALLOWED: dict[str, str] = {
+    "vpn": "gluetun programs its own firewall and the tunnel as root, with NET_ADMIN only",
+}
+HEALTHCHECK_EXEMPT: dict[str, str] = {
+    "migrate": "one-shot job: runs the migrations, then exits (restart: no)",
+    "demo": "one-shot job: pushes demo events, then exits (restart: no)",
+}
+CAP_ADD_ALLOWED: dict[str, set[str]] = {"vpn": {"NET_ADMIN"}}
+DEVICES_ALLOWED: dict[str, set[str]] = {"vpn": {"/dev/net/tun"}}
+SYSCTLS_ALLOWED: dict[str, dict[str, str]] = {
+    # WireGuard marks its own packets so they bypass the tunnel route.
+    "vpn": {"net.ipv4.conf.all.src_valid_mark": "1"},
+}
+# (service, source, target): the only bind mounts, all read-only files from the repository.
+BIND_MOUNTS_ALLOWED: set[tuple[str, str, str]] = {
+    ("backup", "./scripts/backup-service.sh", "/backup-service.sh"),
+    ("vpn", "./vpn/control-auth.toml", "/gluetun/auth/config.toml"),
+    ("vpn", "./vpn/entrypoint.sh", "/vpn/entrypoint.sh"),
+    ("vpn", "./vpn/health.sh", "/vpn/health.sh"),
+}
+TMPFS_FLAGS = ("noexec", "nosuid", "nodev")
+HOST_NAMESPACE_KEYS = ("pid", "ipc", "uts", "cgroup", "userns_mode")
+FORBIDDEN_KEYS = ("privileged", "network_mode", "volumes_from", "device_cgroup_rules")
+UNSAFE_SECURITY_OPT = re.compile(
+    r"unconfined|label[=:]disable|no-new-privileges[=:]false", re.IGNORECASE
+)
+PINNED_IMAGE = re.compile(r"^[^@\s]+:[^@:/\s]+@sha256:[0-9a-f]{64}$")
+
 
 class _Override(list[Any]):
     """A sequence tagged ``!override``: replaces the base value instead of extending it."""
@@ -174,6 +228,7 @@ def check_compose(compose: Compose) -> list[str]:
                     problems.append(f"network '{net}' must set {key}={value}")
         elif cfg.get("internal") is not True:
             problems.append(f"network '{net}' must be internal: true")
+    problems += _check_network_isolation(networks)
 
     # Bridges that hold a proxy or sample traffic are named, so the host firewall can match them.
     for net, bridge in (
@@ -320,6 +375,7 @@ def check_compose(compose: Compose) -> list[str]:
     problems += _check_ports(services)
     problems += _check_sensor_switches(services)
     problems += _check_images(services)
+    problems += check_hardening(services)
     if vpn is not None:
         health = [
             read_only for target, read_only in _mount_targets(vpn) if target == "/vpn/health.sh"
@@ -443,6 +499,176 @@ def _check_images(services: Mapping[str, Any]) -> list[str]:
                 f"service '{name}' image must use ${{SUCKERPOT_IMAGE_PREFIX...}} and "
                 "${SUCKERPOT_VERSION...}"
             )
+        # A third-party image (nothing to build) is pinned by digest; the tag stays for readers.
+        if svc.get("build") is None and not PINNED_IMAGE.match(image):
+            problems.append(
+                f"service '{name}' third-party image must be pinned as <name>:<tag>@sha256:<digest>"
+            )
+    return problems
+
+
+def _check_network_isolation(networks: Mapping[str, Any]) -> list[str]:
+    """No IPv6 anywhere; internal networks leave the host no address on their bridge."""
+    problems: list[str] = []
+    for net, cfg in networks.items():
+        cfg = cfg or {}
+        if cfg.get("external"):
+            continue  # created outside this file (test overlays only)
+        if cfg.get("enable_ipv6") is not False:
+            problems.append(f"network '{net}' must set enable_ipv6: false")
+        opts = cfg.get("driver_opts") or {}
+        bridge = opts.get(BRIDGE_NAME)
+        if bridge is not None and len(str(bridge)) > MAX_BRIDGE_NAME:
+            problems.append(f"network '{net}' bridge name '{bridge}' is longer than 15 characters")
+        if cfg.get("internal") is True and opts.get(GATEWAY_MODE) != "isolated":
+            problems.append(f"network '{net}' must set {GATEWAY_MODE}=isolated")
+    return problems
+
+
+def check_bridge_names(compose: Compose) -> list[str]:
+    """A real install (not a test overlay): every network has its fixed bridge name."""
+    problems: list[str] = []
+    networks: dict[str, Any] = compose.get("networks") or {}
+    for net, cfg in networks.items():
+        want = BRIDGE_NAMES.get(net)
+        got = ((cfg or {}).get("driver_opts") or {}).get(BRIDGE_NAME)
+        if want is None:
+            problems.append(f"network '{net}' has no fixed bridge name in the guardrails")
+        elif got != want:
+            problems.append(f"network '{net}' must set the bridge name {want}")
+    return problems
+
+
+def _user_ids(value: Any) -> list[str]:
+    return [part for part in str(value).split(":") if part != ""]
+
+
+def _volume_entries(service: Mapping[str, Any]) -> list[tuple[str, str, str, bool]]:
+    """(type, source, target, read-only) for every volume entry of a service."""
+    found: list[tuple[str, str, str, bool]] = []
+    for item in service.get("volumes") or []:
+        if isinstance(item, Mapping):
+            kind = str(item.get("type", "volume"))
+            found.append(
+                (
+                    kind,
+                    str(item.get("source", "")),
+                    str(item.get("target", "")),
+                    bool(item.get("read_only", False)),
+                )
+            )
+            continue
+        parts = str(item).split(":")
+        source = parts[0]
+        target = parts[1] if len(parts) > 1 else parts[0]
+        read_only = len(parts) > 2 and "ro" in parts[2].split(",")
+        kind = "bind" if source.startswith((".", "/", "~", "$")) or len(parts) == 1 else "volume"
+        found.append((kind, source, target, read_only))
+    return found
+
+
+def _tmpfs_entries(service: Mapping[str, Any]) -> list[str]:
+    value = service.get("tmpfs") or []
+    return [value] if isinstance(value, str) else [str(v) for v in value]
+
+
+def _sysctls(service: Mapping[str, Any]) -> dict[str, str]:
+    value = service.get("sysctls") or {}
+    if isinstance(value, Mapping):
+        return {str(k): str(v) for k, v in value.items()}
+    out: dict[str, str] = {}
+    for item in value:
+        key, _, val = str(item).partition("=")
+        out[key] = val
+    return out
+
+
+def check_hardening(services: Mapping[str, Any]) -> list[str]:
+    """CLAUDE.md section 5 for every service: one loop, explicit exemptions with reasons."""
+    problems: list[str] = []
+    for name, svc in services.items():
+        svc = svc or {}
+
+        def bad(message: str, name: str = name) -> None:
+            problems.append(f"service '{name}' {message}")
+
+        if svc.get("read_only") is not True:
+            bad("must set read_only: true")
+        if "ALL" not in [str(c).upper() for c in svc.get("cap_drop") or []]:
+            bad("must set cap_drop: [ALL]")
+        opts = [str(o) for o in svc.get("security_opt") or []]
+        if "no-new-privileges:true" not in opts:
+            bad("must set security_opt no-new-privileges:true")
+        for opt in opts:
+            if UNSAFE_SECURITY_OPT.search(opt):
+                bad(f"must not set security_opt {opt}")
+
+        # Non-root, numeric uid and gid.
+        if name not in ROOT_ALLOWED:
+            ids = _user_ids(svc.get("user", ""))
+            if not ids or not all(i.isdigit() for i in ids) or any(int(i) == 0 for i in ids):
+                bad("must run as a numeric non-root user (user: <uid>:<gid>, neither 0)")
+
+        # Resource limits: memory without swap, CPU and processes.
+        for key in ("mem_limit", "memswap_limit", "cpus", "pids_limit"):
+            if not svc.get(key):
+                bad(f"must set {key}")
+        if svc.get("mem_limit") and str(svc.get("memswap_limit")) != str(svc.get("mem_limit")):
+            bad("memswap_limit must equal mem_limit (no swap)")
+        if str(svc.get("pids_limit", "")).lstrip("-").isdigit() and int(svc["pids_limit"]) <= 0:
+            bad("pids_limit must be positive")
+        if svc.get("oom_kill_disable"):
+            bad("must not set oom_kill_disable")
+
+        # Healthcheck, except for the listed one-shot jobs.
+        health = svc.get("healthcheck") or {}
+        test = health.get("test") if isinstance(health, Mapping) else None
+        disabled = bool(health.get("disable")) if isinstance(health, Mapping) else False
+        if disabled or not test or list(test if isinstance(test, list) else [test])[:1] == ["NONE"]:
+            if name not in HEALTHCHECK_EXEMPT:
+                bad("must have a healthcheck")
+            elif str(svc.get("restart", "no")) != "no":
+                bad("is exempt from a healthcheck only as a one-shot job (restart: no)")
+
+        for entry in _tmpfs_entries(svc):
+            flags = set(entry.partition(":")[2].split(","))
+            missing = [f for f in TMPFS_FLAGS if f not in flags]
+            if missing:
+                bad(f"tmpfs {entry.partition(':')[0]} must be mounted {','.join(missing)}")
+
+        # Host namespaces, privileges, devices, capabilities, kernel settings.
+        for key in FORBIDDEN_KEYS:
+            if svc.get(key):
+                bad(f"must not set {key}")
+        for key in HOST_NAMESPACE_KEYS:
+            if svc.get(key):
+                bad(f"must not set {key}")
+        extra_caps = {str(c).upper() for c in svc.get("cap_add") or []} - CAP_ADD_ALLOWED.get(
+            name, set()
+        )
+        if extra_caps:
+            bad(f"must not add capabilities {sorted(extra_caps)}")
+        allowed_devices = DEVICES_ALLOWED.get(name, set())
+        for device in svc.get("devices") or []:
+            parts = str(device).split(":")
+            if parts[0] not in allowed_devices or parts[1:2] not in ([], [parts[0]]):
+                bad(f"must not map device {device}")
+        allowed_sysctls = SYSCTLS_ALLOWED.get(name, {})
+        for key, value in _sysctls(svc).items():
+            if allowed_sysctls.get(key) != value:
+                bad(f"must not set sysctl {key}")
+
+        # Volumes: named volumes, or a read-only repository file from the allow-list.
+        for kind, source, target, read_only in _volume_entries(svc):
+            if "docker.sock" in source or "docker.sock" in target:
+                bad("must not mount the Docker socket")
+            elif kind == "bind":
+                if (name, source, target) not in BIND_MOUNTS_ALLOWED:
+                    bad(f"must not bind mount {source}")
+                elif not read_only:
+                    bad(f"must bind mount {source} read-only")
+            elif kind != "volume":
+                bad(f"must not use a {kind} mount (use tmpfs: for scratch space)")
     return problems
 
 

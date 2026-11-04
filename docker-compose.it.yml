@@ -53,6 +53,15 @@ services:
   hubproxy:
     image: "local/${COMPOSE_PROJECT_NAME:?}-hubproxy:test"
 
+# The base file gives backend a fixed bridge name (sp-backend) that a live stack on the same
+# machine already holds. The throwaway project keeps the isolation, without the fixed name.
+networks:
+  backend: !override
+    internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+
 # Project-local volumes with an explicit "test-" name. The base file declares every data volume as
 # external and named <prefix>_<volume>; a test run must never mount those, and a plain
 # <project>_<volume> default could still equal a live name when the project is "suckerpot".

@@ -5,7 +5,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from suckerpot_guardrails.compose import check_compose, check_vpn_entrypoint, load_compose
+from suckerpot_guardrails.compose import (
+    check_bridge_names,
+    check_compose,
+    check_vpn_entrypoint,
+    load_compose,
+)
 
 
 def main(argv: list[str]) -> int:
@@ -15,6 +20,14 @@ def main(argv: list[str]) -> int:
     files = [Path(a) for a in argv] or base
     problems = check_compose(load_compose(files))
     if not argv:
+        problems += check_bridge_names(load_compose(base))
+        participant = root / "docker-compose.participant.yml"
+        if participant.exists():
+            problems += [
+                f"[{participant.name}] {p}"
+                for p in check_compose(load_compose([*base, participant]))
+                + check_bridge_names(load_compose([*base, participant]))
+            ]
         for overlay in overlays:
             if overlay.exists():
                 problems += [

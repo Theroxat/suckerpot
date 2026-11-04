@@ -17,7 +17,7 @@
 services:
   # Fixes the owner of two volumes, as scripts/ensure-volumes.sh does for the real external ones.
   backups-init:
-    image: timescale/timescaledb:2.22.1-pg17
+    image: timescale/timescaledb:2.22.1-pg17@sha256:fba60021a224479e174ae1ec577c1a0576d5185b09fe9e622f1d19e4bf5bab0d
     user: "0:0"
     entrypoint: ["sh", "-c", "chown 70:70 /b && chown 10001:10001 /v"]
     read_only: true
@@ -85,31 +85,33 @@ services:
     ports: !reset []
 
 networks:
-  backend: { ipam: { config: [{ subnet: 198.19.1.0/28 }] } }
-  tools: { ipam: { config: [{ subnet: 198.19.2.0/28 }] } }
-  ingress: !override { internal: true, ipam: { config: [{ subnet: 198.19.3.0/28 }] } }
-  vpn-uplink: !override { internal: true, ipam: { config: [{ subnet: 198.19.4.0/28 }] } }
-  egress-proxy: !override { internal: true, ipam: { config: [{ subnet: 198.19.5.0/28 }] } }
-  hub-proxy: !override { internal: true, ipam: { config: [{ subnet: 198.19.6.0/28 }] } }
-  samples: !override { internal: true, ipam: { config: [{ subnet: 198.19.7.0/28 }] } }
-  dashboard: !override { ipam: { config: [{ subnet: 198.19.8.0/28 }] } }
+  # Every network is replaced whole (!override): the base file's fixed network and bridge names
+  # (sp-*) belong to the live stack. The isolation options are repeated here.
+  backend: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.1.0/28 }] } }
+  tools: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.2.0/28 }] } }
+  ingress: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.3.0/28 }] } }
+  vpn-uplink: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.4.0/28 }] } }
+  egress-proxy: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.5.0/28 }] } }
+  hub-proxy: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.6.0/28 }] } }
+  samples: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.7.0/28 }] } }
+  dashboard: !override { enable_ipv6: false, ipam: { config: [{ subnet: 198.19.8.0/28 }] } }
   # Created by the script before the stack starts: internal, with a public-looking subnet that the
   # test hub sits on. hubproxy refuses private addresses, and that rule stays untouched.
   hub-uplink: !override
     name: "${E2E_UPLINK_NET:?E2E_UPLINK_NET must be set}"
     external: true
-  sensors-ssh: { ipam: { config: [{ subnet: 198.19.11.0/28 }] } }
-  sensors-rdp: { ipam: { config: [{ subnet: 198.19.12.0/28 }] } }
-  sensors-telnet: { ipam: { config: [{ subnet: 198.19.13.0/28 }] } }
-  sensors-web: { ipam: { config: [{ subnet: 198.19.14.0/28 }] } }
-  sensors-redis: { ipam: { config: [{ subnet: 198.19.15.0/28 }] } }
-  sensors-docker: { ipam: { config: [{ subnet: 198.19.16.0/28 }] } }
-  sensors-mysql: { ipam: { config: [{ subnet: 198.19.17.0/28 }] } }
-  sensors-mssql: { ipam: { config: [{ subnet: 198.19.18.0/28 }] } }
-  sensors-adb: { ipam: { config: [{ subnet: 198.19.19.0/28 }] } }
-  sensors-smb: { ipam: { config: [{ subnet: 198.19.20.0/28 }] } }
-  sensors-sip: { ipam: { config: [{ subnet: 198.19.21.0/28 }] } }
-  sensors-synology: { ipam: { config: [{ subnet: 198.19.22.0/28 }] } }
+  sensors-ssh: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.11.0/28 }] } }
+  sensors-rdp: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.12.0/28 }] } }
+  sensors-telnet: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.13.0/28 }] } }
+  sensors-web: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.14.0/28 }] } }
+  sensors-redis: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.15.0/28 }] } }
+  sensors-docker: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.16.0/28 }] } }
+  sensors-mysql: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.17.0/28 }] } }
+  sensors-mssql: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.18.0/28 }] } }
+  sensors-adb: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.19.0/28 }] } }
+  sensors-smb: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.20.0/28 }] } }
+  sensors-sip: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.21.0/28 }] } }
+  sensors-synology: !override { internal: true, enable_ipv6: false, driver_opts: { com.docker.network.bridge.gateway_mode_ipv4: isolated }, ipam: { config: [{ subnet: 198.19.22.0/28 }] } }
 
 # Project-local volumes with an explicit "test-" name (never external, never equal to a live name).
 volumes:
