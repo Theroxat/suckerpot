@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings → Network said "No network hub is configured" and greyed out the join button on installs whose `.env` does not set `NETWORK_HUB_URL`, which is every install made by the installer. The dashboard now uses the hub address and key shipped with each release, like ingest already did.
+
 ## [0.7.0] - 2026-11-04
 
 ### Added (M33)
