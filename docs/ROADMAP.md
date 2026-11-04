@@ -399,3 +399,13 @@ Design: `docs/design/m32.md`.
 - [x] Release v0.6.0: hub and feed keys filled in, signed images and signed release manifest.
 
 **Acceptance:** on a clean 2 GiB machine, the three commands and `--yes` produce a running participant with no dashboard, a member at the hub, and a status that reports OK. From that stack, nothing but `hub.selfhostr.io:443` is reachable (direct TCP, other names, IP literals and plain HTTP through `hubproxy` all fail), and the owner's full-mode rendering is unchanged. Two eligible nodes reporting the same link lead to a reveal, a review entry, a verifier fetch and a URLhaus candidate; one node never does, an unprivileged node cannot lease tasks, and a private or never-listed link is refused before any fetch. A pre-M32 node still enrols, submits and pulls against the new hub. An auto-update refuses an unsigned or mismatched release and rolls back after a failed health check. Security review PASS.
+
+## M33 — Network on by default, one-button join
+
+Owner decision (2026-11-04): joining the network is the recommended default and joining or leaving is one button. Design: `docs/design/m33.md`.
+
+- [x] `NETWORK_ENABLED` defaults to true; an explicit `false` still switches everything off. An install that never answered the question never joins on upgrade.
+- [x] Full installer asks "Join the Selfhostr network? [Y/n]" (default yes, `--no-network` declines) and writes the consent record; ingest joins from it in full mode too, through the VPN only, after a self address is confirmed. A leave is never undone by a restart.
+- [x] Dashboard: the join dialog shows what is shared and asks only for the password; leave is one button; a node that left can join again; setup step 8 has the join button.
+- [x] Setup wizard sensor list read from the `(sensor, ts)` index (it timed out on busy systems).
+- [ ] Security review, UI review, deploy, release.
