@@ -129,7 +129,7 @@ Joining does not give you a private list or an early copy. Members get the same 
 
 Poisoning means that someone sends false sightings to get an innocent address or site listed. The network makes this expensive. A single node can never publish anything.
 
-A value becomes a **confirmed target** only when all of these hold. The numbers below are the defaults. The hub operator can change them, and the live values are published at `https://hub.suckerpot.selfhostr.io/v1/info`.
+A value becomes a **confirmed target** only when all of these hold. The numbers below are the defaults. The hub operator can change them, and the live values are published at `https://suckerpot-hub.selfhostr.io/v1/info`.
 
 1. **Enough nodes.** At least 5 eligible nodes saw it.
 2. **Enough weight.** The reputation of those nodes adds up to at least 3.0. A node counts at most 1.0. A new node starts at 0.6, so five new nodes make exactly 3.0.

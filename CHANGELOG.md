@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - The network is now called the SuckerPot network, and the blocklists the SuckerPot blocklists. Selfhostr is the small organisation that makes SuckerPot, no longer the name of the product or the network.
-- New addresses: the site is `https://suckerpot.selfhostr.io/` (hosted on Cloudflare Pages), the hub is `https://hub.suckerpot.selfhostr.io` and the feeds are `https://feeds.suckerpot.selfhostr.io/v1`. The old `selfhostr.io` site, `hub.selfhostr.io` and `feeds.selfhostr.io` are gone. Nodes pick up the new hub address with the next release; the hub keys are unchanged. `abuse@selfhostr.io` stays.
+- New addresses: the site is `https://suckerpot.selfhostr.io/` (hosted on Cloudflare Pages), the hub is `https://suckerpot-hub.selfhostr.io` and the feeds are `https://suckerpot-feeds.selfhostr.io/v1`. The old `selfhostr.io` site, `hub.selfhostr.io` and `feeds.selfhostr.io` are gone. Nodes pick up the new hub address with the next release; the hub keys are unchanged. `abuse@selfhostr.io` stays.
 
 ## [0.7.1] - 2026-11-04
 
