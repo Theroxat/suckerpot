@@ -22,6 +22,7 @@
 #                      [--admin-ssh-port N] [--lowmem auto|on|off] [--wg-conf PATH] [--skip-verify]
 #                      [--allow-lan]  (publish the dashboard on a non-loopback address WITHOUT an
 #                                      https tunnel: plain http, cookies lose Secure; not for the internet)
+#                      [--no-network]  (do not join the Selfhostr network; the question defaults to yes)
 #                      [--dry-run --env-out PATH]
 #
 #   Participant mode (docs/design/m32.md): sensors, database, ingest and the network node, no
@@ -33,7 +34,8 @@
 #   scripts/install.sh --repair       existing install: volumes, start and schedule steps again
 #
 # --yes takes the defaults; it reads the admin password from stdin with --admin-password-stdin
-# or generates one and prints it once. With --participant, --yes is the consent to join.
+# or generates one and prints it once. --yes is also the consent to join the Selfhostr network
+# (shown first, undone with --no-network); with --participant it is the consent to join.
 # --dry-run --env-out writes the would-be .env to PATH with a placeholder admin hash and makes
 # no Docker call (used by the tests).
 set -euo pipefail
@@ -80,6 +82,7 @@ env_out=""
 stack=""
 pseudonym_arg=""
 no_pseudonym=0
+no_network=0
 country=""
 show_country=0
 verifier=0
@@ -114,6 +117,7 @@ while [ $# -gt 0 ]; do
     --full) [ "$stack" != participant ] || die "--participant and --full exclude each other"; stack=full ;;
     --pseudonym) need_value "$@"; pseudonym_arg=$2; shift ;;
     --no-pseudonym) no_pseudonym=1 ;;
+    --no-network) no_network=1 ;;
     --country) need_value "$@"; country=$2; shift ;;
     --show-country) show_country=1 ;;
     --verifier) verifier=1 ;;
@@ -207,6 +211,7 @@ if [ "$stack" = participant ]; then
   [ -z "$admin_user" ] || bad+=(--admin-user)
   [ "$pw_stdin" = 0 ] || bad+=(--admin-password-stdin)
   [ "$allow_lan" = 0 ] || bad+=(--allow-lan)
+  [ "$no_network" = 0 ] || bad+=(--no-network)
   [ "${#bad[@]}" -eq 0 ] || die "these flags need --full: ${bad[*]}"
   noask=1
 else
@@ -230,6 +235,7 @@ if [ "$existing" = 1 ]; then
   [ -z "$prefix" ] || bad+=(--prefix)
   [ -z "$sensors_arg" ] || bad+=(--sensors)
   [ -z "$wg_conf" ] || bad+=(--wg-conf)
+  [ "$no_network" = 0 ] || bad+=(--no-network)
   [ "$lowmem" = auto ] || bad+=(--lowmem)
   [ "${#bad[@]}" -eq 0 ] || die "an existing install keeps its settings; these flags are only for a fresh install: ${bad[*]}. Change settings with: just set, just sensors, ./scripts/participant.sh"
   if [ "$repair" = 1 ] && [ "$pw_stdin" = 1 ]; then die "--repair does not change settings: --admin-password-stdin"; fi
@@ -491,6 +497,31 @@ if [ "$stack" = participant ] && [ "$fresh" = 1 ]; then
   fi
 fi
 
+# Full mode (M33): the network question, default yes. It sits after the other questions, so
+# nothing is asked after a "no". The answer is a consent record in .env; ingest joins from it once
+# a VPN is configured. --yes counts as the agreement, --no-network as the refusal.
+join_network=0
+if [ "$stack" = full ] && [ "$fresh" = 1 ] && [ "$no_network" = 0 ]; then
+  # shellcheck source=scripts/lib/pseudonym.sh
+  . scripts/lib/pseudonym.sh
+  echo
+  pseudonym=$(pseudonym_random) || die "could not make a pseudonym"
+  consent_screen_full "$pseudonym"
+  if [ "$assume_yes" = 1 ]; then
+    echo "--yes was given: this counts as your agreement to join as described above (--no-network declines)."
+    echo
+    join_network=1
+  else
+    printf 'Join the Selfhostr network? [Y/n] ' >&2
+    IFS= read -r a <&3 || a=""
+    case $a in
+      "" | y | Y | yes | YES | Yes) join_network=1 ;;
+      n | N | no | NO | No) pseudonym=""; log "network declined" ;;
+      *) die "please answer y or n" ;;
+    esac
+  fi
+fi
+
 # ---------------------------------------------------------------- 3. ports
 step 3 "Checking ports"
 declare -A port_override=()
@@ -701,6 +732,14 @@ else
     [ -n "$admin_ssh_port" ] && setv ADMIN_SSH_PORT "$admin_ssh_port"
     [ -n "$self_addr" ] && setv INDICATORS_IGNORE "$self_addr"
     if [ "$stack" = full ]; then setv COMPOSE_PROFILES egress; fi
+    if [ "$join_network" = 1 ]; then
+      setv NETWORK_ENABLED true
+      setv NETWORK_CONSENT "$(consent_record "$CONSENT_ITEMS_FULL")"
+      case $pseudonym in
+        *" "*) setv NETWORK_PSEUDONYM "'$pseudonym'" ;;
+        *) setv NETWORK_PSEUDONYM "$pseudonym" ;;
+      esac
+    fi
     if [ -n "$wg_conf" ]; then
       setv VPN_WG_PRIVATE_KEY "$wg_private"
       setv VPN_WG_PEER_PUBLIC_KEY "$wg_peer"
@@ -970,6 +1009,14 @@ if [ "$switching" = 1 ]; then
   echo "Switched from participant mode to full mode. Your data and your network membership are kept."
   echo "Without a VPN file the network worker waits until you upload one in Settings > VPN."
   echo "The settings of the participant install are in .env.participant.bak (delete it once all is well)."
+  echo
+fi
+if [ "${join_network:-0}" = 1 ]; then
+  echo "Selfhostr network: you agreed to join. It starts once a VPN is configured (Settings > VPN) and"
+  echo "your own public address is known. Leave at any time in the dashboard."
+  echo
+elif [ "$fresh" = 1 ]; then
+  echo "Selfhostr network: not joined. You can join later in the dashboard."
   echo
 fi
 echo "Next steps:"

@@ -96,12 +96,9 @@ class LeaveBody(BaseModel):
 # ---- helpers -------------------------------------------------------------------------------
 
 
-def _flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in TRUE_VALUES
-
-
 def _enabled() -> bool:
-    return _flag("NETWORK_ENABLED")
+    """On unless ``NETWORK_ENABLED`` is set to something false (M33: default on)."""
+    return os.environ.get("NETWORK_ENABLED", "true").strip().lower() in TRUE_VALUES
 
 
 def _hub_configured() -> bool:

@@ -916,7 +916,6 @@ def test_a_full_install_writes_no_participant_settings(
     env = parse_env(sandbox.root / ".env")
     for name in (
         "SUCKERPOT_STACK_MODE",
-        "NETWORK_CONSENT",
         "HUBPROXY_ALLOW",
         "EGRESS_MODE",
         "AUTO_UPDATE_ENABLED",
@@ -1046,3 +1045,86 @@ def test_participant_scripts_make_no_http_calls_and_look_up_no_address() -> None
         lines = (ROOT / rel).read_text().splitlines()
         code = "\n".join(line for line in lines if not line.lstrip().startswith("#"))
         assert not re.search(r"\b(curl|wget|ipify|icanhazip|ifconfig\.me)\b", code), rel
+
+
+# --------------------------------------------------------------------- the network question (M33)
+
+
+def test_full_install_joins_the_network_with_yes(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    target, rc, out = dry_run(sandbox)
+    assert rc == 0, out
+    env = parse_env(target)
+    assert env["NETWORK_ENABLED"] == "true"
+    # Full mode agrees to the five required items; early reveals stay a separate choice.
+    assert re.fullmatch(
+        r"v2:sources,payloads,c2,files,rechecks:\d{4}-\d\d-\d\d", env["NETWORK_CONSENT"]
+    )
+    assert re.fullmatch(r"[a-z]+-[a-z]+-\d\d", env["NETWORK_PSEUDONYM"])
+    # Full mode keeps its rules: the VPN is the only way out, the own address is not auto-confirmed.
+    assert "SELF_TERMS_AUTO_CONFIRM" not in env
+    assert "NETWORK_VERIFY_REVEALS" not in env
+    assert env["COMPOSE_PROFILES"] == "egress"
+    assert "EGRESS_MODE" not in env and "HUBPROXY_ALLOW" not in env
+    assert "agreement to join" in out
+    assert "through your VPN" in out
+    assert env["NETWORK_PSEUDONYM"] in out
+    assert "Join the Selfhostr network?" not in out  # --yes does not prompt
+
+
+def test_no_network_declines_and_writes_no_consent(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    target, rc, out = dry_run(sandbox, "--no-network")
+    assert rc == 0, out
+    env = parse_env(target)
+    for name in ("NETWORK_CONSENT", "NETWORK_PSEUDONYM", "NETWORK_ENABLED"):
+        assert name not in env, name
+    assert "The Selfhostr network" not in out
+
+
+def _interactive(sandbox: Sandbox, network_answer: str) -> tuple[Path, int, str]:
+    answers = sandbox.root / "answers"
+    answers.write_text(
+        "images\nssh,web\nl\nowner\n" + PASSWORD + "\n" + PASSWORD + "\n\n\n\n" + network_answer
+    )
+    target = sandbox.root / "i.env"
+    proc = sandbox.run(
+        "scripts/install.sh",
+        "--dry-run",
+        "--env-out",
+        str(target),
+        extra_env={"SELFHOSTR_TTY": str(answers)},
+    )
+    return target, proc.returncode, proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize("answer", ["\n", "y\n", "Y\n", "yes\n"])
+def test_the_network_question_defaults_to_yes(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]], answer: str
+) -> None:
+    target, rc, out = _interactive(sandbox, answer)
+    assert rc == 0, out
+    assert "Join the Selfhostr network? [Y/n]" in out
+    assert parse_env(target)["NETWORK_CONSENT"].startswith("v2:sources,payloads,c2,files,rechecks:")
+
+
+@pytest.mark.parametrize("answer", ["n\n", "N\n", "no\n"])
+def test_answering_no_to_the_network_question_writes_nothing(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]], answer: str
+) -> None:
+    target, rc, out = _interactive(sandbox, answer)
+    assert rc == 0, out
+    env = parse_env(target)
+    assert "NETWORK_CONSENT" not in env and "NETWORK_PSEUDONYM" not in env
+
+
+def test_a_garbled_network_answer_is_refused(sandbox: Sandbox) -> None:
+    _, rc, out = _interactive(sandbox, "maybe\n")
+    assert rc != 0 and "answer y or n" in out
+
+
+def test_no_network_is_a_full_mode_flag(psb: Sandbox) -> None:
+    _, rc, out = p_dry_run(psb, "--no-network")
+    assert rc != 0 and "--no-network" in out

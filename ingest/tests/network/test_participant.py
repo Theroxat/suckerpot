@@ -113,11 +113,53 @@ async def test_no_valid_record_no_join_and_no_hub_call(consent: str) -> None:
         assert worker.reason == participant.OUTDATED
 
 
-async def test_full_mode_never_joins_from_a_record() -> None:
+async def test_full_mode_joins_from_a_record_too() -> None:
+    """M33: the full-mode installer question writes the same record; ingest honours it."""
     store = MemoryStore()
     worker, hub = make(store, stack_mode="full")
     await worker.run_once()
-    assert hub.calls == [] and store.m.desired == "off"
+    assert store.m.state == "member" and store.m.requested_by == "installer"
+    assert hub.bodies[-1]["pseudonym"] == GENERATED
+
+
+async def test_full_mode_without_a_record_stays_out() -> None:
+    """An install that never answered the question (an upgrade) is not joined silently."""
+    store = MemoryStore()
+    worker, hub = make(store, stack_mode="full", consent="")
+    await worker.run_once()
+    await worker.run_once()
+    assert hub.calls == [] and store.m.desired == "off" and store.m.state == "off"
+
+
+async def test_full_mode_leave_is_sticky_across_restarts() -> None:
+    store = MemoryStore()
+    worker, _ = make(store, stack_mode="full")
+    await worker.run_once()
+    await store.update(desired="leave")
+    await worker.run_once()
+    assert store.m.left_day == NOW.date()
+    restarted, hub2 = make(store, stack_mode="full")
+    await restarted.run_once()
+    assert hub2.calls == [] and store.m.desired == "off"
+
+
+async def test_a_node_that_left_can_join_again_from_the_dashboard() -> None:
+    """M33: the API's join after a completed leave (desired off, state off) enrols afresh."""
+    store = MemoryStore()
+    worker, hub = make(store, stack_mode="full")
+    await worker.run_once()
+    await store.update(desired="leave")
+    await worker.run_once()
+    assert hub.deleted and store.m.privkey_enc is None and store.m.left_day is not None
+    # What PUT /network/membership writes.
+    await store.update(
+        desired="member", pseudonym="night owl", requested_by="admin", requested_at=NOW
+    )
+    hub.calls.clear()
+    await worker.run_once()
+    assert store.m.state == "member" and ("POST", "/v1/enrol") in hub.calls
+    assert hub.bodies[-1]["pseudonym"] == "night owl"
+    assert store.m.privkey_enc is not None  # a fresh identity, not the deleted one
 
 
 async def test_network_disabled_never_joins() -> None:

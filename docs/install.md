@@ -91,6 +91,7 @@ Each question has a default. Press Enter to accept it. With `--yes`, every quest
 | Low-memory mode | `yes` below 6 GiB, `no` above | Only asked on machines with less than 6 GiB. See [low-memory hosts](#low-memory-hosts). |
 | Daily update check | `no` | One request a day through the VPN, off by default. See [updates](updates.md#the-optional-update-check). |
 | WireGuard `.conf` file | empty | Path to the file from your VPN provider. Empty means you upload it later in the dashboard. See [the VPN](#the-vpn-before-a-wireguard-file-is-uploaded). |
+| Join the Selfhostr network? | `yes` | Shows what would be shared, then asks `[Y/n]`. Yes writes a consent record and a random pseudonym; the join waits for a VPN. `--yes` is a yes, `--no-network` is a no. See [the network](network.md). |
 | Your own public address | empty | Optional. The installer never looks it up. If you type it, it goes to `INDICATORS_IGNORE`, so it never shows up as attack infrastructure. |
 | Port in use | depends | Asked only when a port the chosen sensors need is already taken. See [port 22](#port-22-is-already-in-use). |
 | Admin SSH port | empty, or `22` when port 22 is busy | The port of this machine's own SSH daemon. It is protected so no sensor can take it. |

@@ -1,7 +1,9 @@
 """Settings of the network worker (design M29 section 9.1).
 
-``NETWORK_ENABLED`` is the master switch and defaults to off. The hub address and key ship empty:
-without both the network cannot be joined. Nothing here is a secret (the hub key is public).
+``NETWORK_ENABLED`` is the master switch and defaults to on (M33): it only unlocks joining, and
+nothing is sent until the membership says ``member``. ``false`` switches everything off. The hub
+address and key ship empty: without both the network cannot be joined. Nothing here is a secret
+(the hub key is public).
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ def check_hub_host(host: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class NetworkSettings:
-    enabled: bool = False
+    enabled: bool = True
     hub_url: str = ""
     hub_key: str = ""
     interval_s: int = 900
@@ -90,7 +92,7 @@ class NetworkSettings:
         if egress_mode not in ("vpn", "direct"):
             raise ValueError("EGRESS_MODE must be vpn or direct")
         settings = cls(
-            enabled=e.get("NETWORK_ENABLED", "false").strip().lower() in TRUE_VALUES,
+            enabled=e.get("NETWORK_ENABLED", "true").strip().lower() in TRUE_VALUES,
             hub_url=url,
             hub_key=key,
             interval_s=_int(e, "NETWORK_INTERVAL_S", 900, 30, 86_400),

@@ -7,7 +7,7 @@
 #   scripts/env-set.sh set KEY=VALUE [...]     change allow-listed settings (see lib/env.sh)
 #
 # Refuses secret-looking keys (*_PASSWORD, *_SECRET, *_HASH, *_KEY except the public
-# NETWORK_HUB_KEY, VPN_WG_*, and NETWORK_CONSENT, which only participant.sh join writes) and keys outside
+# NETWORK_HUB_KEY, VPN_WG_*, and NETWORK_CONSENT, which only the installer and participant.sh join write) and keys outside
 # the allow-list. Prints variable names only, never values of anything secret. The change is
 # reverted when scripts/check-ports.sh refuses the resulting port layout.
 set -euo pipefail
