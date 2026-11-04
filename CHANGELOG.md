@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- The installers offer to install the host firewall at the end (participant mode; asks before using sudo, never blocks, prints the two commands otherwise), and `./scripts/participant.sh firewall [install|uninstall|status]` does it later.
+- Updates and rollbacks recreate the stack once (`down --remove-orphans`, never `-v`) when Docker cannot change an existing network; a foreign container attached to one of our networks stops the run with instructions instead of being disconnected.
+- CI pins the TimescaleDB test image by digest, like `docker-compose.yml`.
 - Automatic updates: the minimum release age is now at least 48 h whatever the release's own manifest says; `AUTO_UPDATE_MIN_AGE_H` in `.env` can raise it.
 - Automatic updates: a release that fails verification is marked bad with its reason and the next newest release of the same major version is tried (3 at most per run), so one bad tag no longer blocks updates.
 - The installer warns when Docker Engine is older than 28, where internal networks are not isolated from the host.
