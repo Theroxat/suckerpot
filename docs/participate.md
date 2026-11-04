@@ -22,7 +22,7 @@ The full list of checks is in [Install Selfhostr](install.md#requirements).
 ## The three commands
 
 ```bash
-git clone --depth 1 --branch v0.6.0 https://github.com/Theroxat/suckerpot.git
+git clone --depth 1 --branch v0.7.0 https://github.com/Theroxat/suckerpot.git
 cd suckerpot
 ./scripts/install.sh --participant
 ```
