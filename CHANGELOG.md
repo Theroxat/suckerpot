@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `./scripts/participant.sh ports-check [--wait SECONDS] [--since ISO | --since-install]` tells whether the internet reaches your sensors, and the participant installer runs it at the end and offers to re-check after you open the ports on your router. It makes no outside connection: it counts sessions from public addresses that your sensors already recorded, prints no address, and exits 0 (reached) or 3 (nothing yet). `status.sh` points to it.
+
+### Changed
+
+- The participant installer no longer prints a fixed "14 days" date. The hub decides the probation period; `./scripts/status.sh` shows the date from which the sensor counts.
+
 ## [0.8.0] - 2026-11-04
 
 ### Changed

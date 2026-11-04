@@ -7,10 +7,13 @@
 #                                                    show the consent screen again and join
 #   scripts/participant.sh vpn FILE.conf             send everything through your VPN
 #   scripts/participant.sh vpn --remove              back to the direct path (no VPN)
+#   scripts/participant.sh ports-check [--wait SECONDS] [--since ISO | --since-install]
+#                                                    does the internet reach your sensors? (no outside connection)
 #   scripts/participant.sh auto-update on|off        install or remove the daily update schedule
 #   scripts/participant.sh uninstall [--yes]         leave, stop the stack, remove the schedule
 #
-# join, leave, vpn and uninstall are for participant installs. auto-update works on any install.
+# join, leave, vpn and uninstall are for participant installs. auto-update and ports-check work on any install.
+# ports-check exits 0 when a public address reached a sensor, 3 when nothing did yet.
 # Nothing here deletes data: uninstall prints the volume removal command and never runs it.
 # Secrets are never printed.
 set -euo pipefail
@@ -235,6 +238,14 @@ case $cmd in
     fi
     ;;
 
+  ports-check)
+    # shellcheck source=scripts/lib/ports-check.sh
+    . scripts/lib/ports-check.sh
+    rc=0
+    ports_check_cli "$@" || rc=$?
+    exit "$rc"
+    ;;
+
   auto-update)
     [ $# -ge 1 ] || die "usage: auto-update on|off [--yes]"
     au_mode=$1
@@ -301,6 +312,6 @@ case $cmd in
     sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
     ;;
   *)
-    die "unknown command '$cmd' (status, leave, join, vpn, auto-update, uninstall)"
+    die "unknown command '$cmd' (status, leave, join, vpn, ports-check, auto-update, uninstall)"
     ;;
 esac
