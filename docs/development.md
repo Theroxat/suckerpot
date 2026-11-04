@@ -185,26 +185,15 @@ The GitHub Actions workflows run on every push and pull request to `main`:
 | `ci.yml`, `web-screenshots` | Playwright screenshots on mock data, uploaded as an artifact for 7 days |
 | `ci.yml`, `python-integration` | Integration tests against a real database and Redis |
 | `ci.yml`, `compose` | Runs the port guard, builds the stack, checks the API health and the SSH sensor health, runs a real SSH login (`scripts/ssh-test.sh`), generates demo data, and waits until the API shows the stored sessions |
-| `docs.yml` | Builds this documentation site with warnings treated as errors |
 | `pages.yml` | Publishes the project page and the offline mock-data dashboard on pushes to `main` |
 
 Dependabot keeps the pinned actions, base images and dependencies up to date.
 
 The `compose` job is the only place where the placeholder secrets are allowed. It sets `SUCKERPOT_ALLOW_DEFAULT_SECRETS=1` in a throwaway `.env`, and moves the SSH sensor to another host port because the runner's own `sshd` uses port 22. Never copy that setting to a real host.
 
-Read the Docs builds the site from `.readthedocs.yaml`, using the same pinned requirements.
+## These docs
 
-## Building these docs locally
-
-The docs use Sphinx with MyST Markdown. The versions are pinned in `docs/requirements.txt`. Build them in a container, so nothing is installed on the host:
-
-```bash
-docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
-  -v "$PWD:/work" -w /work python:3.13-slim \
-  sh -c 'pip install --quiet --user -r docs/requirements.txt && python -m sphinx -W --keep-going -b html docs /tmp/docs-html'
-```
-
-The build must finish with no warnings. The output goes to `/tmp` inside the container, so the repository stays clean.
+The documentation is the Markdown in `docs/`. It reads on GitHub as it is, and it is published at https://suckerpot.selfhostr.io/docs/ by the shared Selfhostr docs kit (Starlight), which lives outside this repository. The kit converts these files on each publish: the `{toctree}` blocks in `docs/index.md` become the sidebar, and MyST admonitions such as `{note}` and `{warning}` become callouts. Keep using that syntax, and link pages with relative `.md` paths.
 
 ## Before you commit
 
