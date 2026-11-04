@@ -1,23 +1,16 @@
+import { ChevronRight } from "lucide-react"
 import { useId, useState } from "react"
 import { AdminActionDialog } from "@/components/users/admin-action-dialog"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  ALL_CONSENTS,
-  CONSENTS,
-  NETWORK_MESSAGES,
-  networkApi,
-  RESIDUAL_RISK,
-  validatePseudonym,
-  type Consent,
-} from "@/lib/network"
+import { ALL_CONSENTS, networkApi, validatePseudonym } from "@/lib/network"
 import { ProfileFields, type Profile } from "./profile-fields"
 import { useRefreshNetwork } from "./use-network"
+import { WhatYouShare } from "./what-you-share"
 
 const EMPTY: Profile = { pseudonym: "", country: "", showCountry: false }
 
 /**
- * Joining is a decision, so nothing is pre-ticked: five boxes, each one thing that leaves this
- * system, then the optional pseudonym and country, then the administrator's password again.
+ * Joining is one button and the password. The five consents are shown as a read-only list and all
+ * five are sent. The pseudonym and country are optional and stay collapsed.
  */
 export function JoinDialog({
   open,
@@ -29,25 +22,17 @@ export function JoinDialog({
   onJoined?: () => void
 }) {
   const refresh = useRefreshNetwork()
-  const [accepted, setAccepted] = useState<ReadonlySet<Consent>>(new Set())
   const [profile, setProfile] = useState<Profile>(EMPTY)
   const [nameError, setNameError] = useState<string | undefined>()
+  const [more, setMore] = useState(false)
   const group = useId()
 
-  // Closing drops everything typed, so the next opening starts blank: never pre-ticked or filled.
+  // Closing drops everything typed, so the next opening starts blank.
   const reset = () => {
-    setAccepted(new Set())
     setProfile(EMPTY)
     setNameError(undefined)
+    setMore(false)
   }
-
-  const toggle = (id: Consent, on: boolean) =>
-    setAccepted((prev) => {
-      const next = new Set(prev)
-      if (on) next.add(id)
-      else next.delete(id)
-      return next
-    })
 
   return (
     <AdminActionDialog
@@ -57,7 +42,7 @@ export function JoinDialog({
         onOpenChange(next)
       }}
       title="Join the Selfhostr network"
-      description="Joining is optional and you can leave at any time with one click. Read the five things that would leave this system and tick each one: joining needs all five."
+      description="Help the network take down attack sources. You can leave at any time with one button."
       hint="Joining asks for your own dashboard password again."
       focusPassword={false}
       confirmLabel="Join the network"
@@ -65,8 +50,11 @@ export function JoinDialog({
       validate={() => {
         const problem = validatePseudonym(profile.pseudonym)
         setNameError(problem ?? undefined)
-        if (problem) return "Check the pseudonym and try again."
-        return ALL_CONSENTS.every((c) => accepted.has(c)) ? null : NETWORK_MESSAGES.consent
+        if (problem) {
+          setMore(true)
+          return "Check the pseudonym and try again."
+        }
+        return null
       }}
       run={async (password) => {
         await networkApi.join(
@@ -74,7 +62,7 @@ export function JoinDialog({
             pseudonym: profile.pseudonym,
             country: profile.country,
             showCountry: profile.showCountry,
-            accept: ALL_CONSENTS.filter((c) => accepted.has(c)),
+            accept: [...ALL_CONSENTS],
           },
           password,
         )
@@ -84,31 +72,27 @@ export function JoinDialog({
         onJoined?.()
       }}
     >
-      <fieldset className="flex flex-col gap-3" aria-describedby={`${group}-risk`}>
-        <legend className="mb-1 text-sm font-medium text-fg">I agree to share</legend>
-        {CONSENTS.map((c) => {
-          const id = `${group}-${c.id}`
-          return (
-            <div key={c.id} className="flex items-start gap-3">
-              <Checkbox
-                id={id}
-                checked={accepted.has(c.id)}
-                onCheckedChange={(v) => toggle(c.id, v === true)}
-                className="mt-0.5"
-              />
-              <label htmlFor={id} className="text-sm text-fg">
-                {c.title}
-                <span className="block text-xs text-fg-muted">{c.shared}</span>
-              </label>
-            </div>
-          )
-        })}
-        <p id={`${group}-risk`} className="text-xs text-fg-muted">
-          Usernames, passwords, commands, ports, exact times and your own address are never sent.{" "}
-          {RESIDUAL_RISK}
-        </p>
-      </fieldset>
-      <ProfileFields value={profile} onChange={setProfile} pseudonymError={nameError} />
+      <WhatYouShare />
+      <div className="space-y-3">
+        <button
+          type="button"
+          onClick={() => setMore((v) => !v)}
+          aria-expanded={more}
+          aria-controls={`${group}-profile`}
+          className="flex items-center gap-1.5 rounded-sm text-sm font-medium text-fg-muted hover:text-fg focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          <ChevronRight
+            aria-hidden
+            className={
+              more ? "size-4 rotate-90 transition-transform" : "size-4 transition-transform"
+            }
+          />
+          Optional: pseudonym and country
+        </button>
+        <div id={`${group}-profile`} hidden={!more}>
+          <ProfileFields value={profile} onChange={setProfile} pseudonymError={nameError} />
+        </div>
+      </div>
     </AdminActionDialog>
   )
 }

@@ -425,8 +425,8 @@ export function NetworkStep() {
       fallback={
         <FindingCard
           eyebrow="The Selfhostr network"
-          finding="Sharing with the network is off on this system, and nothing is shared."
-          detail="There is nothing to decide now. You can read about the network and join later in Settings, Network."
+          finding="Sharing is switched off in this system's settings (NETWORK_ENABLED=false), so nothing is shared."
+          detail="There is nothing to decide now. If you switch it on later, you can join in Settings, Network."
         />
       }
     />
