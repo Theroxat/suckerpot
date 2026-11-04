@@ -46,7 +46,7 @@ A firewall cannot sign in to the dashboard, so there is an optional feed. It is 
 
 ## Community lists (Network tab)
 
-The Blocklists page has two tabs. **This sensor** is the list built from your own sensor, described above. **Network** shows the community lists of the Selfhostr network (`/defend/blocklists?tab=network`).
+The Blocklists page has two tabs. **This sensor** is the list built from your own sensor, described above. **Network** shows the community lists of the SuckerPot network (`/defend/blocklists?tab=network`).
 
 Start with the sentence at the top of the tab. It says how many entries each list holds, and how many of them your sensor also saw. Then one card per list:
 

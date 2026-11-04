@@ -1,6 +1,6 @@
-# Selfhostr public site
+# SuckerPot public site
 
-The one-page website of the project, served at https://selfhostr.io/. Plain HTML, CSS and JavaScript: no framework, no build step, no CDN, no trackers, no analytics, no third-party requests. Fonts (Inter, JetBrains Mono) are self-hosted under `public/fonts/` with their licences.
+The one-page website of the project, served at https://suckerpot.selfhostr.io/. Plain HTML, CSS and JavaScript: no framework, no build step, no CDN, no trackers, no analytics, no third-party requests. Fonts (Inter, JetBrains Mono) are self-hosted under `public/fonts/` with their licences.
 
 It is independent of the honeypot stack: its own Dockerfile and compose file, nothing shared with the root `docker-compose.yml`.
 
@@ -29,9 +29,23 @@ For a throwaway test next to a running copy, use another project name and port, 
 
 The site has no volumes and no state. Copy the `site/` directory (or clone the repository), then run the same command on the new host. Point the proxy or tunnel at the new host's `SITE_PORT`, and stop the old copy with `docker compose -f site/compose.yml -p selfhostr-site down`.
 
+## Cloudflare Pages
+
+The public site is deployed to Cloudflare Pages (project `suckerpot`), at https://suckerpot.selfhostr.io/. Pages serves `public/` as it is. `public/_headers` carries the security headers (CSP and the rest) and mirrors `nginx.conf`. When you change one, change the other.
+
+To deploy, set an API token and the account ID in the environment, then run Wrangler. Never write the values into a file or the shell history of a shared machine.
+
+```bash
+export CLOUDFLARE_API_TOKEN=<api-token-with-pages-edit>
+export CLOUDFLARE_ACCOUNT_ID=<account-id>
+npx wrangler pages deploy site/public --project-name suckerpot
+```
+
+The container in `compose.yml` stays as an optional way to host the same files yourself.
+
 ## GitHub Pages
 
-`.github/workflows/pages.yml` also publishes `public/` to GitHub Pages, with the mock-data dashboard at `demo/`. The page does not link to `demo/`, because the same files are served at selfhostr.io where there is no demo. Response headers (CSP and the rest) come from `nginx.conf`, so they apply only to the self-hosted copy.
+`.github/workflows/pages.yml` also publishes `public/` to GitHub Pages, with the mock-data dashboard at `demo/`. The page does not link to `demo/`, because the same files are served at suckerpot.selfhostr.io where there is no demo. Response headers (CSP and the rest) come from `nginx.conf` or `_headers`, so they do not apply to the GitHub Pages copy.
 
 ## Content rules
 

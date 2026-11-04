@@ -1,6 +1,6 @@
 # Security
 
-Selfhostr is a honeypot. Its job is to be attacked. This page covers what it does to stay safe, what it never does, and what you must do when you deploy it.
+SuckerPot is a honeypot. Its job is to be attacked. This page covers what it does to stay safe, what it never does, and what you must do when you deploy it.
 
 ```{admonition} Build status
 :class: note
@@ -22,7 +22,7 @@ Keep the dashboard port private anyway. Login is one layer, not the only one.
 
 ## Deployment warning
 
-- **The host is meant to be attacked.** Deploy Selfhostr only on an isolated machine or VM that you are ready to lose. Treat it as already compromised.
+- **The host is meant to be attacked.** Deploy SuckerPot only on an isolated machine or VM that you are ready to lose. Treat it as already compromised.
 - **Never keep credentials that matter on the host.** No cloud keys, no SSH keys for other systems, no password manager exports, no personal files. Assume that anything on the host can be read by an attacker who breaks out of a container.
 - **Keep the dashboard port private.** The default bind address is `127.0.0.1`, so the port is reachable only from the host. To reach it from another machine, use a reverse tunnel such as cloudflared, and filter the port upstream. See [Deployment](deployment.md).
 - **Published Docker ports bypass ordinary host firewall rules.** Docker writes its own rules for published ports. A rule in the host `INPUT` chain does not stop traffic to a published port. Filter these ports upstream (router or hypervisor firewall) or in the `DOCKER-USER` chain.
@@ -301,7 +301,7 @@ The sensor's test suite (`sensors/sip/tests/test_reflection.py`) measures the re
 
 ### No offensive behaviour
 
-Selfhostr does not:
+SuckerPot does not:
 
 - scan other hosts, or respond to scans with scans;
 - hack back or run any active countermeasure;

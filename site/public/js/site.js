@@ -1,4 +1,4 @@
-// Selfhostr site: theme toggle, copy buttons, and the hero replay of a fake bot session.
+// SuckerPot site: theme toggle, copy buttons, and the hero replay of a fake bot session.
 // No dependencies, no network requests.
 ;(function () {
   "use strict"

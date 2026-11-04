@@ -1,17 +1,17 @@
 # Getting started
 
-This page shows how to run Selfhostr on a single host with Docker Compose. It also covers the warnings you must read first.
+This page shows how to run SuckerPot on a single host with Docker Compose. It also covers the warnings you must read first.
 
-The main path is the installer. It checks the machine, creates the secrets and starts the stack in one command. See [Install Selfhostr](install.md). The manual path, with every step by hand, is in [Manual setup](#manual-setup).
+The main path is the installer. It checks the machine, creates the secrets and starts the stack in one command. See [Install SuckerPot](install.md). The manual path, with every step by hand, is in [Manual setup](#manual-setup).
 
 ## Read this first
 
 ```{warning}
-**Selfhostr is designed to be attacked.** Once its ports face the internet, bots will probe it within minutes. Expect constant scans, login attempts and exploit traffic.
+**SuckerPot is designed to be attacked.** Once its ports face the internet, bots will probe it within minutes. Expect constant scans, login attempts and exploit traffic.
 
 - Use a **dedicated machine or VM** that you are ready to lose. Do not reuse a machine that holds other work.
 - **Never keep credentials that matter on the host.** No cloud keys, no SSH keys for other systems, no password manager exports and no personal files.
-- **Do not run Selfhostr on a machine that you also use for development.** Development tools often keep tokens in plain files.
+- **Do not run SuckerPot on a machine that you also use for development.** Development tools often keep tokens in plain files.
 - **Do not expose the dashboard directly to the internet.** Reach it through a reverse tunnel. See [Deployment](deployment.md).
 ```
 
@@ -26,7 +26,7 @@ The main path is the installer. It checks the machine, creates the secrets and s
 | `git` and `curl` | Used by the installer and by the health checks. |
 | `just` | Optional, but recommended. It wraps the common commands. |
 
-No Python, Node.js or database has to be installed on the host. Everything runs in containers. The full list, with the reasons, is in [Install Selfhostr](install.md#requirements).
+No Python, Node.js or database has to be installed on the host. Everything runs in containers. The full list, with the reasons, is in [Install SuckerPot](install.md#requirements).
 
 ## 1. Install with the installer (recommended)
 
@@ -38,7 +38,7 @@ cd suckerpot
 ./scripts/install.sh
 ```
 
-Replace `vX.Y.Z` with the release you want. The installer asks a few questions. It then writes `.env` with new secrets, starts the stack and prints the dashboard address. Every question and every flag is explained in [Install Selfhostr](install.md).
+Replace `vX.Y.Z` with the release you want. The installer asks a few questions. It then writes `.env` with new secrets, starts the stack and prints the dashboard address. Every question and every flag is explained in [Install SuckerPot](install.md).
 
 When the installer is done, sign in. The first-run setup opens by itself. It walks you through the sensors, the ports to forward, the VPN and the rest. See [the first-run setup](install.md#first-run-setup-in-the-dashboard).
 
@@ -157,7 +157,7 @@ Open the dashboard as described in [section 2](#2-open-the-dashboard). The port 
 
 ## Next steps
 
-- [Install Selfhostr](install.md): the installer, the sensor ports and the low-memory mode.
+- [Install SuckerPot](install.md): the installer, the sensor ports and the low-memory mode.
 - [Updates and rollback](updates.md): how to update safely, and how to go back.
 - [Deployment](deployment.md): the go-live checklist, the host firewall and secret rotation.
 - [Sensors](sensors/index.md): what each fake service does and records.

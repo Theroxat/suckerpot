@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#0b0c0e" />
-    <title>Selfhostr, an open-source honeypot that gets bad hosts taken down</title>
+    <title>SuckerPot, an open-source honeypot that gets bad hosts taken down</title>
     <meta
       name="description"
-      content="Selfhostr is an open-source, self-hosted honeypot. Twelve fake services record what bots try, one dashboard tells each attack as a short story, and anonymous abuse reports go to the networks that host attackers and malware."
+      content="SuckerPot is an open-source, self-hosted honeypot. Twelve fake services record what bots try, one dashboard tells each attack as a short story, and anonymous abuse reports go to the networks that host attackers and malware."
     />
     <meta name="referrer" content="no-referrer" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-    <meta property="og:title" content="Selfhostr" />
+    <meta property="og:title" content="SuckerPot" />
     <meta
       property="og:description"
       content="An open-source honeypot you run yourself. It records attacks, tells them as stories and reports the hosts behind them, anonymously."
@@ -29,12 +29,12 @@
 
     <header class="top">
       <div class="wrap bar">
-        <a class="brand" href="#top" aria-label="Selfhostr, back to top">
+        <a class="brand" href="#top" aria-label="SuckerPot, back to top">
           <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
             <rect x="1" y="1" width="22" height="22" rx="6" />
             <path d="M7 9.5 10 12l-3 2.5M12.5 15H17" />
           </svg>
-          <span>Selfhostr</span>
+          <span>SuckerPot</span>
         </a>
         <nav class="links" aria-label="Sections">
           <a href="#how" class="hide-sm">How it works</a>
@@ -65,7 +65,7 @@
             <p class="eyebrow mono">Open-source honeypot · self-hosted</p>
             <h1>Let the bots attack.<br /><span class="dim">Then report the servers behind them.</span></h1>
             <p class="lede">
-              Selfhostr runs twelve fake services on a machine you can afford to lose. It records what bots try, tells
+              SuckerPot runs twelve fake services on a machine you can afford to lose. It records what bots try, tells
               each attack as a short story, and writes abuse reports to the networks that host attackers, malware and
               command servers. Anonymously, through a VPN.
             </p>
@@ -133,7 +133,7 @@ Linux srv-web01 5.15.0-91-generic x86_64 GNU/Linux
             </div>
             <figcaption id="replay-caption" class="sr">
               A replay of a fake bot session on the SSH sensor. The bot tries 37 passwords, gets in, runs uname and nproc,
-              then tries to download and run a file from 198.51.100.23. Selfhostr turns it into one sentence, tags it
+              then tries to download and run a file from 198.51.100.23. SuckerPot turns it into one sentence, tags it
               recon and malware-drop, and drafts an abuse report for the network that hosts the payload. All data is fake.
             </figcaption>
             <div class="replay-foot">
@@ -181,7 +181,7 @@ then tried to download a file</pre>
               <p class="step-n mono">03</p>
               <h3>Report</h3>
               <p>
-                Selfhostr finds the abuse contact of each attacker, payload host and C2 server, and drafts a report. An
+                SuckerPot finds the abuse contact of each attacker, payload host and C2 server, and drafts a report. An
                 identity check blocks anything that could point back to you.
               </p>
               <pre class="snip mono">X-ARF  v0.2
@@ -192,7 +192,7 @@ check  passed</pre>
               <p class="step-n mono">04</p>
               <h3>Takedown</h3>
               <p>
-                Selfhostr checks whether reported hosts go offline, so you know which reports worked and which
+                SuckerPot checks whether reported hosts go offline, so you know which reports worked and which
                 providers ignore them.
               </p>
               <pre class="snip mono">198.51.100.23
@@ -325,7 +325,7 @@ offline    —</pre>
             <ul class="checks">
               <li>Only one container can reach the internet: the VPN client. A test in CI checks this on every change.</li>
               <li>Reports carry facts only: times, addresses, commands, URLs, hashes. Wording is optional.</li>
-              <li>You review each report. Send it from your own anonymous mailbox, or let Selfhostr send it through the tunnel.</li>
+              <li>You review each report. Send it from your own anonymous mailbox, or let SuckerPot send it through the tunnel.</li>
             </ul>
             <pre class="guard mono" aria-label="Example output of the identity check refusing a report"><span class="t-dim">$ check report-7f3a.eml</span>
 body      2 URLs, 1 hash     <span class="g-ok">ok</span>
@@ -343,7 +343,7 @@ line 12   names this host    <span class="g-stop">stop</span>
             <p class="eyebrow mono">The network</p>
             <h2 id="net-title">Many honeypots. One report.</h2>
             <p class="sec-lede">
-              One honeypot sees one attack. Twenty see a pattern. The network lets Selfhostr nodes pool what they
+              One honeypot sees one attack. Twenty see a pattern. The network lets SuckerPot nodes pool what they
               observe, so a bad host is reported once, with stronger evidence, instead of twenty times with weak evidence.
             </p>
             <ul class="checks">
@@ -475,7 +475,7 @@ cd suckerpot</pre>
             <details open>
               <summary>Does it hack back?</summary>
               <p>
-                No, never. No counter-scans, no exploits, no attacks of any kind. Selfhostr records what is sent to it,
+                No, never. No counter-scans, no exploits, no attacks of any kind. SuckerPot records what is sent to it,
                 analyses files without running them, and writes reports to the people whose job is to act on them.
               </p>
             </details>
@@ -514,7 +514,7 @@ cd suckerpot</pre>
             <details>
               <summary>What does it cost?</summary>
               <p>
-                Nothing. Selfhostr is open source under the MIT licence. Reputation lookups use free tiers, and every API
+                Nothing. SuckerPot is open source under the MIT licence. Reputation lookups use free tiers, and every API
                 key is optional.
               </p>
             </details>
@@ -531,9 +531,9 @@ cd suckerpot</pre>
               <rect x="1" y="1" width="22" height="22" rx="6" />
               <path d="M7 9.5 10 12l-3 2.5M12.5 15H17" />
             </svg>
-            <span>Selfhostr</span>
+            <span>SuckerPot</span>
           </a>
-          <p class="fine">Open source, MIT licence. Every address and name on this page is fake.</p>
+          <p class="fine">SuckerPot, by Selfhostr. Open source, MIT licence. Every address and name on this page is fake.</p>
         </div>
         <ul class="foot-links">
           <li><a href="https://github.com/Theroxat/suckerpot" id="source" target="_blank" rel="noopener">Source code</a></li>

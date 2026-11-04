@@ -1,6 +1,6 @@
 # Architecture
 
-This page describes how Selfhostr is built: the services, the networks, the queue, the database and the API. For the threat model and the controls, see [Security](SECURITY.md).
+This page describes how SuckerPot is built: the services, the networks, the queue, the database and the API. For the threat model and the controls, see [Security](SECURITY.md).
 
 ```{admonition} Build status
 :class: note
@@ -22,7 +22,7 @@ This page describes how Selfhostr is built: the services, the networks, the queu
 
 ## Overview
 
-Selfhostr runs as a set of Docker Compose services on one host. Fake services, called sensors, take the attacks. Each attack becomes an event. Events go through Redis streams (one per sensor), are checked, enriched and stored by ingest, and end up in PostgreSQL with TimescaleDB. The API reads the database and serves the dashboard.
+SuckerPot runs as a set of Docker Compose services on one host. Fake services, called sensors, take the attacks. Each attack becomes an event. Events go through Redis streams (one per sensor), are checked, enriched and stored by ingest, and end up in PostgreSQL with TimescaleDB. The API reads the database and serves the dashboard.
 
 ```
 Internet
@@ -171,7 +171,7 @@ Participant mode (`./scripts/install.sh --participant`) runs sensors, `db`, `mig
 2. The hub lists the hash in `GET /v1/verify/reveals`. A node whose consent includes `verify_reveals` and that holds the clear value sends it, after the identity guard.
 3. After a random delay, a node with the `verifier` role leases the task (`GET /v1/verify/tasks`). Its `collector` fetches the link through the VPN, with the usual SSRF and size caps and no recursion.
 4. The node posts an attestation (sha256, size, file type, family) to `/v1/verify/results`. The attestation never counts as a sighting.
-5. A malware-like attestation plus two reporters makes the link eligible for URLhaus. See [The Selfhostr network](network.md#participants-and-verifiers) and [Network protocol](network-protocol.md#verification-added-in-m32-additive).
+5. A malware-like attestation plus two reporters makes the link eligible for URLhaus. See [The SuckerPot network](network.md#participants-and-verifiers) and [Network protocol](network-protocol.md#verification-added-in-m32-additive).
 
 ### Outbound hosts
 
