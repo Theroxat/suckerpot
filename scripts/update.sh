@@ -293,9 +293,9 @@ fi
 step 7 "Restarting (migrations run first)"
 bash scripts/check-ports.sh --dotenv-only
 if [ "$mode" = images ]; then
-  docker compose up -d --no-build --pull never --wait --wait-timeout 600
+  compose_up_recreating -d --no-build --pull never --wait --wait-timeout 600
 else
-  docker compose up -d --wait --wait-timeout 600
+  compose_up_recreating -d --wait --wait-timeout 600
 fi
 
 # ---------------------------------------------------------------- 8. health

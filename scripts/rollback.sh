@@ -110,9 +110,9 @@ fi
 echo "[4/4] Starting"
 bash scripts/check-ports.sh --dotenv-only
 if [ "$mode" = images ]; then
-  docker compose up -d --no-build --pull never --wait --wait-timeout 600
+  compose_up_recreating -d --no-build --pull never --wait --wait-timeout 600
 else
-  docker compose up -d --wait --wait-timeout 600
+  compose_up_recreating -d --wait --wait-timeout 600
 fi
 # Mark the recorded update as resolved, so the next `just update` is not blocked by its lock.
 tmp=$(mktemp ".suckerpot-state/.state.XXXXXX")

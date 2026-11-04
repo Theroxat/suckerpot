@@ -380,3 +380,49 @@ consent_screen_full() {
   fi
   echo
 }
+
+# compose_up_recreating ARGS...: `docker compose up ARGS...`; when it fails because a Docker
+# network must be recreated (Docker cannot change the name or options of an existing bridge, and
+# a release may change both), it runs `docker compose down --remove-orphans` once and starts
+# again. Never `-v`: volumes stay. If a container of ANOTHER project is attached to one of our
+# networks, the down cannot remove it: that is reported with the way to disconnect it, and
+# nothing is disconnected here. Returns the status of the last `up`, or 1 when it had to stop.
+# Needs `set -o pipefail` (every caller has it).
+compose_up_recreating() {
+  local out rc=0 down_out net project nets conns c
+  out=$(mktemp)
+  docker compose up "$@" 2>&1 | tee "$out" || rc=$?
+  if [ "$rc" = 0 ]; then
+    rm -f "$out"
+    return 0
+  fi
+  # Compose's wording differs between versions; "network" in the output of a failed up is the sign.
+  if ! grep -qi 'network' "$out"; then
+    rm -f "$out"
+    return "$rc"
+  fi
+  rm -f "$out"
+  echo "      a Docker network must be recreated (its name or options changed): stopping the stack and starting it again once (data volumes are kept)" >&2
+  project=$(env_get COMPOSE_PROJECT_NAME)
+  down_out=$(mktemp)
+  if ! docker compose down --remove-orphans > "$down_out" 2>&1; then
+    cat "$down_out" >&2
+    rm -f "$down_out"
+    nets=""
+    if [ -n "$project" ]; then
+      nets=$(docker network ls --filter "label=com.docker.compose.project=$project" --format '{{.Name}}' 2> /dev/null || true)
+    fi
+    for net in $nets; do
+      conns=$(docker network inspect "$net" --format '{{range .Containers}}{{.Name}} {{end}}' 2> /dev/null || true)
+      [ -z "${conns// /}" ] && continue
+      echo "      network $net still has containers that are not part of this stack: $conns" >&2
+      for c in $conns; do
+        echo "      disconnect one with: docker network disconnect $net $c  (then run the update again)" >&2
+      done
+    done
+    echo "      nothing was disconnected for you." >&2
+    return 1
+  fi
+  rm -f "$down_out"
+  docker compose up "$@"
+}
