@@ -1,4 +1,4 @@
-"""Pseudonym and country rules of the Selfhostr network (design M29 section 9.7).
+"""Pseudonym and country rules of the SuckerPot network (design M29 section 9.7).
 
 Shared by the API (validation when the admin joins or edits) and ingest (checked again before
 anything is sent). The identity guard (owner names, addresses, domains) is a separate step:

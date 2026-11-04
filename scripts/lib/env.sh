@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared helpers for the Selfhostr host scripts (install.sh, env-set.sh, env-migrate.sh,
+# Shared helpers for the SuckerPot host scripts (install.sh, env-set.sh, env-migrate.sh,
 # update.sh, rollback.sh). Source this file; it defines functions and constants only and runs
 # nothing. It never prints a secret value.
 
@@ -319,9 +319,9 @@ consent_record() {
 # The installer and `participant.sh join` print the same text.
 consent_screen() {
   local pseudonym=$1 vpn=${2:-0}
-  echo "Selfhostr participant mode"
+  echo "SuckerPot participant mode"
   echo
-  echo "This machine will run honeypot sensors and share what they see with the Selfhostr network:"
+  echo "This machine will run honeypot sensors and share what they see with the SuckerPot network:"
   echo "  - addresses that attacked your sensors, with the services they used, what they did and"
   echo "    rounded counts, once a day and a few hours late;"
   echo "  - download links attackers tried, as hashes; the clear link goes to the hub only when two or"
@@ -352,12 +352,12 @@ consent_screen() {
 }
 
 # Prints the consent screen of a full install (M33). $1 = pseudonym (empty = none).
-# The question "Join the Selfhostr network?" follows it; the default is yes.
+# The question "Join the SuckerPot network?" follows it; the default is yes.
 consent_screen_full() {
   local pseudonym=$1
-  echo "The Selfhostr network"
+  echo "The SuckerPot network"
   echo
-  echo "You can share what your sensors see with the Selfhostr network, and get its shared"
+  echo "You can share what your sensors see with the SuckerPot network, and get its shared"
   echo "blocklists back. What would be shared:"
   echo "  - addresses that attacked your sensors, with the services they used, what they did and"
   echo "    rounded counts, once a day and a few hours late;"

@@ -1,4 +1,4 @@
-"""Committed public defaults of the Selfhostr network (design M32 section 6.5).
+"""Committed public defaults of the SuckerPot network (design M32 section 6.5).
 
 The values live in ``data/network_defaults.env`` (package data, so inside every signed image) and
 are mirrored at ``config/network-defaults.env`` for host scripts. An explicit environment value

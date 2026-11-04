@@ -435,8 +435,8 @@ def test_hubproxy_allow_comes_from_the_shipped_defaults(psb: Sandbox) -> None:
     proc = _bash_lib(psb, body)
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.split() == [
-        "hub.selfhostr.io:443",
-        "hub.selfhostr.io:443,feeds.selfhostr.io:443",
+        "suckerpot-hub.selfhostr.io:443",
+        "suckerpot-hub.selfhostr.io:443,suckerpot-feeds.selfhostr.io:443",
         "hub.example.org",
     ]
 
@@ -625,7 +625,7 @@ def test_vpn_remove_goes_back_to_direct_and_drops_the_verifier(
     assert env["COMPOSE_PROFILES"] == "direct"
     assert env["EGRESS_MODE"] == "direct"
     assert env["EGRESS_PROXY_URL"] == "http://hubproxy:8888"
-    assert env["HUBPROXY_ALLOW"] == "hub.selfhostr.io:443"
+    assert env["HUBPROXY_ALLOW"] == "suckerpot-hub.selfhostr.io:443"
     assert env["VPN_WG_PRIVATE_KEY"] == ""
     assert env["NETWORK_VERIFIER"] == "false"
     assert env["COLLECTOR_ENABLED"] == "false"
@@ -706,7 +706,7 @@ def test_join_shows_the_consent_and_writes_a_fresh_record(
     old_pseudonym = parse_env(installed.root / ".env")["NETWORK_PSEUDONYM"]
     proc = installed.run("scripts/participant.sh", "join", "--yes", "--pseudonym", "Grey Heron 7")
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "Selfhostr participant mode" in proc.stdout
+    assert "SuckerPot participant mode" in proc.stdout
     assert "Pseudonym: Grey Heron 7" in proc.stdout
     env = parse_env(installed.root / ".env")
     assert env["NETWORK_ENABLED"] == "true"

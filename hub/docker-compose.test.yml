@@ -155,7 +155,7 @@ services:
         condition: service_completed_successfully
 
   # Participant end-to-end test only (scripts/e2e/participant.sh): the TLS edge of the throwaway hub.
-  # Caddy's internal CA signs the certificate of hub.selfhostr.io, which is an alias on the pre-made,
+  # Caddy's internal CA signs the certificate of suckerpot-hub.selfhostr.io, which is an alias on the pre-made,
   # internal "uplink" network that the test participant's hubproxy shares. No real DNS record, no
   # public certificate, no published port; the name never leaves the throwaway Docker networks.
   hub-edge:
@@ -173,7 +173,7 @@ services:
       default: {}
       uplink:
         ipv4_address: ${E2E_HUB_IP:-11.251.77.10}
-        aliases: [hub.selfhostr.io]
+        aliases: [suckerpot-hub.selfhostr.io]
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "443"]
       interval: 2s

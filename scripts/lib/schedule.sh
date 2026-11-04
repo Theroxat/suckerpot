@@ -62,7 +62,7 @@ _schedule_systemd_install() {
   mkdir -p "$dir"
   cat > "$dir/$name.service" << EOF
 [Unit]
-Description=Selfhostr automatic update ($project)
+Description=SuckerPot automatic update ($project)
 
 [Service]
 Type=oneshot
@@ -71,7 +71,7 @@ ExecStart=/usr/bin/env bash scripts/auto-update.sh
 EOF
   cat > "$dir/$name.timer" << EOF
 [Unit]
-Description=Selfhostr automatic update, daily ($project)
+Description=SuckerPot automatic update, daily ($project)
 
 [Timer]
 OnCalendar=*-*-* $(printf '%02d:%02d' "$((10#$hour))" "$((10#$minute))"):00

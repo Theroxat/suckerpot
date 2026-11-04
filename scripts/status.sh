@@ -31,7 +31,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-[ -f .env ] || die "no .env here: Selfhostr is not installed in this folder (./scripts/install.sh)"
+[ -f .env ] || die "no .env here: SuckerPot is not installed in this folder (./scripts/install.sh)"
 command -v docker > /dev/null 2>&1 || die "Docker is not installed"
 
 # JSON string with the escapes the renderer needs (control characters other than \n and \t go).
@@ -66,7 +66,7 @@ if [ "$ingest_up" = 0 ]; then
   if [ "$want_json" = 1 ]; then
     printf '{"stack":%s,"version":%s,"errors":["ingest_down"],"exit":2}\n' "$(json_str "$stack")" "$(json_str "$version")"
   else
-    echo "Selfhostr ${version:-source build}, $stack mode, $install                       ERROR"
+    echo "SuckerPot ${version:-source build}, $stack mode, $install                       ERROR"
     echo
     echo "Ingest is not running, so nothing can be reported. Start it: ./scripts/install.sh --repair"
     echo "Or look at: docker compose ps, docker compose logs ingest"

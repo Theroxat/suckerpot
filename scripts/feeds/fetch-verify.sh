@@ -1,5 +1,5 @@
 #!/bin/sh
-# fetch-verify.sh: download Selfhostr community lists, verify them, then replace the local copies.
+# fetch-verify.sh: download SuckerPot community lists, verify them, then replace the local copies.
 #
 # Usage:
 #   fetch-verify.sh [-b BASE_URL] [-d DEST_DIR] [-P PUBKEY] FILE...

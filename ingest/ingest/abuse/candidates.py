@@ -72,7 +72,7 @@ NETWORK_WINDOW_DAYS = 30
 
 
 async def network_covered(session: AsyncSession) -> set[str]:
-    """Hosts the Selfhostr network reported or got taken down in the last 30 days (M29 dedupe).
+    """Hosts the SuckerPot network reported or got taken down in the last 30 days (M29 dedupe).
 
     The window runs on the report or takedown date, never on the last sighting.
 

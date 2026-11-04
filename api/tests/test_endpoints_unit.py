@@ -75,7 +75,7 @@ async def test_docs_env_switch(monkeypatch: pytest.MonkeyPatch, value: str, enab
         r = await c.get("/openapi.json")
     assert (r.status_code == 200) is enabled
     if enabled:
-        assert r.json()["info"]["title"] == "Selfhostr API"
+        assert r.json()["info"]["title"] == "SuckerPot API"
 
 
 @pytest.mark.parametrize("sid", ["a.b", "a%20b", "x" * 65, "a;b"])

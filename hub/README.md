@@ -1,8 +1,8 @@
-# Selfhostr network hub: operator guide
+# SuckerPot network hub: operator guide
 
-The hub is the server of the Selfhostr network. It takes the daily batches from member systems, confirms the targets that enough independent sensors agree on, sends abuse reports for them, and publishes the network's figures. It is a separate deployment. It lives in `hub/`, with its own `docker-compose.yml`, its own database and its own migrations.
+The hub is the server of the SuckerPot network. It takes the daily batches from member systems, confirms the targets that enough independent sensors agree on, sends abuse reports for them, and publishes the network's figures. It is a separate deployment. It lives in `hub/`, with its own `docker-compose.yml`, its own database and its own migrations.
 
-This guide is for the person who runs a hub. For what members see and share, read [The Selfhostr network](../docs/network.md). For the wire format, read [Network protocol](../docs/network-protocol.md). The design and its review are in [M29](../docs/design/m29.md).
+This guide is for the person who runs a hub. For what members see and share, read [The SuckerPot network](../docs/network.md). For the wire format, read [Network protocol](../docs/network-protocol.md). The design and its review are in [M29](../docs/design/m29.md).
 
 Every example uses placeholders. The public name is `hub.example.org`, and addresses come from the documentation ranges (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`).
 

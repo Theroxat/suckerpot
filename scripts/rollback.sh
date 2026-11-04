@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Puts Selfhostr back to the state recorded by the last `just update`: the previous code and
+# Puts SuckerPot back to the state recorded by the last `just update`: the previous code and
 # version, and the database as it was in the dump taken just before the update.
 # Called by `just rollback`.
 #

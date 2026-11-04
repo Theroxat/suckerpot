@@ -582,7 +582,7 @@ def test_participant_dry_run_writes_the_participant_env(
     assert env["EGRESS_MODE"] == "direct"
     assert env["EGRESS_PROXY_URL"] == "http://hubproxy:8888"
     assert env["EGRESS_CONTROL_URL"] == "http://hubproxy:8000"
-    assert env["HUBPROXY_ALLOW"] == "hub.selfhostr.io:443"
+    assert env["HUBPROXY_ALLOW"] == "suckerpot-hub.selfhostr.io:443"
     assert env["NETWORK_ENABLED"] == "true"
     assert re.fullmatch(
         r"v2:sources,payloads,c2,files,rechecks,verify_reveals:\d{4}-\d\d-\d\d",
@@ -624,7 +624,7 @@ def test_participant_placeholders_differ_between_runs(
 def test_participant_prints_the_consent_screen_with_the_vpn_truth(psb: Sandbox) -> None:
     _, rc, out = p_dry_run(psb)
     assert rc == 0, out
-    assert "Selfhostr participant mode" in out
+    assert "SuckerPot participant mode" in out
     assert "Without a VPN, the hub" in out
     assert "sees this machine's public" in out
     assert "./scripts/participant.sh vpn <file.conf>" in out
@@ -728,7 +728,9 @@ def test_participant_feeds_widen_the_allow_list(
     target, rc, out = p_dry_run(psb, "--feeds", "--self-address", "203.0.113.9")
     assert rc == 0, out
     env = parse_env(target)
-    assert env["HUBPROXY_ALLOW"] == "hub.selfhostr.io:443,feeds.selfhostr.io:443"
+    assert (
+        env["HUBPROXY_ALLOW"] == "suckerpot-hub.selfhostr.io:443,suckerpot-feeds.selfhostr.io:443"
+    )
     assert env["NETWORK_FEED_ENABLED"] == "true"
     assert env["SELF_ADDRESS"] == "203.0.113.9"
     assert env["INDICATORS_IGNORE"] == "203.0.113.9"
@@ -746,7 +748,7 @@ def test_participant_consent_prompt_declined_installs_nothing(psb: Sandbox) -> N
         extra_env={"SELFHOSTR_TTY": str(answers)},
     )
     assert proc.returncode == 1
-    assert "Join the Selfhostr network as described? [y/N]" in proc.stderr
+    assert "Join the SuckerPot network as described? [y/N]" in proc.stderr
     assert "Not joined" in proc.stderr
     assert not (psb.root / "o.env").exists()
     assert psb.docker_calls() == []
@@ -797,7 +799,7 @@ def test_participant_install_with_fake_docker(
         assert env[name] not in log
     assert env["ADMIN_PASSWORD_HASH"] not in out
     # Done screen: the ports, the status command, the schedule.
-    assert "Selfhostr is running in participant mode (v0.8.0)." in out
+    assert "SuckerPot is running in participant mode (v0.8.0)." in out
     assert f"Pseudonym: {env['NETWORK_PSEUDONYM']}" in out
     assert "Path: direct (no VPN)" in out
     assert re.search(r"22\s+->\s+22\s+TCP\s+ssh", out)
@@ -1070,7 +1072,7 @@ def test_full_install_joins_the_network_with_yes(
     assert "agreement to join" in out
     assert "through your VPN" in out
     assert env["NETWORK_PSEUDONYM"] in out
-    assert "Join the Selfhostr network?" not in out  # --yes does not prompt
+    assert "Join the SuckerPot network?" not in out  # --yes does not prompt
 
 
 def test_no_network_declines_and_writes_no_consent(
@@ -1081,7 +1083,7 @@ def test_no_network_declines_and_writes_no_consent(
     env = parse_env(target)
     for name in ("NETWORK_CONSENT", "NETWORK_PSEUDONYM", "NETWORK_ENABLED"):
         assert name not in env, name
-    assert "The Selfhostr network" not in out
+    assert "The SuckerPot network" not in out
 
 
 def _interactive(sandbox: Sandbox, network_answer: str) -> tuple[Path, int, str]:
@@ -1106,7 +1108,7 @@ def test_the_network_question_defaults_to_yes(
 ) -> None:
     target, rc, out = _interactive(sandbox, answer)
     assert rc == 0, out
-    assert "Join the Selfhostr network? [Y/n]" in out
+    assert "Join the SuckerPot network? [Y/n]" in out
     assert parse_env(target)["NETWORK_CONSENT"].startswith("v2:sources,payloads,c2,files,rechecks:")
 
 

@@ -171,7 +171,7 @@ class SubjectOut(BaseModel):
     first_ts: datetime
     last_ts: datetime
     link: str
-    # confirmed | reported | taken_down when the Selfhostr network handles it (M29), else null
+    # confirmed | reported | taken_down when the SuckerPot network handles it (M29), else null
     network_state: str | None = None
 
 

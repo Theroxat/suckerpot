@@ -179,7 +179,7 @@ def render_text(doc: dict[str, Any], info: dict[str, Any], now: datetime) -> str
     out: list[str] = []
     version = doc.get("version") or "source build"
     status = {0: "OK", 1: "WARNING", 2: "ERROR"}[info["exit"]]
-    head = f"Selfhostr {version}, {info['stack']} mode, {doc.get('install') or 'source'}"
+    head = f"SuckerPot {version}, {info['stack']} mode, {doc.get('install') or 'source'}"
     out.append(f"{head:<66}{status}")
     out.append("")
 

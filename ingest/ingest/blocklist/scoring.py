@@ -51,7 +51,7 @@ EXPLOIT_TAGS = frozenset(
 BRUTE_TAGS = frozenset(
     {"weak-credentials", "credential-stuffing", "wordpress-bruteforce", "phpmyadmin-bruteforce"}
 )
-NETWORK_BONUS = 2  # confirmed by the Selfhostr network (5 or more sensors), M29
+NETWORK_BONUS = 2  # confirmed by the SuckerPot network (5 or more sensors), M29
 KNOWN_SCANNER_CAP = 35
 MIN_LISTED_SCORE = 10
 UNCONFIRMED_CAP = 45

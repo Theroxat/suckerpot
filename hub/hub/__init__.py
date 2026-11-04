@@ -1,1 +1,1 @@
-"""Selfhostr network hub (design M29)."""
+"""SuckerPot network hub (design M29)."""
