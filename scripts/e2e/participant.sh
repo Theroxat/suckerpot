@@ -14,7 +14,7 @@
 #     (SELFHOSTR_TEST_INSTALL=1) accepts only that shape of name, and appends
 #     docker-compose.participant-it.yml (local images, local volumes, no published sensor port,
 #     internal networks only). The machine's own .env is never read or written;
-#   - the test hub is reached under the name suckerpot-hub.selfhostr.io through a network alias on a
+#   - the test hub is reached under the name relay.selfhostr.io through a network alias on a
 #     throwaway INTERNAL Docker network (no gateway, no route). The name never reaches a real
 #     resolver, and the real hub is never contacted;
 #   - the only traffic to the internet is what Docker itself does (image pulls, base image
@@ -187,7 +187,7 @@ log "installed"
 # The hub address in the defaults is the real name with a placeholder key. The test injects the
 # key through .env, explicitly: the committed defaults are not edited.
 {
-  echo "NETWORK_HUB_URL=https://suckerpot-hub.selfhostr.io"
+  echo "NETWORK_HUB_URL=https://relay.selfhostr.io"
   echo "NETWORK_HUB_KEY=$hub_key"
   echo "NETWORK_INTERVAL_S=30"
 } >> "$work/.env"
@@ -228,7 +228,7 @@ s = socket.socket()
 s.settimeout(3)
 print("tcp_1.1.1.1_443_fails", fails(lambda: s.connect(("1.1.1.1", 443))))
 print("dns_example.org_fails", fails(lambda: socket.getaddrinfo("example.org", 443)))
-print("dns_hub_name_fails", fails(lambda: socket.getaddrinfo("suckerpot-hub.selfhostr.io", 443)))
+print("dns_hub_name_fails", fails(lambda: socket.getaddrinfo("relay.selfhostr.io", 443)))
 print("dns_hubproxy_works", not fails(lambda: socket.getaddrinfo("hubproxy", 8888)))
 '
 net_out=$(py_ingest "$probe_net" 2> /dev/null || true)
@@ -256,11 +256,11 @@ for label, args in (
     ("example.org:443", ("example.org:443",)),
     ("ip_literal_1.1.1.1:443", ("1.1.1.1:443",)),
     ("ip_literal_192.0.2.7:443", ("192.0.2.7:443",)),
-    ("hub_port_80", ("suckerpot-hub.selfhostr.io:80",)),
-    ("hub_port_22", ("suckerpot-hub.selfhostr.io:22",)),
-    ("get_method", ("suckerpot-hub.selfhostr.io:443", "GET")),
-    ("no_auth", ("suckerpot-hub.selfhostr.io:443", "CONNECT", False)),
-    ("hub_443", ("suckerpot-hub.selfhostr.io:443",)),
+    ("hub_port_80", ("relay.selfhostr.io:80",)),
+    ("hub_port_22", ("relay.selfhostr.io:22",)),
+    ("get_method", ("relay.selfhostr.io:443", "GET")),
+    ("no_auth", ("relay.selfhostr.io:443", "CONNECT", False)),
+    ("hub_443", ("relay.selfhostr.io:443",)),
 ):
     print(label, connect(*args))
 '

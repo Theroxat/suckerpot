@@ -23,7 +23,7 @@ def test_defaults_are_unlocked_but_nothing_joins() -> None:
     s = NetworkSettings.from_env({})
     assert s.enabled and s.interval_s == 900 and s.max_sources == 5000
     # The committed release defaults name the project hub; joining still needs an explicit opt-in.
-    assert s.hub_configured and s.hub_url == "https://suckerpot-hub.selfhostr.io"
+    assert s.hub_configured and s.hub_url == "https://relay.selfhostr.io"
 
 
 def test_an_explicit_false_switches_the_network_off() -> None:

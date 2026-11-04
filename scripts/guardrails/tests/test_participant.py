@@ -159,8 +159,8 @@ def test_dashboard_never_uses_a_sensor_port_or_the_admin_port() -> None:
 @pytest.mark.parametrize(
     "value",
     [
-        "suckerpot-hub.selfhostr.io:443",
-        "suckerpot-hub.selfhostr.io:443,suckerpot-feeds.selfhostr.io:443",
+        "relay.selfhostr.io:443",
+        "relay.selfhostr.io:443,lists.selfhostr.io:443",
     ],
 )
 def test_allow_list_accepts_the_defaults(value: str) -> None:
@@ -171,9 +171,9 @@ def test_allow_list_accepts_the_defaults(value: str) -> None:
     "value",
     [
         "",
-        "suckerpot-hub.selfhostr.io:443,suckerpot-feeds.selfhostr.io:443,example.org:443",
-        "suckerpot-hub.selfhostr.io:80",
-        "suckerpot-hub.selfhostr.io",
+        "relay.selfhostr.io:443,lists.selfhostr.io:443,example.org:443",
+        "relay.selfhostr.io:80",
+        "relay.selfhostr.io",
         "example.org:443",
     ],
 )

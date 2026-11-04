@@ -582,7 +582,7 @@ def test_participant_dry_run_writes_the_participant_env(
     assert env["EGRESS_MODE"] == "direct"
     assert env["EGRESS_PROXY_URL"] == "http://hubproxy:8888"
     assert env["EGRESS_CONTROL_URL"] == "http://hubproxy:8000"
-    assert env["HUBPROXY_ALLOW"] == "suckerpot-hub.selfhostr.io:443"
+    assert env["HUBPROXY_ALLOW"] == "relay.selfhostr.io:443"
     assert env["NETWORK_ENABLED"] == "true"
     assert re.fullmatch(
         r"v2:sources,payloads,c2,files,rechecks,verify_reveals:\d{4}-\d\d-\d\d",
@@ -729,7 +729,7 @@ def test_participant_feeds_widen_the_allow_list(
     assert rc == 0, out
     env = parse_env(target)
     assert (
-        env["HUBPROXY_ALLOW"] == "suckerpot-hub.selfhostr.io:443,suckerpot-feeds.selfhostr.io:443"
+        env["HUBPROXY_ALLOW"] == "relay.selfhostr.io:443,lists.selfhostr.io:443"
     )
     assert env["NETWORK_FEED_ENABLED"] == "true"
     assert env["SELF_ADDRESS"] == "203.0.113.9"
