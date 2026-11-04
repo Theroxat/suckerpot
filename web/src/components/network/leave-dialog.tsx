@@ -17,7 +17,7 @@ export function LeaveDialog({
     <AdminActionDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Leave the Selfhostr network?"
+      title="Leave the SuckerPot network?"
       description="Nothing more is sent from this moment, and your data is deleted on both sides. You can join again at any time."
       hint="Leaving asks for your own dashboard password again."
       confirmLabel="Leave the network"
@@ -46,7 +46,7 @@ export function LeaveDialog({
         />
       </div>
       <p className="text-xs text-fg-muted">
-        If the hub cannot be reached now, Selfhostr keeps trying for 7 days.
+        If the hub cannot be reached now, SuckerPot keeps trying for 7 days.
       </p>
     </AdminActionDialog>
   )

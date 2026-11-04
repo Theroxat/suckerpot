@@ -37,7 +37,7 @@ test("settings sending off and automatic", async ({ page }, info) => {
   const mode = page.getByRole("radiogroup", { name: "Sending mode" })
   await expect(mode).toBeVisible()
   await mode.getByRole("radio", { name: "Off" }).click()
-  await expect(page.getByText(/Nothing is sent by Selfhostr/)).toBeVisible()
+  await expect(page.getByText(/Nothing is sent by SuckerPot/)).toBeVisible()
   await mode.scrollIntoViewIfNeeded()
   await settle(page)
   await shoot(page, "settings-sending-off", info.project.name)

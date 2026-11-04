@@ -1,5 +1,5 @@
 /**
- * The Selfhostr community lists (M30, docs/design/m30.md sections 4, 6 and 10.5): shapes of the
+ * The SuckerPot community lists (M30, docs/design/m30.md sections 4, 6 and 10.5): shapes of the
  * node API under `/api/v1/network/feed`, the plain-English sentences of the Network tab of the
  * Blocklists page and the calls. The mocks in `src/mocks/network-feed.ts` match these types
  * exactly (a test checks it).
@@ -247,7 +247,7 @@ export function feedSentence(s: FeedStatus): string {
     seen > 0
       ? ` ${formatNumber(seen)} of them also reached this sensor.`
       : " None of them has reached this sensor yet."
-  return `The Selfhostr network lists ${plural(hosts, "malware and command host")} and ${plural(sources, "attack source")}, each confirmed by at least ${MIN_CONFIRMING_SENSORS} independent sensors.${tail}`
+  return `The SuckerPot network lists ${plural(hosts, "malware and command host")} and ${plural(sources, "attack source")}, each confirmed by at least ${MIN_CONFIRMING_SENSORS} independent sensors.${tail}`
 }
 
 export type FeedTone = "ok" | "warning"
@@ -323,8 +323,8 @@ export function usageSteps(app: FirewallApp, url: string): string[] {
       ]
     case "nftables":
       return [
-        `Fetch the file on a timer: curl -fsS -o /etc/nftables.d/selfhostr-outbound.nft ${url}`,
-        "Load it in one step: nft -f /etc/nftables.d/selfhostr-outbound.nft",
+        `Fetch the file on a timer: curl -fsS -o /etc/nftables.d/suckerpot-outbound.nft ${url}`,
+        "Load it in one step: nft -f /etc/nftables.d/suckerpot-outbound.nft",
         "The file defines the sets. Add a rule in the same table that rejects traffic to them.",
       ]
   }

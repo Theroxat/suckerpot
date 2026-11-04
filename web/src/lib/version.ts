@@ -42,13 +42,13 @@ export function safeReleaseUrl(url: string | null | undefined): string | null {
 export function describeVersion(v: VersionInfo): string {
   if (isDevBuild(v.version))
     return `This is a development build (${v.version}), so it does not look for updates.`
-  if (hasUpdate(v)) return `Selfhostr ${v.latest} is available. You are running ${v.version}.`
-  if (v.check === "off") return `You are running Selfhostr ${v.version}. Update checks are off.`
+  if (hasUpdate(v)) return `SuckerPot ${v.latest} is available. You are running ${v.version}.`
+  if (v.check === "off") return `You are running SuckerPot ${v.version}. Update checks are off.`
   if (v.check === "no_egress")
-    return `You are running Selfhostr ${v.version}. The check is paused because the outbound gate is closed.`
+    return `You are running SuckerPot ${v.version}. The check is paused because the outbound gate is closed.`
   if (v.check === "error")
-    return `You are running Selfhostr ${v.version}. The last update check failed.`
+    return `You are running SuckerPot ${v.version}. The last update check failed.`
   if (v.check === "pending")
-    return `You are running Selfhostr ${v.version}. The first update check has not run yet.`
-  return `Selfhostr ${v.version} is up to date.`
+    return `You are running SuckerPot ${v.version}. The first update check has not run yet.`
+  return `SuckerPot ${v.version} is up to date.`
 }

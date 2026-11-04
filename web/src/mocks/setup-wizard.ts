@@ -85,14 +85,14 @@ function version(): VersionInfo {
     update_available: false,
     checked_at: iso(3 * 60 * MINUTE),
     check: "ok",
-    release_url: "https://example.org/selfhostr/releases/tag/v0.8.0",
+    release_url: "https://example.org/suckerpot/releases/tag/v0.8.0",
   }
   if (mode === "1")
     return {
       ...base,
       latest: "v0.9.0",
       update_available: true,
-      release_url: "https://example.org/selfhostr/releases/tag/v0.9.0",
+      release_url: "https://example.org/suckerpot/releases/tag/v0.9.0",
     }
   if (mode === "dev")
     return { ...base, version: "v0.8.0-14-g0badc0d", build: "source", latest: null, check: "ok" }

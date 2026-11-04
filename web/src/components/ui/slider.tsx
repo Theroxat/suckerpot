@@ -12,7 +12,7 @@ function Slider({
   thumbValueText,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root> & {
-  // Selfhostr addition: a single-thumb slider has no accessible name otherwise.
+  // SuckerPot addition: a single-thumb slider has no accessible name otherwise.
   thumbLabel?: string
   thumbValueText?: string
 }) {

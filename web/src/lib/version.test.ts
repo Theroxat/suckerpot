@@ -28,9 +28,9 @@ describe("version", () => {
   })
 
   it("explains each state of the check in one sentence", () => {
-    expect(describeVersion(base)).toBe("Selfhostr v0.8.0 is up to date.")
+    expect(describeVersion(base)).toBe("SuckerPot v0.8.0 is up to date.")
     expect(describeVersion({ ...base, latest: "v0.9.0", update_available: true })).toBe(
-      "Selfhostr v0.9.0 is available. You are running v0.8.0.",
+      "SuckerPot v0.9.0 is available. You are running v0.8.0.",
     )
     expect(describeVersion({ ...base, check: "off" })).toMatch(/checks are off/)
     expect(describeVersion({ ...base, check: "no_egress" })).toMatch(/gate is closed/)
