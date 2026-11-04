@@ -262,7 +262,7 @@ services:
       INDICATORS_KEEP_DOCUMENTATION: ${INDICATORS_KEEP_DOCUMENTATION:-false}
       # Daily check for a newer release (M28): one anonymous GET through the egress proxy.
       UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-false}
-      UPDATE_CHECK_REPO: ${UPDATE_CHECK_REPO:-Theroxat/suckerpot}
+      UPDATE_CHECK_REPO: ${UPDATE_CHECK_REPO:-selfhostr/suckerpot}
       # This deployment's own names: never recorded as attack infrastructure.
       API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
       API_ALLOWED_ORIGINS: ${API_ALLOWED_ORIGINS:-}
@@ -477,7 +477,7 @@ services:
       DASHBOARD_PORT: ${DASHBOARD_PORT:-8443}
       # Update check (M28): the version shown in Settings; ingest does the daily lookup.
       UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-false}
-      UPDATE_CHECK_REPO: ${UPDATE_CHECK_REPO:-Theroxat/suckerpot}
+      UPDATE_CHECK_REPO: ${UPDATE_CHECK_REPO:-selfhostr/suckerpot}
       # Machine-readable blocklist feeds (M16), outside /api/v1 and off by default.
       FEEDS_ENABLED: ${FEEDS_ENABLED:-false}
       # Egress card in Settings (quota meter and quarantine cap).

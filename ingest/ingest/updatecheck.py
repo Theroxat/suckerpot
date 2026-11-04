@@ -35,7 +35,7 @@ from ingest.enrichment.status import publish_status
 
 log = logging.getLogger(__name__)
 
-DEFAULT_REPO = "Theroxat/suckerpot"
+DEFAULT_REPO = "selfhostr/suckerpot"
 ROW = "update_check"
 TIMEOUT = httpx.Timeout(10.0)
 MAX_BODY = 64 * 1024

@@ -621,9 +621,9 @@ if [ "$mode" = images ]; then
   [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ || ( $dry_run = 1 && $version = dev ) ]] || die "--version must look like v1.2.3"
 fi
 if [ "$existing" = 1 ]; then
-  image_prefix=$(env_get SUCKERPOT_IMAGE_PREFIX "${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}")
+  image_prefix=$(env_get SUCKERPOT_IMAGE_PREFIX "${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/selfhostr/suckerpot}")
 else
-  image_prefix=${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/theroxat/suckerpot}
+  image_prefix=${SUCKERPOT_IMAGE_PREFIX:-ghcr.io/selfhostr/suckerpot}
 fi
 [[ $image_prefix =~ ^ghcr\.io/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$ ]] \
   || die "SUCKERPOT_IMAGE_PREFIX must look like ghcr.io/<owner>/<name>"

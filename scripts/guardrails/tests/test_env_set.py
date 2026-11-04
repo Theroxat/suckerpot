@@ -327,3 +327,30 @@ def test_check_ports_dotenv_only_ignores_the_environment(sandbox: Sandbox) -> No
     assert ok.returncode == 0, ok.stderr
     plain = sandbox.run("scripts/check-ports.sh", extra_env={"DASHBOARD_PORT": "22"})
     assert plain.returncode != 0
+
+
+def test_migrate_moves_only_the_exact_old_repository_defaults(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    sandbox.write_env(
+        BASE_ENV
+        + "SUCKERPOT_IMAGE_PREFIX=ghcr.io/theroxat/suckerpot\nUPDATE_CHECK_REPO=Theroxat/suckerpot\n"
+    )
+    proc = sandbox.run("scripts/env-migrate.sh")
+    assert proc.returncode == 0, proc.stderr
+    env = parse_env(sandbox.root / ".env")
+    assert env["SUCKERPOT_IMAGE_PREFIX"] == "ghcr.io/selfhostr/suckerpot"
+    assert env["UPDATE_CHECK_REPO"] == "selfhostr/suckerpot"
+
+
+def test_migrate_keeps_a_fork_prefix(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    sandbox.write_env(
+        BASE_ENV
+        + "SUCKERPOT_IMAGE_PREFIX=ghcr.io/someone/suckerpot\nUPDATE_CHECK_REPO=someone/suckerpot\n"
+    )
+    assert sandbox.run("scripts/env-migrate.sh").returncode == 0
+    env = parse_env(sandbox.root / ".env")
+    assert env["SUCKERPOT_IMAGE_PREFIX"] == "ghcr.io/someone/suckerpot"
+    assert env["UPDATE_CHECK_REPO"] == "someone/suckerpot"

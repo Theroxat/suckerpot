@@ -23,7 +23,7 @@ from api.deps import DbSession
 
 router = APIRouter(tags=["settings"])
 
-DEFAULT_UPDATE_REPO = "Theroxat/suckerpot"
+DEFAULT_UPDATE_REPO = "selfhostr/suckerpot"
 UPDATE_ROW = "update_check"
 RELEASE_TAG = re.compile(r"v(\d{1,3})\.(\d{1,3})\.(\d{1,3})")
 REPO_NAME = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}")
