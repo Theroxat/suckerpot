@@ -1,11 +1,11 @@
 # The Selfhostr network
 
-The Selfhostr network is an opt-in pool. Many Selfhostr systems share what their sensors saw, in aggregate and without identities. The network confirms a target only when several independent sensors agree. It then sends one strong abuse report instead of many weak ones, and it follows the takedown.
+The Selfhostr network is a pool you can join and leave at any time. Many Selfhostr systems share what their sensors saw, in aggregate and without identities. The network confirms a target only when several independent sensors agree. It then sends one strong abuse report instead of many weak ones, and it follows the takedown.
 
 This page is for members and for people who want to know what joining means. The hub operator reads `hub/README.md`. The exact wire format is in [Network protocol](network-protocol.md). The design and its review are in [M29](design/m29.md).
 
 ```{warning}
-Joining is a choice. Selfhostr never joins the network for you. In a full install, nothing is sent until you have turned it on and joined in the dashboard. In a participant install, choosing that mode in the installer is the join.
+Joining is a choice you are always asked about. The installer asks "Join the Selfhostr network? [Y/n]" and shows what would be shared first. The default is yes, and `--no-network` says no. An existing install that never answered is never joined by an update. In a full install you can also join or leave in the dashboard at any time. In a participant install, choosing that mode in the installer is the join.
 ```
 
 ## What joining means
@@ -20,22 +20,26 @@ You do not get a share of anything, and you do not get better detection. The ben
 
 Your system stays on your own machine. Nothing is installed on the hub side for you, and no account or e-mail address is created.
 
-## Strictly opt-in
+## Joining is always an explicit choice
 
-Two steps must both be true before a single byte goes to the hub:
+The network feature is unlocked by default (`NETWORK_ENABLED=true`), but unlocking is not joining. Nothing goes to the hub until this system has joined, and a join needs an explicit agreement:
 
-| Step | Who | Where | Default |
-| --- | --- | --- | --- |
-| 1. Allow the network on this system | You | `just set NETWORK_ENABLED=true` on the host (it writes `.env` and restarts the services that read it) | `false` |
-| 2. Join the network | An administrator | Settings, Network: join, with the password typed again and five consents ticked | Not joined |
+| Way to join | Who | Default |
+| --- | --- | --- |
+| The installer question "Join the Selfhostr network? [Y/n]" (full mode), after the consent screen | The person installing | Yes. `--yes` counts as the agreement, `--no-network` declines |
+| The participant install (`--participant`) | The person installing | The mode is the join |
+| Settings, Network: join, with the password typed again and five consents ticked | An administrator | Not joined |
 
-If step 1 is off, the Network pages explain the situation and nothing else happens. The node worker does not contact the hub at all. If step 2 is not done, the worker stays idle.
+A yes in the installer writes a consent record (`NETWORK_CONSENT`) and a random pseudonym to `.env`. Ingest then joins by itself, once. In a full install the traffic only ever leaves through the VPN, so the join waits until a VPN is configured. Even after the join, nothing is submitted until your own public address is known (it is learned from traffic, or you set it in Settings), so your own address cannot leak into a batch.
+
+If you set `NETWORK_ENABLED=false`, the whole feature is off: the Network pages explain it and the worker never contacts the hub.
 
 Other rules:
 
-- Leaving takes one click and the password. See [How to leave](#how-to-leave).
+- Leaving takes one click and the password. See [How to leave](#how-to-leave). A leave is final for restarts and updates: a stored record never joins you again by itself.
+- Joining again after you leave is a new decision. Do it in the dashboard (Settings, Network), with the password and the five consents.
+- An upgrade never joins an install that has no consent record.
 - Viewers can read the Network pages but cannot join or leave. Only an administrator can.
-- Joining again after you leave is a new decision, made in the same way.
 
 ## What is shared and what never is
 

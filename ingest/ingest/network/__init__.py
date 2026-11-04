@@ -1,4 +1,7 @@
-"""The opt-in Selfhostr network, node side (design M29). Off unless NETWORK_ENABLED is true."""
+"""The Selfhostr network, node side (design M29, M33).
+
+Nothing is sent until the node has joined; NETWORK_ENABLED=false switches it all off.
+"""
 
 from .builder import BatchBuilder
 from .config import NetworkSettings

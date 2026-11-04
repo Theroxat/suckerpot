@@ -1,5 +1,6 @@
-"""The network worker (design M29 section 9.3). Off unless ``NETWORK_ENABLED=true`` AND an admin
-opted in (``network_membership.desired``). Nothing is sent otherwise (N1).
+"""The network worker (design M29 section 9.3). Off when ``NETWORK_ENABLED=false`` (default on),
+and idle until the node has joined (``network_membership.desired``: the dashboard, or a valid
+``NETWORK_CONSENT`` from the installer). Nothing is sent otherwise (N1).
 
 One cycle:
 
@@ -156,8 +157,7 @@ class NetworkWorker(FeatureWorker):
             self.state, self.reason = "off", "no_hub" if store is not None else None
             return
         m = await store.membership()
-        if self.network.participant:
-            m = await self._auto_join(m)
+        m = await self._auto_join(m)  # participant and full mode alike (M33)
         self.state = m.state
         pending = m.desired == "leave" or (m.desired == "member" and m.state != "member")
         self.interval_s = FAST_INTERVAL_S if pending else float(self.network.interval_s)
@@ -197,7 +197,9 @@ class NetworkWorker(FeatureWorker):
             log.warning("self address learning failed (%s)", type(exc).__name__)
 
     async def _auto_join(self, m: Membership) -> Membership:
-        """Request membership from the installer's consent record (N1'): once, never re-joins."""
+        """Request membership from the installer's consent record (N1', M33): once, never re-joins.
+
+        Full mode does this too; its traffic still only leaves through the VPN gate."""
         store = self.store
         assert store is not None  # noqa: S101
         self._consent_reason = None

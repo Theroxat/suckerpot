@@ -10,6 +10,7 @@ import pytest
 from suckerpot_egress import EgressClosed
 from suckerpot_netproto import ProtoError, sign
 
+from ingest.features import FeatureSettings
 from ingest.network import identity as ident
 from ingest.network import scheduler
 from ingest.network.client import HubClient, HubError, HubUnavailable
@@ -18,11 +19,17 @@ from ingest.network.config import NetworkSettings
 from .helpers import HUB_KEY, HUB_URL, NOW, FakeGate, FakeHub, hub_client, settings
 
 
-def test_defaults_are_off_and_unconfigured() -> None:
+def test_defaults_are_unlocked_but_nothing_joins() -> None:
     s = NetworkSettings.from_env({})
-    assert not s.enabled and s.interval_s == 900 and s.max_sources == 5000
+    assert s.enabled and s.interval_s == 900 and s.max_sources == 5000
     # The committed release defaults name the project hub; joining still needs an explicit opt-in.
     assert s.hub_configured and s.hub_url == "https://hub.selfhostr.io"
+
+
+def test_an_explicit_false_switches_the_network_off() -> None:
+    assert not NetworkSettings.from_env({"NETWORK_ENABLED": "false"}).enabled
+    assert not FeatureSettings.from_env({"NETWORK_ENABLED": "false"}).network_enabled
+    assert FeatureSettings.from_env({}).network_enabled
 
 
 def test_settings_validation() -> None:

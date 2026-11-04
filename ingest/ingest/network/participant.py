@@ -1,7 +1,8 @@
 """Participant mode: the consent record and the automatic join (design M32 D4, N1').
 
-In participant mode there is no dashboard, so the installer writes ``NETWORK_CONSENT`` to
-``.env`` after showing the consent screen. Ingest joins by itself from a valid record, once: a
+The installer writes ``NETWORK_CONSENT`` to ``.env`` after showing the consent screen (always
+in participant mode, where there is no dashboard; in full mode when the owner accepts the
+"Join the network?" question, M33). Ingest joins by itself from a valid record, once: a
 leave stores ``network_membership.left_day`` and a restart never re-joins. A record of a version
 this release does not know (``consent_outdated``) never joins; the participant re-runs
 ``participant.sh join`` to agree again.

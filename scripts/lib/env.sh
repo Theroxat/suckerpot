@@ -31,7 +31,7 @@ SETTABLE_VARS=(
   API_ALLOWED_HOSTS API_ALLOWED_ORIGINS INDICATORS_IGNORE 'SITE_*' 'SENSOR_*'
   NETWORK_ENABLED NETWORK_HUB_URL NETWORK_HUB_KEY NETWORK_VERIFY_REVEALS NETWORK_VERIFIER
 )
-# NETWORK_CONSENT is deliberately absent: only scripts/participant.sh join writes it.
+# NETWORK_CONSENT is deliberately absent: only the installer and scripts/participant.sh join write it.
 
 # Prints "ENV_VAR:default_host_port:protocols" lines for a sensor (the single port table).
 sensor_ports() {
@@ -306,10 +306,13 @@ env_del_line() {
 # Version of the consent text, and what the participant agrees to share.
 CONSENT_VERSION=v2
 CONSENT_ITEMS=sources,payloads,c2,files,rechecks,verify_reveals
+# Full mode (M33) agrees to the five required items; the early-reveal item stays a separate opt-in.
+CONSENT_ITEMS_FULL=sources,payloads,c2,files,rechecks
 
 # Prints the NETWORK_CONSENT record for today (UTC): version, consent list, day.
+# $1 = the item list (default: the participant list).
 consent_record() {
-  printf '%s:%s:%s' "$CONSENT_VERSION" "$CONSENT_ITEMS" "$(date -u +%Y-%m-%d)"
+  printf '%s:%s:%s' "$CONSENT_VERSION" "${1:-$CONSENT_ITEMS}" "$(date -u +%Y-%m-%d)"
 }
 
 # Prints the consent screen. $1 = pseudonym (empty = none), $2 = 1 when a VPN is used.
@@ -342,6 +345,35 @@ consent_screen() {
   echo
   if [ -n "$pseudonym" ]; then
     echo "Pseudonym: $pseudonym   (change: --pseudonym NAME, none: --no-pseudonym)"
+  else
+    echo "Pseudonym: none (the network shows an anonymous node number)"
+  fi
+  echo
+}
+
+# Prints the consent screen of a full install (M33). $1 = pseudonym (empty = none).
+# The question "Join the Selfhostr network?" follows it; the default is yes.
+consent_screen_full() {
+  local pseudonym=$1
+  echo "The Selfhostr network"
+  echo
+  echo "You can share what your sensors see with the Selfhostr network, and get its shared"
+  echo "blocklists back. What would be shared:"
+  echo "  - addresses that attacked your sensors, with the services they used, what they did and"
+  echo "    rounded counts, once a day and a few hours late;"
+  echo "  - download links attackers tried, as hashes; the clear link goes to the hub only when two or"
+  echo "    more sensors saw the same link, so a verifier can check it;"
+  echo "  - malware hashes and command-and-control addresses (only with the collector);"
+  echo "  - takedown checks for addresses the network reported."
+  echo "Never shared: passwords, commands, your ports, your own address or names in any payload."
+  echo
+  echo "All of it leaves through your VPN, never from this machine's own address. Until a VPN is"
+  echo "configured (Settings > VPN) and your own public address is confirmed, nothing is sent."
+  echo "Leave at any time in the dashboard (Network page). A leave is final: an update or a restart"
+  echo "never joins you again."
+  echo
+  if [ -n "$pseudonym" ]; then
+    echo "Pseudonym: $pseudonym   (you can change it in the dashboard)"
   else
     echo "Pseudonym: none (the network shows an anonymous node number)"
   fi

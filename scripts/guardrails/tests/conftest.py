@@ -32,6 +32,8 @@ COPIED = [
     "scripts/verify-images.sh",
     "scripts/compose-fresh.sh",
     "scripts/lib/env.sh",
+    "scripts/lib/pseudonym.sh",
+    "netproto/suckerpot_netproto/data/pseudonym_words.txt",
     ".env.example",
     "docker-compose.yml",
 ]

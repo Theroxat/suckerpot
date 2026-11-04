@@ -168,7 +168,7 @@ def test_status_is_open_to_a_viewer_and_never_404(rig: Any) -> None:
 def test_status_reports_env_off_and_waiting_reasons(
     rig: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("NETWORK_ENABLED")
+    monkeypatch.setenv("NETWORK_ENABLED", "false")
     monkeypatch.setenv("NETWORK_HUB_URL", "")
     rig.db.m.update(last_error_code="waiting_self_address")
     body = rig.client().get("/api/v1/network/status").json()
@@ -315,6 +315,24 @@ def test_leaving_needs_the_password_and_marks_the_wish(rig: Any) -> None:
     assert rig.db.audit[-1].action == "network.leave"
     again = c.request("DELETE", URL, json={"password": PASSWORD})
     assert again.status_code == 200  # already leaving: idempotent
+
+
+def test_the_network_is_unlocked_by_default(rig: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """M33: no NETWORK_ENABLED in the environment means on; nothing joins by itself."""
+    monkeypatch.delenv("NETWORK_ENABLED")
+    body = rig.client().get("/api/v1/network/status").json()
+    assert body["enabled_env"] is True and body["desired"] == "off"
+
+
+def test_a_node_that_left_can_join_again(rig: Any) -> None:
+    """After a completed leave the row is desired=off, state=off (ingest wipes it): join works."""
+    rig.db.m.update(desired="member", state="member")
+    c = rig.client()
+    assert c.request("DELETE", URL, json={"password": PASSWORD}).status_code == 200
+    rig.db.m.update(desired="off", state="off", pseudonym=None)  # what ingest's wipe leaves
+    r = c.put(URL, json=join_body())
+    assert r.status_code == 200 and rig.db.m["desired"] == "member"
+    assert [a.action for a in rig.db.audit][-2:] == ["network.leave", "network.join"]
 
 
 def test_leaving_when_not_a_member_is_a_conflict(rig: Any) -> None:
