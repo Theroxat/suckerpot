@@ -521,7 +521,7 @@ docker compose logs --tail=50 ingest
 
 Use `just update`. It takes a database dump first, checks the image signatures and records how to go back. `just rollback` puts the previous state back. See [Updates and rollback](updates.md).
 
-Migrations run on start. Read the [changelog](https://github.com/Theroxat/suckerpot/blob/main/CHANGELOG.md) first for anything that needs a change in `.env`.
+Migrations run on start. Read the [changelog](https://github.com/selfhostr/suckerpot/blob/main/CHANGELOG.md) first for anything that needs a change in `.env`.
 
 ## Troubleshooting
 

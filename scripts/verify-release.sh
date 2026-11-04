@@ -54,7 +54,7 @@ tag=$1
 tag_major=${tag#v}
 tag_major=${tag_major%%.*}
 
-prefix=$(get SUCKERPOT_IMAGE_PREFIX ghcr.io/theroxat/suckerpot)
+prefix=$(get SUCKERPOT_IMAGE_PREFIX ghcr.io/selfhostr/suckerpot)
 [[ $prefix =~ ^ghcr\.io/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$ ]] \
   || die "SUCKERPOT_IMAGE_PREFIX must look like ghcr.io/<owner>/<name>" 2
 repo=${prefix#ghcr.io/}

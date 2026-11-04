@@ -1,13 +1,13 @@
 # Contributing
 
-Issues and pull requests are welcome on [GitHub](https://github.com/Theroxat/suckerpot). For the architecture and the project rules, read [CLAUDE.md](CLAUDE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/development.md](docs/development.md).
+Issues and pull requests are welcome on [GitHub](https://github.com/selfhostr/suckerpot). For the architecture and the project rules, read [CLAUDE.md](CLAUDE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/development.md](docs/development.md).
 
 ## Setup
 
 Everything runs in containers. The host only needs Docker with the compose plugin and [`just`](https://github.com/casey/just).
 
 ```bash
-git clone https://github.com/Theroxat/suckerpot.git && cd suckerpot
+git clone https://github.com/selfhostr/suckerpot.git && cd suckerpot
 cp .env.example .env          # replace every change-me (openssl rand -base64 32)
 scripts/install-hooks.sh      # gitleaks pre-commit hook
 just up                       # build and start the stack

@@ -377,7 +377,7 @@ def test_a_valid_manifest_verifies_and_prints_the_age(sandbox: Sandbox) -> None:
     # against the workflow identity of that exact tag.
     assert "--proto =https" in calls
     assert (
-        "https://github.com/theroxat/suckerpot/releases/download/v0.9.0/release-manifest.json"
+        "https://github.com/selfhostr/suckerpot/releases/download/v0.9.0/release-manifest.json"
         in calls
     )
     assert "verify-blob" in calls and "--bundle /m/release-manifest.json.sigstore.json" in calls
