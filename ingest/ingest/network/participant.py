@@ -3,9 +3,10 @@
 The installer writes ``NETWORK_CONSENT`` to ``.env`` after showing the consent screen (always
 in participant mode, where there is no dashboard; in full mode when the owner accepts the
 "Join the network?" question, M33). Ingest joins by itself from a valid record, once: a
-leave stores ``network_membership.left_day`` and a restart never re-joins. A record of a version
-this release does not know (``consent_outdated``) never joins; the participant re-runs
-``participant.sh join`` to agree again.
+leave stores ``network_membership.left_day`` and a restart never re-joins. A record older than
+``MAX_AGE_DAYS`` never joins (``consent_stale``), so a restored database cannot undo a leave. A
+record of a version this release does not know (``consent_outdated``) never joins; the participant
+re-runs ``participant.sh join`` to agree again.
 
 Format: ``v2:sources,payloads,c2,files,rechecks[,verify_reveals]:2026-11-03``.
 """
@@ -24,6 +25,11 @@ MISSING = "missing"
 VALID = "valid"
 OUTDATED = "consent_outdated"
 INVALID = "consent_invalid"
+STALE = "consent_stale"
+
+# The record is consumed at the first start: it only starts a join while it is this fresh, so a
+# leave cannot be undone later by a restored database that finds an old record in ``.env``.
+MAX_AGE_DAYS = 7
 
 _VERSION = re.compile(r"^v\d{1,3}$")
 
@@ -36,6 +42,12 @@ class Consent:
 
     def has(self, item: str) -> bool:
         return item in self.items
+
+
+def is_fresh(consent: Consent, today: date) -> bool:
+    """True when the record is at most ``MAX_AGE_DAYS`` old (one day of clock skew allowed)."""
+    age = (today - consent.day).days
+    return -1 <= age <= MAX_AGE_DAYS
 
 
 def parse(raw: str) -> tuple[str, Consent | None]:

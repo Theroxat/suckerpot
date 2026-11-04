@@ -342,7 +342,7 @@ jobs:
           password=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)
           echo "::add-mask::$password"
           echo "SMOKE_PASSWORD=$password" >> "$GITHUB_ENV"
-          printf '%s\n' "$password" | scripts/install.sh --yes --images --version "$VERSION" \
+          printf '%s\n' "$password" | scripts/install.sh --yes --no-network --images --version "$VERSION" \
             --project "$PROJECT" --prefix "$PROJECT" --sensors ssh,web --admin-password-stdin
       - name: Check the health endpoint and the running version
         env:

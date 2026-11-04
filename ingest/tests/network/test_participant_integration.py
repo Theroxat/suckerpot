@@ -86,11 +86,15 @@ async def test_auto_confirm_applies_to_learned_addresses_only(
     assert await confirmed(engine, "address") == [False]
     plain = await TermsCache(factory, {}).get()
     assert plain is not None and not plain.has_self_address
-    auto = await TermsCache(factory, {"SELF_TERMS_AUTO_CONFIRM": "true"}).get()
+    auto = await TermsCache(
+        factory, {"SELF_TERMS_AUTO_CONFIRM": "true", "SUCKERPOT_STACK_MODE": "participant"}
+    ).get()
     assert auto is not None and not auto.has_self_address  # one day of planting is not enough
     for d in (1, 2):
         await add_http(engine, 3, "8.8.4.4", days_ago=d)
-    seen = await TermsCache(factory, {"SELF_TERMS_AUTO_CONFIRM": "true"}).get()
+    seen = await TermsCache(
+        factory, {"SELF_TERMS_AUTO_CONFIRM": "true", "SUCKERPOT_STACK_MODE": "participant"}
+    ).get()
     assert seen is not None and seen.has_self_address  # named on three days: it acts
 
 

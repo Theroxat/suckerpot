@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Upgrade note
+
+- The network feature is now on by default (`NETWORK_ENABLED=true`). When you update an install that was made before this change and its `.env` has no active `NETWORK_ENABLED` line, the update adds `NETWORK_ENABLED=false` (and a `NETWORK_DEFAULT_PINNED=1` marker), so nothing changes for you. To use the network, run `just set NETWORK_ENABLED=true` and join in the dashboard.
+
+### Changed
+
+- The installer consent record is spent after 7 days: ingest joins from it only within 7 days of its date, so restoring an old database cannot undo a leave. `just set NETWORK_CONSENT=` (empty value only) clears the record. `SELF_TERMS_AUTO_CONFIRM` only applies in participant mode.
+- The installer's network question treats end of input as an error, not as a yes. `--yes` also joins the network unless `--no-network` is given.
+
 ## [0.6.0] - 2026-11-03
 
 ### Added (M32)

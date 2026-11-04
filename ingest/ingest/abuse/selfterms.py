@@ -243,8 +243,10 @@ async def self_address_state(factory: async_sessionmaker[AsyncSession]) -> dict[
 
 
 def auto_confirm_enabled(env: Mapping[str, str] | None = None) -> bool:
-    """``SELF_TERMS_AUTO_CONFIRM`` (participant mode, M32 section 8.4)."""
+    """``SELF_TERMS_AUTO_CONFIRM``, honoured in participant mode only (M32 section 8.4)."""
     e = os.environ if env is None else env
+    if e.get("SUCKERPOT_STACK_MODE", "").strip().lower() != "participant":
+        return False
     return e.get("SELF_TERMS_AUTO_CONFIRM", "false").strip().lower() in ("1", "true", "yes", "on")
 
 

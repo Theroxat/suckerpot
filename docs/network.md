@@ -28,24 +28,26 @@ The network feature is unlocked by default (`NETWORK_ENABLED=true`), but unlocki
 | --- | --- | --- |
 | The installer question "Join the Selfhostr network? [Y/n]" (full mode), after the consent screen | The person installing | Yes. `--yes` counts as the agreement, `--no-network` declines |
 | The participant install (`--participant`) | The person installing | The mode is the join |
-| Settings, Network: join, with the password typed again and five consents ticked | An administrator | Not joined |
+| Settings, Network: join, after being shown the five items and confirming with the password | An administrator | Not joined |
 
-A yes in the installer writes a consent record (`NETWORK_CONSENT`) and a random pseudonym to `.env`. Ingest then joins by itself, once. In a full install the traffic only ever leaves through the VPN, so the join waits until a VPN is configured. Even after the join, nothing is submitted until your own public address is known (it is learned from traffic, or you set it in Settings), so your own address cannot leak into a batch.
+A yes in the installer writes a consent record (`NETWORK_CONSENT`) and a random pseudonym to `.env`. Ingest then joins by itself, once. In a full install the traffic only ever leaves through the VPN, so the join waits until a VPN is configured. Enrolment and every network read go through the VPN once a VPN exists, and with none nothing leaves at all. Nothing about your sensors is submitted until your own public address is confirmed (it is learned from traffic, or you set it in Settings), so your own address cannot leak into a batch.
+
+The record is consumed at the first start: ingest uses it only within 7 days of the day written in it. Later it is ignored, so restoring an old database cannot undo a leave. To re-agree, use the dashboard or, in a participant install, `./scripts/participant.sh join` (it writes a fresh record).
 
 If you set `NETWORK_ENABLED=false`, the whole feature is off: the Network pages explain it and the worker never contacts the hub.
 
 Other rules:
 
 - Leaving takes one click and the password. See [How to leave](#how-to-leave). A leave is final for restarts and updates: a stored record never joins you again by itself.
-- Joining again after you leave is a new decision. Do it in the dashboard (Settings, Network), with the password and the five consents.
+- Joining again after you leave is a new decision. Do it in the dashboard (Settings, Network), after being shown the five items and confirming with the password.
 - An upgrade never joins an install that has no consent record.
 - Viewers can read the Network pages but cannot join or leave. Only an administrator can.
 
 ## What is shared and what never is
 
-When you join, you tick five boxes. Each box is one kind of data. The API refuses a join unless all five are ticked.
+When you join, you are shown five items. Each item is one kind of data. The API refuses a join unless you confirm all five.
 
-| Box | What is sent | Form |
+| Item | What is sent | Form |
 | --- | --- | --- |
 | Attacker addresses | The addresses that attacked your sensors | Clear IP address, with the kind of service (for example `ssh`, `web`), a coarse activity (`connect`, `scan`, `login`, `login_success`, `command`, `download`, `exploit`, `http`), behaviour tags and rounded counts |
 | Download links | Links that attackers tried to fetch malware from | Blinded: a SHA-256 hash of the normalised link. The clear link is revealed only after the network confirms the hash and a member holds the clear link |
@@ -198,7 +200,7 @@ Then:
 1. On the host, run `just set NETWORK_ENABLED=true`. It writes `.env` and restarts `ingest` and `api` so they read it. Only if you run your own hub, set its address and key the same way: `just set NETWORK_HUB_URL=https://hub.example.org NETWORK_HUB_KEY=<key>`. A full install also needs a working VPN, because every call to the hub goes through it.
 2. Open **Settings, Network** and read the page. It lists what is shared and what is never shared.
 3. Press **Join the network**. The dialog asks for:
-   - the five consents, one box each;
+   - the five items, shown for you to confirm;
    - an optional pseudonym. Do not use a name that you use anywhere else;
    - an optional country. It is never detected for you. It is shown only if you tick "Show my country" and at least three members share it;
    - your dashboard password again.
@@ -226,6 +228,8 @@ Open **Settings, Network** and press **Leave the network**. The dialog says what
 3. The Network pages show you as not a member.
 
 If the hub cannot be reached, the worker retries each cycle for up to seven days. After that it deletes everything locally and records `leave_unconfirmed`. The hub removes a node that stays silent for 30 days, so nothing stays active.
+
+A leave is final. To remove the installer's consent record from `.env` as well, run `just set NETWORK_CONSENT=` (an empty value is the only value `just set` accepts for this key).
 
 Two things are not deleted, and you should know why:
 

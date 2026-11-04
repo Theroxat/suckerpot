@@ -7,7 +7,7 @@
 #   scripts/env-set.sh set KEY=VALUE [...]     change allow-listed settings (see lib/env.sh)
 #
 # Refuses secret-looking keys (*_PASSWORD, *_SECRET, *_HASH, *_KEY except the public
-# NETWORK_HUB_KEY, VPN_WG_*, and NETWORK_CONSENT, which only the installer and participant.sh join write) and keys outside
+# NETWORK_HUB_KEY, VPN_WG_*, and NETWORK_CONSENT, which only the installer and participant.sh join write; it can only be cleared with an empty value) and keys outside
 # the allow-list. Prints variable names only, never values of anything secret. The change is
 # reverted when scripts/check-ports.sh refuses the resulting port layout.
 set -euo pipefail
@@ -102,7 +102,13 @@ case $cmd in
       [[ $pair == *=* ]] || die "'$pair' is not KEY=VALUE"
       key=${pair%%=*}
       value=${pair#*=}
-      settable_key "$key" || die "$key cannot be changed with 'just set' (secret-looking or not allow-listed)"
+      # NETWORK_CONSENT may only be cleared (empty value); a non-empty record is written by the
+      # installer and `participant.sh join` after the consent screen, never here.
+      if [ "$key" = NETWORK_CONSENT ]; then
+        [ -z "$value" ] || die "NETWORK_CONSENT can only be cleared (NETWORK_CONSENT=), never set to a value"
+      else
+        settable_key "$key" || die "$key cannot be changed with 'just set' (secret-looking or not allow-listed)"
+      fi
       settable_value "$value" || die "the value for $key has characters that are not allowed"
       case $key in
         SENSOR_*) [[ $value =~ ^[01]$ ]] || die "$key must be 0 or 1" ;;

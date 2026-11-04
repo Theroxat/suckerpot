@@ -63,10 +63,11 @@ If you clone without a tag, or you want to build from source, run:
 
 The installer does not use `curl | bash`. Read the script first, then run it from the checkout.
 
-To install without questions, use `--yes`. It takes the default for every question. The admin password is then generated and printed once, or you can pass your own on standard input:
+To install without questions, use `--yes`. It takes the default for every question. **That includes joining the Selfhostr network**: `--yes` counts as your agreement to the network screen, unless you also pass `--no-network`. The admin password is then generated and printed once, or you can pass your own on standard input:
 
 ```bash
 ./scripts/install.sh --yes --sensors recommended
+# add --no-network to stay out of the network
 ```
 
 ```bash
