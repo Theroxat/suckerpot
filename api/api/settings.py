@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db.models import EventRow
 
 from api.deps import DbSession
-from api.sensors import SENSORS
+from api.sensors import SENSORS, latest_event_per_sensor
 
 router = APIRouter()
 
@@ -94,18 +94,20 @@ async def _status(db: AsyncSession, key: str) -> dict[str, Any] | None:
 @router.get("/settings/system", response_model=SystemSettings)
 async def system_settings(db: DbSession) -> SystemSettings:
     now = datetime.now(UTC)
-    rows = (
-        await db.execute(
-            select(
-                EventRow.sensor,
-                func.max(EventRow.ts),
-                func.count().filter(EventRow.ts >= now - timedelta(hours=1)),
+    last_seen = await latest_event_per_sensor(db, now - QUIET_WITHIN - timedelta(days=6))
+    # Only the last hour is counted, a small bounded group-by.
+    counts = dict(
+        (
+            await db.execute(
+                select(EventRow.sensor, func.count())
+                .where(EventRow.ts >= now - timedelta(hours=1))
+                .group_by(EventRow.sensor)
             )
-            .where(EventRow.ts >= now - QUIET_WITHIN - timedelta(days=6))
-            .group_by(EventRow.sensor)
         )
-    ).all()
-    seen = {name: (last, n) for name, last, n in rows}
+        .tuples()
+        .all()
+    )
+    seen = {name: (last, counts.get(name, 0)) for name, last in last_seen.items()}
     sensors = [
         SensorStatus(
             sensor=s,
