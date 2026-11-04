@@ -3,7 +3,6 @@
 import time
 
 import pytest
-
 from conftest import Sandbox
 from test_auto_update import (
     ENV,
@@ -139,7 +138,7 @@ def test_a_bundle_answering_503_is_a_transient_problem(sandbox: Sandbox) -> None
         sandbox.shim / "curl",
         '#!/bin/sh\nfor a; do last=$a; done\ncase "$*" in\n'
         '  *sigstore.json*) : > "$4"; printf 503 ;;\n'
-        "  *) cp \"$SHIM_DIR/assets/release-manifest.json\" \"$4\"; printf 200 ;;\n"
+        '  *) cp "$SHIM_DIR/assets/release-manifest.json" "$4"; printf 200 ;;\n'
         "esac\n",
     )
     proc = verify(sandbox, "--auto", "v0.9.0")
