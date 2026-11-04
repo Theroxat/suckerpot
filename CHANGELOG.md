@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-04
+
 ### Added
 
 - `./scripts/participant.sh ports-check [--wait SECONDS] [--since ISO | --since-install]` tells whether the internet reaches your sensors, and the participant installer runs it at the end and offers to re-check after you open the ports on your router. It makes no outside connection: it counts sessions from public addresses that your sensors already recorded, prints no address, reads the database in a read-only transaction, and exits 0 (reached) or 3 (nothing yet). `status.sh` points to it.
@@ -18,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- Host firewall for participant mode: `scripts/host/firewall-participant.nft` loads with no placeholder other than the admin SSH port, rendered by `scripts/host/render-firewall.sh` and installed with `scripts/host/install-firewall.sh` (systemd unit, survives a reboot, `--uninstall` to undo). In its own nft table, it drops everything new, invalid or untracked from the sensors' uplink to the host and to the internet or the LAN, and limits `hubproxy`'s uplink to TCP 443 on public addresses plus UDP DNS to the resolvers Docker uses. The full-mode template's DNS rule is narrowed the same way. The renderer refuses a host bridge that is not Docker's but matches the rule names, to avoid a lockout.
+- Every internal network has an isolated gateway (`gateway_mode_ipv4: isolated`), a fixed bridge name and IPv6 off, so a compromised container no longer reaches services on the host through its bridge. This needs Docker Engine 28 or newer, and the first update recreates the stack once (see `docs/updates.md`).
+- A guardrail checks the hardening of every service of every supported stack: read-only root, all capabilities dropped, no-new-privileges, a non-root `uid:gid`, memory, CPU and process limits, a healthcheck, `noexec,nosuid,nodev` tmpfs, no host namespaces, devices, Docker socket or unlisted bind mounts, isolated internal networks, and third-party images pinned by digest.
+- The TimescaleDB image is pinned by digest.
 - The installers offer to install the host firewall at the end (participant mode; asks before using sudo, never blocks, prints the two commands otherwise; `participant.sh vpn` reminds you to re-run it), and `./scripts/participant.sh firewall [install|uninstall|status]` does it later.
 - Updates and rollbacks recreate the stack once (`down --remove-orphans`, never `-v`) when compose says an existing network cannot be reused (matched on its wording, not on any mention of a network); a foreign container attached to one of our networks stops the run with instructions instead of being disconnected.
 - CI pins the TimescaleDB test image by digest, like `docker-compose.yml`.
@@ -227,7 +233,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Isolation: four networks with an internal backend, one Redis ACL user per sensor limited to `XADD` on its own stream, least-privilege database roles, no outbound route for the API, non-root read-only containers with all capabilities dropped.
 - The first review of the M1 stack found unbounded stream growth, egress, poison-message and default-credential issues; all were fixed and the second pass passed.
 
-[Unreleased]: https://github.com/selfhostr/suckerpot/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/selfhostr/suckerpot/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/selfhostr/suckerpot/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/selfhostr/suckerpot/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/selfhostr/suckerpot/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/selfhostr/suckerpot/compare/v0.6.0...v0.7.0

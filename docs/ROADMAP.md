@@ -419,3 +419,14 @@ Owner decision (2026-11-04): SuckerPot is the product and the network; Selfhostr
 - [x] Hub at `suckerpot-hub.selfhostr.io`, feeds at `suckerpot-feeds.selfhostr.io/v1`, same keys.
 - [x] Site, docs and mock-data demo at `suckerpot.selfhostr.io` (maintained outside the repo); Read the Docs, GitHub Pages and `site/` removed.
 - [x] Release (v0.8.0).
+
+## Participant hardening (v0.9.0)
+
+Owner request (2026-11-04): a second person joins as a participant; the three-command install must be enough, and a compromised container must not be able to do anything outside its design.
+
+- [x] Port reachability check at the end of the participant install and `participant.sh ports-check`, from local evidence only (no outside connection).
+- [x] Host firewall for participant mode: rendered with no placeholder, offered by the installer (sudo, never blocking), `participant.sh firewall`.
+- [x] Isolated gateways, fixed bridge names and IPv6 off on every internal network; one-time stack recreate on update; Docker Engine 28+ warning.
+- [x] Generic hardening guardrail over every service; third-party images by digest.
+- [x] Automatic updates: 48 h age floor no release can lower, only real verdicts mark a release bad, next candidate tried.
+- [x] Two security reviews (first FAIL, all findings fixed; second PASS), release (v0.9.0).
