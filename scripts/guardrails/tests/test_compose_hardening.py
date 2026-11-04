@@ -7,7 +7,13 @@ from typing import Any
 
 import pytest
 
-from suckerpot_guardrails import check_bridge_names, check_compose, check_hardening, load_compose
+from suckerpot_guardrails import (
+    check_bridge_names,
+    check_compose,
+    check_hardening,
+    check_top_level,
+    load_compose,
+)
 from suckerpot_guardrails.compose import BRIDGE_NAMES, MAX_BRIDGE_NAME
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -87,6 +93,27 @@ SERVICE_MUTATIONS: list[tuple[str, str, Callable[[dict[str, Any]], None], str]] 
         lambda s: s.update(user="redis"),
         "must run as a numeric non-root user",
     ),
+    ("uid only", "ingest", lambda s: s.update(user="10001"), "must run as a numeric non-root"),
+    ("uid and name", "ingest", lambda s: s.update(user="10001:app"), "must run as a numeric"),
+    ("leading zero", "ingest", lambda s: s.update(user="010001:10001"), "must run as a numeric"),
+    ("three parts", "ingest", lambda s: s.update(user="1:2:3"), "must run as a numeric"),
+    ("empty gid", "ingest", lambda s: s.update(user="10001:"), "must run as a numeric"),
+    ("group_add", "ingest", lambda s: s.update(group_add=["docker"]), "must not set group_add"),
+    (
+        "cgroup_parent",
+        "ingest",
+        lambda s: s.update(cgroup_parent="/system.slice"),
+        "must not set cgroup_parent",
+    ),
+    ("runtime", "sensor-ssh", lambda s: s.update(runtime="runc"), "must not set runtime"),
+    ("secrets", "api", lambda s: s.update(secrets=["db_password"]), "must not use secrets"),
+    (
+        "secrets, long form",
+        "api",
+        lambda s: s.update(secrets=[{"source": "x", "target": "/run/x"}]),
+        "must not use secrets 'x'",
+    ),
+    ("configs", "ingest", lambda s: s.update(configs=["rules"]), "must not use configs 'rules'"),
     ("mem_limit", "api", lambda s: s.pop("mem_limit"), "must set mem_limit"),
     ("memswap_limit", "api", lambda s: s.pop("memswap_limit"), "must set memswap_limit"),
     (
@@ -379,3 +406,78 @@ def test_participant_e2e_overlay_has_no_fixed_name_on_any_network() -> None:
             assert cfg["driver_opts"]["com.docker.network.bridge.gateway_mode_ipv4"] == "isolated"
     # Same networks as the base file: nothing added, nothing lost.
     assert set(merged["networks"]) == set(load_compose([BASE])["networks"])
+
+
+# --- Top-level volumes, secrets and configs ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "files",
+    [[BASE], [BASE, IT], [BASE, ROOT / "docker-compose.ci.yml"], [BASE, PARTICIPANT_IT]],
+    ids=["base", "it", "ci", "participant-it"],
+)
+def test_every_volume_is_external_or_plain(files: list[Path]) -> None:
+    assert check_top_level(load_compose(files)) == []
+
+
+@pytest.mark.parametrize(
+    ("volume", "needle"),
+    [
+        (
+            {"driver_opts": {"type": "none", "o": "bind", "device": "/etc"}},
+            "volume 'x' must not set driver_opts",
+        ),
+        ({"driver": "rclone"}, "volume 'x' must use the default local driver"),
+        (
+            {"driver": "local", "driver_opts": {"type": "nfs", "device": ":/export"}},
+            "volume 'x' must not set driver_opts",
+        ),
+    ],
+    ids=["local bind", "other driver", "nfs"],
+)
+def test_host_path_volume_is_refused(
+    good: dict[str, Any], volume: dict[str, Any], needle: str
+) -> None:
+    good["volumes"]["x"] = volume
+    assert _has(check_top_level(good), needle)
+    assert _has(check_compose(good), needle)
+
+
+def test_plain_local_volume_is_accepted(good: dict[str, Any]) -> None:
+    good["volumes"]["x"] = {"driver": "local", "name": "test-x"}
+    assert check_top_level(good) == []
+
+
+def test_external_volume_options_are_not_ours(good: dict[str, Any]) -> None:
+    good["volumes"]["x"] = {"external": True, "name": "x"}
+    assert check_top_level(good) == []
+
+
+@pytest.mark.parametrize("key", ["secrets", "configs"])
+def test_top_level_file_secret_or_config_is_refused(good: dict[str, Any], key: str) -> None:
+    good[key] = {"x": {"file": "/etc/shadow"}}
+    assert _has(check_compose(good), f"top-level {key} 'x' is not allowed")
+
+
+# --- The CLI checks the same renderings as the tests --------------------------------------------
+
+
+def test_cli_checks_the_lowmem_renderings(monkeypatch: pytest.MonkeyPatch) -> None:
+    from suckerpot_guardrails import __main__ as cli
+
+    seen: list[list[str]] = []
+    real = load_compose
+
+    def spy(paths: Any) -> Any:
+        paths = list(paths)
+        seen.append([p.name for p in paths])
+        return real(paths)
+
+    monkeypatch.setattr(cli, "load_compose", spy)
+    assert cli.main([]) == 0
+    for combo in (
+        ["docker-compose.yml", "docker-compose.lowmem.yml"],
+        ["docker-compose.yml", "docker-compose.participant.yml"],
+        ["docker-compose.yml", "docker-compose.lowmem.yml", "docker-compose.participant.yml"],
+    ):
+        assert combo in seen, combo

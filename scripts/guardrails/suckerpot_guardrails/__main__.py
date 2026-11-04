@@ -21,12 +21,17 @@ def main(argv: list[str]) -> int:
     problems = check_compose(load_compose(files))
     if not argv:
         problems += check_bridge_names(load_compose(base))
+        # Every supported real install, as the tests render them: full and participant, each with
+        # and without the low-memory overlay.
+        lowmem = root / "docker-compose.lowmem.yml"
         participant = root / "docker-compose.participant.yml"
-        if participant.exists():
+        for extra in ([lowmem], [participant], [lowmem, participant]):
+            if not all(f.exists() for f in extra):
+                continue
+            merged = load_compose([*base, *extra])
+            label = "+".join(f.name for f in extra)
             problems += [
-                f"[{participant.name}] {p}"
-                for p in check_compose(load_compose([*base, participant]))
-                + check_bridge_names(load_compose([*base, participant]))
+                f"[{label}] {p}" for p in check_compose(merged) + check_bridge_names(merged)
             ]
         for overlay in overlays:
             if overlay.exists():

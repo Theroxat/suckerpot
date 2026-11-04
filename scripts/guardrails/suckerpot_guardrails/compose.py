@@ -90,7 +90,20 @@ BIND_MOUNTS_ALLOWED: set[tuple[str, str, str]] = {
 }
 TMPFS_FLAGS = ("noexec", "nosuid", "nodev")
 HOST_NAMESPACE_KEYS = ("pid", "ipc", "uts", "cgroup", "userns_mode")
-FORBIDDEN_KEYS = ("privileged", "network_mode", "volumes_from", "device_cgroup_rules")
+FORBIDDEN_KEYS = (
+    "privileged",
+    "network_mode",
+    "volumes_from",
+    "device_cgroup_rules",
+    "group_add",
+    "cgroup_parent",
+    "runtime",
+)
+USER_SPEC = re.compile(r"^[1-9][0-9]*:[1-9][0-9]*$")
+# Compose secrets and configs are files from the host mounted into a container. None is used
+# today; an entry here would name (service, secret or config) with the reason it is needed.
+SECRETS_ALLOWED: dict[tuple[str, str], str] = {}
+CONFIGS_ALLOWED: dict[tuple[str, str], str] = {}
 UNSAFE_SECURITY_OPT = re.compile(
     r"unconfined|label[=:]disable|no-new-privileges[=:]false", re.IGNORECASE
 )
@@ -376,6 +389,7 @@ def check_compose(compose: Compose) -> list[str]:
     problems += _check_sensor_switches(services)
     problems += _check_images(services)
     problems += check_hardening(services)
+    problems += check_top_level(compose)
     if vpn is not None:
         health = [
             read_only for target, read_only in _mount_targets(vpn) if target == "/vpn/health.sh"
@@ -539,8 +553,24 @@ def check_bridge_names(compose: Compose) -> list[str]:
     return problems
 
 
-def _user_ids(value: Any) -> list[str]:
-    return [part for part in str(value).split(":") if part != ""]
+def check_top_level(compose: Compose) -> list[str]:
+    """Top-level volumes, secrets and configs cannot smuggle in a host path."""
+    problems: list[str] = []
+    for name, cfg in (compose.get("volumes") or {}).items():
+        cfg = cfg or {}
+        if cfg.get("external"):
+            continue
+        # The local driver with driver_opts (type=none, o=bind, device=/host/path) is a bind mount.
+        if cfg.get("driver_opts"):
+            problems.append(f"volume '{name}' must not set driver_opts")
+        if str(cfg.get("driver", "local")) != "local":
+            problems.append(f"volume '{name}' must use the default local driver")
+    for key, allowed in (("secrets", SECRETS_ALLOWED), ("configs", CONFIGS_ALLOWED)):
+        allowed_names = {ref for _, ref in allowed}
+        for name in compose.get(key) or {}:
+            if name not in allowed_names:
+                problems.append(f"top-level {key} '{name}' is not allowed")
+    return problems
 
 
 def _volume_entries(service: Mapping[str, Any]) -> list[tuple[str, str, str, bool]]:
@@ -604,10 +634,15 @@ def check_hardening(services: Mapping[str, Any]) -> list[str]:
                 bad(f"must not set security_opt {opt}")
 
         # Non-root, numeric uid and gid.
-        if name not in ROOT_ALLOWED:
-            ids = _user_ids(svc.get("user", ""))
-            if not ids or not all(i.isdigit() for i in ids) or any(int(i) == 0 for i in ids):
-                bad("must run as a numeric non-root user (user: <uid>:<gid>, neither 0)")
+        if name not in ROOT_ALLOWED and not USER_SPEC.match(str(svc.get("user", ""))):
+            bad("must run as a numeric non-root user (user: <uid>:<gid>, neither 0)")
+
+        # Compose secrets and configs (files from the host): allow-list only.
+        for key, allowed in (("secrets", SECRETS_ALLOWED), ("configs", CONFIGS_ALLOWED)):
+            for item in svc.get(key) or []:
+                ref = str(item.get("source", "")) if isinstance(item, Mapping) else str(item)
+                if (name, ref) not in allowed:
+                    bad(f"must not use {key} '{ref}'")
 
         # Resource limits: memory without swap, CPU and processes.
         for key in ("mem_limit", "memswap_limit", "cpus", "pids_limit"):
