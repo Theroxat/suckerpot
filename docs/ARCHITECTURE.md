@@ -98,15 +98,17 @@ Each network has a single job. The point of the layout is that a compromised sen
 | Network | Docker name | Outbound internet | Connected services | Why |
 | --- | --- | --- | --- | --- |
 | `ingress` | `sp-ingress` | None. Masquerading off, inter-container communication off. | Every sensor | Inbound traffic from attackers. Sensors cannot reach each other or the internet. |
-| `sensors-<name>`, one per sensor (`sensors-ssh`, `sensors-web`, `sensors-sip`, ...) | (project prefix) | None (`internal: true`) | `redis` and one sensor | The one link between a sensor and Redis. One network per sensor. |
-| `tools` | (project prefix) | None (`internal: true`) | `redis`, `demo` | The demo generator reaches Redis and nothing else. |
-| `backend` | (project prefix) | None (`internal: true`) | `redis`, `db`, `migrate`, `ingest`, `api` | Storage and processing stay off the internet. |
+| `sensors-<name>`, one per sensor (`sensors-ssh`, `sensors-web`, `sensors-sip`, ...) | (project prefix); bridge `sp-s-<name>` | None (`internal: true`) | `redis` and one sensor | The one link between a sensor and Redis. One network per sensor. |
+| `tools` | (project prefix); bridge `sp-tools` | None (`internal: true`) | `redis`, `demo` | The demo generator reaches Redis and nothing else. |
+| `backend` | (project prefix); bridge `sp-backend` | None (`internal: true`) | `redis`, `db`, `migrate`, `ingest`, `api` | Storage and processing stay off the internet. |
 | `vpn-uplink` | `sp-vpn` | Outbound, but only through the WireGuard tunnel. Inter-container communication off. | `vpn` only | The one route to the internet in the whole stack. See [Anonymous egress](#anonymous-egress-m21). |
 | `egress-proxy` | `sp-egress` | None (`internal: true`) | `vpn`, `ingest`, `collector` | The HTTP proxy and control server of `vpn`. Nothing else may join it. |
 | `samples` | `sp-samples` | None (`internal: true`) | `db`, `collector`, `analyzer` | Keeps the collector and analyzer away from Redis, ingest and the API. |
 | `dashboard` | `sp-dashboard` | None. Masquerading off. | `api` only | The published dashboard port. |
+| `hub-uplink` | `sp-hubgate` | Outbound (participant mode, profile `direct`). Inter-container communication off. | `hubproxy` only | The only route out of a participant without a VPN. The host firewall allows TCP 443 to public addresses and DNS to the host's resolvers only. |
+| `hub-proxy` | (project prefix); bridge `sp-hubproxy` | None (`internal: true`) | `hubproxy`, `ingest` (participant overlay) | The allow-list proxy, like `egress-proxy` for `vpn`. |
 
-`sp-ingress`, `sp-dashboard`, `sp-vpn`, `sp-egress` and `sp-samples` have fixed bridge names, so the [host firewall](deployment.md#host-firewall) can match them by name.
+Every network has a fixed bridge name (`sp-...`, at most 15 characters), so the [host firewall](deployment.md#host-firewall) can match it by name, and none has IPv6 (`enable_ipv6: false`). Every internal network also sets `com.docker.network.bridge.gateway_mode_ipv4: isolated` (Docker Engine 28 or later): the host keeps no address on the bridge, so a compromised sensor, Redis, database or ingest has no host address to connect to. Nothing on an internal network publishes a port. On an older engine this isolation does not apply, and only the host firewall stops these containers from reaching the host. The test overlays (`docker-compose.it.yml`, `docker-compose.participant-it.yml`) drop the fixed names, so a throwaway test project never clashes with a live stack on the same machine.
 
 ### Sensors need two networks
 

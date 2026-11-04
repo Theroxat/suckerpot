@@ -6,33 +6,101 @@ the internet, but they do not stop a compromised container from opening connecti
 the **host itself** (for example its admin SSH port) or to other machines on your LAN.
 This nftables table closes that gap.
 
-`firewall.nft` is a template: it contains no addresses from any real network.
+There are two templates. Neither contains an address from any real network.
+
+| File | For | Values to set |
+| --- | --- | --- |
+| `firewall-participant.nft` | A participant node: sensors, database, ingest and `hubproxy`, no dashboard, no VPN | The admin SSH port only |
+| `firewall.nft` | A full install: dashboard, optional VPN (`egress` profile) | Admin SSH port, dashboard port, WireGuard endpoint |
+
+Both define the same table, `inet suckerpot_host`, and are loaded the same way.
+
+## Quick start
+
+```
+scripts/host/render-firewall.sh --participant --admin-ssh-port 2200 --out ~/suckerpot-firewall.nft
+scripts/host/install-firewall.sh ~/suckerpot-firewall.nft
+```
+
+For a full install, use `--full` and add `--dashboard-port <DASHBOARD_PORT>` and, with the
+`egress` profile, `--vpn-endpoint <VPN_WG_ENDPOINT_IP>:<VPN_WG_ENDPOINT_PORT>`.
+
+- `render-firewall.sh` needs no root and changes nothing. It fills in the values, reads the
+  resolvers hubproxy's DNS goes to (see [DNS](#dns-from-sp-hubgate)), writes the file with
+  mode 0600 and checks it with `nft -c` when it may (root only; otherwise it says it skipped
+  the check). Exit codes: 0 rendered, 1 `nft -c` refused the result, 2 bad arguments.
+- `install-firewall.sh FILE` re-runs itself with `sudo`. It refuses a file that still holds a
+  placeholder or that `nft -c` refuses, then copies it to `/etc/suckerpot-firewall.nft`,
+  installs and enables `suckerpot-firewall.service`, loads the table and checks it is there.
+  `install-firewall.sh --uninstall` removes all of it. Exit codes: 0 done, 2 bad arguments,
+  3 `nft` or `systemctl` missing, 4 file refused (nothing changed), 5 loading failed.
+
+Keep the rendered file out of the repository: it holds your admin port.
 
 ## What it blocks
+
+Participant (`firewall-participant.nft`):
+
+| Rule | Effect |
+| --- | --- |
+| input, from `sp-*` | No container on a SuckerPot network can open a new connection to the host. The one exception: UDP 53 from `sp-hubgate` to a listed resolver, if that resolver is the host itself. |
+| input, from `docker0` and `br-*` to the admin SSH port | Containers of other Docker networks cannot reach the admin SSH port. |
+| forward, from `sp-ingress` (and `sp-dashboard`) | Sensors cannot start anything through the host: no outbound traffic, no LAN scan, not even a one-way SYN or UDP packet with a container source address. Replies to inbound connections still go out. |
+| forward, from `sp-hubgate` | `hubproxy` may open TCP 443 to public unicast addresses, and UDP 53 to the resolvers in `HUBGATE_DNS`. Private, shared (CGNAT), loopback, link-local, multicast and documentation ranges are dropped, and so is everything else. |
+| forward, IPv6 from `sp-*` | Dropped. The networks have no IPv6. |
+| forward, from `sp-vpn` | Nothing new (a direct participant has no VPN). With `--vpn-endpoint`, UDP to that endpoint only. |
+
+Full (`firewall.nft`):
 
 | Rule | Effect |
 | --- | --- |
 | input, from `sp-ingress` and `sp-dashboard` | Containers of the sensor network and the dashboard network cannot open new connections to the host. |
+| input, from `sp-s-*`, `sp-backend` and `sp-tools` | The internal networks cannot open new connections to the host. On Docker Engine 28 or later the host has no address on these bridges at all (isolated gateway); this rule covers older engines. |
 | input, from `docker0`, `br-*` and `sp-*` to `protected_ports` | No container of any Docker network can reach the admin SSH port or the dashboard port of the host. |
 | forward, from `sp-ingress` and `sp-dashboard` | These containers cannot start new connections through the host: no LAN scanning, no outbound traffic, no traffic between sensors. Replies to inbound connections still go out. |
-| input, from `sp-egress` and `sp-samples` | The proxy network and the sample network cannot open new connections to the host. Without this, `CONNECT <bridge gateway>:<published port>` through the proxy would reach the host's published ports. |
+| input, from `sp-egress`, `sp-samples` and `sp-hubproxy` | The proxy networks and the sample network cannot open new connections to the host. Without this, `CONNECT <bridge gateway>:<published port>` through a proxy would reach the host's published ports. |
 | input, from `sp-vpn` | The `vpn` container (anonymous egress) cannot open new connections to the host. |
 | forward, from `sp-vpn` | The only new connection allowed is UDP to the WireGuard endpoint (`VPN_ENDPOINT_IP`, `VPN_ENDPOINT_PORT`). Everything else is dropped, so the kill switch holds even if the container's own firewall fails. |
+| forward, from `sp-hubgate` | As for a participant: TCP 443 to public addresses and UDP 53 to `HUBGATE_DNS` only. Only matters with the `direct` profile. |
+| forward, IPv6 from `sp-*` | Dropped. |
 
-Nothing here affects traffic from the internet to the published sensor ports.
+Nothing here affects traffic from the internet to the published sensor ports, or your own
+admin SSH from the LAN: every rule names a Docker bridge.
 
-## Before you apply it
+## DNS from sp-hubgate
 
-1. Open `firewall.nft` and set `ADMIN_SSH_PORT` to the port of your host's admin SSH
-   daemon. The file ships with `CHANGE_ME` on purpose: it will not load until you
-   change it.
-2. Check `DASHBOARD_PORT` matches your `.env`.
-   If you use the `egress` profile, set `VPN_ENDPOINT_IP` and `VPN_ENDPOINT_PORT` to the
-   values of `VPN_WG_ENDPOINT_IP` and `VPN_WG_ENDPOINT_PORT`. The file will not load until you
-   do (without the profile, any valid values such as the documentation address
-   `203.0.113.10` and port `51820` will do; the rules then never match anything).
-3. Nothing to adjust for Docker address pools: rules match network interfaces, not addresses.
-4. Keep a second way into the machine (hypervisor console) the first time.
+`hubproxy` resolves the hub through Docker's embedded resolver (127.0.0.11 inside the
+container). That resolver forwards each query **from the container's own network
+namespace** (moby `libnetwork/resolver.go`, `forwardExtDNS`), so the packet leaves through
+`sp-hubgate` with the container's address, to the upstream servers Docker read from the host:
+
+- `/etc/resolv.conf`, or `/run/systemd/resolve/resolv.conf` when `/etc/resolv.conf` only lists
+  the systemd-resolved stub `127.0.0.53` (Ubuntu's default);
+- the `dns` list of `/etc/docker/daemon.json`, if you set one (pass it with `--dns`).
+
+The one exception is a loopback upstream (for example a local `unbound` on `127.0.0.1`): Docker
+queries it from the host's namespace, so it never crosses `sp-hubgate` and needs no rule.
+
+So DNS through `sp-hubgate` is needed, but only UDP 53 to those servers. `render-firewall.sh`
+lists them in `HUBGATE_DNS` (IPv4, loopback skipped; repeat `--dns IP` to override). When there
+are none, it writes `{ 127.0.0.1 }`, which no forwarded packet can match. TCP 53 is not opened:
+the answers hubproxy needs (the address of one or two names) fit in UDP. If your resolvers change (new router,
+new DHCP lease), render and install the file again. A wrong list fails safe: hubproxy cannot
+resolve the hub and the node stays idle, nothing else opens.
+
+## Before you apply it by hand
+
+The renderer does all of this. By hand:
+
+1. Copy the template and set `ADMIN_SSH_PORT` to the port of your host's admin SSH daemon. The
+   files ship with `CHANGE_ME` on purpose: they will not load until you change it.
+2. Participant: set `HUBGATE_DNS` to your upstream resolvers (see above).
+3. Full: check that `DASHBOARD_PORT` matches your `.env`. With the `egress` profile, set
+   `VPN_ENDPOINT_IP` and `VPN_ENDPOINT_PORT` to the values of `VPN_WG_ENDPOINT_IP` and
+   `VPN_WG_ENDPOINT_PORT`. Without the profile, use `127.0.0.1` and `51820`: the rule then
+   never matches anything.
+4. Nothing to adjust for Docker address pools: rules match network interfaces, not addresses.
+5. Keep a second way into the machine (hypervisor console) the first time.
 
 ## Important: load it before exposing the host
 
@@ -45,11 +113,16 @@ sudo nft list table inet suckerpot_host
 
 If that prints an error, the firewall is not active.
 
+The internal networks also use Docker's isolated gateway mode
+(`com.docker.network.bridge.gateway_mode_ipv4: isolated`), which needs **Docker Engine 28 or
+later**. On an older engine that isolation does not apply (the host keeps an address on each
+internal bridge), and only this table stops a container from reaching the host. Upgrade Docker.
+
 ## Apply
 
 ```
-sudo nft -c -f scripts/host/firewall.nft   # syntax check, changes nothing
-sudo nft -f scripts/host/firewall.nft      # apply (safe to run again)
+sudo nft -c -f FILE    # syntax check, changes nothing
+sudo nft -f FILE       # apply (safe to run again)
 sudo nft list table inet suckerpot_host    # see the rules and counters
 ```
 
@@ -57,16 +130,15 @@ The rules live in memory only until you persist them.
 
 ## Persist across reboots
 
-Do **not** use the stock `nftables` service for this: on Debian and Ubuntu,
-`/etc/nftables.conf` starts with `flush ruleset`, and starting that service on a
-running host wipes Docker's own rules (NAT and published ports) until Docker restarts.
+`install-firewall.sh` does this for you. Do **not** use the stock `nftables` service: on
+Debian and Ubuntu, `/etc/nftables.conf` starts with `flush ruleset`, and starting that service
+on a running host wipes Docker's own rules (NAT and published ports) until Docker restarts.
 
 Use the dedicated unit shipped next to this file instead. It only loads the
-`suckerpot_host` table, after Docker has started:
+`suckerpot_host` table, after Docker has started. By hand:
 
 ```
-sudo install -m 0600 scripts/host/firewall.nft /etc/suckerpot-firewall.nft
-sudo editor /etc/suckerpot-firewall.nft        # fill in ADMIN_SSH_PORT (and DASHBOARD_PORT)
+sudo install -m 0600 FILE /etc/suckerpot-firewall.nft
 sudo nft -c -f /etc/suckerpot-firewall.nft     # syntax check, changes nothing
 sudo install -m 0644 scripts/host/suckerpot-firewall.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -86,6 +158,9 @@ Egress: with the `egress` profile up, run `just egress-check`, then
 handshake packets; the `sp-vpn` drop counters stay at 0 unless something inside `vpn`
 tried to leave outside the tunnel.
 
+Participant: the `sp-hubgate` UDP 53 and TCP 443 accept counters go up when the node talks to
+the hub; the `sp-hubgate` drop counters stay at 0.
+
 1. Start the stack, then from the host run `sudo nft list table inet suckerpot_host`.
    Counters on the `drop` rules stay at 0 in normal operation.
 2. From inside a sensor, a new connection to the host must fail. For example (replace
@@ -99,14 +174,17 @@ tried to leave outside the tunnel.
 3. From the internet (or another machine), the sensor ports must still answer.
 4. Check that the host listens on the sensor port for IPv4 only: `ss -tlnp | grep ':22 '`
    should show `0.0.0.0:22` and no `[::]:22`.
+5. The internal bridges have no host address: `ip -4 addr show sp-backend` prints no `inet`
+   line (Docker Engine 28 or later).
 
 ## Roll back
 
 ```
-sudo systemctl disable --now suckerpot-firewall.service  # or: sudo nft delete table inet suckerpot_host
+sudo scripts/host/install-firewall.sh --uninstall   # or, for this boot only: sudo nft delete table inet suckerpot_host
 ```
 
-To remove it permanently: `sudo rm /etc/systemd/system/suckerpot-firewall.service /etc/suckerpot-firewall.nft && sudo systemctl daemon-reload`.
+By hand: `sudo systemctl disable --now suckerpot-firewall.service`, then
+`sudo rm /etc/systemd/system/suckerpot-firewall.service /etc/suckerpot-firewall.nft && sudo systemctl daemon-reload`.
 
 ## Also recommended
 
