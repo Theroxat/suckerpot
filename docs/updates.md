@@ -120,6 +120,17 @@ SuckerPot checks 18 images for each release:
 
 The check uses this rule. The image must be signed by the release workflow of the repository named in `SUCKERPOT_IMAGE_PREFIX`, for the tag you asked for. A fork therefore verifies its own releases.
 
+### Moving from the old repository (v0.7.1 and earlier)
+
+The project moved from `Theroxat/suckerpot` to `selfhostr/suckerpot`. Releases after the move are signed by the release workflow of the new repository and published under `ghcr.io/selfhostr/suckerpot-*`. An install made before the move keeps `SUCKERPOT_IMAGE_PREFIX=ghcr.io/theroxat/suckerpot` in `.env`, and its scripts accept only a signature from that repository, so the first update refuses the new release (the automatic updater records `signature_invalid` and changes nothing). This is deliberate: the check is not relaxed. Make the move yourself once, by editing `.env` (set `SUCKERPOT_IMAGE_PREFIX=ghcr.io/selfhostr/suckerpot` and `UPDATE_CHECK_REPO=selfhostr/suckerpot`) and pointing the checkout at the new address:
+
+```bash
+git remote set-url origin https://github.com/selfhostr/suckerpot.git
+just update
+```
+
+From that update on, the scripts of the new release do the rest, and `scripts/env-migrate.sh` rewrites the old defaults by itself.
+
 ### Verify, then run by digest
 
 The check is the gate, not a report:

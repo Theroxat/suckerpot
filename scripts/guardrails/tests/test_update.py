@@ -70,8 +70,8 @@ def test_update_images_mode_full_flow(sandbox: Sandbox) -> None:
     ]
     assert order == sorted(order)
     # Pulled by the digest cosign verified, then tagged; never pulled by tag.
-    assert "docker pull --quiet ghcr.io/theroxat/suckerpot-api@sha256:" in joined
-    assert "docker tag ghcr.io/theroxat/suckerpot-api@sha256:" in joined
+    assert "docker pull --quiet ghcr.io/selfhostr/suckerpot-api@sha256:" in joined
+    assert "docker tag ghcr.io/selfhostr/suckerpot-api@sha256:" in joined
     assert "docker compose pull --policy missing" in joined
     assert "docker compose pull\n" not in joined + "\n"
     assert re.search(r"SUCKERPOT_VERSION=v0\.9\.0", (sandbox.root / ".env").read_text())

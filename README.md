@@ -4,10 +4,10 @@
 
 **A self-hosted honeypot with one readable dashboard: twelve realistic sensors for remote shells, web and APIs, databases, and Windows and VoIP services, and a UI that tells each attack as a short story you can click through.**
 
-[Documentation](https://suckerpot.readthedocs.io) · [Releases](https://github.com/Theroxat/suckerpot/releases) · [Changelog](CHANGELOG.md)
+[Documentation](https://suckerpot.selfhostr.io/docs/) · [Releases](https://github.com/selfhostr/suckerpot/releases) · [Changelog](CHANGELOG.md)
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Theroxat/suckerpot/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/Theroxat/suckerpot/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/readthedocs/suckerpot?logo=readthedocs&logoColor=white&label=docs)](https://suckerpot.readthedocs.io)
+[![CI](https://img.shields.io/github/actions/workflow/status/selfhostr/suckerpot/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/selfhostr/suckerpot/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-suckerpot.selfhostr.io-blue)](https://suckerpot.selfhostr.io/docs/)
 ![Python 3.13](https://img.shields.io/badge/python-3.13-3776ab?logo=python&logoColor=white)
 ![Sensors](https://img.shields.io/badge/sensors-12-8b5cf6)
 [![Docker Compose](https://img.shields.io/badge/stack-docker%20compose-2496ed?logo=docker&logoColor=white)](docker-compose.yml)
@@ -103,7 +103,7 @@ Sensors are the only services published to the internet, and they can reach Redi
 You need Docker with the compose plugin, on a machine you can afford to lose.
 
 ```bash
-git clone --depth 1 --branch v0.7.1 https://github.com/Theroxat/suckerpot.git
+git clone --depth 1 --branch v0.7.1 https://github.com/selfhostr/suckerpot.git
 cd suckerpot
 ./scripts/install.sh
 ```
@@ -117,7 +117,7 @@ The installer creates the secrets, starts the stack and prints the address of th
 Want to help the SuckerPot network and nothing else? Three commands, no dashboard, no VPN needed:
 
 ```bash
-git clone --depth 1 --branch v0.7.1 https://github.com/Theroxat/suckerpot.git
+git clone --depth 1 --branch v0.7.1 https://github.com/selfhostr/suckerpot.git
 cd suckerpot
 ./scripts/install.sh --participant
 ```

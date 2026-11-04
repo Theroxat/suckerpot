@@ -48,7 +48,7 @@ The mode is saved as `SUCKERPOT_INSTALL_MODE` in `.env`. Updates use the same mo
 Clone a release tag, then run the installer from the checkout:
 
 ```bash
-git clone --depth 1 --branch v0.7.1 https://github.com/Theroxat/suckerpot.git
+git clone --depth 1 --branch v0.7.1 https://github.com/selfhostr/suckerpot.git
 cd suckerpot
 ./scripts/install.sh
 ```
