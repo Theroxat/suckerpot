@@ -63,23 +63,25 @@ table inet suckerpot_host {
     iifname "lo" accept
     ct state established,related accept
 
-    # (1) Sensor and dashboard containers may not talk to the host at all.
-    iifname { "sp-ingress", "sp-dashboard" } ct state new counter drop
+    # (1) Sensor and dashboard containers may not talk to the host at all. Every rule below
+    #     that names an sp-* bridge drops everything that is not a reply (new, invalid or
+    #     untracked): containers never need to reach the host.
+    iifname { "sp-ingress", "sp-dashboard" } counter drop
 
     # (1) Nor may the internal networks (no host address there on Docker Engine 28 or later).
-    iifname { "sp-s-*", "sp-backend", "sp-tools" } ct state new counter drop
+    iifname { "sp-s-*", "sp-backend", "sp-tools" } counter drop
 
     # (4) The vpn container never talks to the host. Neither do the proxy and sample networks:
     #     the bridge gateway is the host, and the proxy could otherwise be asked to CONNECT to
     #     the host's published ports through it.
-    iifname { "sp-vpn", "sp-egress", "sp-samples" } ct state new counter drop
+    iifname { "sp-vpn", "sp-egress", "sp-samples" } counter drop
 
     # (5) Participant mode without a VPN (M32): the proxy network (sp-hubproxy) never talks to
     #     the host, and hubproxy (sp-hubgate) only asks for DNS, and only if a resolver is the
     #     host itself. No effect when those networks do not exist.
-    iifname "sp-hubproxy" ct state new counter drop
-    iifname "sp-hubgate" ip daddr $HUBGATE_DNS udp dport 53 counter accept
-    iifname "sp-hubgate" ct state new counter drop
+    iifname "sp-hubproxy" counter drop
+    iifname "sp-hubgate" ct state new ip daddr $HUBGATE_DNS udp dport 53 counter accept
+    iifname "sp-hubgate" counter drop
 
     # (2) No container may reach the protected ports of the host. Matching by
     #     interface (not by address) is independent of the address pool Docker
@@ -96,12 +98,14 @@ table inet suckerpot_host {
     # (6) No IPv6 from any SuckerPot network.
     iifname "sp-*" meta nfproto ipv6 counter drop
 
-    # (3) Nothing new may start from the sensor or dashboard networks.
-    iifname { "sp-ingress", "sp-dashboard" } ct state new counter drop
+    # (3) Nothing but replies may leave the sensor or dashboard networks (new, invalid and
+    #     untracked are dropped). The internal bridges get no forward rule: their members talk
+    #     to each other across the bridge.
+    iifname { "sp-ingress", "sp-dashboard" } counter drop
 
     # (4) From the vpn uplink, only WireGuard to the one endpoint.
     iifname "sp-vpn" ct state new ip daddr $VPN_ENDPOINT_IP udp dport $VPN_ENDPOINT_PORT counter accept
-    iifname "sp-vpn" ct state new counter drop
+    iifname "sp-vpn" counter drop
 
     # (5) From the hubproxy uplink, only DNS to the resolvers above, then TCP 443 (the hub and
     #     feed hosts, which hubproxy itself allow-lists by name) to public unicast addresses.
@@ -109,7 +113,7 @@ table inet suckerpot_host {
     iifname "sp-hubgate" ct state new ip daddr $HUBGATE_DNS udp dport 53 counter accept
     iifname "sp-hubgate" ct state new ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/3 } counter drop  # gitleaks:allow (private ranges are the point of this rule)
     iifname "sp-hubgate" ct state new tcp dport 443 counter accept
-    iifname "sp-hubgate" ct state new counter drop
+    iifname "sp-hubgate" counter drop
   }
 
   # OPTIONAL: rate-limit new SIP flows (udp/5060) before they reach the sensor. The
