@@ -224,3 +224,9 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 
 - Tag `v0.7.0` built, signed and published by the Release workflow. `scripts/verify-release.sh v0.7.0` checks the manifest (commit a5000af); `just verify-images v0.7.0` reports all 19 image signatures valid.
 - Docs build fixed: `design/m33` added to the docs toctree.
+
+## 2026-11-04 — v0.7.1 (fixes)
+
+- The dashboard read the hub address only from `.env`, so Settings → Network said "No network hub is configured" on every installer-made install. The API now uses `suckerpot_netproto.defaults.effective`, like ingest.
+- A repeated join while one is pending now explains itself instead of showing a generic error; the "new" standing text no longer states a fixed two-week delay.
+- The owner's node joined the network through the dashboard; enrolment went through the VPN (egress-check PASS).

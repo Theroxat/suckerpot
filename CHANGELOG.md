@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-04
+
 ### Fixed
 
 - Settings → Network said "No network hub is configured" and greyed out the join button on installs whose `.env` does not set `NETWORK_HUB_URL`, which is every install made by the installer. The dashboard now uses the hub address and key shipped with each release, like ingest already did.
+- Clicking Join again while a join is pending showed "The change could not be made". It now says the system has already asked to join and refreshes the page.
+- A new node's standing no longer promises "two weeks": the hub's thresholds are configurable, so the page points to the Eligibility date instead.
 
 ## [0.7.0] - 2026-11-04
 
@@ -195,7 +199,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Isolation: four networks with an internal backend, one Redis ACL user per sensor limited to `XADD` on its own stream, least-privilege database roles, no outbound route for the API, non-root read-only containers with all capabilities dropped.
 - The first review of the M1 stack found unbounded stream growth, egress, poison-message and default-credential issues; all were fixed and the second pass passed.
 
-[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/Theroxat/suckerpot/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Theroxat/suckerpot/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Theroxat/suckerpot/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Theroxat/suckerpot/compare/v0.4.0...v0.5.0
