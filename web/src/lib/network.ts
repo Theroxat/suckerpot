@@ -317,8 +317,9 @@ export const STANDING_TEXT: Record<NetworkStanding, { label: string; sentence: s
 
 const WAITING_TEXT: Record<NetworkWaiting, string> = {
   self_address:
-    "Nothing is sent until you confirm your own address in Settings, Reporting. That check keeps your address out of every batch.",
-  egress: "The outbound gate is closed, so nothing is sent. See Settings, VPN.",
+    "Waiting for your own address: nothing is sent until you confirm it in Settings, Reporting. That check keeps your address out of every batch.",
+  egress:
+    "Waiting for the VPN: the outbound gate is closed, so nothing is sent yet. See Settings, VPN.",
   settings_key:
     "The settings encryption key is not set, so the node key cannot be stored safely. Nothing is sent.",
   enrolment:
@@ -351,7 +352,8 @@ export function isMember(s: NetworkStatus | undefined): boolean {
 
 /** The one sentence at the top of the Overview, whatever the state. */
 export function describeStatus(s: NetworkStatus, impact?: NetworkImpact): string {
-  if (!s.enabled_env) return "Sharing is switched off on this system. Nothing leaves it."
+  if (!s.enabled_env)
+    return "Sharing is switched off in this system's settings (NETWORK_ENABLED=false). Nothing leaves it."
   if (!s.hub_configured) return "No network hub is configured, so the network cannot be joined yet."
   switch (s.state) {
     case "off":

@@ -15,6 +15,17 @@ export function useNetworkStatus() {
   })
 }
 
+let leftThisSession = false
+
+/** Remember that this person just left, so the card can offer "Join again". */
+export function markLeft() {
+  leftThisSession = true
+}
+
+export function hasLeft() {
+  return leftThisSession
+}
+
 /** After a change, everything the network pages show is stale. */
 export function useRefreshNetwork() {
   const qc = useQueryClient()

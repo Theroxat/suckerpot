@@ -127,7 +127,7 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
   {
     id: "network",
     title: "The Selfhostr network",
-    sentence: "Joining the network is optional and always your choice.",
+    sentence: "Joining the network is recommended, and always your choice.",
     optional: true,
     skip: "Yes. Nothing is shared unless you join, and you can join or leave later in Settings, Network.",
     teaser: "Decide whether to join the Selfhostr network.",

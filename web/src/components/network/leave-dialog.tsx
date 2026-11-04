@@ -2,7 +2,7 @@ import { useId } from "react"
 import { Trash2 } from "lucide-react"
 import { networkApi } from "@/lib/network"
 import { AdminActionDialog } from "@/components/users/admin-action-dialog"
-import { useRefreshNetwork } from "./use-network"
+import { markLeft, useRefreshNetwork } from "./use-network"
 
 /** Leaving is one click plus the password. The text says what is deleted, and where. */
 export function LeaveDialog({
@@ -18,14 +18,17 @@ export function LeaveDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Leave the Selfhostr network?"
-      description="Nothing more is sent from this moment, and your data is deleted on both sides. You can join again later."
+      description="Nothing more is sent from this moment, and your data is deleted on both sides. You can join again at any time."
       hint="Leaving asks for your own dashboard password again."
       confirmLabel="Leave the network"
       pendingLabel="Leaving…"
       run={async (password) => {
         await networkApi.leave(password)
       }}
-      onDone={() => void refresh()}
+      onDone={() => {
+        markLeft()
+        void refresh()
+      }}
     >
       <div className="grid gap-3 text-sm sm:grid-cols-2">
         <DeletedList
