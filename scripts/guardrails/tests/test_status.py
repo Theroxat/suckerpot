@@ -35,7 +35,7 @@ def member_cli(**overrides: Any) -> dict[str, Any]:
         "path": "direct",
         "self_address": "learned",
         "hub": {
-            "host": "relay.selfhostr.io",
+            "host": "suckerpot-hub.selfhostr.io",
             "last_contact": iso(timedelta(minutes=12)),
             "signature_ok": True,
         },
@@ -139,7 +139,7 @@ def test_healthy_participant_report(st: Status) -> None:
     assert "router 80, 443" in out
     assert "Member as amber-falcon-42 (Node 3f9a1c07), standing: new" in out
     assert "Counts toward consensus from 2026-11-17" in out
-    assert "Hub contact: OK, 12 min ago (relay.selfhostr.io, signature verified)" in out
+    assert "Hub contact: OK, 12 min ago (suckerpot-hub.selfhostr.io, signature verified)" in out
     assert "Path: direct (no VPN). The hub sees this machine's address." in out
     assert "Own address: learned" in out
     assert "Sent: 2026-11-02  412 sources, 9 links (blinded), 0 files" in out

@@ -129,7 +129,7 @@ Joining does not give you a private list or an early copy. Members get the same 
 
 Poisoning means that someone sends false sightings to get an innocent address or site listed. The network makes this expensive. A single node can never publish anything.
 
-A value becomes a **confirmed target** only when all of these hold. The numbers below are the defaults. The hub operator can change them, and the live values are published at `https://relay.selfhostr.io/v1/info`.
+A value becomes a **confirmed target** only when all of these hold. The numbers below are the defaults. The hub operator can change them, and the live values are published at `https://suckerpot-hub.selfhostr.io/v1/info`.
 
 1. **Enough nodes.** At least 5 eligible nodes saw it.
 2. **Enough weight.** The reputation of those nodes adds up to at least 3.0. A node counts at most 1.0. A new node starts at 0.6, so five new nodes make exactly 3.0.
@@ -178,6 +178,8 @@ There are two ways to join. Both mean the same thing for the data that is shared
 ### The no-VPN trade-off
 
 A participant can run without a VPN. The node then reaches the hub through `hubproxy`, a small allow-list proxy that accepts connections to the hub host only. The cost is that the hub, and a tunnel provider in front of it, can see the participant's home address when it connects. The hub does not store or log it. This is stated in the consent text and in `./scripts/status.sh`. A VPN can be added at any time with `./scripts/participant.sh vpn <file>`. Without a VPN the collector and enrichment are off, so the node reports links but never downloads anything.
+
+The hub and feeds host names (`suckerpot-hub.selfhostr.io`, `suckerpot-feeds.selfhostr.io`) contain the product name. Anyone who sees a node's DNS queries or the TLS server name (SNI) of its connections, such as the participant's internet provider without a VPN or the VPN provider with one, can tell that the machine runs SuckerPot. Attackers who only reach the sensors cannot see this traffic.
 
 ### The early reveal of a link
 

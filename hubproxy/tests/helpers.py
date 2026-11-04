@@ -10,7 +10,7 @@ from hubproxy.config import Settings
 from hubproxy.server import HubProxy
 
 PASSWORD = "correct-horse-battery-staple"
-ALLOW = "relay.selfhostr.io"
+ALLOW = "suckerpot-hub.selfhostr.io"
 GLOBAL_IP = "8.8.8.8"  # only ever handed to the fake connector, never dialled
 
 
