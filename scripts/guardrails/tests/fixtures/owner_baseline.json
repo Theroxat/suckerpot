@@ -1,6 +1,11 @@
 {
  "networks": {
   "backend": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-backend"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "dashboard": {
@@ -8,6 +13,7 @@
     "com.docker.network.bridge.enable_ip_masquerade": "false",
     "com.docker.network.bridge.name": "sp-dashboard"
    },
+   "enable_ipv6": false,
    "name": "sp-dashboard"
   },
   "egress-proxy": {
@@ -15,6 +21,7 @@
     "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
     "com.docker.network.bridge.name": "sp-egress"
    },
+   "enable_ipv6": false,
    "internal": true
   },
   "ingress": {
@@ -23,6 +30,7 @@
     "com.docker.network.bridge.enable_ip_masquerade": "false",
     "com.docker.network.bridge.name": "sp-ingress"
    },
+   "enable_ipv6": false,
    "name": "sp-ingress"
   },
   "samples": {
@@ -30,45 +38,111 @@
     "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
     "com.docker.network.bridge.name": "sp-samples"
    },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-adb": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-adb"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-docker": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-docker"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-mssql": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-mssql"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-mysql": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-mysql"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-rdp": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-rdp"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-redis": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-redis"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-sip": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-sip"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-smb": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-smb"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-ssh": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-ssh"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-synology": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-synology"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-telnet": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-telnet"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "sensors-web": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-s-web"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "tools": {
+   "driver_opts": {
+    "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+    "com.docker.network.bridge.name": "sp-tools"
+   },
+   "enable_ipv6": false,
    "internal": true
   },
   "vpn-uplink": {
@@ -76,6 +150,7 @@
     "com.docker.network.bridge.enable_icc": "false",
     "com.docker.network.bridge.name": "sp-vpn"
    },
+   "enable_ipv6": false,
    "name": "sp-vpn"
   }
  },
@@ -344,7 +419,7 @@
     ],
     "timeout": "10s"
    },
-   "image": "timescale/timescaledb:2.22.1-pg17",
+   "image": "timescale/timescaledb:2.22.1-pg17@sha256:fba60021a224479e174ae1ec577c1a0576d5185b09fe9e622f1d19e4bf5bab0d",
    "logging": {
     "driver": "json-file",
     "options": {
@@ -353,6 +428,7 @@
     }
    },
    "mem_limit": "256m",
+   "memswap_limit": "256m",
    "networks": [
     "backend"
    ],
@@ -520,7 +596,7 @@
     ],
     "timeout": "5s"
    },
-   "image": "timescale/timescaledb:2.22.1-pg17",
+   "image": "timescale/timescaledb:2.22.1-pg17@sha256:fba60021a224479e174ae1ec577c1a0576d5185b09fe9e622f1d19e4bf5bab0d",
    "logging": {
     "driver": "json-file",
     "options": {
@@ -804,6 +880,7 @@
     }
    },
    "mem_limit": "256m",
+   "memswap_limit": "256m",
    "networks": [
     "backend"
    ],

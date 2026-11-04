@@ -76,7 +76,7 @@ services:
       start_period: 5s
 
   db:
-    image: timescale/timescaledb:2.22.1-pg17
+    image: timescale/timescaledb:2.22.1-pg17@sha256:fba60021a224479e174ae1ec577c1a0576d5185b09fe9e622f1d19e4bf5bab0d
     <<: *hardening
     # Run directly as the image's "postgres" user (uid 70) instead of starting as
     # root and dropping privileges. The data volume is initialised from the image
@@ -166,6 +166,7 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
     networks: [backend]
     mem_limit: 256m
+    memswap_limit: 256m
     cpus: 0.5
     pids_limit: 64
     restart: "no"
@@ -177,7 +178,7 @@ services:
   # route out. It uses the database OWNER account (like `migrate`), because pg_dump needs to read
   # every table; a dedicated read-only role is possible later. The image ships a matching pg_dump.
   backup:
-    image: timescale/timescaledb:2.22.1-pg17
+    image: timescale/timescaledb:2.22.1-pg17@sha256:fba60021a224479e174ae1ec577c1a0576d5185b09fe9e622f1d19e4bf5bab0d
     <<: *hardening
     user: "70:70"
     entrypoint: ["/bin/sh", "/backup-service.sh"]
@@ -193,6 +194,7 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,size=8m,uid=70,gid=70
     networks: [backend]
     mem_limit: 256m
+    memswap_limit: 256m
     cpus: 0.5
     pids_limit: 64
     restart: unless-stopped
@@ -1597,6 +1599,7 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001
     networks: [tools]
     mem_limit: 256m
+    memswap_limit: 256m
     cpus: 0.5
     pids_limit: 64
     restart: "no"
@@ -1605,11 +1608,20 @@ services:
         condition: service_healthy
 
 networks:
+  # Every network has a fixed bridge name (at most 15 characters), so the host firewall
+  # (scripts/host/) can match it by interface, and no IPv6. Every internal network also sets
+  # gateway_mode_ipv4=isolated (Docker Engine 28 or later): the host keeps no address on the bridge,
+  # so a compromised container on it has no host address to connect to. Nothing on an internal
+  # network publishes a port or needs the gateway. The test overlays drop the fixed names
+  # (docker-compose.it.yml, docker-compose.participant-it.yml): a throwaway project must never
+  # clash with the bridges of a live stack on the same machine.
+  #
   # Inbound-only network for every internet-facing sensor. Published ports work,
   # but containers get no outbound route (masquerading off) and cannot talk to
   # each other (inter-container communication off).
   ingress:
     name: sp-ingress
+    enable_ipv6: false
     driver_opts:
       com.docker.network.bridge.name: sp-ingress
       com.docker.network.bridge.enable_ip_masquerade: "false"
@@ -1617,77 +1629,138 @@ networks:
   # SSH sensor <-> Redis only. No route to anything else.
   sensors-ssh:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-ssh
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # RDP sensor <-> Redis only.
   sensors-rdp:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-rdp
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # Telnet sensor <-> Redis only.
   sensors-telnet:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-telnet
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # Web sensor <-> Redis only.
   sensors-web:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-web
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # REDIS sensor <-> Redis only.
   sensors-redis:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-redis
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # Docker sensor <-> Redis only.
   sensors-docker:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-docker
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # MYSQL sensor <-> Redis only.
   sensors-mysql:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-mysql
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # MSSQL sensor <-> Redis only.
   sensors-mssql:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-mssql
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # ADB sensor <-> Redis only.
   sensors-adb:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-adb
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # SMB sensor <-> Redis only.
   sensors-smb:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-smb
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # SIP sensor <-> Redis only.
   sensors-sip:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-sip
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # Synology sensor <-> Redis only.
   sensors-synology:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-s-synology
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # Demo generator <-> Redis only.
   tools:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-tools
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # Redis, database, ingest and API. No route to the internet.
   backend:
     internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.name: sp-backend
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   # The only route to the internet: the vpn container's uplink (WireGuard to one endpoint).
   # Masquerading stays on so the tunnel handshake can leave; the host firewall
   # (scripts/host/firewall.nft) restricts sp-vpn to that one endpoint.
   vpn-uplink:
     name: sp-vpn
+    enable_ipv6: false
     driver_opts:
       com.docker.network.bridge.name: sp-vpn
       com.docker.network.bridge.enable_icc: "false"
   # vpn <-> ingest <-> collector: the HTTP proxy and the control server. Internal.
   egress-proxy:
     internal: true
+    enable_ipv6: false
     driver_opts:
-      # Named so the host firewall can drop its traffic to the host (the gateway is the host).
       com.docker.network.bridge.name: sp-egress
       com.docker.network.bridge.gateway_mode_ipv4: isolated
   # Participant mode without a VPN (M32): hubproxy's uplink, the only route out in that mode.
-  # Masquerading stays on so the proxy can reach the hub; the host firewall (scripts/host/firewall.nft)
-  # restricts sp-hubgate to TCP 443. Members: hubproxy only.
+  # Masquerading stays on so the proxy can reach the hub; the host firewall
+  # (scripts/host/firewall-participant.nft) restricts sp-hubgate to TCP 443 and DNS to the
+  # host's resolvers. Members: hubproxy only.
   hub-uplink:
     name: sp-hubgate
+    enable_ipv6: false
     driver_opts:
       com.docker.network.bridge.name: sp-hubgate
       com.docker.network.bridge.enable_icc: "false"
   # hubproxy <-> ingest (participant overlay): the proxy and control server. Internal.
   hub-proxy:
     internal: true
+    enable_ipv6: false
     driver_opts:
       com.docker.network.bridge.name: sp-hubproxy
       com.docker.network.bridge.gateway_mode_ipv4: isolated
   # db <-> collector <-> analyzer. Keeps both away from Redis, ingest and the API.
   samples:
     internal: true
+    enable_ipv6: false
     driver_opts:
       com.docker.network.bridge.name: sp-samples
       com.docker.network.bridge.gateway_mode_ipv4: isolated
@@ -1695,6 +1768,7 @@ networks:
   # dashboard port works but the API container cannot reach the internet.
   dashboard:
     name: sp-dashboard
+    enable_ipv6: false
     driver_opts:
       com.docker.network.bridge.name: sp-dashboard
       com.docker.network.bridge.enable_ip_masquerade: "false"
