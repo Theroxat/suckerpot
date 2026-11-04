@@ -112,12 +112,16 @@ The API cannot reach the internet through Docker's normal NAT, and it cannot res
 
 Egress must also be filtered outside the containers. Check it from the owner side before you go live:
 
-- The [host firewall](deployment.md#host-firewall) is loaded. It drops new connections from `sp-ingress` and `sp-dashboard` to the host and through the host, and from every Docker network to the host's admin SSH port and the dashboard port.
+- The [host firewall](deployment.md#host-firewall) is loaded. It drops new connections from `sp-ingress` and `sp-dashboard` to the host and through the host, from the internal networks to the host, and from every Docker network to the host's admin SSH port and the dashboard port.
 - The API container cannot open a connection to an external address, by IP or by name.
 
 #### The host firewall and the sensor network
 
-A compromised sensor has no route to the internet (masquerading is off), but without a host rule it could still open connections to the host itself, for example to its admin SSH port, or to machines on your LAN through the host. The nftables table in `scripts/host/firewall.nft` blocks that, and it matches Docker networks by interface name, so it works whatever address pool Docker picks. It is installed with its own systemd unit, never with the stock `nftables` service, which would flush Docker's own rules.
+A compromised sensor has no route to the internet (masquerading is off), but without a host rule it could still open connections to the host itself, for example to its admin SSH port, or send one-way packets to machines on your LAN or the internet through the host (Docker still forwards from `sp-ingress`, and many home routers masquerade any source). The nftables table in `scripts/host/firewall.nft` (full install) or `scripts/host/firewall-participant.nft` (participant node) blocks that, and it matches Docker networks by interface name, so it works whatever address pool Docker picks. `scripts/host/render-firewall.sh` fills it in and `scripts/host/install-firewall.sh` installs it with its own systemd unit, never with the stock `nftables` service, which would flush Docker's own rules.
+
+On a participant node the table also limits `hubproxy`'s uplink (`sp-hubgate`, the only route out without a VPN) to TCP 443 on public addresses and UDP 53 to the host's own upstream resolvers. Docker's embedded resolver sends those queries from the container's namespace, so they do cross the bridge; they never reach any other address, and the LAN is dropped. hubproxy's own allow-list stays the first control.
+
+Every internal network (`sensors-<name>`, `backend`, `tools`, `egress-proxy`, `hub-proxy`, `samples`) uses Docker's isolated gateway mode: the host has no address on those bridges, so a compromised sensor, Redis, database or ingest has no host address to reach, even without the host firewall. This needs Docker Engine 28 or later; on an older engine only the host firewall protects the host. The compose guardrails (`just guardrails`) refuse an internal network without it, any IPv6, and any service that drops a hardening setting (read-only root, `cap_drop: [ALL]`, `no-new-privileges`, a non-root user, memory, swap, CPU and process limits, a healthcheck, `noexec,nosuid,nodev` tmpfs, no host namespace, device, extra capability, sysctl, Docker socket or bind mount outside a short allow-list), with each exemption named and explained in `scripts/guardrails/suckerpot_guardrails/compose.py`. Third-party images are pinned by digest.
 
 #### Anonymous egress (M21)
 
