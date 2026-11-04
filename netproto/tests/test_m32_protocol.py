@@ -348,7 +348,11 @@ def test_effective_prefers_explicit_environment_value() -> None:
 def test_defaults_file_names_no_private_values() -> None:
     text = (REPO / "config" / "network-defaults.env").read_text()
     assert not re.search(r"\b(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d+\.\d+", text)
-    assert "suckerpot" not in text.lower()
+    # the only place the product name may appear is the two public hostnames
+    stripped = text.replace("suckerpot-hub.selfhostr.io", "").replace(
+        "suckerpot-feeds.selfhostr.io", ""
+    )
+    assert "suckerpot" not in stripped.lower()
 
 
 # --- pseudonym words ---
