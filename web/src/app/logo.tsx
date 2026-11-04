@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 
-/** The Selfhostr mark: a honeycomb cell with a drop. Neutral, no brand hue. */
+/** The SuckerPot mark: a honeycomb cell with a drop. Neutral, no brand hue. */
 export function Logo({ className, withName = true }: { className?: string; withName?: boolean }) {
   return (
     <span className={cn("inline-flex items-center gap-2.5", className)}>
@@ -18,9 +18,9 @@ export function Logo({ className, withName = true }: { className?: string; withN
         />
       </svg>
       {withName ? (
-        <span className="text-base font-semibold tracking-tight text-fg">Selfhostr</span>
+        <span className="text-base font-semibold tracking-tight text-fg">SuckerPot</span>
       ) : (
-        <span className="sr-only">Selfhostr</span>
+        <span className="sr-only">SuckerPot</span>
       )}
     </span>
   )

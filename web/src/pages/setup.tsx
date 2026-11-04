@@ -144,10 +144,10 @@ function Stepper() {
 
   if (!progress || !step)
     return progressQ.isError ? (
-      <PageHeader title="Set up Selfhostr" description="The setup is not available right now." />
+      <PageHeader title="Set up SuckerPot" description="The setup is not available right now." />
     ) : (
       <>
-        <PageHeader title="Set up Selfhostr" />
+        <PageHeader title="Set up SuckerPot" />
         <SkeletonCard />
       </>
     )
@@ -189,7 +189,7 @@ function Stepper() {
     <>
       <PageHeader
         help="setup"
-        title="Set up Selfhostr"
+        title="Set up SuckerPot"
         description="A few minutes, and every step can be skipped and reopened later from Settings."
         actions={
           <Button

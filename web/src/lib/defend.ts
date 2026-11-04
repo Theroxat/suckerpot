@@ -200,7 +200,7 @@ export const REASON_LABELS: Record<string, { label: string; sentence: string }> 
   "manual-block": { label: "Blocked by you", sentence: "You chose to always block this." },
   "network-confirmed": {
     label: "Network confirmed",
-    sentence: "Five or more sensors in the Selfhostr network saw it too.",
+    sentence: "Five or more sensors in the SuckerPot network saw it too.",
   },
 }
 

@@ -364,7 +364,7 @@ const RULES: DetectionRule[] = [
     rationale: "Seen in HTTP requests to the web decoy from several unrelated sources.",
     sessions,
     sources,
-    text: SURICATA(`Selfhostr ${msg}`, content, 9100100 + i),
+    text: SURICATA(`SuckerPot ${msg}`, content, 9100100 + i),
   })),
   {
     id: "suricata-download",
@@ -375,7 +375,7 @@ const RULES: DetectionRule[] = [
     rationale: "Attackers repeatedly fetched tools from the same address.",
     sessions: 88,
     sources: 14,
-    text: `alert http $HOME_NET any -> 203.0.113.41 any (msg:"Selfhostr download from a host seen in attacks"; flow:established,to_server; classtype:trojan-activity; sid:9100200; rev:1;)\n`,
+    text: `alert http $HOME_NET any -> 203.0.113.41 any (msg:"SuckerPot download from a host seen in attacks"; flow:established,to_server; classtype:trojan-activity; sid:9100200; rev:1;)\n`,
   },
 ]
 

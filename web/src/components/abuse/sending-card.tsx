@@ -34,7 +34,7 @@ import { UserError } from "@/lib/users"
 type Action = "save" | "test" | "remove"
 
 function finding(c: SmtpConfig): string {
-  if (!c.configured) return "Selfhostr does not send reports. Set up SMTP to let it."
+  if (!c.configured) return "SuckerPot does not send reports. Set up SMTP to let it."
   if (c.mode === "off")
     return "Sending is off. Reports are copied or opened from the To send queue."
   if (c.mode === "click") return "Reports are sent only when you click Send now."
@@ -442,7 +442,7 @@ export function SendingCard() {
               ? `Saved: ${finding(q.data)}`
               : finding(q.data)
       }
-      detail="Optional. Selfhostr sends a report only if you set up SMTP and choose a sending mode."
+      detail="Optional. SuckerPot sends a report only if you set up SMTP and choose a sending mode."
     >
       {q.isPending ? (
         <SkeletonText lines={4} />

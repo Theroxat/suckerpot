@@ -152,7 +152,7 @@ export function NetworkPage() {
       <PageHeader
         help="network"
         title="Network"
-        description="Selfhostr installations pooling what their sensors see, to get attackers removed."
+        description="SuckerPot installations pooling what their sensors see, to get attackers removed."
         actions={canWrite ? null : <ReadOnlyBadge />}
       />
       {q.isPending ? (

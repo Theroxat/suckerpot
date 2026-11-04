@@ -60,7 +60,7 @@ describe("NetworkFeedTab", () => {
   it("leads with the finding, one card per list, outbound first to start", async () => {
     stubFetch("ok")
     wrap(<NetworkFeedTab />)
-    expect(await screen.findByText(/^The Selfhostr network lists/)).toBeInTheDocument()
+    expect(await screen.findByText(/^The SuckerPot network lists/)).toBeInTheDocument()
     expect(screen.getByRole("group", { name: "Outbound list" })).toBeInTheDocument()
     expect(screen.getByRole("group", { name: "Inbound list" })).toBeInTheDocument()
     expect(screen.getByRole("group", { name: "Outbound domains list" })).toBeInTheDocument()
