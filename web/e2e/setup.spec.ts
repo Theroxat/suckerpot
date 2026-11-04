@@ -12,7 +12,7 @@ const STEPS = [
   { id: "self", text: "Selfhostr must know your own address" },
   { id: "reporting", text: "Abuse reports are drafts you send yourself" },
   { id: "alerts", text: "Alerts tell you when something matters" },
-  { id: "network", text: "Joining the network is optional" },
+  { id: "network", text: "Joining the network is recommended" },
   { id: "done", text: "That is everything" },
 ]
 
