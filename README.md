@@ -4,7 +4,7 @@
 
 **A self-hosted honeypot with one readable dashboard: twelve realistic sensors for remote shells, web and APIs, databases, and Windows and VoIP services, and a UI that tells each attack as a short story you can click through.**
 
-[Website](https://suckerpot.selfhostr.io/) · [Documentation](https://suckerpot.selfhostr.io/docs/) · [Releases](https://github.com/selfhostr/suckerpot/releases) · [Changelog](CHANGELOG.md)
+[Website](https://suckerpot.selfhostr.io/) · [Live demo](https://suckerpot.selfhostr.io/demo/) · [Documentation](https://suckerpot.selfhostr.io/docs/) · [Releases](https://github.com/selfhostr/suckerpot/releases) · [Changelog](CHANGELOG.md)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/selfhostr/suckerpot/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/selfhostr/suckerpot/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-suckerpot.selfhostr.io-blue)](https://suckerpot.selfhostr.io/docs/)
