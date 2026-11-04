@@ -29,6 +29,7 @@ from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from suckerpot_db.blocklist_values import normalize_value
 from suckerpot_db.models import BlocklistOverrideRow, NetworkFeedEntryRow, NetworkFeedStateRow
+from suckerpot_netproto import defaults
 
 from api.abuse_core import error
 from api.cursor import InvalidCursorError, decode_cursor, encode_cursor
@@ -76,7 +77,7 @@ def feed_enabled() -> bool:
 
 def public_base_url() -> str | None:
     """``NETWORK_FEED_URL`` without a trailing slash; only an https address counts."""
-    url = os.environ.get("NETWORK_FEED_URL", "").strip().rstrip("/")
+    url = defaults.effective(os.environ, "NETWORK_FEED_URL").rstrip("/")
     if not url or len(url) > MAX_URL or not url.startswith("https://") or not url.isprintable():
         return None
     return url if " " not in url else None

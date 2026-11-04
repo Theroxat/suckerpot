@@ -30,6 +30,7 @@ from suckerpot_db.network_names import (
     pseudonym_problem,
     valid_country,
 )
+from suckerpot_netproto import defaults
 from suckerpot_reporting import guard
 
 from api import audit as audit_db
@@ -102,8 +103,9 @@ def _enabled() -> bool:
 
 
 def _hub_configured() -> bool:
-    return bool(os.environ.get("NETWORK_HUB_URL", "").strip()) and bool(
-        os.environ.get("NETWORK_HUB_KEY", "").strip()
+    """Explicit env value, else the committed default (placeholders count as unset)."""
+    return bool(defaults.effective(os.environ, "NETWORK_HUB_URL")) and bool(
+        defaults.effective(os.environ, "NETWORK_HUB_KEY")
     )
 
 

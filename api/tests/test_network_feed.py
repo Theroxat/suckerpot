@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 from starlette.testclient import TestClient
 from suckerpot_db import create_session_factory
+from suckerpot_netproto import defaults
 
 from api import feed_tokens, network_feed
 from api.auth import AuthSettings, Principal, SessionInfo
@@ -87,6 +88,11 @@ def test_the_public_files_come_from_the_fixed_names() -> None:
 
 
 def test_only_an_https_address_is_a_public_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    placeholders = defaults.from_text(
+        "NETWORK_DEFAULTS_VERSION=1\nNETWORK_HUB_URL=<A>\nNETWORK_HUB_KEY=<B>\n"
+        "NETWORK_FEED_URL=<C>\nNETWORK_FEED_KEY=<D>\n"
+    )
+    monkeypatch.setattr(defaults, "load", lambda: placeholders)
     for value, expected in (
         (BASE + "/", BASE), ("", None), ("http://feeds.example.org/v1", None),
         ("https://feeds.example.org/v 1", None), ("https://x.example.org/" + "a" * 300, None),
