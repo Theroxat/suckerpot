@@ -284,6 +284,9 @@ else
   engine=$(docker version --format '{{.Server.Version}}' 2> /dev/null) \
     || die "Docker does not answer for this user. Try: sudo usermod -aG docker \$USER, then log in again."
   ver_ge "${engine%%[-+]*}" 24.0 || die "Docker Engine 24 or newer is required (found $engine)"
+  if ! ver_ge "${engine%%[-+]*}" 28.0; then
+    warn "Docker Engine $engine is older than 28. On this engine the internal networks are NOT isolated from the host (the isolation needs gateway_mode_ipv4: isolated, from Engine 28). Upgrading Docker Engine to 28 or newer is strongly recommended."
+  fi
   cver=$(docker compose version --short 2> /dev/null) || die "Docker Compose v2 is not available"
   ver_ge "${cver#v}" 2.24 || die "Docker Compose 2.24 or newer is required (found $cver)"
 
@@ -977,6 +980,10 @@ if [ "$stack" = participant ]; then
   else
     echo "Never forward the admin SSH port of this machine."
   fi
+  echo "Use port forwards, not your router's DMZ. A DMZ puts every service of this machine on the"
+  echo "internet, the real sshd included. It is acceptable only if this machine runs nothing else,"
+  echo "its admin SSH port is not 22 and the host firewall is loaded."
+  # FIREWALL-STEP: the host firewall step of participant mode goes here (rendered rules, load, check).
   echo
   echo "Check it any time:      ./scripts/status.sh"
   case $sched in

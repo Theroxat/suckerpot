@@ -1153,3 +1153,51 @@ def test_a_fresh_install_carries_the_network_default_marker(
 def test_no_network_is_a_full_mode_flag(psb: Sandbox) -> None:
     _, rc, out = p_dry_run(psb, "--no-network")
     assert rc != 0 and "--no-network" in out
+
+
+# ------------------------------------------------------------ engine version and DMZ advice
+
+ENGINE_SHIM = """#!/bin/sh
+case "$*" in
+  "version "*) echo "$SHIM_ENGINE" ;;
+  *) exec "$(dirname "$0")/docker.real" "$@" ;;
+esac
+"""
+
+
+def set_engine(sb: Sandbox, version: str) -> None:
+    if not (sb.shim / "docker.real").exists():
+        (sb.shim / "docker").rename(sb.shim / "docker.real")
+        (sb.shim / "docker").write_text(ENGINE_SHIM)
+        (sb.shim / "docker").chmod(0o755)
+    sb.env["SHIM_ENGINE"] = version
+
+
+@pytest.mark.parametrize(
+    ("engine", "warned"), [("24.0.7", True), ("27.5.1", True), ("28.0.0", False), ("29.1.2", False)]
+)
+def test_engine_older_than_28_gets_a_warning_about_isolation(
+    psb: Sandbox, engine: str, warned: bool
+) -> None:
+    set_engine(psb, engine)
+    rc, out = p_real(psb)
+    assert rc == 0, out
+    assert ("NOT isolated from the host" in out) is warned
+    if warned:
+        assert "28 or newer is strongly recommended" in out
+
+
+def test_engine_older_than_24_is_refused(psb: Sandbox) -> None:
+    set_engine(psb, "23.0.6")
+    rc, out = p_real(psb)
+    assert rc != 0
+    assert "Docker Engine 24 or newer is required" in out
+
+
+def test_participant_summary_recommends_forwards_over_a_dmz(psb: Sandbox) -> None:
+    set_engine(psb, "28.0.0")
+    rc, out = p_real(psb)
+    assert rc == 0, out
+    assert "Use port forwards, not your router's DMZ" in out
+    assert "the host firewall is loaded" in out
+    assert "FIREWALL-STEP" in (ROOT / "scripts/install.sh").read_text()
