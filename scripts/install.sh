@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Selfhostr installer. Run it from a checkout of a release tag:
+# SuckerPot installer. Run it from a checkout of a release tag:
 #
 #   git clone --depth 1 --branch vX.Y.Z <repository-url> suckerpot && cd suckerpot
 #   ./scripts/install.sh
@@ -22,7 +22,7 @@
 #                      [--admin-ssh-port N] [--lowmem auto|on|off] [--wg-conf PATH] [--skip-verify]
 #                      [--allow-lan]  (publish the dashboard on a non-loopback address WITHOUT an
 #                                      https tunnel: plain http, cookies lose Secure; not for the internet)
-#                      [--no-network]  (do not join the Selfhostr network; the question defaults to yes)
+#                      [--no-network]  (do not join the SuckerPot network; the question defaults to yes)
 #                      [--dry-run --env-out PATH]
 #
 #   Participant mode (docs/design/m32.md): sensors, database, ingest and the network node, no
@@ -34,7 +34,7 @@
 #   scripts/install.sh --repair       existing install: volumes, start and schedule steps again
 #
 # --yes takes the defaults; it reads the admin password from stdin with --admin-password-stdin
-# or generates one and prints it once. --yes is also the consent to join the Selfhostr network
+# or generates one and prints it once. --yes is also the consent to join the SuckerPot network
 # (shown first, undone with --no-network); with --participant it is the consent to join.
 # --dry-run --env-out writes the would-be .env to PATH with a placeholder admin hash and makes
 # no Docker call (used by the tests).
@@ -175,7 +175,7 @@ target=${env_out:-.env}
 existing=0
 switching=0
 if [ -e .env ]; then
-  [ "$dry_run" = 0 ] || die "Selfhostr is already installed here (.env exists). The dry run needs a checkout without .env."
+  [ "$dry_run" = 0 ] || die "SuckerPot is already installed here (.env exists). The dry run needs a checkout without .env."
   existing=1
   cur_stack=$(env_get SUCKERPOT_STACK_MODE full)
   case $cur_stack in full | participant) ;; *) die "SUCKERPOT_STACK_MODE in .env must be full or participant" ;; esac
@@ -184,7 +184,7 @@ if [ -e .env ]; then
       || die "--repair keeps the mode of the install ($cur_stack); use --full to switch a participant install"
     stack=$cur_stack
   elif [ -z "$stack" ] || [ "$stack" = "$cur_stack" ]; then
-    echo "Selfhostr is already installed here in $cur_stack mode (.env exists). Nothing was changed."
+    echo "SuckerPot is already installed here in $cur_stack mode (.env exists). Nothing was changed."
     echo "Update: just update. Start the steps again without changing settings: ./scripts/install.sh --repair"
     if [ -f scripts/status.sh ]; then bash scripts/status.sh || true; fi
     exit 0
@@ -260,7 +260,7 @@ if [ "$stack" = participant ] && [ "$fresh" = 1 ]; then
 fi
 
 if [ "$existing" = 0 ]; then
-  [ -f .env.example ] || die ".env.example not found: run this from a Selfhostr checkout"
+  [ -f .env.example ] || die ".env.example not found: run this from a SuckerPot checkout"
   if [ "$dry_run" = 1 ] && [ -e "$env_out" ]; then
     die "$env_out already exists; the dry run does not overwrite files"
   fi
@@ -292,7 +292,7 @@ else
   [[ ${mem_kb:-} =~ ^[0-9]+$ ]] || die "cannot read the memory size from $meminfo"
   if [ "$fresh" = 1 ]; then
     if [ "$mem_kb" -lt $((2 * 1024 * 1024 - 65536)) ]; then
-      die "less than 2 GiB of memory: Selfhostr needs at least 2 GiB (with --lowmem on)"
+      die "less than 2 GiB of memory: SuckerPot needs at least 2 GiB (with --lowmem on)"
     fi
 
     root=$(docker info --format '{{.DockerRootDir}}' 2> /dev/null || true)
@@ -488,7 +488,7 @@ if [ "$stack" = participant ] && [ "$fresh" = 1 ]; then
     echo "--yes was given: this counts as your agreement to join as described above."
     echo
   else
-    printf 'Join the Selfhostr network as described? [y/N] ' >&2
+    printf 'Join the SuckerPot network as described? [y/N] ' >&2
     IFS= read -r a <&3 || a=""
     case $a in
       y | Y | yes | YES | Yes) ;;
@@ -512,7 +512,7 @@ if [ "$stack" = full ] && [ "$fresh" = 1 ] && [ "$no_network" = 0 ]; then
     echo
     join_network=1
   else
-    printf 'Join the Selfhostr network? [Y/n] ' >&2
+    printf 'Join the SuckerPot network? [Y/n] ' >&2
     # End of input is not a yes: only an explicit Enter or y is.
     IFS= read -r a <&3 || die "no answer to the network question; use --yes or --no-network"
     case $a in
@@ -751,7 +751,7 @@ else
       wg_private="" wg_peer=""
     fi
 
-    printf '\n# Added by the Selfhostr installer\n' >> "$tmp"
+    printf '\n# Added by the SuckerPot installer\n' >> "$tmp"
     setv UPDATE_CHECK_ENABLED "$update_check"
     setv NETWORK_DEFAULT_PINNED 1
     setv SUCKERPOT_INSTALL_MODE "$mode"
@@ -890,7 +890,7 @@ elif [ -z "$(env_get VPN_WG_PRIVATE_KEY)" ]; then
 fi
 
 # ---------------------------------------------------------------- 9. start
-step 9 "Starting Selfhostr (this can take several minutes)"
+step 9 "Starting SuckerPot (this can take several minutes)"
 up_extra=()
 if [ "$switching" = 1 ]; then
   # hubproxy goes away, api and vpn start. A service of a profile that is no longer on is not an
@@ -963,7 +963,7 @@ if [ "$stack" = participant ]; then
   fi
   if [ -n "$(env_get VPN_WG_PRIVATE_KEY)" ]; then path="through your VPN"; else path="direct (no VPN)"; fi
   echo
-  if [ "$repair" = 1 ]; then echo "Selfhostr is repaired and running in participant mode (${version:-source build})."; else echo "Selfhostr is running in participant mode (${version:-source build})."; fi
+  if [ "$repair" = 1 ]; then echo "SuckerPot is repaired and running in participant mode (${version:-source build})."; else echo "SuckerPot is running in participant mode (${version:-source build})."; fi
   echo "  Pseudonym: ${pseudonym:-none}   Hub: ${hub_host:-unknown}   Path: $path"
   echo
   echo "Open these ports on your router or firewall, all to this machine:"
@@ -991,7 +991,7 @@ if [ "$stack" = participant ]; then
 fi
 
 echo
-echo "Selfhostr is running."
+echo "SuckerPot is running."
 if [ -n "$public_host" ]; then
   echo "  Dashboard: https://$public_host  (through your tunnel to http://$hbind:$dport)"
 else
@@ -1014,11 +1014,11 @@ if [ "$switching" = 1 ]; then
   echo
 fi
 if [ "${join_network:-0}" = 1 ]; then
-  echo "Selfhostr network: you agreed to join. It starts once a VPN is configured (Settings > VPN) and"
+  echo "SuckerPot network: you agreed to join. It starts once a VPN is configured (Settings > VPN) and"
   echo "your own public address is known. Leave at any time in the dashboard."
   echo
 elif [ "$fresh" = 1 ]; then
-  echo "Selfhostr network: not joined. You can join later in the dashboard."
+  echo "SuckerPot network: not joined. You can join later in the dashboard."
   echo
 fi
 echo "Next steps:"

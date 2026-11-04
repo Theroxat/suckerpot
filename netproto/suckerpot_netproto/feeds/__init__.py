@@ -1,4 +1,4 @@
-"""Selfhostr public blocklist feed formats (design M30 section 6): models, renderers, minisign
+"""SuckerPot public blocklist feed formats (design M30 section 6): models, renderers, minisign
 signatures and bounded parsers. Pure functions, no I/O. Used by the hub (render and sign) and by
 the node worker (verify and parse)."""
 

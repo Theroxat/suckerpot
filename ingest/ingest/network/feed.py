@@ -1,6 +1,6 @@
 """The community blocklist feed worker (design M30 section 10).
 
-Downloads the public, signed Selfhostr blocklist feed and keeps the verified entries in
+Downloads the public, signed SuckerPot blocklist feed and keeps the verified entries in
 ``network_feed_entries``. It is independent of network membership: the feed is public, so a node
 that never joined can use it. Off unless ``NETWORK_FEED_ENABLED=true`` with a URL and a key.
 

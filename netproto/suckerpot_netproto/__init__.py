@@ -1,4 +1,4 @@
-"""Selfhostr network protocol spn/1 (design M29): pure functions, no I/O.
+"""SuckerPot network protocol spn/1 (design M29): pure functions, no I/O.
 
 Imported by the hub and by the node worker. The normative description is
 ``docs/network-protocol.md``; any wire change goes through that spec first.

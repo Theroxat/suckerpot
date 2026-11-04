@@ -157,7 +157,7 @@ def render_report(summary: dict[str, Any], generated_at: str = "") -> str:
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         '<meta name="referrer" content="no-referrer">'
         f"<title>{esc('Weekly report, ' + title)}</title><style>{STYLE}</style></head><body><main>"
-        f'<header><span class="brand">Selfhostr · Weekly attack report</span><span class="meta">{esc(meta)}</span></header>'
+        f'<header><span class="brand">SuckerPot · Weekly attack report</span><span class="meta">{esc(meta)}</span></header>'
         f"<h1>{esc(title)}</h1>"
         f'<p class="lead">{esc(str(summary.get("headline", "")))}</p>'
         f'<div class="kpis">{kpi_html}</div>'

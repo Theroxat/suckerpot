@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Safe update of an installed Selfhostr: backup first, then new code, new images, restart, health
+# Safe update of an installed SuckerPot: backup first, then new code, new images, restart, health
 # check. Called by `just update [vX.Y.Z]`. See docs/design/m28.md section 6.
 #
 #   scripts/update.sh [--yes] [--no-backup] [--skip-verify] [--force] [--auto] [vX.Y.Z]
@@ -65,7 +65,7 @@ confirm() {
   [ "$a" = y ] || [ "$a" = yes ]
 }
 
-[ -f .env ] || die ".env not found. Selfhostr is not installed here (run ./scripts/install.sh)."
+[ -f .env ] || die ".env not found. SuckerPot is not installed here (run ./scripts/install.sh)."
 need_project
 env_drop_loaded
 
@@ -333,7 +333,7 @@ sed 's/"completed": false,/"completed": true,/' "$STATE" > "$tmp"
 chmod 600 "$tmp"
 mv "$tmp" "$STATE"
 echo
-echo "Selfhostr is now on $expected (commit ${new_ref:0:9})."
+echo "SuckerPot is now on $expected (commit ${new_ref:0:9})."
 if [ -n "$dump" ] && [ "$auto" = 0 ]; then
   echo "Rollback, if you need it: just rollback   (restores $dump and the previous version)"
 fi

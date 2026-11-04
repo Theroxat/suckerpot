@@ -1,4 +1,4 @@
-"""The Selfhostr network, node side (design M29, M33).
+"""The SuckerPot network, node side (design M29, M33).
 
 Nothing is sent until the node has joined; NETWORK_ENABLED=false switches it all off.
 """

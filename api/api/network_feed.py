@@ -1,4 +1,4 @@
-"""The Selfhostr community lists, node API and local mirror (design M30 section 10.5).
+"""The SuckerPot community lists, node API and local mirror (design M30 section 10.5).
 
 The ingest feed worker fetches the public lists, verifies the signature and stores the entries
 (``network_feed_entries``, ``network_feed_state``). This module only reads what was stored:

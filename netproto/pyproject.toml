@@ -1,7 +1,7 @@
 [project]
 name = "suckerpot-netproto"
 version = "0.1.0"
-description = "Selfhostr network protocol spn/1: wire models, signatures, blinding, proof of work and buckets (pure functions, no I/O)"
+description = "SuckerPot network protocol spn/1: wire models, signatures, blinding, proof of work and buckets (pure functions, no I/O)"
 requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.9,<3",

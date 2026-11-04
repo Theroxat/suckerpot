@@ -352,7 +352,7 @@ NETWORK_KINDS = {
 
 
 async def _network_confirmed(db: AsyncSession) -> set[tuple[str, str]]:
-    """Values the Selfhostr network confirmed (M29), as blocklist ``(kind, value)`` keys."""
+    """Values the SuckerPot network confirmed (M29), as blocklist ``(kind, value)`` keys."""
     rows = await db.execute(
         text(
             "SELECT kind, value FROM network_targets "

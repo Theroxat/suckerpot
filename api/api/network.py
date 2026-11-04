@@ -1,4 +1,4 @@
-"""The opt-in Selfhostr network, node API (design M29 section 9.6).
+"""The opt-in SuckerPot network, node API (design M29 section 9.6).
 
 The API has no route out and no builder: it records what the administrator asked for
 (``network_membership.desired``, a trigger limits it to ``off -> member -> leave``), and shows

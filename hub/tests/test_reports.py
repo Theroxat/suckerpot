@@ -77,7 +77,7 @@ def test_render_template_and_no_node_identity() -> None:
 
 def test_render_refuses_text_naming_the_project() -> None:
     with pytest.raises(ValueError):
-        render.render("attack_source", [rt()], template="from the Selfhostr network $facts")
+        render.render("attack_source", [rt()], template="from the SuckerPot network $facts")
 
 
 def test_sensors_bucket_uses_the_smallest_count() -> None:

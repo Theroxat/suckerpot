@@ -165,7 +165,7 @@ case $cmd in
     [ -z "$(env_get VPN_WG_PRIVATE_KEY)" ] || vpn=1
     echo
     consent_screen "$shown" "$vpn"
-    confirm "Join the Selfhostr network as described?" || die "not joined; nothing was changed"
+    confirm "Join the SuckerPot network as described?" || die "not joined; nothing was changed"
     begin
     env_set_line .env NETWORK_CONSENT "$(consent_record)"
     env_set_line .env NETWORK_ENABLED true
@@ -283,7 +283,7 @@ case $cmd in
       esac
       shift
     done
-    confirm "Leave the network and stop Selfhostr on this machine? (data volumes stay)" || die "aborted"
+    confirm "Leave the network and stop SuckerPot on this machine? (data volumes stay)" || die "aborted"
     if [ "$(env_get NETWORK_ENABLED false)" = true ]; then
       do_leave || echo "participant: warning: could not confirm the leave; continuing" >&2
     fi

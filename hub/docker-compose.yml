@@ -1,4 +1,4 @@
-# Selfhostr network hub. A SEPARATE deployment: it is not part of the node stack's
+# SuckerPot network hub. A SEPARATE deployment: it is not part of the node stack's
 # docker-compose.yml and never runs on a member's connection. Start it from this directory:
 #   cp .env.example .env   # fill in
 #   docker compose up -d --build        (build context is the repository root)

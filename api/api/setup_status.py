@@ -314,7 +314,7 @@ async def _updates(db: AsyncSession, _now: datetime) -> SetupItem:
         return _item(
             "updates",
             "warning",
-            f"Selfhostr {info.latest} is available (you run {info.version}).",
+            f"SuckerPot {info.latest} is available (you run {info.version}).",
             href,
         )
     return _item("updates", "ok", "No newer release is known.", href)
@@ -332,9 +332,9 @@ async def _network(db: AsyncSession, now: datetime) -> SetupItem:
         )
     ).one_or_none()
     if row is None or row.state != "member":
-        return _item("network", "off", "This system is not part of the Selfhostr network.", href)
+        return _item("network", "off", "This system is not part of the SuckerPot network.", href)
     if recent_submission(row.last_submit_day, now.date()):
-        return _item("network", "ok", "Part of the Selfhostr network; batches are going out.", href)
+        return _item("network", "ok", "Part of the SuckerPot network; batches are going out.", href)
     waiting = {
         "waiting_self_address": "Waiting for the honeypot's own address before sending.",
         "waiting_enrolment": "The hub is not taking new members right now; trying again later.",

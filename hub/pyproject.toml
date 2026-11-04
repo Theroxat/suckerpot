@@ -1,7 +1,7 @@
 [project]
 name = "suckerpot-hub"
 version = "0.1.0"
-description = "Selfhostr network hub: signed API, consensus, reputation and grouped abuse reports (a separate deployable)"
+description = "SuckerPot network hub: signed API, consensus, reputation and grouped abuse reports (a separate deployable)"
 requires-python = ">=3.13"
 dependencies = [
     "suckerpot-netproto",

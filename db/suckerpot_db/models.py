@@ -1573,7 +1573,7 @@ class SetupProgressRow(Base):
 
 
 class NetworkMembershipRow(Base):
-    """Membership of the opt-in Selfhostr network (M29): one row. ``desired`` is written by the
+    """Membership of the opt-in SuckerPot network (M29): one row. ``desired`` is written by the
     API, everything else by ingest. ``privkey_enc`` is readable by ingest only."""
 
     __tablename__ = "network_membership"
