@@ -2,7 +2,7 @@
 
 Sensors are the fake services that face the internet. Each one speaks just enough of a protocol to look real, records what the attacker does, and publishes it as [events](../event-schema.md). A sensor never runs attacker input and never makes an outbound connection.
 
-Selfhostr runs twelve sensors in four families. The family sets the colour in the dashboard. The sensor name and icon tell them apart.
+SuckerPot runs twelve sensors in four families. The family sets the colour in the dashboard. The sensor name and icon tell them apart.
 
 | Family | Sensor | Fake service | Host port (default) | Stream |
 | --- | --- | --- | --- | --- |

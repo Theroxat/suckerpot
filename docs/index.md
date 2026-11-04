@@ -1,15 +1,15 @@
-# Selfhostr
+# SuckerPot
 
-Selfhostr is a self-hosted honeypot with a dashboard that makes internet attacks easy to read. A few fake services (sensors) take the attacks. Each attack becomes an event. The events are enriched, tagged and stored. One dashboard shows what happened, as a story you can follow.
+SuckerPot is a self-hosted honeypot with a dashboard that makes internet attacks easy to read. A few fake services (sensors) take the attacks. Each attack becomes an event. The events are enriched, tagged and stored. One dashboard shows what happened, as a story you can follow.
 
-Selfhostr was called SuckerPot; technical names (packages, volumes, environment variables) keep the `suckerpot` prefix.
+SuckerPot is made by Selfhostr, a small organisation that builds self-hosted tools. Technical names (packages, volumes, environment variables) use the `suckerpot` prefix.
 
 Everything runs in Docker Compose on one host.
 
 > **Status: v0.2.0.** Twelve sensors, enrichment and tagging, and a dashboard organised in three spaces (Observe, Understand, Defend) plus Settings. The new analysis features are off until you turn them on. See the [roadmap](ROADMAP.md).
 
 ```{warning}
-Selfhostr is built to be attacked. Deploy it only on a dedicated, isolated machine that you are ready to lose. Read [Getting started](getting-started.md) before you install it.
+SuckerPot is built to be attacked. Deploy it only on a dedicated, isolated machine that you are ready to lose. Read [Getting started](getting-started.md) before you install it.
 ```
 
 ```{toctree}

@@ -1,11 +1,11 @@
-# Install Selfhostr
+# Install SuckerPot
 
-This page shows how to install Selfhostr with one command. The installer checks the machine, asks a few questions, creates every secret on this host and starts the stack. The dashboard then walks you through the rest.
+This page shows how to install SuckerPot with one command. The installer checks the machine, asks a few questions, creates every secret on this host and starts the stack. The dashboard then walks you through the rest.
 
 The manual path, with no installer, is still described in [Getting started](getting-started.md#manual-setup).
 
 ```{warning}
-Selfhostr is built to be attacked. Install it on a dedicated machine that holds nothing else you care about. Read [Getting started](getting-started.md#read-this-first) first.
+SuckerPot is built to be attacked. Install it on a dedicated machine that holds nothing else you care about. Read [Getting started](getting-started.md#read-this-first) first.
 ```
 
 ## Requirements
@@ -63,7 +63,7 @@ If you clone without a tag, or you want to build from source, run:
 
 The installer does not use `curl | bash`. Read the script first, then run it from the checkout.
 
-To install without questions, use `--yes`. It takes the default for every question. **That includes joining the Selfhostr network**: `--yes` counts as your agreement to the network screen, unless you also pass `--no-network`. The admin password is then generated and printed once, or you can pass your own on standard input:
+To install without questions, use `--yes`. It takes the default for every question. **That includes joining the SuckerPot network**: `--yes` counts as your agreement to the network screen, unless you also pass `--no-network`. The admin password is then generated and printed once, or you can pass your own on standard input:
 
 ```bash
 ./scripts/install.sh --yes --sensors recommended
@@ -92,7 +92,7 @@ Each question has a default. Press Enter to accept it. With `--yes`, every quest
 | Low-memory mode | `yes` below 6 GiB, `no` above | Only asked on machines with less than 6 GiB. See [low-memory hosts](#low-memory-hosts). |
 | Daily update check | `no` | One request a day through the VPN, off by default. See [updates](updates.md#the-optional-update-check). |
 | WireGuard `.conf` file | empty | Path to the file from your VPN provider. Empty means you upload it later in the dashboard. See [the VPN](#the-vpn-before-a-wireguard-file-is-uploaded). |
-| Join the Selfhostr network? | `yes` | Shows what would be shared, then asks `[Y/n]`. Yes writes a consent record and a random pseudonym; the join waits for a VPN. `--yes` is a yes, `--no-network` is a no. See [the network](network.md). |
+| Join the SuckerPot network? | `yes` | Shows what would be shared, then asks `[Y/n]`. Yes writes a consent record and a random pseudonym; the join waits for a VPN. `--yes` is a yes, `--no-network` is a no. See [the network](network.md). |
 | Your own public address | empty | Optional. The installer never looks it up. If you type it, it goes to `INDICATORS_IGNORE`, so it never shows up as attack infrastructure. |
 | Port in use | depends | Asked only when a port the chosen sensors need is already taken. See [port 22](#port-22-is-already-in-use). |
 | Admin SSH port | empty, or `22` when port 22 is busy | The port of this machine's own SSH daemon. It is protected so no sensor can take it. |
@@ -144,7 +144,7 @@ The installer stops before it changes anything when one of these is true.
 
 | Situation | What to do |
 | --- | --- |
-| A `.env` already exists in the checkout. | Selfhostr is installed here. Use `just update`. The installer never overwrites `.env`. |
+| A `.env` already exists in the checkout. | SuckerPot is installed here. Use `just update`. The installer never overwrites `.env`. |
 | The checkout is a linked git worktree. | Install from a normal clone. |
 | Docker is missing or does not answer for your user. | Install Docker, or run `sudo usermod -aG docker $USER`, then log in again. |
 | Docker Engine is older than 24, or Compose older than 2.24. | Upgrade Docker. |
@@ -197,7 +197,7 @@ Rules:
 - Never forward the dashboard port (`DASHBOARD_PORT`, 8443 by default) or your own admin SSH port.
 - Do not put the machine in your router's DMZ. A DMZ forwards every port, the dashboard's included. See [Deployment](deployment.md#forward-the-ports).
 - If your router's WAN address is in `100.64.0.0/10` (carrier-grade NAT), forwarding cannot work. Ask your provider for a public address.
-- Selfhostr cannot test the forwarding from outside, and it does not try. Bots arrive within minutes. The Ports page shows **Receiving** once a sensor gets its first event.
+- SuckerPot cannot test the forwarding from outside, and it does not try. Bots arrive within minutes. The Ports page shows **Receiving** once a sensor gets its first event.
 
 Set up the host firewall too. See [Deployment: host firewall](deployment.md#host-firewall).
 
@@ -241,7 +241,7 @@ After the installer finishes, sign in as the admin user. The setup opens by itse
 | Your own address | Asks for your own public address, so it never goes into a report or alert. | Yes |
 | Abuse reports | The reply contact for reports. Reports are drafts you send yourself. | Yes |
 | Alerts | Link to the alert channels. | Yes |
-| The Selfhostr network | Reserved for a later release. It stays hidden until then. | Yes |
+| The SuckerPot network | Reserved for a later release. It stays hidden until then. | Yes |
 | You are set | The checklist of what is left, the tour, and "Go to Today". | No |
 
 Controls:
@@ -252,7 +252,7 @@ Controls:
 
 ## Low-memory hosts
 
-The low-memory mode lets Selfhostr run on a machine with about 2 GiB of memory, with some swap. It uses a second Compose file, `docker-compose.lowmem.yml`.
+The low-memory mode lets SuckerPot run on a machine with about 2 GiB of memory, with some swap. It uses a second Compose file, `docker-compose.lowmem.yml`.
 
 The installer turns it on when you say yes to the question, or with `--lowmem on`. It writes this line to `.env`:
 
@@ -288,7 +288,7 @@ Sizing targets, from the design:
 
 ## The VPN before a WireGuard file is uploaded
 
-The installer always turns on the egress profile (`COMPOSE_PROFILES=egress`). This starts three services: `vpn`, `collector` and `analyzer`. Selfhostr makes every outside lookup through the VPN, and the VPN is the only service with a route to the internet. See [Configuration: anonymous egress](configuration.md#anonymous-egress-and-payload-collection-m21).
+The installer always turns on the egress profile (`COMPOSE_PROFILES=egress`). This starts three services: `vpn`, `collector` and `analyzer`. SuckerPot makes every outside lookup through the VPN, and the VPN is the only service with a route to the internet. See [Configuration: anonymous egress](configuration.md#anonymous-egress-and-payload-collection-m21).
 
 You can finish the install before you have a VPN configuration. Then the `vpn` service waits in **idle mode**:
 
@@ -304,11 +304,11 @@ To finish the VPN set-up, use one of these:
 
 A WireGuard configuration that is only half filled is not idle. The `vpn` service refuses to start the tunnel, so nothing leaves the machine. Fill in every value or remove them all.
 
-Use a VPN provider and a configuration that you trust. The provider sees all outbound traffic of Selfhostr.
+Use a VPN provider and a configuration that you trust. The provider sees all outbound traffic of SuckerPot.
 
 ## What leaves this machine
 
-Selfhostr sends its outside lookups through the VPN. The installer and the updates are different. They use the host's own network connection, not the VPN:
+SuckerPot sends its outside lookups through the VPN. The installer and the updates are different. They use the host's own network connection, not the VPN:
 
 - `git clone` and `git fetch`.
 - Image pulls from the registry, and the signature checks of [updates](updates.md#image-signatures).

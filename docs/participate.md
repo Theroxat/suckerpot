@@ -1,11 +1,11 @@
 # Join the network in three commands
 
-This page is for people who want to help the Selfhostr network and nothing else. You do not need a dashboard, an admin account, an API key or a VPN. You run sensors on a machine, and the machine shares what they see with the network.
+This page is for people who want to help the SuckerPot network and nothing else. You do not need a dashboard, an admin account, an API key or a VPN. You run sensors on a machine, and the machine shares what they see with the network.
 
-If you want the full product (the dashboard, reports, blocklists), read [Install Selfhostr](install.md) instead. You can switch to it later and keep your data.
+If you want the full product (the dashboard, reports, blocklists), read [Install SuckerPot](install.md) instead. You can switch to it later and keep your data.
 
 ```{warning}
-Selfhostr is built to be attacked. Use a dedicated machine that holds nothing else you care about. Choosing participant mode is your consent to join the network, as described below.
+SuckerPot is built to be attacked. Use a dedicated machine that holds nothing else you care about. Choosing participant mode is your consent to join the network, as described below.
 ```
 
 ## What you need
@@ -17,7 +17,7 @@ Selfhostr is built to be attacked. Use a dedicated machine that holds nothing el
 | Router | You can forward ports to this machine |
 | VPN | Not needed |
 
-The full list of checks is in [Install Selfhostr](install.md#requirements).
+The full list of checks is in [Install SuckerPot](install.md#requirements).
 
 ## The three commands
 
@@ -27,7 +27,7 @@ cd suckerpot
 ./scripts/install.sh --participant
 ```
 
-The installer prints what it will share and asks one question: `Join the Selfhostr network as described? [y/N]`. With `--yes` it does not ask, and `--yes` counts as your consent.
+The installer prints what it will share and asks one question: `Join the SuckerPot network as described? [y/N]`. With `--yes` it does not ask, and `--yes` counts as your consent.
 
 It then creates every secret on this machine, starts the sensors, the database, the ingest service and the network node, and picks a random pseudonym such as `amber-falcon-42`. Memory use is about 2 GiB.
 
@@ -44,7 +44,7 @@ The installer ends with a table like this (example):
 | 80 | 80 | TCP | web |
 | 443 | 443 | TCP | web |
 
-The first column is the port on your router. The second is the port on this machine. They are the same unless port 22 is busy on the machine: then the SSH sensor uses port 2222 and the table shows `22` and `2222`. Forward each router port to this machine on your router or firewall. Never forward your own admin SSH port. The installer never edits your `sshd_config`. More on ports: [Install Selfhostr](install.md#ports-to-forward).
+The first column is the port on your router. The second is the port on this machine. They are the same unless port 22 is busy on the machine: then the SSH sensor uses port 2222 and the table shows `22` and `2222`. Forward each router port to this machine on your router or firewall. Never forward your own admin SSH port. The installer never edits your `sshd_config`. More on ports: [Install SuckerPot](install.md#ports-to-forward).
 
 ## What you agree to share
 
@@ -55,7 +55,7 @@ In plain words, the node sends the hub:
 - malware hashes and command-and-control addresses, but only if you have a VPN and the collector is on;
 - takedown checks for addresses the network reported (not active yet).
 
-It never shares passwords, commands, your ports, your own address or any name of yours in a payload. The full picture, with the threat model, is in [The Selfhostr network](network.md).
+It never shares passwords, commands, your ports, your own address or any name of yours in a payload. The full picture, with the threat model, is in [The SuckerPot network](network.md).
 
 ## Privacy without a VPN
 
@@ -145,6 +145,6 @@ Run `./scripts/install.sh --help` for the full list.
 
 ## Next steps
 
-- [The Selfhostr network](network.md)
+- [The SuckerPot network](network.md)
 - [Updates and rollback](updates.md)
-- [Install Selfhostr](install.md)
+- [Install SuckerPot](install.md)

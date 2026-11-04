@@ -1,4 +1,4 @@
-# Selfhostr public site: static files served by unprivileged nginx on port 8080.
+# SuckerPot public site: static files served by unprivileged nginx on port 8080.
 FROM nginxinc/nginx-unprivileged:1.29.3-alpine3.22
 
 # The image already runs as the non-root "nginx" user (uid 101).

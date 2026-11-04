@@ -1,11 +1,11 @@
-# The Selfhostr network
+# The SuckerPot network
 
-The Selfhostr network is a pool you can join and leave at any time. Many Selfhostr systems share what their sensors saw, in aggregate and without identities. The network confirms a target only when several independent sensors agree. It then sends one strong abuse report instead of many weak ones, and it follows the takedown.
+The SuckerPot network is a pool you can join and leave at any time. Many SuckerPot systems share what their sensors saw, in aggregate and without identities. The network confirms a target only when several independent sensors agree. It then sends one strong abuse report instead of many weak ones, and it follows the takedown.
 
 This page is for members and for people who want to know what joining means. The hub operator reads `hub/README.md`. The exact wire format is in [Network protocol](network-protocol.md). The design and its review are in [M29](design/m29.md).
 
 ```{warning}
-Joining is a choice you are always asked about. The installer asks "Join the Selfhostr network? [Y/n]" and shows what would be shared first. The default is yes, and `--no-network` says no. An existing install that never answered is never joined by an update. In a full install you can also join or leave in the dashboard at any time. In a participant install, choosing that mode in the installer is the join.
+Joining is a choice you are always asked about. The installer asks "Join the SuckerPot network? [Y/n]" and shows what would be shared first. The default is yes, and `--no-network` says no. An existing install that never answered is never joined by an update. In a full install you can also join or leave in the dashboard at any time. In a participant install, choosing that mode in the installer is the join.
 ```
 
 ## What joining means
@@ -26,7 +26,7 @@ The network feature is unlocked by default (`NETWORK_ENABLED=true`), but unlocki
 
 | Way to join | Who | Default |
 | --- | --- | --- |
-| The installer question "Join the Selfhostr network? [Y/n]" (full mode), after the consent screen | The person installing | Yes. `--yes` counts as the agreement, `--no-network` declines |
+| The installer question "Join the SuckerPot network? [Y/n]" (full mode), after the consent screen | The person installing | Yes. `--yes` counts as the agreement, `--no-network` declines |
 | The participant install (`--participant`) | The person installing | The mode is the join |
 | Settings, Network: join, after being shown the five items and confirming with the password | An administrator | Not joined |
 
@@ -129,7 +129,7 @@ Joining does not give you a private list or an early copy. Members get the same 
 
 Poisoning means that someone sends false sightings to get an innocent address or site listed. The network makes this expensive. A single node can never publish anything.
 
-A value becomes a **confirmed target** only when all of these hold. The numbers below are the defaults. The hub operator can change them, and the live values are published at `https://hub.selfhostr.io/v1/info`.
+A value becomes a **confirmed target** only when all of these hold. The numbers below are the defaults. The hub operator can change them, and the live values are published at `https://hub.suckerpot.selfhostr.io/v1/info`.
 
 1. **Enough nodes.** At least 5 eligible nodes saw it.
 2. **Enough weight.** The reputation of those nodes adds up to at least 3.0. A node counts at most 1.0. A new node starts at 0.6, so five new nodes make exactly 3.0.
@@ -331,7 +331,7 @@ It does not give away the node keys' private halves, which never leave the nodes
 
 ### What an attacker can learn about your sensors
 
-An attacker that probes many addresses can learn that a set of addresses runs a Selfhostr sensor. Many probe addresses over weeks make this more likely. The attacker cannot learn which member runs them. This risk exists because your sensors answer connections, and it is the same with or without the network. The Overview says so before you join.
+An attacker that probes many addresses can learn that a set of addresses runs a SuckerPot sensor. Many probe addresses over weeks make this more likely. The attacker cannot learn which member runs them. This risk exists because your sensors answer connections, and it is the same with or without the network. The Overview says so before you join.
 
 ### What the community lists reveal
 

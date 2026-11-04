@@ -1,4 +1,4 @@
-"""Sphinx configuration for the Selfhostr documentation.
+"""Sphinx configuration for the SuckerPot documentation.
 
 The source directory is ``docs/``. Only files inside it are part of the site.
 Build locally with::
@@ -6,9 +6,9 @@ Build locally with::
     sphinx-build -W --keep-going -b html docs docs/_build/html
 """
 
-project = "Selfhostr"
-author = "Selfhostr contributors"
-copyright = "2026, Selfhostr contributors"
+project = "SuckerPot"
+author = "Selfhostr"
+copyright = "2026, Selfhostr"
 
 # Pages are written in Markdown (MyST).
 extensions = [
@@ -40,7 +40,7 @@ myst_heading_anchors = 4
 
 # Theme: furo follows the reader's light or dark setting.
 html_theme = "furo"
-html_title = "Selfhostr documentation"
+html_title = "SuckerPot documentation"
 
 # Copy button: skip the shell prompt when copying commands.
 copybutton_prompt_text = r"\$ "
