@@ -29,7 +29,7 @@ Most honeypot stacks are a pile of separate tools and dashboards that are hard t
 
 ## Status
 
-The current release is `v0.7.1`, a fix for the dashboard join button. `v0.7.0` turned the SuckerPot network on by default, with one-button join and leave. Earlier, `v0.6.0` added the SuckerPot network, a public community blocklist, a three-command participant install, a one-command installer and signed automatic updates. Earlier releases brought twelve sensors, the dashboard, campaigns, ATT&CK, Defend, scripts, alerts, the weekly report and anonymous reporting. The new analysis features are off until you turn them on, with an `*_ENABLED` variable each (see [configuration](docs/configuration.md)). Every sensor and feature goes through adversarial security review before it is accepted. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
+The current release is `v0.8.0`: the project moved to the Selfhostr organisation (`github.com/selfhostr/suckerpot`, images at `ghcr.io/selfhostr`), with new hub and feed addresses and the docs and demo at [suckerpot.selfhostr.io](https://suckerpot.selfhostr.io/). Installs on `v0.7.1` or earlier need [one manual step](docs/updates.md#moving-from-the-old-repository-v071-and-earlier) for this update. `v0.7.0` turned the SuckerPot network on by default, with one-button join and leave. Earlier, `v0.6.0` added the SuckerPot network, a public community blocklist, a three-command participant install, a one-command installer and signed automatic updates. Earlier releases brought twelve sensors, the dashboard, campaigns, ATT&CK, Defend, scripts, alerts, the weekly report and anonymous reporting. The new analysis features are off until you turn them on, with an `*_ENABLED` variable each (see [configuration](docs/configuration.md)). Every sensor and feature goes through adversarial security review before it is accepted. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
 
 ## Features
 
@@ -109,7 +109,7 @@ Sensors are the only services published to the internet, and they can reach Redi
 You need Docker with the compose plugin, on a machine you can afford to lose.
 
 ```bash
-git clone --depth 1 --branch v0.7.1 https://github.com/selfhostr/suckerpot.git
+git clone --depth 1 --branch v0.8.0 https://github.com/selfhostr/suckerpot.git
 cd suckerpot
 ./scripts/install.sh
 ```
@@ -123,7 +123,7 @@ The installer creates the secrets, starts the stack and prints the address of th
 Want to help the SuckerPot network and nothing else? Three commands, no dashboard, no VPN needed:
 
 ```bash
-git clone --depth 1 --branch v0.7.1 https://github.com/selfhostr/suckerpot.git
+git clone --depth 1 --branch v0.8.0 https://github.com/selfhostr/suckerpot.git
 cd suckerpot
 ./scripts/install.sh --participant
 ```
@@ -166,7 +166,7 @@ SuckerPot runs hostile traffic through containers, so isolation is a feature, no
 
 ## Roadmap
 
-Shipped through `v0.7.1`; `v0.8.0` is next. See [docs/ROADMAP.md](docs/ROADMAP.md) for every milestone.
+Shipped through `v0.8.0`. See [docs/ROADMAP.md](docs/ROADMAP.md) for every milestone.
 
 ## License
 
