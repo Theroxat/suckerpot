@@ -38,7 +38,7 @@ import { PortsCard } from "./ports-table"
 const WARNINGS = [
   {
     title: "Use a dedicated machine",
-    body: "Selfhostr is attacked on purpose. Run it on a machine or virtual machine that holds nothing else you care about.",
+    body: "SuckerPot is attacked on purpose. Run it on a machine or virtual machine that holds nothing else you care about.",
   },
   {
     title: "Leave no credentials on it",
@@ -54,7 +54,7 @@ export function WelcomeStep() {
   return (
     <div className="space-y-4">
       <p className="max-w-2xl text-sm text-fg-muted">
-        Selfhostr runs fake services and records everything attackers try against them. Three rules
+        SuckerPot runs fake services and records everything attackers try against them. Three rules
         keep the rest of your network safe:
       </p>
       <ol className="grid gap-3 sm:grid-cols-3">
@@ -139,7 +139,7 @@ function SensorPicker({ items }: { items: readonly PortItem[] }) {
       ) : (
         <div className="space-y-2">
           <p role="status" className="text-sm text-fg">
-            Run this on the machine that hosts Selfhostr to switch to {chosen.length}{" "}
+            Run this on the machine that hosts SuckerPot to switch to {chosen.length}{" "}
             {chosen.length === 1 ? "sensor" : "sensors"}:
           </p>
           <CommandBox
@@ -268,7 +268,7 @@ export function SelfStep() {
   return (
     <div className="space-y-4">
       <p className="max-w-2xl text-sm text-fg-muted">
-        Until one address is confirmed, abuse reports, alerts and the network stay locked. Selfhostr
+        Until one address is confirmed, abuse reports, alerts and the network stay locked. SuckerPot
         learns the address from the traffic it sees and asks you to confirm it. You can also add it
         by hand. It is never looked up on the internet.
       </p>
@@ -369,7 +369,7 @@ export function ReportingStep() {
         <CommandBox
           command={setCommand("ABUSE_REPORTS_ENABLED", "true")}
           label="Command to switch report drafts on"
-          hint="Run it on the machine that hosts Selfhostr. It restarts the services that need the change."
+          hint="Run it on the machine that hosts SuckerPot. It restarts the services that need the change."
         />
       </FindingCard>
     </div>
@@ -424,7 +424,7 @@ export function NetworkStep() {
     <NetworkJoinStep
       fallback={
         <FindingCard
-          eyebrow="The Selfhostr network"
+          eyebrow="The SuckerPot network"
           finding="Sharing is switched off in this system's settings (NETWORK_ENABLED=false), so nothing is shared."
           detail="There is nothing to decide now. If you switch it on later, you can join in Settings, Network."
         />

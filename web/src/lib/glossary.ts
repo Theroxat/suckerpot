@@ -108,7 +108,7 @@ export const GLOSSARY = {
   blocklist: {
     term: "Blocklist",
     short:
-      "A list of addresses or domains that your firewall or proxy should refuse. Selfhostr builds one from what it saw.",
+      "A list of addresses or domains that your firewall or proxy should refuse. SuckerPot builds one from what it saw.",
   },
   malware: {
     term: "Malware",

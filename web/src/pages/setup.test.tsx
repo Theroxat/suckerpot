@@ -147,7 +147,7 @@ describe("SetupPage", () => {
       "aria-current",
       "step",
     )
-    expect(within(nav).queryByRole("button", { name: /Selfhostr network/ })).toBeNull()
+    expect(within(nav).queryByRole("button", { name: /SuckerPot network/ })).toBeNull()
     await userEvent.click(within(nav).getByRole("button", { name: /Open the ports/ }))
     expect(await screen.findByText(/Attackers only reach a sensor/)).toBeInTheDocument()
   })
@@ -183,7 +183,7 @@ describe("SetupPage", () => {
     const names = within(nav)
       .getAllByRole("button")
       .map((b) => b.textContent)
-    const at = names.findIndex((n) => n.includes("The Selfhostr network"))
+    const at = names.findIndex((n) => n.includes("The SuckerPot network"))
     expect(names[at - 1]).toContain("Alerts")
     expect(names[at + 1]).toContain("You are set")
     expect(screen.getByText("Step 8 of 9")).toBeInTheDocument()

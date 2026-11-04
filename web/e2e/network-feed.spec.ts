@@ -8,7 +8,7 @@ import { h1, settle, shoot, shootTall } from "./helpers"
 test("network lists, on", async ({ page }, info) => {
   await page.goto("/defend/blocklists?tab=network")
   await expect(h1(page, "Blocklists")).toBeVisible()
-  await expect(page.getByText(/^The Selfhostr network lists/)).toBeVisible()
+  await expect(page.getByText(/^The SuckerPot network lists/)).toBeVisible()
   await expect(page.getByRole("group", { name: "Outbound list" })).toBeVisible()
   await expect(page.getByRole("list", { name: "Community list entries" })).toBeVisible()
   await settle(page)
@@ -68,7 +68,7 @@ test("tabs switch and keep the sensor view intact", async ({ page }) => {
   await page.goto("/defend/blocklists")
   await page.getByRole("tab", { name: "Network" }).click()
   await expect(page).toHaveURL(/tab=network/)
-  await expect(page.getByText(/^The Selfhostr network lists/)).toBeVisible()
+  await expect(page.getByText(/^The SuckerPot network lists/)).toBeVisible()
   await page.getByRole("tab", { name: "This sensor" }).click()
   await expect(page).not.toHaveURL(/tab=/)
   await expect(page.getByRole("list", { name: "Blocklist entries" })).toBeVisible()

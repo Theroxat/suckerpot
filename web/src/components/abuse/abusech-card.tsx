@@ -267,7 +267,7 @@ export function AbusechCard() {
             ? "The abuse.ch settings could not be loaded."
             : finding(q.data)
       }
-      detail="Optional. Selfhostr shares a captured malware URL with URLhaus only if you choose to."
+      detail="Optional. SuckerPot shares a captured malware URL with URLhaus only if you choose to."
     >
       {q.isPending ? (
         <SkeletonText lines={4} />

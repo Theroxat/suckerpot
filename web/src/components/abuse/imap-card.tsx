@@ -195,7 +195,7 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
             Read replies from this mailbox
             <span className="block text-xs text-fg-muted">
               Use a dedicated mailbox or alias for reports. It should be the reply contact you put
-              in your reports. Proton needs Proton Bridge, which Selfhostr does not include.
+              in your reports. Proton needs Proton Bridge, which SuckerPot does not include.
             </span>
           </label>
         </div>
@@ -300,7 +300,7 @@ function ImapSettingsForm({ initial }: { initial: ImapConfig }) {
               ]}
               className="self-start"
             />
-            <p className="text-xs text-fg-muted">Selfhostr never deletes or sends mail.</p>
+            <p className="text-xs text-fg-muted">SuckerPot never deletes or sends mail.</p>
           </div>
           {f.processed_action === "move" ? (
             <Field
@@ -459,7 +459,7 @@ export function ImapCard() {
             ? "The mailbox settings could not be loaded."
             : finding(q.data)
       }
-      detail="Optional. Selfhostr reads the replies to your reports so the Results page can tell who answered."
+      detail="Optional. SuckerPot reads the replies to your reports so the Results page can tell who answered."
     >
       {q.isPending ? (
         <SkeletonText lines={4} />

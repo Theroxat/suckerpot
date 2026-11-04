@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { BENEFIT } from "@/lib/network"
 
 /**
- * The optional "Join the Selfhostr network" step of the setup flow. Standalone: the setup flow
+ * The optional "Join the SuckerPot network" step of the setup flow. Standalone: the setup flow
  * decides where it goes and what "next" means.
  *
  * Joining is recommended but never automatic: it needs the join button and the password. "Not now"
@@ -45,9 +45,9 @@ export function NetworkStep({
           <CircleCheck aria-hidden className="size-4 text-status-ok" strokeWidth={2.25} />
           {s.state === "member"
             ? s.pseudonym
-              ? `You are part of the Selfhostr network as ${s.pseudonym}.`
-              : "You are part of the Selfhostr network."
-            : "Joining the Selfhostr network…"}
+              ? `You are part of the SuckerPot network as ${s.pseudonym}.`
+              : "You are part of the SuckerPot network."
+            : "Joining the SuckerPot network…"}
         </h3>
         <p className="text-sm text-fg-muted">
           You can read everything that was sent, change your pseudonym or leave with one button in{" "}
@@ -70,7 +70,7 @@ export function NetworkStep({
     <div className="space-y-5">
       <div className="space-y-2">
         <h3 className="text-base font-medium text-fg">
-          Join the Selfhostr network{" "}
+          Join the SuckerPot network{" "}
           <span className="font-normal text-fg-muted">(recommended)</span>
         </h3>
         <p className="max-w-3xl text-sm text-fg-muted">{BENEFIT}</p>

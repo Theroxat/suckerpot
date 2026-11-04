@@ -136,7 +136,7 @@ describe("network feed mocks match the contract", () => {
 describe("sentences and files", () => {
   it("opens with the finding and the confirmation threshold", () => {
     expect(feedSentence(buildStatus("ok"))).toMatch(
-      /^The Selfhostr network lists .* attack sources?, each confirmed by at least 5 independent sensors\./,
+      /^The SuckerPot network lists .* attack sources?, each confirmed by at least 5 independent sensors\./,
     )
   })
 

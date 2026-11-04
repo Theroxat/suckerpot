@@ -32,7 +32,7 @@ interface SendControlProps {
 }
 
 /**
- * What Selfhostr's own sending adds to a report: "Send now" in click mode, "Sending at hh:mm" with
+ * What SuckerPot's own sending adds to a report: "Send now" in click mode, "Sending at hh:mm" with
  * Cancel in automatic mode, and the state of the last request in plain words.
  */
 export function SendControl({

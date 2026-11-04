@@ -69,9 +69,9 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
   {
     id: "welcome",
     title: "Welcome",
-    sentence: "Selfhostr is a trap: fake servers that attackers find on the internet.",
+    sentence: "SuckerPot is a trap: fake servers that attackers find on the internet.",
     optional: false,
-    skip: "Yes. Nothing is set here: this step only explains what Selfhostr is.",
+    skip: "Yes. Nothing is set here: this step only explains what SuckerPot is.",
     teaser: "Read the three rules that keep your network safe.",
   },
   {
@@ -102,7 +102,7 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
   {
     id: "self",
     title: "Your own address",
-    sentence: "Selfhostr must know your own address so it never ends up in a report or an alert.",
+    sentence: "SuckerPot must know your own address so it never ends up in a report or an alert.",
     optional: true,
     skip: "Yes. Abuse reports and alerts stay locked until one address is confirmed.",
     teaser: "Confirm your own address, so it never ends up in a report or an alert.",
@@ -126,11 +126,11 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
   },
   {
     id: "network",
-    title: "The Selfhostr network",
+    title: "The SuckerPot network",
     sentence: "Joining the network is recommended, and always your choice.",
     optional: true,
     skip: "Yes. Nothing is shared unless you join, and you can join or leave later in Settings, Network.",
-    teaser: "Decide whether to join the Selfhostr network.",
+    teaser: "Decide whether to join the SuckerPot network.",
   },
   {
     id: "done",
