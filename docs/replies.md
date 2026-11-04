@@ -1,6 +1,6 @@
 # Replies to reports
 
-Selfhostr can read the answers to your abuse reports. It reads a mailbox that you set up for reports, sorts each reply by what it says, and links it to the report it answers. The report page then shows the outcome: an automatic receipt, a ticket number, a resolution, a rejection or a bounce.
+SuckerPot can read the answers to your abuse reports. It reads a mailbox that you set up for reports, sorts each reply by what it says, and links it to the report it answers. The report page then shows the outcome: an automatic receipt, a ticket number, a resolution, a rejection or a bounce.
 
 Replies are optional. Without a mailbox you can still paste a reply, or upload an `.eml` file, on the report page. The outcome is then set the same way.
 
@@ -15,7 +15,7 @@ You need:
 - The VPN tunnel from [Anonymous egress](deployment.md#anonymous-egress-vpn), running.
 - `ABUSE_REPLIES_ENABLED=true` in `.env`. The worker is off until you set it.
 
-Proton mail needs Proton Bridge for IMAP. Selfhostr does not include Bridge. Proton users can still paste replies.
+Proton mail needs Proton Bridge for IMAP. SuckerPot does not include Bridge. Proton users can still paste replies.
 
 ## Set up the mailbox
 
@@ -47,25 +47,25 @@ The status line under the card shows when the mailbox was last checked, or the l
 
 ### The VPN rule
 
-Replies are read through the VPN, like every other outbound request of Selfhostr. The mailbox server never sees your home address.
+Replies are read through the VPN, like every other outbound request of SuckerPot. The mailbox server never sees your home address.
 
 If the VPN is down, nothing is sent and nothing is read. The worker does not open a connection at all. The status shows the code `egress_closed`. When the tunnel is back, the next check reads the mail that arrived in the meantime.
 
 ### Shared mailboxes
 
-Selfhostr warns you when the mailbox is on a free or shared mail domain. The card says: "This looks like a free or shared mailbox: use a mailbox dedicated to reports."
+SuckerPot warns you when the mailbox is on a free or shared mail domain. The card says: "This looks like a free or shared mailbox: use a mailbox dedicated to reports."
 
 Why this matters:
 
 - A reply from a free mail domain says nothing about the organisation you wrote to. Anyone can open a free account.
-- For these domains, Selfhostr trusts one exact address only: the address of the recipient's mailbox, or an address you chose to trust. The domain alone never counts.
+- For these domains, SuckerPot trusts one exact address only: the address of the recipient's mailbox, or an address you chose to trust. The domain alone never counts.
 - A free-domain sender never makes a mail relevant, and never matches a report by its domain.
 
 You can still use such a mailbox. The results are then more often "Reply not understood" or "Check it". A dedicated mailbox on your own domain gives better results.
 
 ## Find the trusted provider name
 
-Selfhostr checks the **Authentication-Results** header that your mail provider adds to each mail it delivers. This check is what proves that a reply really came from the recipient's domain.
+SuckerPot checks the **Authentication-Results** header that your mail provider adds to each mail it delivers. This check is what proves that a reply really came from the recipient's domain.
 
 The header starts with a name, then a semicolon. That name is the **trusted provider name**. Enter it in the **Mail provider name** field. Only the first header with that name counts. Without the name, no reply is ever treated as authenticated. Then a reply is verified only when it matches your Message-ID from a trusted sender, or when you confirm it by hand.
 
@@ -87,7 +87,7 @@ gives the trusted provider name `mx.example.net`.
 Notes:
 
 - Use a mail that was delivered to the mailbox. A copy in your sent folder has no such header.
-- Selfhostr compares the name in lower case. Letters, digits, dots and hyphens are allowed, up to 255 characters.
+- SuckerPot compares the name in lower case. Letters, digits, dots and hyphens are allowed, up to 255 characters.
 - If the header has no such line, your provider does not add one. Then leave the field empty.
 
 ## How replies are matched
@@ -96,7 +96,7 @@ Each reply is matched to one report by the first rule that fits. The rules run i
 
 | Order | Method | What it looks at |
 | --- | --- | --- |
-| 1 | `message_id` | The `In-Reply-To` or `References` header quotes the Message-ID of a report that Selfhostr sent through SMTP. |
+| 1 | `message_id` | The `In-Reply-To` or `References` header quotes the Message-ID of a report that SuckerPot sent through SMTP. |
 | 2 | `token` | A 12-character reference, after `ref` (for example `ref 3f9a1c7b2e4d`), in the subject or the first 8 KiB of the body. |
 | 3 | `dsn` | A delivery failure notice whose original mail has a Message-ID or a reference from rule 1 or 2. |
 | 4 | `ticket` | A ticket number that an earlier reply from the same domain already linked to a report. |
@@ -172,20 +172,20 @@ A report with no reply has the outcome **No answer yet**. After 14 days (`ABUSE_
 
 A bounce also marks the report for review, and the report page suggests another mailbox for the recipient.
 
-Selfhostr never closes a report by itself. A "resolved" outcome does not close it. You decide when to close.
+SuckerPot never closes a report by itself. A "resolved" outcome does not close it. You decide when to close.
 
 ### Set the outcome by hand
 
 If the automatic result is wrong, or the provider answered by phone, set the outcome yourself. On the report page, open the **Outcome** card, choose **Set outcome**, pick the outcome, the date and an optional note. The manual outcome wins over the automatic one. **Back to automatic** removes it.
 
-## What Selfhostr reads and stores
+## What SuckerPot reads and stores
 
 Incoming mail is treated as hostile. The rules below apply to every mail.
 
-- **Relevance first.** Selfhostr reads the headers first. A mail is fetched in full only when its headers show a reference or Message-ID of one of your reports, a ticket number, a delivery failure, or a sender from a party you wrote to. Other mail is counted as "ignored". Nothing is stored and its flags are not changed.
+- **Relevance first.** SuckerPot reads the headers first. A mail is fetched in full only when its headers show a reference or Message-ID of one of your reports, a ticket number, a delivery failure, or a sender from a party you wrote to. Other mail is counted as "ignored". Nothing is stored and its flags are not changed.
 - **Size.** A header block over 64 KiB is skipped. A mail over 256 KiB is cut at 256 KiB and marked as truncated (`ABUSE_REPLY_MAX_BYTES`).
 - **Bounded parsing.** At most 50 parts, nested at most 5 levels deep. Each text part is capped at 128 KiB.
-- **Attachments** are never opened or decoded. Selfhostr stores only how many there were, their types and their size.
+- **Attachments** are never opened or decoded. SuckerPot stores only how many there were, their types and their size.
 - **HTML** is never rendered. If a mail has no text part, the text is taken from the HTML and all tags are removed. No link is kept or made clickable.
 - **Excerpt.** At most 2,000 characters of the reply are kept, without quoted text. Excerpts are deleted after 180 days (`ABUSE_REPLY_EXCERPT_DAYS`). Unmatched replies are deleted after 180 days.
 - **Addresses.** Only the sender's domain is shown to viewers. Administrators also see the sender's address.
@@ -199,7 +199,7 @@ On a report page, choose **Add a reply**. Paste the text of the mail, or upload 
 
 ## The worker never deletes mail
 
-The mailbox is only read and marked. Selfhostr does not:
+The mailbox is only read and marked. SuckerPot does not:
 
 - delete, expunge or flag mail as deleted;
 - write, rename or create folders, or change access rights;
@@ -212,7 +212,7 @@ It changes only two things, and only after the reply is saved in the database:
 | **Mark as read** (default) | Sets the `\Seen` flag on the mail. |
 | **Move** | Moves the mail to the folder you chose (IMAP `MOVE`). If the server has no `MOVE`, the mail is marked as read instead, and the status says so. |
 
-Fetching never marks mail as read: Selfhostr uses `BODY.PEEK`. Selfhostr also does not rely on unread mail. It reads everything since the last position, so mail you read yourself is still picked up.
+Fetching never marks mail as read: SuckerPot uses `BODY.PEEK`. SuckerPot also does not rely on unread mail. It reads everything since the last position, so mail you read yourself is still picked up.
 
 If you want an empty mailbox, do that yourself in your mail app.
 
@@ -231,10 +231,10 @@ The status line shows one of these codes in plain words. Server answers and mail
 | `no_move_folder` | The folder to move replies to is missing, or the server refused the move. | Create the folder, or correct its name. |
 | `timeout` | The server did not answer in time. | Try again later. |
 | `network` | The connection to the server failed. | Check the server name and the tunnel. |
-| `protocol` | The server answered in a way Selfhostr does not understand. | Check that the port is an IMAP port, not a POP3 or SMTP one. |
-| `internal` | A problem inside Selfhostr, such as the database. | Check the ingest logs. No mail content is in them. |
+| `protocol` | The server answered in a way SuckerPot does not understand. | Check that the port is an IMAP port, not a POP3 or SMTP one. |
+| `internal` | A problem inside SuckerPot, such as the database. | Check the ingest logs. No mail content is in them. |
 
-A single bad mail does not stop the mailbox. Selfhostr counts it as `failed` and moves on to the next one. A broken connection or database stops the poll, and the poll starts again from the same place next time.
+A single bad mail does not stop the mailbox. SuckerPot counts it as `failed` and moves on to the next one. A broken connection or database stops the poll, and the poll starts again from the same place next time.
 
 Counters on the card: `fetched`, `relevant`, `matched`, `ignored`, `oversize` and `failed`.
 

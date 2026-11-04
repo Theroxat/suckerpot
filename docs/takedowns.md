@@ -1,6 +1,6 @@
 # Takedowns
 
-Selfhostr follows what happens to the targets in your reports. Is the malware file still served? Is the attacking address still active? How long did the takedown take, and which providers act?
+SuckerPot follows what happens to the targets in your reports. Is the malware file still served? Is the attacking address still active? How long did the takedown take, and which providers act?
 
 Takedown tracking is optional and off by default. It needs `TAKEDOWN_ENABLED=true`. Re-checks of payload URLs also need `COLLECTOR_ENABLED=true`.
 
@@ -15,7 +15,7 @@ Related pages: [Replies to reports](replies.md) (the answers from providers), [C
 
 ## What is never contacted
 
-Selfhostr is a honeypot. It does not hunt back. Takedown tracking follows the same rule:
+SuckerPot is a honeypot. It does not hunt back. Takedown tracking follows the same rule:
 
 | Target | Contacted? |
 | --- | --- |
@@ -25,7 +25,7 @@ Selfhostr is a honeypot. It does not hunt back. Takedown tracking follows the sa
 | An attacking IP address | Never. No connection, no ping, no traceroute. |
 | A URL hosted on an address that attacked you in the last 30 days | Never. Passive signals only. |
 | Any host for port scans, DNS brute force or reverse lookups | Never. |
-| An abuse report to AbuseIPDB | Never. Selfhostr only reads AbuseIPDB. |
+| An abuse report to AbuseIPDB | Never. SuckerPot only reads AbuseIPDB. |
 
 The fixed intel services are asked about a value. These are URLhaus, ThreatFox and AbuseIPDB. They are not the target. Their answers come from their own databases.
 
@@ -33,7 +33,7 @@ Why:
 
 - A connection to a C2 server or an attacker is a probe of their infrastructure. That is a counter-scan.
 - A payload host is public by nature: it serves a file to anyone who asks. Asking once, the same way the collector asked the first time, is the same request.
-- An address that attacks you is not a host that serves you. Selfhostr keeps out of it.
+- An address that attacks you is not a host that serves you. SuckerPot keeps out of it.
 
 ### The re-check of a payload URL
 
@@ -50,7 +50,7 @@ The re-check is one GET with the same identity and limits as the original fetch:
 - the body is capped at `COLLECTOR_MAX_BYTES`;
 - every request goes through the VPN. With the tunnel down, nothing is sent and no quota is used.
 
-Selfhostr stores nothing unless the file changed. The body is hashed while it streams. If the hash matches the last one, the bytes are thrown away. If the file is different, it is kept as a new sample, if there is room in quarantine. A file that is never stored is never run.
+SuckerPot stores nothing unless the file changed. The body is hashed while it streams. If the hash matches the last one, the bytes are thrown away. If the file is different, it is kept as a new sample, if there is room in quarantine. A file that is never stored is never run.
 
 The schedule of re-checks per URL:
 
@@ -76,7 +76,7 @@ Listing lookups have their own daily caps, `TAKEDOWN_INTEL_DAILY_QUOTA` (100) an
 
 ## Targets
 
-A target is one thing you reported. Selfhostr creates targets from:
+A target is one thing you reported. SuckerPot creates targets from:
 
 | Source | Target kind | Role |
 | --- | --- | --- |
@@ -119,7 +119,7 @@ A single failed check never means down. A URL is down when its last two checks a
 
 The dashboard shows "Not answering since" for a URL that has failed once and is not yet confirmed down.
 
-For a C2 server the state is never **down**. Selfhostr does not contact C2 servers, so it cannot see them go away. The page says so: it shows whether new malware still points to the address.
+For a C2 server the state is never **down**. SuckerPot does not contact C2 servers, so it cannot see them go away. The page says so: it shows whether new malware still points to the address.
 
 ### Time to takedown
 
@@ -164,7 +164,7 @@ A monthly roll-up keeps the counts per provider, kind and channel. It holds numb
 
 ## abuse.ch submissions
 
-Selfhostr can send captured malware URLs to URLhaus, and command-and-control addresses to ThreatFox. abuse.ch then shares them with other defenders.
+SuckerPot can send captured malware URLs to URLhaus, and command-and-control addresses to ThreatFox. abuse.ch then shares them with other defenders.
 
 Submission is **off by default, twice**:
 
@@ -222,7 +222,7 @@ The body has no free text, no comment, no reference link, no date and no session
 
 ### Lookup before submit
 
-Before a candidate can be submitted, Selfhostr asks abuse.ch whether it already knows the value:
+Before a candidate can be submitted, SuckerPot asks abuse.ch whether it already knows the value:
 
 | Lookup result | Status shown |
 | --- | --- |
@@ -232,7 +232,7 @@ Before a candidate can be submitted, Selfhostr asks abuse.ch whether it already 
 
 ### Delivery happens at most once
 
-A submission is sent at most once. Selfhostr records "Sending" in the database before it makes the request. If the outcome is unknown, for example after a crash, the row becomes **Failed** and is never retried. A tunnel that is down before the request returns the row to the queue, unsent.
+A submission is sent at most once. SuckerPot records "Sending" in the database before it makes the request. If the outcome is unknown, for example after a crash, the row becomes **Failed** and is never retried. A tunnel that is down before the request returns the row to the queue, unsent.
 
 ### Statuses
 
@@ -250,7 +250,7 @@ Each submitted row links to the abuse.ch page for the value. The link is built b
 
 ### Check the first submission
 
-The abuse.ch documentation describes the submission request, but it does not describe every answer. Selfhostr maps answers to short codes, such as `inserted`, `already_known` or `auth_failed`. Unknown answers become `unknown_outcome` or a generic code. Check the first result on the Submissions tab after you turn on automatic mode, before you rely on it.
+The abuse.ch documentation describes the submission request, but it does not describe every answer. SuckerPot maps answers to short codes, such as `inserted`, `already_known` or `auth_failed`. Unknown answers become `unknown_outcome` or a generic code. Check the first result on the Submissions tab after you turn on automatic mode, before you rely on it.
 
 ## Retention
 

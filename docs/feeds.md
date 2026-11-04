@@ -1,10 +1,10 @@
 # Community blocklist feeds
 
-The Selfhostr network publishes free blocklists. Any firewall can load them. This page is for the person who loads them: what the lists hold, how to fetch them, how to check them, and how to ask for a removal.
+The SuckerPot network publishes free blocklists. Any firewall can load them. This page is for the person who loads them: what the lists hold, how to fetch them, how to check them, and how to ask for a removal.
 
 The examples use the placeholder host `feeds.example.org`. The public address of the feed is written there until the project sets its real one. Use the address from the project documentation once it is live.
 
-The lists are built only from what many sensors saw. Each entry needs observations from at least five independent sensors. The network explains how that works in [The Selfhostr network](network.md).
+The lists are built only from what many sensors saw. Each entry needs observations from at least five independent sensors. The network explains how that works in [The SuckerPot network](network.md).
 
 ## The five lists
 
@@ -168,7 +168,7 @@ Menu names follow OPNsense 25.x. Your version may name things a little different
    - **Type:** **URL Table (IPs)**
    - **Refresh Frequency:** `0` days `6` hours
    - **Content:** `https://feeds.example.org/v1/outbound.txt`
-   - **Description:** `Selfhostr outbound (CC0)`
+   - **Description:** `SuckerPot outbound (CC0)`
 3. Save, then **Apply**.
 4. Repeat for `selfhostr_inbound` with `https://feeds.example.org/v1/inbound-high.txt`. Start with the high tier.
 5. Go to **Firewall → Settings → Advanced** and check **Firewall Maximum Table Entries**. It must be larger than the sum of all your tables. Each list holds up to 50,000 entries.
@@ -292,8 +292,8 @@ The `.rsc` file adds each address with a timeout of 1 day 6 hours. Addresses tha
 3. Add the block rules, above your general forward accept rule:
 
    ```
-   /ip firewall filter add chain=forward action=drop dst-address-list=selfhostr-outbound log=yes log-prefix=selfhostr comment="Selfhostr outbound" place-before=<number>
-   /ipv6 firewall filter add chain=forward action=drop dst-address-list=selfhostr-outbound comment="Selfhostr outbound" place-before=<number>
+   /ip firewall filter add chain=forward action=drop dst-address-list=selfhostr-outbound log=yes log-prefix=selfhostr comment="SuckerPot outbound" place-before=<number>
+   /ipv6 firewall filter add chain=forward action=drop dst-address-list=selfhostr-outbound comment="SuckerPot outbound" place-before=<number>
    ```
 
    `place-before` sets the position. Use the number of your first forward accept rule, which you can read with `/ip firewall filter print`. Use the IPv6 number for the IPv6 rule.
@@ -391,7 +391,7 @@ The index has a `next_key_id` field, reserved for a future key change. It is `nu
 
 The lists and the files are released under **CC0 1.0 Universal**, the public-domain dedication. You may copy, change, mix and redistribute them, for any purpose, with no permission and no attribution. The full text is at <https://creativecommons.org/publicdomain/zero/1.0/legalcode>.
 
-- The project asks, without any condition, that you credit "the Selfhostr network" if it is convenient.
+- The project asks, without any condition, that you credit "the SuckerPot network" if it is convenient.
 - The data comes with no warranty. The operators are not liable for blocking decisions you make with it.
 - The licence of the project's code is separate and unchanged.
 
@@ -492,9 +492,9 @@ The lookup gives no dates, no categories, no list names and no node counts. It i
 | What does the delisting form keep? | The value, the category, the day, and the decision. It never stores your address. Evidence and contact are deleted 30 days after the decision. Requests are deleted after 180 days. |
 | What about your firewall and your proxy? | Your own network can log what it fetches. The feed cannot see that. |
 
-## The local mirror on your own Selfhostr
+## The local mirror on your own SuckerPot
 
-If you run a Selfhostr sensor, its dashboard can serve the community lists to your firewall. The mirror holds only what your node verified. This helps when the firewall should not reach the internet, or when it can only fetch from one address.
+If you run a SuckerPot sensor, its dashboard can serve the community lists to your firewall. The mirror holds only what your node verified. This helps when the firewall should not reach the internet, or when it can only fetch from one address.
 
 What the mirror does:
 
@@ -529,7 +529,7 @@ The path form puts the token in the URL. Treat that URL like a password, and rev
 
 ## See also
 
-- [The Selfhostr network](network.md): how the lists are built and what members share
+- [The SuckerPot network](network.md): how the lists are built and what members share
 - [Defend](defend.md): the Network tab on the Blocklists page
 - [Configuration](configuration.md#community-lists-m30): the `NETWORK_FEED_*` settings
 - [API](api.md#community-lists-m30): the node endpoints and the mirror routes

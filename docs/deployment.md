@@ -1,6 +1,6 @@
 # Deployment
 
-This page is the checklist for putting Selfhostr on the internet. Follow the steps in order. Do not skip the firewall, the snapshot or the verification.
+This page is the checklist for putting SuckerPot on the internet. Follow the steps in order. Do not skip the firewall, the snapshot or the verification.
 
 Read [Getting started](getting-started.md) first, and the [Security](SECURITY.md) page for the threat model.
 
@@ -528,7 +528,7 @@ Migrations run on start. Read the [changelog](https://github.com/Theroxat/sucker
 | Symptom | Likely cause and fix |
 | --- | --- |
 | After an upgrade the browser shows only the dark background. | The browser kept old app files. Close every tab of the dashboard, then hard-reload with `Ctrl+Shift+R`. |
-| The dashboard is very slow through a tunnel, but the server is idle. | Usually the uplink is saturated. Compare a ping to your gateway with a ping to an internet host (for example `ping -c 10 192.0.2.1` for the gateway and `ping -c 10 example.com`). High loss or delay on both points at the uplink, not at Selfhostr. |
+| The dashboard is very slow through a tunnel, but the server is idle. | Usually the uplink is saturated. Compare a ping to your gateway with a ping to an internet host (for example `ping -c 10 192.0.2.1` for the gateway and `ping -c 10 example.com`). High loss or delay on both points at the uplink, not at SuckerPot. |
 | The first image build fails with a DNS error. | A transient name-resolution failure while pulling a base image or package. Run `docker compose build` again. |
 
 ## After go-live
@@ -537,7 +537,7 @@ Migrations run on start. Read the [changelog](https://github.com/Theroxat/sucker
 - Check `docker compose ps` for restarting sensors. A sensor that restarts often points at an attack that hits a limit.
 - Keep the host updated. Apply security updates regularly.
 - Keep the snapshot up to date when you change the setup.
-- Read the logs of the admin SSH service, not only of Selfhostr.
+- Read the logs of the admin SSH service, not only of SuckerPot.
 
 ## Planned
 

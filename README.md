@@ -1,6 +1,6 @@
 <div align="center">
 
-# Selfhostr
+# SuckerPot
 
 **A self-hosted honeypot with one readable dashboard: twelve realistic sensors for remote shells, web and APIs, databases, and Windows and VoIP services, and a UI that tells each attack as a short story you can click through.**
 
@@ -15,19 +15,19 @@
 
 </div>
 
-<img src="docs/screenshots/demo.webp" alt="The Selfhostr Live page: sensor counters, a live feed of attacks with tags such as recon, php2shell and malware-drop, and the sensor filters" width="100%">
+<img src="docs/screenshots/demo.webp" alt="The SuckerPot Live page: sensor counters, a live feed of attacks with tags such as recon, php2shell and malware-drop, and the sensor filters" width="100%">
 
-> **Selfhostr is meant to be attacked.** Deploy it only on an isolated host or VM that you are ready to lose, and keep nothing that matters on it. It is purely passive: no counter-scans, no hacking back, no automatic reporting. Attacker input is never executed. All screenshots use synthetic demo data and documentation IP addresses.
+> **SuckerPot is meant to be attacked.** Deploy it only on an isolated host or VM that you are ready to lose, and keep nothing that matters on it. It is purely passive: no counter-scans, no hacking back, no automatic reporting. Attacker input is never executed. All screenshots use synthetic demo data and documentation IP addresses.
 
-> Selfhostr was called SuckerPot; technical names (packages, volumes, environment variables) keep the `suckerpot` prefix.
+> SuckerPot is made by Selfhostr, a small organisation that builds self-hosted tools. Technical names (packages, volumes, environment variables) use the `suckerpot` prefix.
 
 ## Why
 
-Most honeypot stacks are a pile of separate tools and dashboards that are hard to read. Selfhostr goes the other way: few sensors, built well, and ONE dashboard that is the product. Each page opens with a plain-English finding, every IP, country, tag or URL is a link to a filtered view, and every filter lives in the URL so you can share it.
+Most honeypot stacks are a pile of separate tools and dashboards that are hard to read. SuckerPot goes the other way: few sensors, built well, and ONE dashboard that is the product. Each page opens with a plain-English finding, every IP, country, tag or URL is a link to a filtered view, and every filter lives in the URL so you can share it.
 
 ## Status
 
-The current release is `v0.7.1`, a fix for the dashboard join button. `v0.7.0` turned the Selfhostr network on by default, with one-button join and leave. Earlier, `v0.6.0` added the Selfhostr network, a public community blocklist, a three-command participant install, a one-command installer and signed automatic updates. Earlier releases brought twelve sensors, the dashboard, campaigns, ATT&CK, Defend, scripts, alerts, the weekly report and anonymous reporting. The new analysis features are off until you turn them on, with an `*_ENABLED` variable each (see [configuration](docs/configuration.md)). Every sensor and feature goes through adversarial security review before it is accepted. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
+The current release is `v0.7.1`, a fix for the dashboard join button. `v0.7.0` turned the SuckerPot network on by default, with one-button join and leave. Earlier, `v0.6.0` added the SuckerPot network, a public community blocklist, a three-command participant install, a one-command installer and signed automatic updates. Earlier releases brought twelve sensors, the dashboard, campaigns, ATT&CK, Defend, scripts, alerts, the weekly report and anonymous reporting. The new analysis features are off until you turn them on, with an `*_ENABLED` variable each (see [configuration](docs/configuration.md)). Every sensor and feature goes through adversarial security review before it is accepted. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
 
 ## Features
 
@@ -60,7 +60,7 @@ Each sensor records what the attacker does and never runs it. SIP answers are ca
 - **Defend.** Scored blocklists with a reason for every point, exports for OPNsense and pfSense aliases, an opt-in token feed for firewalls, Sigma and Suricata rules marked "review before deploying", and "Your exposure", which compares your own service inventory with what was recorded.
 - **Alerts and reports.** Discord, Microsoft Teams and e-mail alerts for new campaigns, new download hosts, malware drops and watched CVEs. Every rule is off until you switch it on. A weekly report has a one-page printable view.
 - **Today and search.** A Today home page says what changed in the last 24 hours. One search box finds an IP, hash, domain, CVE or campaign. Known research scanners are labelled, and hidden from lists unless you ask for them. A glossary explains the terms.
-- **Opt-in network and public blocklist.** Many Selfhostr systems can share aggregate attacker data, and the network confirms a target only when several independent sensors agree. Joining is a choice you make in the installer or the dashboard. A community blocklist built from it is published for free, once the network has confirmed its first targets. See [the network](docs/network.md) and [the public feeds](docs/feeds.md).
+- **Opt-in network and public blocklist.** Many SuckerPot systems can share aggregate attacker data, and the network confirms a target only when several independent sensors agree. Joining is a choice you make in the installer or the dashboard. A community blocklist built from it is published for free, once the network has confirmed its first targets. See [the network](docs/network.md) and [the public feeds](docs/feeds.md).
 - **Retention and backups.** Raw events kept 90 days, aggregates forever, compression after 7 days, a disk guard, and `just backup` / `just restore`.
 - **Hardened by default.** Non-root, read-only containers with all capabilities dropped and `no-new-privileges`; isolated networks with an internal backend; one Redis ACL user per sensor, limited to `XADD` on its own stream; least-privilege database roles; no outbound route for the API; and an nftables [host firewall template](scripts/host/firewall.nft).
 
@@ -114,7 +114,7 @@ The installer creates the secrets, starts the stack and prints the address of th
 
 ## Join the network
 
-Want to help the Selfhostr network and nothing else? Three commands, no dashboard, no VPN needed:
+Want to help the SuckerPot network and nothing else? Three commands, no dashboard, no VPN needed:
 
 ```bash
 git clone --depth 1 --branch v0.7.1 https://github.com/Theroxat/suckerpot.git
@@ -156,7 +156,7 @@ Install the gitleaks pre-commit hook once with `scripts/install-hooks.sh`. See [
 
 ## Security
 
-Selfhostr runs hostile traffic through containers, so isolation is a feature, not an afterthought. The design and the threat model are in [docs/SECURITY.md](docs/SECURITY.md). To report a vulnerability, read [SECURITY.md](SECURITY.md) and use GitHub's private reporting.
+SuckerPot runs hostile traffic through containers, so isolation is a feature, not an afterthought. The design and the threat model are in [docs/SECURITY.md](docs/SECURITY.md). To report a vulnerability, read [SECURITY.md](SECURITY.md) and use GitHub's private reporting.
 
 ## Roadmap
 

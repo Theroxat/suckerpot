@@ -1,8 +1,8 @@
 # Network protocol `spn/1`
 
-This is the wire protocol between a Selfhostr node and a network hub. It is normative. The reference implementation is the `suckerpot_netproto` package (`netproto/`). Its golden test vectors (`netproto/tests/vectors.json`) are the contract for any other implementation: a client that reproduces every vector byte for byte speaks `spn/1`.
+This is the wire protocol between a SuckerPot node and a network hub. It is normative. The reference implementation is the `suckerpot_netproto` package (`netproto/`). Its golden test vectors (`netproto/tests/vectors.json`) are the contract for any other implementation: a client that reproduces every vector byte for byte speaks `spn/1`.
 
-For the design and the threat model, read [M29](design/m29.md). For the user view, read [The Selfhostr network](network.md). For the hub, read `hub/README.md`.
+For the design and the threat model, read [M29](design/m29.md). For the user view, read [The SuckerPot network](network.md). For the hub, read `hub/README.md`.
 
 Every address and name below is a placeholder. The examples use documentation ranges (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`) and `example.org`.
 
@@ -261,7 +261,7 @@ A flood from one prefix therefore prices out that prefix alone. A global counter
 
 The node solves the puzzle in a child process at low priority (`os.nice` 15), with a 15-minute limit, so ingest keeps running.
 
-Proof of work is a speed bump. Age, cohort, reputation and corroboration are the real defences (see [The Selfhostr network](network.md#how-consensus-protects-against-poisoning)).
+Proof of work is a speed bump. Age, cohort, reputation and corroboration are the real defences (see [The SuckerPot network](network.md#how-consensus-protects-against-poisoning)).
 
 ## Blinding
 

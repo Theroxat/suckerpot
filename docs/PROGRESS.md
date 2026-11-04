@@ -215,7 +215,7 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 
 ## 2026-11-04 — M33 Network on by default, one-button join
 
-- `NETWORK_ENABLED` defaults to true. The full installer asks "Join the Selfhostr network? [Y/n]" (default yes, `--no-network` declines); ingest joins from the dated consent record in both modes, once, within 7 days, through the VPN only in full mode. A leave stays final; `just set NETWORK_CONSENT=` clears the record. Updates pin `NETWORK_ENABLED=false` on pre-M33 installs that never set it.
+- `NETWORK_ENABLED` defaults to true. The full installer asks "Join the SuckerPot network? [Y/n]" (default yes, `--no-network` declines); ingest joins from the dated consent record in both modes, once, within 7 days, through the VPN only in full mode. A leave stays final; `just set NETWORK_CONSENT=` clears the record. Updates pin `NETWORK_ENABLED=false` on pre-M33 installs that never set it.
 - Dashboard: the join dialog lists what is shared and asks only for the password; leave is one button; setup step 8 joins directly.
 - Fixed: the setup wizard's sensor list timed out on busy systems (24 h group-by over ~1.3 M events); it now reads the newest event per sensor from the `(sensor, ts)` index.
 - Security review PASS; its two medium and five low findings fixed. Lint, typecheck, unit, integration, guardrails and the participant end-to-end test (48/48) green. One collector timing test failed once and passed on rerun.
