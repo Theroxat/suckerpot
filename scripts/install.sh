@@ -993,7 +993,7 @@ if [ "$stack" = participant ]; then
   echo "Checking whether the internet reaches your sensors..."
   pc_since=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
   pc_rc=0
-  ports_check_run 0 "$pc_since" || pc_rc=$?
+  ports_check_run 90 "$pc_since" || pc_rc=$?
   if [ "$pc_rc" = 3 ]; then
     pc_done=0
     while [ "$assume_yes" = 0 ] && [ "$pc_done" = 0 ]; do

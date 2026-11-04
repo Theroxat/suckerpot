@@ -274,14 +274,14 @@ def test_prompt_continue_is_the_default(psb: Sandbox) -> None:
 
 
 def test_prompt_recheck_loops_until_reached(psb: Sandbox) -> None:
-    # The fake database answers "nothing" for the first two queries, then one session on ssh (a recheck waits 60 s: 7 polls).
+    # The fake database answers "nothing" for the first check (90 s: 10 polls) and the first recheck (60 s: 7 polls), then one session on ssh.
     wrap_docker(
         psb,
         '  "compose exec -T db sh -c"*)\n'
         '    echo "docker $*" >> "$SHIM_LOG"\n'
         "    cat > /dev/null\n"
         '    n=$(grep -c "exec -T db sh -c" "$SHIM_LOG")\n'
-        '    [ "$n" -lt 9 ] || echo "ssh 8.8.8.8"; exit 0 ;;\n'
+        '    [ "$n" -lt 18 ] || echo "ssh 8.8.8.8"; exit 0 ;;\n'
         '  "compose exec -T ingest python -I -c"*)\n'
         '    exec "$SHIM_PYTHON" -I -c "$8" ;;',
     )
