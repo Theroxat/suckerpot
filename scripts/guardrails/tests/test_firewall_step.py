@@ -62,7 +62,9 @@ def test_yes_renders_privately_and_installs(fsb: Sandbox) -> None:
 
 
 def test_enter_means_yes_and_no_means_commands_to_run_later(fsb: Sandbox) -> None:
-    assert fsb.run("scripts/participant.sh", "firewall", extra_env=answer(fsb, "\n")).returncode == 0
+    assert (
+        fsb.run("scripts/participant.sh", "firewall", extra_env=answer(fsb, "\n")).returncode == 0
+    )
     assert len(loader_calls(fsb)) == 1
     fsb.log.write_text("")
     proc = fsb.run("scripts/participant.sh", "firewall", extra_env=answer(fsb, "n\n"))
