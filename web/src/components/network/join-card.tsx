@@ -6,7 +6,7 @@ import { SkeletonText } from "@/components/skeletons"
 import { Button } from "@/components/ui/button"
 import { describeNetworkError, describeStatus, type NetworkStatus } from "@/lib/network"
 import { JoinDialog } from "./join-dialog"
-import { useNetworkStatus } from "./use-network"
+import { hasLeft, useNetworkStatus } from "./use-network"
 
 function Notice({ children, busy = false }: { children: React.ReactNode; busy?: boolean }) {
   const Icon = busy ? LoaderCircle : TriangleAlert
@@ -27,13 +27,7 @@ function Notice({ children, busy = false }: { children: React.ReactNode; busy?: 
 /** Why joining is not possible right now, or null when it is. */
 function blockedBy(s: NetworkStatus): React.ReactNode {
   if (!s.enabled_env)
-    return (
-      <>
-        An administrator must first allow sharing on this system: on the host, run{" "}
-        <code className="font-mono text-fg">just set NETWORK_ENABLED=true</code>. It saves the
-        setting and restarts the services that read it. Until then the network stays completely off.
-      </>
-    )
+    return "Sharing is switched off in this system's settings (NETWORK_ENABLED=false)."
   if (!s.hub_configured)
     return "This system has no network hub address yet, so there is nothing to join. Nothing is sent."
   return null
@@ -71,7 +65,7 @@ export function JoinCard({ onJoined }: { onJoined?: () => void }) {
       finding={describeStatus(s)}
       detail={
         s.state === "off"
-          ? "The network is optional and off by default. Joining takes one decision; leaving takes one click."
+          ? "Joining takes one button and your password. Leaving takes one button too."
           : undefined
       }
     >
@@ -80,8 +74,8 @@ export function JoinCard({ onJoined }: { onJoined?: () => void }) {
         {busy ? (
           <Notice busy>
             {s.state === "enrolling"
-              ? "Creating this system's key and registering it. This page updates by itself."
-              : "Deleting your data. This page updates by itself."}
+              ? "Joining: creating this system's key and registering it. This page updates by itself."
+              : "Leaving: deleting your data at the hub. This page updates by itself."}
           </Notice>
         ) : null}
         {error ? <Notice>{error}</Notice> : null}
@@ -90,10 +84,10 @@ export function JoinCard({ onJoined }: { onJoined?: () => void }) {
             <div className="flex flex-wrap items-center gap-3">
               <Button onClick={() => setOpen(true)} disabled={!!blocked}>
                 <Share2 aria-hidden />
-                Join the network
+                {hasLeft() ? "Join again" : "Join the network"}
               </Button>
               <span className="text-xs text-fg-muted">
-                You will be asked to tick what you agree to share, and for your password.
+                You will see what you share, then enter your password.
               </span>
             </div>
           ) : (

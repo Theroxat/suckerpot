@@ -80,29 +80,27 @@ afterEach(() => vi.unstubAllGlobals())
 vi.setConfig({ testTimeout: 30_000 })
 
 describe("JoinDialog", () => {
-  it("starts with nothing ticked and sends nothing until all five are", async () => {
+  it("shows what is shared, has no tick boxes and needs the password", async () => {
     const calls = stubFetch()
     const user = userEvent.setup()
     wrap(<JoinDialog open onOpenChange={() => undefined} />)
-    const boxes = screen.getAllByRole("checkbox")
-    expect(boxes).toHaveLength(5)
-    for (const b of boxes) expect(b).not.toBeChecked()
-
-    await user.type(screen.getByLabelText("Your password"), "secret-value")
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0)
+    const list = screen.getByRole("region", { name: "What you share" })
+    expect(within(list).getAllByRole("listitem")).toHaveLength(5)
+    expect(screen.getByRole("button", { name: /Optional: pseudonym and country/ })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    )
     await user.click(screen.getByRole("button", { name: "Join the network" }))
-    expect(await screen.findByText(/Tick all five boxes/)).toBeInTheDocument()
-    expect(calls.filter((c) => c.method !== "GET")).toHaveLength(0)
-
-    for (const b of boxes.slice(0, 4)) await user.click(b)
-    await user.click(screen.getByRole("button", { name: "Join the network" }))
+    expect(await screen.findByText("Enter your password to confirm.")).toBeInTheDocument()
     expect(calls.filter((c) => c.method !== "GET")).toHaveLength(0)
   })
 
-  it("refuses a bad pseudonym before asking the server", async () => {
+  it("refuses a bad pseudonym before asking the server, and opens the optional part", async () => {
     const calls = stubFetch()
     const user = userEvent.setup()
     wrap(<JoinDialog open onOpenChange={() => undefined} />)
-    for (const b of screen.getAllByRole("checkbox")) await user.click(b)
+    await user.click(screen.getByRole("button", { name: /Optional: pseudonym and country/ }))
     await user.type(screen.getByLabelText(/Pseudonym/), "owl@example.org")
     await user.type(screen.getByLabelText("Your password"), "secret-value")
     await user.click(screen.getByRole("button", { name: "Join the network" }))
@@ -110,13 +108,11 @@ describe("JoinDialog", () => {
     expect(calls.filter((c) => c.method !== "GET")).toHaveLength(0)
   })
 
-  it("joins with the five consents, the pseudonym and the password", async () => {
+  it("joins with all five consents and the password, nothing else needed", async () => {
     const calls = stubFetch()
     const user = userEvent.setup()
     const done = vi.fn()
     wrap(<JoinDialog open onOpenChange={() => undefined} onJoined={done} />)
-    for (const b of screen.getAllByRole("checkbox")) await user.click(b)
-    await user.type(screen.getByLabelText(/Pseudonym/), "gray-heron")
     await user.type(screen.getByLabelText("Your password"), "secret-value")
     await user.click(screen.getByRole("button", { name: "Join the network" }))
     await waitFor(() => expect(done).toHaveBeenCalled())
@@ -124,13 +120,24 @@ describe("JoinDialog", () => {
     expect(put?.url).toBe("/api/v1/network/membership")
     expect(put?.body).toMatchObject({
       join: true,
-      pseudonym: "gray-heron",
       show_country: false,
       accept: ["sources", "payloads", "c2", "files", "rechecks"],
       password: "secret-value",
     })
-    // No country was chosen, so none is sent.
     expect(put?.body).not.toHaveProperty("country")
+  })
+
+  it("sends the optional pseudonym when given", async () => {
+    const calls = stubFetch()
+    const user = userEvent.setup()
+    const done = vi.fn()
+    wrap(<JoinDialog open onOpenChange={() => undefined} onJoined={done} />)
+    await user.click(screen.getByRole("button", { name: /Optional: pseudonym and country/ }))
+    await user.type(screen.getByLabelText(/Pseudonym/), "gray-heron")
+    await user.type(screen.getByLabelText("Your password"), "secret-value")
+    await user.click(screen.getByRole("button", { name: "Join the network" }))
+    await waitFor(() => expect(done).toHaveBeenCalled())
+    expect(calls.find((c) => c.method === "PUT")?.body).toMatchObject({ pseudonym: "gray-heron" })
   })
 
   it("shows a wrong password on the password field", async () => {
@@ -141,7 +148,6 @@ describe("JoinDialog", () => {
     )
     const user = userEvent.setup()
     wrap(<JoinDialog open onOpenChange={() => undefined} />)
-    for (const b of screen.getAllByRole("checkbox")) await user.click(b)
     await user.type(screen.getByLabelText("Your password"), "nope")
     await user.click(screen.getByRole("button", { name: "Join the network" }))
     expect(await screen.findByText("That password is not correct.")).toBeInTheDocument()
@@ -173,6 +179,7 @@ describe("NetworkStep", () => {
     const skip = vi.fn()
     wrap(<NetworkStep onSkip={skip} />)
     expect(await screen.findByText(/You can skip this/)).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "What you share" })).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Not now" }))
     expect(skip).toHaveBeenCalled()
     expect(calls.filter((c) => c.method !== "GET")).toHaveLength(0)
@@ -184,11 +191,12 @@ describe("NetworkStep", () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement())
   })
 
-  it("lists what is shared and what never is", async () => {
-    stubFetch()
+  it("says who you are in the network when already a member", async () => {
+    stubFetch({ ...OFF, desired: "member", state: "member", pseudonym: "gray-heron" })
     wrap(<NetworkStep />)
-    expect(await screen.findByText("What is never shared")).toBeInTheDocument()
-    expect(screen.getByText(/The usernames and passwords that attackers tried/)).toBeInTheDocument()
+    expect(await screen.findByText(/as gray-heron/)).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Settings, Network" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Join the network" })).toBeNull()
   })
 })
 

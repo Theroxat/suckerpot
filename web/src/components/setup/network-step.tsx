@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react"
 import { Link } from "react-router"
 import { useAuth } from "@/app/auth"
 import { JoinDialog } from "@/components/network/join-dialog"
-import { SharedExplainer } from "@/components/network/explainer"
+import { WhatYouShare } from "@/components/network/what-you-share"
 import { useNetworkStatus } from "@/components/network/use-network"
 import { SkeletonText } from "@/components/skeletons"
 import { Button } from "@/components/ui/button"
@@ -13,8 +13,8 @@ import { BENEFIT } from "@/lib/network"
  * The optional "Join the Selfhostr network" step of the setup flow. Standalone: the setup flow
  * decides where it goes and what "next" means.
  *
- * Joining is never the default. "Not now" is as prominent as "Join", does nothing and sends
- * nothing, and the step says so. When sharing is switched off in .env and no hub is configured
+ * Joining is recommended but never automatic: it needs the join button and the password. "Not now"
+ * does nothing and sends nothing, and the step says so. When sharing is switched off in .env and no hub is configured
  * there is nothing to offer: the step shows `fallback` (nothing by default). A member sees a done
  * state.
  *
@@ -44,11 +44,13 @@ export function NetworkStep({
         <h3 className="flex items-center gap-2 text-base font-medium text-fg">
           <CircleCheck aria-hidden className="size-4 text-status-ok" strokeWidth={2.25} />
           {s.state === "member"
-            ? "You are part of the Selfhostr network."
+            ? s.pseudonym
+              ? `You are part of the Selfhostr network as ${s.pseudonym}.`
+              : "You are part of the Selfhostr network."
             : "Joining the Selfhostr network…"}
         </h3>
         <p className="text-sm text-fg-muted">
-          You can read everything that was sent, change your pseudonym or leave at any time in{" "}
+          You can read everything that was sent, change your pseudonym or leave with one button in{" "}
           <Link to="/settings?tab=network" className="text-fg underline underline-offset-4">
             Settings, Network
           </Link>
@@ -59,7 +61,7 @@ export function NetworkStep({
   }
 
   const blocked = !s.enabled_env
-    ? "Sharing is switched off on this system. To allow it, run just set NETWORK_ENABLED=true on the host: it saves the setting and restarts the services that read it."
+    ? "Sharing is switched off in this system's settings (NETWORK_ENABLED=false)."
     : !s.hub_configured
       ? "No network hub is configured yet, so there is nothing to join."
       : null
@@ -68,15 +70,16 @@ export function NetworkStep({
     <div className="space-y-5">
       <div className="space-y-2">
         <h3 className="text-base font-medium text-fg">
-          Join the Selfhostr network <span className="font-normal text-fg-muted">(optional)</span>
+          Join the Selfhostr network{" "}
+          <span className="font-normal text-fg-muted">(recommended)</span>
         </h3>
         <p className="max-w-3xl text-sm text-fg-muted">{BENEFIT}</p>
         <p className="max-w-3xl text-sm text-fg">
-          You can skip this. Until you join, nothing leaves this system, and you can join or leave
-          later in Settings.
+          One button and your password. Until you join, nothing leaves this system. You can skip
+          this, and join or leave later in Settings.
         </p>
       </div>
-      <SharedExplainer compact />
+      <WhatYouShare />
       {blocked ? (
         <p
           role="status"
@@ -87,7 +90,7 @@ export function NetworkStep({
       ) : null}
       <div className="flex flex-wrap items-center gap-3">
         {canWrite ? (
-          <Button variant="outline" onClick={() => setOpen(true)} disabled={!!blocked}>
+          <Button onClick={() => setOpen(true)} disabled={!!blocked}>
             <Share2 aria-hidden />
             Join the network
           </Button>

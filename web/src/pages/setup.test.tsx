@@ -178,7 +178,7 @@ describe("SetupPage", () => {
   it("offers the network step after alerts, optional, with the wizard's own skip", async () => {
     const puts = stub({ state: "in_progress", steps: {}, show: true }, NETWORK_OFF)
     mount("/setup?step=network")
-    await screen.findByRole("heading", { name: /Joining the network is optional/ })
+    await screen.findByRole("heading", { name: /Joining the network is recommended/ })
     const nav = screen.getByRole("navigation", { name: "Setup steps" })
     const names = within(nav)
       .getAllByRole("button")
@@ -196,9 +196,7 @@ describe("SetupPage", () => {
   it("says the network is off when there is nothing to join", async () => {
     stub(NEW, { ...NETWORK_OFF, enabled_env: false, hub_configured: false })
     mount("/setup?step=network")
-    expect(
-      await screen.findByText(/Sharing with the network is off on this system/),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/NETWORK_ENABLED=false/)).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Join the network/ })).toBeNull()
   })
 
