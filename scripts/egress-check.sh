@@ -38,7 +38,7 @@ if [ "$direct" -eq 1 ]; then
   done
   hub_url=$(env_value NETWORK_HUB_URL)
   hub_host=${hub_url#*://}; hub_host=${hub_host%%[/:]*}
-  hub_host=${hub_host:-suckerpot-hub.selfhostr.io}
+  hub_host=${hub_host:-relay.selfhostr.io}
   for svc in vpn collector analyzer; do
     state=$(dc ps --format '{{.State}}' "$svc" 2>/dev/null | head -n 1)
     [ "$state" = "running" ] && fail "$svc must not run in direct mode" || pass "$svc is not running"

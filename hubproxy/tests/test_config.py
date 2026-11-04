@@ -8,10 +8,10 @@ GOOD_PW = "x" * 24
 
 
 def test_valid_allow_lists() -> None:
-    assert parse_allow("suckerpot-hub.selfhostr.io:443") == ("suckerpot-hub.selfhostr.io:443",)
-    assert parse_allow("SUCKERPOT-HUB.selfhostr.io, suckerpot-feeds.selfhostr.io:443") == (
-        "suckerpot-hub.selfhostr.io:443",
-        "suckerpot-feeds.selfhostr.io:443",
+    assert parse_allow("relay.selfhostr.io:443") == ("relay.selfhostr.io:443",)
+    assert parse_allow("SUCKERPOT-HUB.selfhostr.io, lists.selfhostr.io:443") == (
+        "relay.selfhostr.io:443",
+        "lists.selfhostr.io:443",
     )
     assert parse_allow("a.example.org,a.example.org") == ("a.example.org:443",)
 
@@ -22,8 +22,8 @@ def test_valid_allow_lists() -> None:
         "",
         " , ",
         "a.example.org,b.example.org,c.example.org",
-        "suckerpot-hub.selfhostr.io:80",
-        "suckerpot-hub.selfhostr.io:8443",
+        "relay.selfhostr.io:80",
+        "relay.selfhostr.io:8443",
         "203.0.113.5",
         "203.0.113.5:443",
         "[2001:db8::1]:443",
@@ -50,32 +50,32 @@ def test_invalid_allow_lists_are_refused(value: str) -> None:
 def test_settings_from_env() -> None:
     s = Settings.from_env(
         {
-            "HUBPROXY_ALLOW": "suckerpot-hub.selfhostr.io",
+            "HUBPROXY_ALLOW": "relay.selfhostr.io",
             "HUBPROXY_PASSWORD": GOOD_PW,
             "HUBPROXY_MAX_CONNS": "4",
         }
     )
-    assert s.allow == ("suckerpot-hub.selfhostr.io:443",) and s.max_conns == 4
+    assert s.allow == ("relay.selfhostr.io:443",) and s.max_conns == 4
 
 
 @pytest.mark.parametrize(
     "env",
     [
         {"HUBPROXY_PASSWORD": GOOD_PW},
-        {"HUBPROXY_ALLOW": "suckerpot-hub.selfhostr.io"},
-        {"HUBPROXY_ALLOW": "suckerpot-hub.selfhostr.io", "HUBPROXY_PASSWORD": "short"},
+        {"HUBPROXY_ALLOW": "relay.selfhostr.io"},
+        {"HUBPROXY_ALLOW": "relay.selfhostr.io", "HUBPROXY_PASSWORD": "short"},
         {
-            "HUBPROXY_ALLOW": "suckerpot-hub.selfhostr.io",
+            "HUBPROXY_ALLOW": "relay.selfhostr.io",
             "HUBPROXY_PASSWORD": GOOD_PW,
             "HUBPROXY_MAX_CONNS": "0",
         },
         {
-            "HUBPROXY_ALLOW": "suckerpot-hub.selfhostr.io",
+            "HUBPROXY_ALLOW": "relay.selfhostr.io",
             "HUBPROXY_PASSWORD": GOOD_PW,
             "HUBPROXY_MAX_CONNS": "x",
         },
         {
-            "HUBPROXY_ALLOW": "suckerpot-hub.selfhostr.io",
+            "HUBPROXY_ALLOW": "relay.selfhostr.io",
             "HUBPROXY_PASSWORD": GOOD_PW,
             "HUBPROXY_MAX_CONNS": "65",
         },
