@@ -18,6 +18,7 @@ import pytest
 from argon2 import PasswordHasher
 from fastapi import FastAPI
 from starlette.testclient import TestClient
+from suckerpot_netproto import defaults
 from suckerpot_reporting import SelfTermRow, load_self_terms
 
 from api import network as network_mod
@@ -84,6 +85,12 @@ class FakeDb:
 
     async def rollback(self) -> None:
         return None
+
+
+PLACEHOLDERS = defaults.from_text(
+    "NETWORK_DEFAULTS_VERSION=1\nNETWORK_HUB_URL=<HUB_URL>\nNETWORK_HUB_KEY=<HUB_KEY>\n"
+    "NETWORK_FEED_URL=<FEED_URL>\nNETWORK_FEED_KEY=<FEED_KEY>\n"
+)
 
 
 @asynccontextmanager
@@ -170,6 +177,7 @@ def test_status_reports_env_off_and_waiting_reasons(
 ) -> None:
     monkeypatch.setenv("NETWORK_ENABLED", "false")
     monkeypatch.setenv("NETWORK_HUB_URL", "")
+    monkeypatch.setattr(defaults, "load", lambda: PLACEHOLDERS)
     rig.db.m.update(last_error_code="waiting_self_address")
     body = rig.client().get("/api/v1/network/status").json()
     assert body["enabled_env"] is False and body["hub_configured"] is False
@@ -213,7 +221,21 @@ def test_nothing_happens_while_the_network_is_off_in_env(
 
 def test_no_hub_means_it_cannot_be_joined(rig: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NETWORK_HUB_KEY", "")
+    monkeypatch.setattr(defaults, "load", lambda: PLACEHOLDERS)
     assert rig.client().put(URL, json=join_body()).json()["code"] == "network_disabled"
+
+
+def test_committed_defaults_stand_in_for_an_unset_hub(
+    rig: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A full install sets no hub in .env: the committed defaults make the network joinable."""
+    monkeypatch.delenv("NETWORK_HUB_URL")
+    monkeypatch.delenv("NETWORK_HUB_KEY")
+    assert defaults.load().hub_configured  # the shipped file holds real values
+    body = rig.client().get("/api/v1/network/status").json()
+    assert body["hub_configured"] is True
+    r = rig.client().put(URL, json=join_body())
+    assert r.status_code != 503 and r.json().get("code") != "network_disabled"
 
 
 @pytest.mark.parametrize(

@@ -5,6 +5,7 @@ description = "SuckerPot REST API"
 requires-python = ">=3.13"
 dependencies = [
     "suckerpot-db",
+    "suckerpot-netproto",
     "suckerpot-reporting",
     "fastapi>=0.115,<1",
     "uvicorn>=0.32,<1",
@@ -25,6 +26,7 @@ dev = [
 
 [tool.uv.sources]
 suckerpot-db = { path = "../db" }
+suckerpot-netproto = { path = "../netproto" }
 suckerpot-reporting = { path = "../reporting" }
 
 [build-system]
