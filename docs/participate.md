@@ -46,6 +46,28 @@ The installer ends with a table like this (example):
 
 The first column is the port on your router. The second is the port on this machine. They are the same unless port 22 is busy on the machine: then the SSH sensor uses port 2222 and the table shows `22` and `2222`. Forward each router port to this machine on your router or firewall. Never forward your own admin SSH port. The installer never edits your `sshd_config`. More on ports: [Install SuckerPot](install.md#ports-to-forward).
 
+### Check that the ports are open
+
+Forwarding a port on a router is the one step the installer cannot do for you, so it checks the result. At the end of the installation it looks, once, for connections from the internet. If none has arrived yet, it asks:
+
+```text
+Ports not reachable yet. [r]echeck now (after you opened them), or [c]ontinue and open them later? [c]
+```
+
+Answer `r` after you opened the ports: it looks again for up to a minute and repeats until a connection arrives or you answer `c`. With `--yes`, or without a terminal, it never asks: it prints the warning and the command to run later.
+
+You can run the check at any time (it also works on a full install):
+
+```bash
+./scripts/participant.sh ports-check              # waits up to 3 minutes
+./scripts/participant.sh ports-check --wait 600   # wait up to 10 minutes
+./scripts/participant.sh ports-check --since-install
+```
+
+It prints one row per port with `reached from the internet (N)` or `no traffic yet`. Exit code 0 means the internet reaches this machine, 3 means nothing arrived yet (your router probably does not forward the ports, or a DMZ is not active). Rarely scanned services such as SIP or MSSQL can stay quiet for hours, so one sensor with traffic is enough to prove the forwarding works.
+
+The check makes no connection of its own: no port-check website, no address lookup, no request to the hub, no test of your public address. It counts sessions already recorded by your sensors from public addresses, because bots find an open port within minutes. It reads the local database only, never prints an address (only counts per sensor), and ignores private, loopback, link-local, carrier-grade NAT and documentation addresses. The counts are per sensor, so a sensor with two ports (web: 80 and 443) shows the same count on both rows.
+
 ## What you agree to share
 
 In plain words, the node sends the hub:

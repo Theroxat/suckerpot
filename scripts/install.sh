@@ -983,10 +983,38 @@ if [ "$stack" = participant ]; then
     "cron "* | "systemd "*) echo "Automatic updates:      daily at ${sched#* } local time (off: ./scripts/participant.sh auto-update off)" ;;
     *) echo "Automatic updates:      off (on: ./scripts/participant.sh auto-update on)" ;;
   esac
-  if [ "$repair" = 0 ]; then
-    echo "The network counts your sensor from $(date -u -d '+14 days' +%Y-%m-%d) (14 days after joining)."
-  fi
+  echo "The network counts your sensor after a short probation period set by the hub. The date shows in ./scripts/status.sh."
   echo "Take a snapshot of this machine now if you can."
+  # Does the internet already reach the sensors? Local evidence only, no outside connection.
+  # Never fatal, never blocks with --yes or without a terminal.
+  # shellcheck source=scripts/lib/ports-check.sh
+  . scripts/lib/ports-check.sh
+  echo
+  echo "Checking whether the internet reaches your sensors..."
+  pc_since=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+  pc_rc=0
+  ports_check_run 0 "$pc_since" || pc_rc=$?
+  if [ "$pc_rc" = 3 ]; then
+    pc_done=0
+    while [ "$assume_yes" = 0 ] && [ "$pc_done" = 0 ]; do
+      printf '  Ports not reachable yet. [r]echeck now (after you opened them), or [c]ontinue and open them later? [c] ' >&2
+      pc_ans=""
+      IFS= read -r pc_ans <&3 || pc_ans=c
+      case $pc_ans in
+        r | R)
+          pc_rc=0
+          ports_check_run 60 "$pc_since" || pc_rc=$?
+          [ "$pc_rc" = 3 ] || pc_done=1
+          ;;
+        *) pc_done=1 ;;
+      esac
+    done
+    if [ "$pc_rc" = 3 ]; then
+      echo "Check again any time: ./scripts/participant.sh ports-check"
+    fi
+  elif [ "$pc_rc" != 0 ]; then
+    echo "Check again any time: ./scripts/participant.sh ports-check"
+  fi
   exit 0
 fi
 

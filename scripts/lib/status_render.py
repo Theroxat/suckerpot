@@ -197,6 +197,8 @@ def render_text(doc: dict[str, Any], info: dict[str, Any], now: datetime) -> str
         if name in sessions:
             line += f" last 24 h: {_n(sessions[name]):>6,} sessions"
         out.append(line.rstrip())
+    if sensors:
+        out.append("  Does the internet reach them? ./scripts/participant.sh ports-check")
 
     out.append("Network")
     cli = info["cli"]

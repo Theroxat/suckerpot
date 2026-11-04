@@ -198,6 +198,7 @@ Rules:
 - Do not put the machine in your router's DMZ. A DMZ forwards every port, the dashboard's included. See [Deployment](deployment.md#forward-the-ports).
 - If your router's WAN address is in `100.64.0.0/10` (carrier-grade NAT), forwarding cannot work. Ask your provider for a public address.
 - SuckerPot cannot test the forwarding from outside, and it does not try. Bots arrive within minutes. The Ports page shows **Receiving** once a sensor gets its first event.
+- To know whether the internet reaches your sensors, run `./scripts/participant.sh ports-check`. It makes no outside connection: it looks for sessions from public addresses already recorded by your sensors. See [Participate](participate.md#check-that-the-ports-are-open).
 
 Set up the host firewall too. See [Deployment: host firewall](deployment.md#host-firewall).
 
