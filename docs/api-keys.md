@@ -1,6 +1,6 @@
 # Provider API keys
 
-Selfhostr works without any API key. Every key below is optional. Each one adds one more source of context to the dashboard. Without it, that source is simply empty, and nothing else breaks.
+SuckerPot works without any API key. Every key below is optional. Each one adds one more source of context to the dashboard. Without it, that source is simply empty, and nothing else breaks.
 
 ```{admonition} Security note
 :class: warning
@@ -15,7 +15,7 @@ There are two ways. A key set in Settings overrides the same key in `.env`.
 1. **Settings > API keys.** Choose **Set key** for a provider, paste the key and confirm with the admin password. The key is stored encrypted, is write-only (only its last four characters are shown back), and **Test key** makes one real call to check it. This needs `SETTINGS_ENCRYPTION_KEY` in `.env` (see [Enrichment keys in Settings](configuration.md#enrichment-keys-in-settings)).
 2. **`.env`.** Put the key in the variable listed for the provider, then run `docker compose up -d`.
 
-The Settings page lists seven providers: AbuseIPDB, GreyNoise Community, MaxMind GeoLite2, NVD, GitHub advisories, abuse.ch and VirusTotal. The Anthropic key is set in `.env`. A key must be 16 to 128 printable characters with no spaces. Daily quotas are enforced by Selfhostr, so a key cannot be used up by mistake.
+The Settings page lists seven providers: AbuseIPDB, GreyNoise Community, MaxMind GeoLite2, NVD, GitHub advisories, abuse.ch and VirusTotal. The Anthropic key is set in `.env`. A key must be 16 to 128 printable characters with no spaces. Daily quotas are enforced by SuckerPot, so a key cannot be used up by mistake.
 
 | Provider | Adds | `.env` variable | Cost |
 | --- | --- | --- | --- |
@@ -37,7 +37,7 @@ Adds the abuse score and report count of an attacker's IP address, shown on atta
 3. Choose **Create Key**, give it a name such as `suckerpot`, and copy it.
 4. Set it in Settings, or as `ABUSEIPDB_API_KEY`.
 
-The free tier allows 1,000 checks per day. `ABUSEIPDB_DAILY_QUOTA` (default 1000) caps what Selfhostr uses. Results are cached for 24 hours. Selfhostr only reads from AbuseIPDB. It never reports addresses to it.
+The free tier allows 1,000 checks per day. `ABUSEIPDB_DAILY_QUOTA` (default 1000) caps what SuckerPot uses. Results are cached for 24 hours. SuckerPot only reads from AbuseIPDB. It never reports addresses to it.
 
 ## GreyNoise Community
 
@@ -51,7 +51,7 @@ The Community API allows about 50 lookups per day (`GREYNOISE_DAILY_QUOTA`, defa
 
 ## MaxMind GeoLite2
 
-Adds country, city and network (ASN) for each address. Without a key, Selfhostr uses DB-IP Lite instead, which needs no key.
+Adds country, city and network (ASN) for each address. Without a key, SuckerPot uses DB-IP Lite instead, which needs no key.
 
 1. Create a free account at <https://www.maxmind.com/en/geolite2/signup> and confirm your e-mail address.
 2. Sign in. The **Account ID** is the number at the top of the account page.
@@ -75,7 +75,7 @@ Raises the rate limit of the CVE watch from 5 to 50 requests per 30 seconds.
 3. Open the activation e-mail and follow its link. The key is shown on that page.
 4. Set it in Settings, or as `NVD_API_KEY`.
 
-Selfhostr spends at most `CVE_NVD_DAILY_QUOTA` requests per day (default 200).
+SuckerPot spends at most `CVE_NVD_DAILY_QUOTA` requests per day (default 200).
 
 ## GitHub advisories
 
@@ -107,7 +107,7 @@ Adds verdicts and links for file hashes. Only hashes are sent, never files.
 2. Open your profile menu, then **API key**, and copy it.
 3. Set it in Settings, or as `VIRUSTOTAL_API_KEY`.
 
-The free tier is small (about 500 requests per day and 4 per minute). Selfhostr spaces requests 16 seconds apart and stops at `VIRUSTOTAL_DAILY_QUOTA` (default 400).
+The free tier is small (about 500 requests per day and 4 per minute). SuckerPot spaces requests 16 seconds apart and stops at `VIRUSTOTAL_DAILY_QUOTA` (default 400).
 
 ## Anthropic (optional script explainer)
 

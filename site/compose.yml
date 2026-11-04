@@ -1,4 +1,4 @@
-# Selfhostr public site, standalone. Not part of the honeypot stack.
+# SuckerPot public site, standalone. Not part of the honeypot stack.
 #   docker compose -f site/compose.yml -p selfhostr-site up -d --build
 # SITE_PORT (default 8141) is the host port; put a TLS reverse proxy or tunnel in front of it.
 

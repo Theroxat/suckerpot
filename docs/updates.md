@@ -1,6 +1,6 @@
 # Updates and rollback
 
-Selfhostr updates with one command, `just update`. Before anything changes, the update takes a database dump. If the update fails, or you want to go back, `just rollback` puts the previous code, images and database back.
+SuckerPot updates with one command, `just update`. Before anything changes, the update takes a database dump. If the update fails, or you want to go back, `just rollback` puts the previous code, images and database back.
 
 This page covers:
 
@@ -111,7 +111,7 @@ Automatic updates trade control for convenience. If the release channel of the p
 
 Every release image is signed when it is published. The signature proves that the release workflow of the project built the image from a version tag. The signature is made with [cosign](https://docs.sigstore.dev/cosign/) and GitHub's identity, so no private key is kept.
 
-Selfhostr checks 18 images for each release:
+SuckerPot checks 18 images for each release:
 
 | Images |
 | --- |
@@ -250,7 +250,7 @@ After you confirm, it runs four steps:
 
 ### When a rollback happens
 
-Selfhostr never rolls back by itself. If an update fails after the code has changed, it prints the command to run:
+SuckerPot never rolls back by itself. If an update fails after the code has changed, it prints the command to run:
 
 ```text
 update FAILED after the code was changed. Nothing was rolled back automatically.
@@ -262,7 +262,7 @@ A rollback is your decision, because it replaces the database.
 
 ## Automatic updates and the docker group
 
-The daily update job (`./scripts/participant.sh auto-update on`) runs from the crontab of the user who installed Selfhostr. That user is in the `docker` group, which is root-equivalent on the host: anyone who can write that user's files or crontab can run code as root. Keep the checkout and the crontab writable by that user only. The job refuses a release whose signed manifest does not match its commit or its image digests (`error_code` values such as `commit_mismatch` and `digest_mismatch` in `.suckerpot-state/auto-update.json`).
+The daily update job (`./scripts/participant.sh auto-update on`) runs from the crontab of the user who installed SuckerPot. That user is in the `docker` group, which is root-equivalent on the host: anyone who can write that user's files or crontab can run code as root. Keep the checkout and the crontab writable by that user only. The job refuses a release whose signed manifest does not match its commit or its image digests (`error_code` values such as `commit_mismatch` and `digest_mismatch` in `.suckerpot-state/auto-update.json`).
 
 ## The optional update check
 
@@ -299,7 +299,7 @@ The dashboard only compares versions. The update itself is always a command you 
 | Your VPN provider | A TLS connection to GitHub. It already sees all outbound traffic. |
 | Attackers | Nothing. The check does not open any inbound port. |
 
-The VPN exit address is shared with other users of the same provider. The request does not say which Selfhostr install made it.
+The VPN exit address is shared with other users of the same provider. The request does not say which SuckerPot install made it.
 
 ### Forks
 
@@ -340,6 +340,6 @@ If `checkout` and `running` differ, the stack has not been restarted since the u
 
 ## Next steps
 
-- [Install Selfhostr](install.md)
+- [Install SuckerPot](install.md)
 - [Deployment](deployment.md)
 - [Configuration](configuration.md)

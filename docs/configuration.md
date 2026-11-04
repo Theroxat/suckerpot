@@ -1,6 +1,6 @@
 # Configuration
 
-Selfhostr is configured with environment variables. You set them in `.env`, which Docker Compose reads. The template is `.env.example`. Copy it, then replace every placeholder.
+SuckerPot is configured with environment variables. You set them in `.env`, which Docker Compose reads. The template is `.env.example`. Copy it, then replace every placeholder.
 
 ```bash
 cp .env.example .env
@@ -76,7 +76,7 @@ The template uses `change-me` as a placeholder. It is too short for the policy, 
 
 ## Install, updates and sensor switches (M28)
 
-These variables are written by the installer, or changed by the update and sensor commands. The install guide explains them in context: [Install Selfhostr](install.md) and [Updates and rollback](updates.md).
+These variables are written by the installer, or changed by the update and sensor commands. The install guide explains them in context: [Install SuckerPot](install.md) and [Updates and rollback](updates.md).
 
 ### Sensor switches
 
@@ -625,7 +625,7 @@ abuse.ch submission needs three things: `ABUSECH_SUBMIT_ENABLED=true`, a mode ot
 | `TAKEDOWN_TRACK_DAYS` | `30` | Days a target is followed after it was reported (7 to 90). |
 | `TAKEDOWN_HTTP_DAILY_QUOTA` | `200` | Re-checks per day, read by `collector` (at least 1). |
 | `TAKEDOWN_INTEL_DAILY_QUOTA` | `100` | Lookups per day (URLhaus and ThreatFox) that takedown tracking may make. Each one also counts against `ABUSECH_DAILY_QUOTA`. |
-| `TAKEDOWN_ABUSEIPDB_DAILY_QUOTA` | `50` | AbuseIPDB reads per day that takedown tracking may make. Each one also counts against `ABUSEIPDB_DAILY_QUOTA`. Selfhostr never reports to AbuseIPDB. |
+| `TAKEDOWN_ABUSEIPDB_DAILY_QUOTA` | `50` | AbuseIPDB reads per day that takedown tracking may make. Each one also counts against `ABUSEIPDB_DAILY_QUOTA`. SuckerPot never reports to AbuseIPDB. |
 | `TAKEDOWN_QUIET_DAYS` | `7` | Days without a sighting before an attacking address counts as quiet (1 to 90). |
 | `TAKEDOWN_CHECK_RETENTION_DAYS` | `400` | Days to keep individual checks (30 to 3,650). Read by `migrate`. The monthly roll-up is kept forever. |
 | `TAKEDOWN_INTERVAL_S` | `600` | Seconds between two takedown cycles in `ingest` (30 to 86,400). Read by the worker. |
@@ -633,9 +633,9 @@ abuse.ch submission needs three things: `ABUSECH_SUBMIT_ENABLED=true`, a mode ot
 
 The abuse.ch lookup key (used to check whether a value is already listed) is the same as before: `ABUSECH_AUTH_KEY`, or the key on the Settings page. The submission Auth-Key is separate and is entered only in Settings > Reporting > abuse.ch.
 
-## Selfhostr network (M29)
+## SuckerPot network (M29)
 
-The network is unlocked by default, and nobody is joined by default. Details are in [The Selfhostr network](network.md) and [Network protocol](network-protocol.md). A system sends nothing until it has joined, through the installer question (the default answer is yes) or in Settings, Network. `NETWORK_ENABLED=false` switches the whole feature off.
+The network is unlocked by default, and nobody is joined by default. Details are in [The SuckerPot network](network.md) and [Network protocol](network-protocol.md). A system sends nothing until it has joined, through the installer question (the default answer is yes) or in Settings, Network. `NETWORK_ENABLED=false` switches the whole feature off.
 
 | Variable | Default | Service | Description |
 | --- | --- | --- | --- |
@@ -696,7 +696,7 @@ Notes:
 
 - `NETWORK_FEED_URL` and `NETWORK_FEED_KEY` must be set together. A wrong value leaves the feed unconfigured, and `ingest` logs an error. Check its log after you change them.
 - `just set NETWORK_FEED_ENABLED=true` works. `NETWORK_FEED_URL` and `NETWORK_FEED_KEY` are not in the `just set` list, so set them in `.env`.
-- Turning the fetch off deletes the stored list rows on the next worker cycle. Leaving the Selfhostr network does not delete them.
+- Turning the fetch off deletes the stored list rows on the next worker cycle. Leaving the SuckerPot network does not delete them.
 - The node checks the signature, the serial (no rollback), `valid_until`, and the sha256 of every file before it stores anything. If a check fails, the last good copy stays. After `valid_until` without a new index, the entries are kept for display only, and the local mirror serves nothing.
 
 ## In `.env.example` but not used yet
@@ -708,7 +708,7 @@ These names are in the template. The code does not read them, so setting them ha
 
 ## Data sources and attribution
 
-Selfhostr shows data from third parties. Keep these credits visible if you publish a screenshot or a page that shows the data.
+SuckerPot shows data from third parties. Keep these credits visible if you publish a screenshot or a page that shows the data.
 
 | Data | Used when | Credit |
 | --- | --- | --- |

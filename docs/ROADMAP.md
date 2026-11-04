@@ -338,7 +338,7 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 **Acceptance:** on a fresh Linux VM with Docker, `scripts/install.sh` brings a healthy stack from published images on amd64 and arm64 in one command, and the dashboard walks the owner through the rest; `just update` from the previous release keeps the data and a failed update prints a working rollback; the update check never leaves outside the tunnel and never sends the running version; guardrails and security review PASS.
 
-## M29 — The Selfhostr network (opt-in, anonymous)
+## M29 — The SuckerPot network (opt-in, anonymous)
 
 - [x] Protocol `spn/1` (JSON over HTTPS, Ed25519-signed requests and responses, nonce and timestamp replay protection, proof of work at enrolment) in a shared `netproto/` package and `docs/network-protocol.md`, with golden test vectors.
 - [x] Hub service in `hub/` (own Dockerfile, compose file and migrations, deployed separately): enrol, signed daily observation batches, targets and network summary, reveals, takedown re-checks, leave and delete. No client address stored or logged, no analytics, 14-day observation retention, size caps and rate limits.
@@ -388,7 +388,7 @@ Each milestone ends with the Definition of Done from `CLAUDE.md` §8: all servic
 
 Design: `docs/design/m32.md`.
 
-- [x] Committed network defaults (`hub.selfhostr.io`, `feeds.selfhostr.io`, hub and feed public keys) inside the signed images and mirrored for host scripts; an explicit `.env` value wins. Nodes pin a set of up to three hub keys; the hub signs with a primary and an optional alternate key (`X-SPN-Hub-Signature-Alt`), so a key rollover ships in a release and auto-updated nodes follow.
+- [x] Committed network defaults (`hub.suckerpot.selfhostr.io`, `feeds.suckerpot.selfhostr.io`, hub and feed public keys) inside the signed images and mirrored for host scripts; an explicit `.env` value wins. Nodes pin a set of up to three hub keys; the hub signs with a primary and an optional alternate key (`X-SPN-Hub-Signature-Alt`), so a key rollover ships in a release and auto-updated nodes follow.
 - [x] Participant mode: `./scripts/install.sh --participant` with no question but one consent prompt (`--yes` skips it), a random pseudonym, sensors + database + ingest + network node only (no dashboard, no wizard, no API key), about 2 GiB, the consent recorded in `.env`, the port list printed. Re-running converges; `--full` later switches to full mode and keeps the data; full mode is unchanged.
 - [x] No VPN needed: a new `hubproxy` service (profile `direct`) is the only route out in that mode and allows only `CONNECT` to the hub (and feed) names on 443. The egress gate gets a direct mode scoped to those hosts, so every other outbound worker idles; collector and enrichment stay off. With a VPN, a participant behaves as today.
 - [x] `./scripts/status.sh` (and `just status`): sensors and ports, hub contact, membership and eligibility, what was sent per day (`--last-batch` prints the exact JSON), self-address state, update state, exit codes for monitoring. `./scripts/participant.sh` for leave, join, VPN, auto-update and uninstall.
@@ -398,14 +398,14 @@ Design: `docs/design/m32.md`.
 - [x] Guardrails that fail if a participant service gains a route out, if `hubproxy` allows more than the hub names on 443, or if the owner's rendering changes; an end-to-end participant install against a test hub in a throwaway project; docs (`docs/participate.md`, install, network, protocol, updates, operator guide) and a "Help the network" section on the site; security review and UI review.
 - [x] Release v0.6.0: hub and feed keys filled in, signed images and signed release manifest.
 
-**Acceptance:** on a clean 2 GiB machine, the three commands and `--yes` produce a running participant with no dashboard, a member at the hub, and a status that reports OK. From that stack, nothing but `hub.selfhostr.io:443` is reachable (direct TCP, other names, IP literals and plain HTTP through `hubproxy` all fail), and the owner's full-mode rendering is unchanged. Two eligible nodes reporting the same link lead to a reveal, a review entry, a verifier fetch and a URLhaus candidate; one node never does, an unprivileged node cannot lease tasks, and a private or never-listed link is refused before any fetch. A pre-M32 node still enrols, submits and pulls against the new hub. An auto-update refuses an unsigned or mismatched release and rolls back after a failed health check. Security review PASS.
+**Acceptance:** on a clean 2 GiB machine, the three commands and `--yes` produce a running participant with no dashboard, a member at the hub, and a status that reports OK. From that stack, nothing but `hub.suckerpot.selfhostr.io:443` is reachable (direct TCP, other names, IP literals and plain HTTP through `hubproxy` all fail), and the owner's full-mode rendering is unchanged. Two eligible nodes reporting the same link lead to a reveal, a review entry, a verifier fetch and a URLhaus candidate; one node never does, an unprivileged node cannot lease tasks, and a private or never-listed link is refused before any fetch. A pre-M32 node still enrols, submits and pulls against the new hub. An auto-update refuses an unsigned or mismatched release and rolls back after a failed health check. Security review PASS.
 
 ## M33 — Network on by default, one-button join
 
 Owner decision (2026-11-04): joining the network is the recommended default and joining or leaving is one button. Design: `docs/design/m33.md`.
 
 - [x] `NETWORK_ENABLED` defaults to true; an explicit `false` still switches everything off. An install that never answered the question never joins on upgrade.
-- [x] Full installer asks "Join the Selfhostr network? [Y/n]" (default yes, `--no-network` declines) and writes the consent record; ingest joins from it in full mode too, through the VPN only, after a self address is confirmed. A leave is never undone by a restart.
+- [x] Full installer asks "Join the SuckerPot network? [Y/n]" (default yes, `--no-network` declines) and writes the consent record; ingest joins from it in full mode too, through the VPN only, after a self address is confirmed. A leave is never undone by a restart.
 - [x] Dashboard: the join dialog shows what is shared and asks only for the password; leave is one button; a node that left can join again; setup step 8 has the join button.
 - [x] Setup wizard sensor list read from the `(sensor, ts)` index (it timed out on busy systems).
 - [x] Security review (PASS; the stale consent record, upgrade pin, end-of-input and wording findings fixed), deploy.
