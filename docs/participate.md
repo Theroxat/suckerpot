@@ -31,6 +31,8 @@ The installer prints what it will share and asks one question: `Join the SuckerP
 
 It then creates every secret on this machine, starts the sensors, the database, the ingest service and the network node, and picks a random pseudonym such as `amber-falcon-42`. Memory use is about 2 GiB.
 
+Near the end it offers the **host firewall**: `Install the host firewall now? ... Needs sudo. [Y/n]`. It is a small nftables table that stops a compromised sensor from reaching this machine or the internet. It is part of the installer, so the three commands stay three commands. It asks for your `sudo` password on the terminal. If you say no, or run with `--yes`, it prints the two commands to run later; you can also run `./scripts/participant.sh firewall` at any time (`uninstall` removes it, `status` shows whether it is loaded). It never touches your LAN interface, and the installer says which admin SSH port it used (from `ADMIN_SSH_PORT` in `.env`, or detected from sshd, or 22).
+
 After that, your only job is to open the printed ports.
 
 ## Open the ports
