@@ -728,9 +728,7 @@ def test_participant_feeds_widen_the_allow_list(
     target, rc, out = p_dry_run(psb, "--feeds", "--self-address", "203.0.113.9")
     assert rc == 0, out
     env = parse_env(target)
-    assert (
-        env["HUBPROXY_ALLOW"] == "relay.selfhostr.io:443,lists.selfhostr.io:443"
-    )
+    assert env["HUBPROXY_ALLOW"] == "relay.selfhostr.io:443,lists.selfhostr.io:443"
     assert env["NETWORK_FEED_ENABLED"] == "true"
     assert env["SELF_ADDRESS"] == "203.0.113.9"
     assert env["INDICATORS_IGNORE"] == "203.0.113.9"

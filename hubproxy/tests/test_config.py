@@ -9,7 +9,7 @@ GOOD_PW = "x" * 24
 
 def test_valid_allow_lists() -> None:
     assert parse_allow("relay.selfhostr.io:443") == ("relay.selfhostr.io:443",)
-    assert parse_allow("SUCKERPOT-HUB.selfhostr.io, lists.selfhostr.io:443") == (
+    assert parse_allow("RELAY.selfhostr.io, lists.selfhostr.io:443") == (
         "relay.selfhostr.io:443",
         "lists.selfhostr.io:443",
     )
