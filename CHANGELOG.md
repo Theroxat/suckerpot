@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - The participant installer no longer prints a fixed "14 days" date. The hub decides the probation period; `./scripts/status.sh` shows the date from which the sensor counts.
+- Participant docs and installer summary: use port forwards rather than a DMZ, explain the DMZ risk, and say precisely when the route-out restriction holds (host firewall loaded).
+
+### Security
+
+- Automatic updates: the minimum release age is now at least 48 h whatever the release's own manifest says; `AUTO_UPDATE_MIN_AGE_H` in `.env` can raise it.
+- Automatic updates: a release that fails verification is marked bad with its reason and the next newest release of the same major version is tried (3 at most per run), so one bad tag no longer blocks updates.
+- The installer warns when Docker Engine is older than 28, where internal networks are not isolated from the host.
 
 ## [0.8.0] - 2026-11-04
 
