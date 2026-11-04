@@ -238,3 +238,11 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - Docs moved from Read the Docs to `suckerpot.selfhostr.io/docs/`, the mock-data demo to `/demo/`; `site/`, the Pages and Sphinx workflows are removed. README screenshots refreshed on mock data.
 - Full compose build healthy (20/20), egress-check PASS, CI green on the new repository.
 
+## 2026-11-04 — v0.9.0 (participant hardening)
+
+- Hub feeds turned on in `review` mode with the existing feed key (it matches the key shipped to nodes); the first signed publication verifies from a node through the VPN.
+- Participant install: port reachability check (local evidence only), host firewall offered with sudo, DMZ advice; the "14 days" date is gone.
+- Security review of participant mode: first pass FAIL (no participant host firewall, a release could lower its own update delay, host reachable through internal bridges, no generic hardening guardrail, wide DNS rule, no DMZ warning); all fixed. Second pass PASS; its two medium findings (transient failures marking releases bad, a too-broad network-recreate trigger) and the low ones fixed as well.
+- Checked on this host with a throwaway project: compose recreates a changed network by itself, and refuses with "has active endpoints" when a container of another project is attached; the update path stops with instructions in that case.
+- Lint, typecheck, unit tests (Python and vitest), guardrails (742 passed) and web build green.
+
