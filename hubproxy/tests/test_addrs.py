@@ -52,7 +52,7 @@ def test_global_addresses_pass(value: str) -> None:
         "::ffff:100.64.0.1",
         "::ffff:169.254.169.254",
         "",
-        "relay.selfhostr.io",
+        "suckerpot-hub.selfhostr.io",
         "1.2.3",
         "1.2.3.4.5",
     ],

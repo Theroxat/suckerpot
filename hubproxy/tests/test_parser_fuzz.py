@@ -15,17 +15,17 @@ from hubproxy.httpwire import (
     parse_head,
 )
 
-GOOD = b"CONNECT relay.selfhostr.io:443 HTTP/1.1\r\nHost: relay.selfhostr.io:443\r\n\r\n"
+GOOD = b"CONNECT suckerpot-hub.selfhostr.io:443 HTTP/1.1\r\nHost: suckerpot-hub.selfhostr.io:443\r\n\r\n"
 
 
 def test_good_head_parses() -> None:
     head = parse_head(GOOD + b"")
     assert (head.method, head.target, head.version) == (
         "CONNECT",
-        "relay.selfhostr.io:443",
+        "suckerpot-hub.selfhostr.io:443",
         "HTTP/1.1",
     )
-    assert head.headers == {"host": "relay.selfhostr.io:443"}
+    assert head.headers == {"host": "suckerpot-hub.selfhostr.io:443"}
 
 
 def test_header_names_are_case_insensitive_and_values_trimmed() -> None:

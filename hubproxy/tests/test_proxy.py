@@ -45,12 +45,12 @@ async def test_allowed_connect_tunnels_bytes() -> None:
 
 async def test_host_match_is_case_insensitive_but_exact() -> None:
     async with running() as (_, _, port, _):
-        ok = await exchange(port, connect_request(target="RELAY.SelfHostr.IO:443"))
+        ok = await exchange(port, connect_request(target="SUCKERPOT-HUB.SelfHostr.IO:443"))
         assert status_line(ok) == "HTTP/1.1 200 Connection established"
         for bad in (
-            "relay.selfhostr.io.:443",
-            "x.relay.selfhostr.io:443",
-            "relay.selfhostr.io",
+            "suckerpot-hub.selfhostr.io.:443",
+            "x.suckerpot-hub.selfhostr.io:443",
+            "suckerpot-hub.selfhostr.io",
         ):
             assert status_line(await exchange(port, connect_request(target=bad))).endswith(
                 "403 Forbidden"
@@ -61,18 +61,18 @@ async def test_host_match_is_case_insensitive_but_exact() -> None:
     "target",
     [
         "example.org:443",
-        "relay.selfhostr.io:80",
-        "relay.selfhostr.io:8443",
-        "relay.selfhostr.io:0443",
-        "relay.selfhostr.io:",
+        "suckerpot-hub.selfhostr.io:80",
+        "suckerpot-hub.selfhostr.io:8443",
+        "suckerpot-hub.selfhostr.io:0443",
+        "suckerpot-hub.selfhostr.io:",
         ":443",
         "203.0.113.7:443",
         "[2001:db8::1]:443",
         "127.0.0.1:443",
         "2130706433:443",
         "0x7f000001:443",
-        "relay.selfhostr.io@example.org:443",
-        "example.org:443@relay.selfhostr.io:443",
+        "suckerpot-hub.selfhostr.io@example.org:443",
+        "example.org:443@suckerpot-hub.selfhostr.io:443",
     ],
 )
 async def test_other_targets_are_refused(target: str) -> None:
@@ -94,7 +94,9 @@ async def test_only_connect_is_accepted(method: str) -> None:
 
 async def test_plain_http_absolute_uri_is_refused() -> None:
     async with running() as (_, fakes, port, _):
-        raw = await exchange(port, b"GET http://relay.selfhostr.io/ HTTP/1.1\r\nHost: x\r\n\r\n")
+        raw = await exchange(
+            port, b"GET http://suckerpot-hub.selfhostr.io/ HTTP/1.1\r\nHost: x\r\n\r\n"
+        )
         assert status_line(raw).endswith("405 Method Not Allowed")
         assert fakes.dialled == []
 
@@ -198,7 +200,7 @@ async def test_slow_loris_is_cut_off(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(server, "HEAD_TIMEOUT", 0.3)
     async with running() as (proxy, _, port, _):
         reader, writer = await asyncio.open_connection("127.0.0.1", port)
-        writer.write(b"CONNECT relay.selfhostr.io:443 HTTP/1.1\r\n")  # never finishes
+        writer.write(b"CONNECT suckerpot-hub.selfhostr.io:443 HTTP/1.1\r\n")  # never finishes
         await writer.drain()
         async with asyncio.timeout(3):
             raw = await reader.read(4096)
@@ -211,11 +213,14 @@ async def test_slow_loris_is_cut_off(monkeypatch: pytest.MonkeyPatch) -> None:
     "payload",
     [
         b"CONNECT " + b"a" * 600 + b":443 HTTP/1.1\r\n\r\n",
-        b"CONNECT relay.selfhostr.io:443 HTTP/1.1\r\n" + b"X-A: " + b"b" * 5000 + b"\r\n\r\n",
-        b"CONNECT relay.selfhostr.io:443 HTTP/2\r\n\r\n",
+        b"CONNECT suckerpot-hub.selfhostr.io:443 HTTP/1.1\r\n"
+        + b"X-A: "
+        + b"b" * 5000
+        + b"\r\n\r\n",
+        b"CONNECT suckerpot-hub.selfhostr.io:443 HTTP/2\r\n\r\n",
         b"\x16\x03\x01\x02\x00\x01\x00\x01\xfc\x03\x03\r\n\r\n",
-        b"CONNECT relay.selfhostr.io:443\r\n\r\n",
-        b"CONNECT  relay.selfhostr.io:443 HTTP/1.1\r\n\r\n",
+        b"CONNECT suckerpot-hub.selfhostr.io:443\r\n\r\n",
+        b"CONNECT  suckerpot-hub.selfhostr.io:443 HTTP/1.1\r\n\r\n",
     ],
 )
 async def test_malformed_heads_are_400(payload: bytes) -> None:

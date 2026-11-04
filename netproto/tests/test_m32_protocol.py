@@ -250,8 +250,8 @@ def test_single_key_verify_response_unchanged() -> None:
 def test_committed_defaults_load_and_are_placeholders_until_release() -> None:
     d = defaults.load()
     assert d.version == 1
-    assert d.hub_url == "https://relay.selfhostr.io"
-    assert d.feed_url == "https://lists.selfhostr.io/v1"
+    assert d.hub_url == "https://suckerpot-hub.selfhostr.io"
+    assert d.feed_url == "https://suckerpot-feeds.selfhostr.io/v1"
     # Until the release fills the keys, they are placeholders and the network is not joinable.
     if d.placeholders():
         assert set(d.placeholders()) == {"NETWORK_HUB_KEY", "NETWORK_FEED_KEY"}
@@ -271,7 +271,7 @@ def test_host_mirror_is_identical_to_package_data() -> None:
 def test_placeholder_detection() -> None:
     for v in ("", "  ", "<HUB_PUBLIC_KEY>", "<FEED_PUBLIC_KEY>", "prefix<X>"):
         assert defaults.is_placeholder(v)
-    assert not defaults.is_placeholder("https://relay.selfhostr.io")
+    assert not defaults.is_placeholder("https://suckerpot-hub.selfhostr.io")
     assert not defaults.is_placeholder(
         sign.node_key(sign.public_key_of(sign.generate_private_key()))
     )
@@ -337,7 +337,7 @@ def test_effective_prefers_explicit_environment_value() -> None:
         {"NETWORK_HUB_URL": "https://hub.example.org"}, "NETWORK_HUB_URL"
     ) == ("https://hub.example.org")
     assert defaults.effective({"NETWORK_HUB_URL": "  "}, "NETWORK_HUB_URL") == (
-        "https://relay.selfhostr.io"
+        "https://suckerpot-hub.selfhostr.io"
     )
     # a placeholder default reads as unset
     if defaults.load().placeholders():
@@ -348,7 +348,11 @@ def test_effective_prefers_explicit_environment_value() -> None:
 def test_defaults_file_names_no_private_values() -> None:
     text = (REPO / "config" / "network-defaults.env").read_text()
     assert not re.search(r"\b(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d+\.\d+", text)
-    assert "suckerpot" not in text.lower()
+    # the product name may appear only inside the two public hostnames (owner decision 2026-11-04)
+    stripped = text.replace("suckerpot-hub.selfhostr.io", "").replace(
+        "suckerpot-feeds.selfhostr.io", ""
+    )
+    assert "suckerpot" not in stripped.lower()
 
 
 # --- pseudonym words ---
