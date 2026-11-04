@@ -4,7 +4,7 @@
 
 **A self-hosted honeypot with one readable dashboard: twelve realistic sensors for remote shells, web and APIs, databases, and Windows and VoIP services, and a UI that tells each attack as a short story you can click through.**
 
-[Documentation](https://suckerpot.selfhostr.io/docs/) · [Releases](https://github.com/selfhostr/suckerpot/releases) · [Changelog](CHANGELOG.md)
+[Website](https://suckerpot.selfhostr.io/) · [Documentation](https://suckerpot.selfhostr.io/docs/) · [Releases](https://github.com/selfhostr/suckerpot/releases) · [Changelog](CHANGELOG.md)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/selfhostr/suckerpot/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/selfhostr/suckerpot/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-suckerpot.selfhostr.io-blue)](https://suckerpot.selfhostr.io/docs/)
@@ -19,7 +19,9 @@
 
 > **SuckerPot is meant to be attacked.** Deploy it only on an isolated host or VM that you are ready to lose, and keep nothing that matters on it. It is purely passive: no counter-scans, no hacking back, no automatic reporting. Attacker input is never executed. All screenshots use synthetic demo data and documentation IP addresses.
 
-> SuckerPot is made by Selfhostr, a small organisation that builds self-hosted tools. Technical names (packages, volumes, environment variables) use the `suckerpot` prefix.
+> SuckerPot is made by [Selfhostr](https://selfhostr.io), a small organisation that builds self-hosted tools. Technical names (packages, volumes, environment variables) use the `suckerpot` prefix.
+>
+> The documentation is at <https://suckerpot.selfhostr.io/docs/>. The same pages are in the [`docs/`](docs/) folder of this repository, so you can read them on GitHub too.
 
 ## Why
 
@@ -85,6 +87,10 @@ Each sensor records what the attacker does and never runs it. SIP answers are ca
   <img src="docs/screenshots/attacks-light.png" alt="The Attacks page in light mode" width="49%">
 </p>
 <p>
+  <img src="docs/screenshots/settings-network.png" alt="Settings, Network tab: a member of the SuckerPot network with a pseudonym, what is shared and what is never shared" width="49%">
+  <img src="docs/screenshots/setup-network.png" alt="The setup wizard, SuckerPot network step: what you share, and a Join the network button that you can also skip" width="49%">
+</p>
+<p>
   <img src="docs/screenshots/live-mobile.png" alt="The Live page on a phone, in dark mode" width="30%">
   <img src="docs/screenshots/attacks-mobile.png" alt="The Attacks page on a phone, in dark mode" width="30%">
 </p>
@@ -112,7 +118,7 @@ The installer creates the secrets, starts the stack and prints the address of th
 
 **Before you expose anything**, follow the go-live checklist in [docs/deployment.md](docs/deployment.md) and apply [scripts/host/firewall.nft](scripts/host/firewall.nft). Keep the dashboard port filtered upstream. Set `INDICATORS_IGNORE` in `.env` to your public IP and host names, so they are never recorded as attack infrastructure.
 
-## Join the network
+## Join the SuckerPot network
 
 Want to help the SuckerPot network and nothing else? Three commands, no dashboard, no VPN needed:
 
@@ -160,7 +166,7 @@ SuckerPot runs hostile traffic through containers, so isolation is a feature, no
 
 ## Roadmap
 
-Shipped through `v0.7.1`. See [docs/ROADMAP.md](docs/ROADMAP.md) for every milestone.
+Shipped through `v0.7.1`; `v0.8.0` is next. See [docs/ROADMAP.md](docs/ROADMAP.md) for every milestone.
 
 ## License
 
