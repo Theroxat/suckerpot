@@ -212,3 +212,10 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - Tag `v0.6.0` pushed; the release workflow built the 19 images for amd64 and arm64, signed them, passed the smoke install and attached the signed release manifest.
 - Verified on a separate machine: `scripts/verify-release.sh v0.6.0` (signer, commit, network defaults hash) and `just verify-images v0.6.0` (all 19 signatures) pass.
 - The participant end-to-end job that failed once on CI passed on the next run with no code change: a CI flake, not a regression.
+
+## 2026-11-04 — M33 Network on by default, one-button join
+
+- `NETWORK_ENABLED` defaults to true. The full installer asks "Join the Selfhostr network? [Y/n]" (default yes, `--no-network` declines); ingest joins from the dated consent record in both modes, once, within 7 days, through the VPN only in full mode. A leave stays final; `just set NETWORK_CONSENT=` clears the record. Updates pin `NETWORK_ENABLED=false` on pre-M33 installs that never set it.
+- Dashboard: the join dialog lists what is shared and asks only for the password; leave is one button; setup step 8 joins directly.
+- Fixed: the setup wizard's sensor list timed out on busy systems (24 h group-by over ~1.3 M events); it now reads the newest event per sensor from the `(sensor, ts)` index.
+- Security review PASS; its two medium and five low findings fixed. Lint, typecheck, unit, integration, guardrails and the participant end-to-end test (48/48) green. One collector timing test failed once and passed on rerun.
