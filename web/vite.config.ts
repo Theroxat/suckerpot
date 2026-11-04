@@ -54,7 +54,7 @@ export default defineConfig(({ mode }) => {
   const demo = env.VITE_DEMO === "1"
 
   return {
-    // Sub-path for static hosting, for example VITE_BASE=/suckerpot/demo/.
+    // Sub-path for static hosting, for example VITE_BASE=/demo/.
     base: env.VITE_BASE ?? "/",
     plugins: [react(), tailwindcss(), dropMockWorker(mock), demoPages(demo)],
     resolve: {

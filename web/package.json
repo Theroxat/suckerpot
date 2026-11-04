@@ -12,7 +12,7 @@
     "dev:mock": "VITE_MOCK=1 vite",
     "build": "tsc -b && vite build",
     "build:mock": "tsc -b && VITE_MOCK=1 vite build --outDir dist-mock",
-    "build:demo": "tsc -b && VITE_MOCK=1 VITE_DEMO=1 VITE_BASE=${DEMO_BASE:-/suckerpot/demo/} vite build --outDir dist-demo",
+    "build:demo": "tsc -b && VITE_MOCK=1 VITE_DEMO=1 VITE_BASE=${DEMO_BASE:-/demo/} vite build --outDir dist-demo",
     "preview": "vite preview",
     "preview:mock": "vite preview --outDir dist-mock --port 4173 --strictPort",
     "typecheck": "tsc -b --noEmit",

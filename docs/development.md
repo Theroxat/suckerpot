@@ -185,7 +185,6 @@ The GitHub Actions workflows run on every push and pull request to `main`:
 | `ci.yml`, `web-screenshots` | Playwright screenshots on mock data, uploaded as an artifact for 7 days |
 | `ci.yml`, `python-integration` | Integration tests against a real database and Redis |
 | `ci.yml`, `compose` | Runs the port guard, builds the stack, checks the API health and the SSH sensor health, runs a real SSH login (`scripts/ssh-test.sh`), generates demo data, and waits until the API shows the stored sessions |
-| `pages.yml` | Publishes the project page and the offline mock-data dashboard on pushes to `main` |
 
 Dependabot keeps the pinned actions, base images and dependencies up to date.
 

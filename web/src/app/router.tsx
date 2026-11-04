@@ -99,7 +99,7 @@ export const router = createBrowserRouter(
       children: [appRoutes()],
     },
   ],
-  // "/" in a normal build, "/suckerpot/demo/" in the GitHub Pages demo.
+  // "/" in a normal build, "/demo/" in the hosted demo.
   { basename: import.meta.env.BASE_URL.replace(/\/$/, "") || undefined },
 )
 
