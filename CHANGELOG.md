@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-04
+
+### Added (M33)
+
+- The network is on by default. The full installer asks "Join the Selfhostr network? [Y/n]" (default yes; `--no-network` declines) and the node joins at first start, through the VPN only. Design: [M33](docs/design/m33.md).
+- Joining in the dashboard is one button: the dialog lists what is shared and asks for your password. Leaving is one button, and a node that left can join again. Setup step 8 has the join button.
+
+### Fixed
+
+- The setup wizard's sensor list timed out on busy systems. It now reads the newest event per sensor from the index.
+
 ### Upgrade note
 
 - The network feature is now on by default (`NETWORK_ENABLED=true`). When you update an install that was made before this change and its `.env` has no active `NETWORK_ENABLED` line, the update adds `NETWORK_ENABLED=false` (and a `NETWORK_DEFAULT_PINNED=1` marker), so nothing changes for you. To use the network, run `just set NETWORK_ENABLED=true` and join in the dashboard.
@@ -180,7 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Isolation: four networks with an internal backend, one Redis ACL user per sensor limited to `XADD` on its own stream, least-privilege database roles, no outbound route for the API, non-root read-only containers with all capabilities dropped.
 - The first review of the M1 stack found unbounded stream growth, egress, poison-message and default-credential issues; all were fixed and the second pass passed.
 
-[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Theroxat/suckerpot/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Theroxat/suckerpot/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Theroxat/suckerpot/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Theroxat/suckerpot/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Theroxat/suckerpot/compare/v0.3.0...v0.4.0
