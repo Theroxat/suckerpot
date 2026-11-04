@@ -1,5 +1,5 @@
 # Loads the SuckerPot host firewall table after Docker has set up its own rules.
-# Install: see scripts/host/README.md ("Persist across reboots").
+# Install: scripts/host/install-firewall.sh FILE (or see scripts/host/README.md, "Persist across reboots").
 [Unit]
 Description=SuckerPot host firewall (nftables table inet suckerpot_host)
 After=docker.service network-online.target
