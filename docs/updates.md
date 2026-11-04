@@ -87,9 +87,10 @@ The time is a random minute between 03:00 and 05:59 local time, chosen at instal
 1. It takes a lock, so only one run happens at a time.
 2. It stops if automatic updates are off, if an earlier update never finished, or if the install is in `source` mode.
 3. It picks the newest release tag of the **same major version** that is newer than the running one and not marked bad.
-4. It verifies the signed release manifest (`scripts/verify-release.sh`) and the image signatures. The manifest must be signed by the release workflow, its commit must be the commit of the tag, and the release must be at least **48 hours old**.
+4. It verifies the signed release manifest (`scripts/verify-release.sh`) and the image signatures. The manifest must be signed by the release workflow, its commit must be the commit of the tag, and the release must be old enough. The minimum age is the largest of 48 hours, the `auto_min_age_h` of the manifest and `AUTO_UPDATE_MIN_AGE_H` in `.env` (hours; it can only make the wait longer, never below 48). A release cannot shorten its own waiting time.
 5. It runs `update.sh --yes --auto`, which takes a database dump first.
 6. It waits up to 10 minutes for every service to be healthy, the running version to match, and the network node to answer.
+   If the release fails verification (bad signature, a manifest that does not match its tag), it is written to `.suckerpot-state/bad-versions` with its reason in `bad-versions.log`, and the next newest release of the same major version is tried, up to 3 per run. It never installs a version older than the running one. A release that is only too young stops the run and is tried again the next day. A network problem while downloading the manifest is not held against the release. To allow a tag again, delete its line from `bad-versions`.
 7. If anything fails after the code changed, it runs the [rollback](#rollback), marks the version as bad and never tries it again. The next release is tried normally.
 
 The outcome of the last run is in `.suckerpot-state/auto-update.json`, and the log is in `.suckerpot-state/auto-update.log` (rotated at 1 MiB). `./scripts/status.sh` shows both.

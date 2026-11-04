@@ -16,12 +16,16 @@
 #      released_at and the Sigstore transparency-log time, when the bundle carries one.
 #
 # --auto (used by the automatic updater): a missing manifest is never accepted, and a release
-# younger than the manifest's auto_min_age_h is refused.
+# younger than the effective minimum age is refused. That age is the largest of: 48 h (a fixed
+# floor, so a release can never shorten its own waiting time), the AUTO_UPDATE_MIN_AGE_H of the
+# local .env (it can only raise the wait) and the manifest's auto_min_age_h. A manual update
+# does not check the age.
 #
 # Prints key=value lines on stdout (version, commit, released_at, age_h, auto_min_age_h, major)
 # and a human summary on stderr. Exit codes: 0 verified, 1 failure, 2 usage, 3 no manifest (with
 # --auto always; without it only for a release older than v0.6.0, which has none), 4 too young (--auto),
-# 5 the manifest does not match the tag (commit, version, major or defaults), 6 bad signature.
+# 5 the manifest does not match the tag (commit, version, major or defaults), 6 bad signature,
+# 9 a download failed (a network problem, not a verdict on the release: try again later).
 #
 # cosign runs in a pinned container, like scripts/verify-images.sh (host traffic: the download
 # and Sigstore are contacted from this machine, not through the VPN).
@@ -32,6 +36,7 @@ cd "$(dirname "$0")/.."
 COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign:v3.1.4@sha256:0f06154836d2de34f887a5c273506d52ca43edaa1d9e53e6510fa78a48f69c2d"
 ISSUER="https://token.actions.githubusercontent.com"
 MANIFEST_SINCE="0.6.0"
+MIN_AGE_FLOOR_H=48
 MANIFEST_NAME="release-manifest.json"
 BUNDLE_NAME="release-manifest.json.sigstore.json"
 
@@ -75,7 +80,7 @@ fetch() {
 
 base="https://github.com/$repo/releases/download/$tag"
 code=$(fetch "$base/$MANIFEST_NAME" "$work/$MANIFEST_NAME") \
-  || die "could not download the release manifest of $tag"
+  || die "could not download the release manifest of $tag" 9
 if [ "$code" = 404 ]; then
   oldest=$(printf '%s\n%s\n' "${tag#v}" "$MANIFEST_SINCE" | sort -V | head -n 1)
   if [ "$auto" = 0 ] && [ "$oldest" = "${tag#v}" ] && [ "${tag#v}" != "$MANIFEST_SINCE" ]; then
@@ -87,9 +92,9 @@ if [ "$code" = 404 ]; then
   if [ "$auto" = 1 ]; then die "$tag has no signed release manifest" 3; fi
   die "$tag has no signed release manifest"
 fi
-[ "$code" = 200 ] || die "downloading the release manifest answered HTTP $code"
+[ "$code" = 200 ] || die "downloading the release manifest answered HTTP $code" 9
 code=$(fetch "$base/$BUNDLE_NAME" "$work/$BUNDLE_NAME") \
-  || die "could not download the manifest signature of $tag"
+  || die "could not download the manifest signature of $tag" 9
 [ "$code" = 200 ] || die "the manifest signature of $tag answered HTTP $code (not signed?)" 6
 chmod 644 "$work/$MANIFEST_NAME" "$work/$BUNDLE_NAME"
 
@@ -152,6 +157,20 @@ logged=$(grep -o '"integratedTime" *: *"\{0,1\}[0-9]\{1,12\}' "$work/$BUNDLE_NAM
 if [ -n "$logged" ] && [ "$logged" -gt "$effective" ]; then effective=$logged; fi
 if [ "$effective" -gt "$now" ]; then age_h=0; else age_h=$(((now - effective) / 3600)); fi
 
+# The effective minimum age: the manifest of a release can only lengthen the wait, never shorten
+# it below the fixed floor, and the local setting can only raise it too.
+min_age=$MIN_AGE_FLOOR_H
+local_age=$(get AUTO_UPDATE_MIN_AGE_H "")
+if [ -n "$local_age" ]; then
+  if [[ $local_age =~ ^[0-9]{1,4}$ ]]; then
+    local_age=$((10#$local_age))
+    if [ "$local_age" -gt "$min_age" ]; then min_age=$local_age; fi
+  else
+    echo "verify-release: ignoring AUTO_UPDATE_MIN_AGE_H='$local_age' (not a number of hours)" >&2
+  fi
+fi
+if [ "$m_min_age" -gt "$min_age" ]; then min_age=$m_min_age; fi
+
 {
   echo "verify-release: $tag is signed by the release workflow of github.com/$repo"
   echo "verify-release: commit ${m_commit:0:12}, released $(date -u -d "@$effective" +%Y-%m-%dT%H:%MZ 2> /dev/null || echo "$effective"), ${age_h} h ago"
@@ -161,11 +180,12 @@ echo "commit=$m_commit"
 echo "released_at=$effective"
 echo "age_h=$age_h"
 echo "auto_min_age_h=$m_min_age"
+echo "effective_min_age_h=$min_age"
 echo "major=$m_major"
 # The signed digest of each image: verify-images.sh --expect refuses an image that differs.
 printf '%s' "$flat" | grep -oE '"[a-z0-9-]{1,40}" *: *"sha256:[0-9a-f]{64}"' \
   | sed -E 's/^"([^"]*)" *: *"([^"]*)"$/image.\1=\2/' || true
 
-if [ "$auto" = 1 ] && [ "$age_h" -lt "$m_min_age" ]; then
-  die "$tag is ${age_h} h old; an automatic update waits for ${m_min_age} h" 4
+if [ "$auto" = 1 ] && [ "$age_h" -lt "$min_age" ]; then
+  die "$tag is ${age_h} h old; an automatic update waits for ${min_age} h" 4
 fi

@@ -7,8 +7,11 @@
 #   - AUTO_UPDATE_ENABLED=true in .env, images install mode, no earlier update left unfinished;
 #   - the release is newer than the running one and not in .suckerpot-state/bad-versions;
 #   - its signed release manifest verifies (scripts/verify-release.sh --auto): signed by the
-#     release workflow, its commit is the tag's commit, and the release is old enough
-#     (auto_min_age_h, 48 h by default);
+#     release workflow, its commit is the tag's commit, and the release is old enough (at least
+#     48 h, more if the manifest or AUTO_UPDATE_MIN_AGE_H in .env asks for more);
+#   - a release that fails verification (bad signature, manifest that does not match) is written
+#     to bad-versions with its reason (bad-versions.log) and the next newest candidate of the same
+#     major version is tried, at most 3 per run; it never goes below the installed version;
 #   - its images verify (scripts/verify-images.sh).
 # Then it runs scripts/update.sh --yes --auto (backup first). If the update fails after the code
 # changed, it runs scripts/rollback.sh --yes, remembers the version as bad and never retries it.
@@ -86,31 +89,50 @@ cur_major=${cur_major%%.*}
 
 git fetch --tags --quiet || record failed fetch_failed
 
-target=""
+# Eligible candidates, newest first: same major, newer than the running one, not marked bad.
+candidates=()
 while IFS= read -r tag; do
   [[ $tag =~ ^v([0-9]{1,3})\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || continue
   [ "${BASH_REMATCH[1]}" = "$cur_major" ] || continue
   [ "$tag" != "$from_version" ] || continue
   ver_ge "${tag#v}" "${from_version#v}" || continue
   if [ -f "$BAD" ] && grep -qxF "$tag" "$BAD"; then continue; fi
-  target=$tag
-  break
+  candidates+=("$tag")
 done < <(git tag -l 'v*.*.*' --sort=-v:refname)
-[ -n "$target" ] || record ok up_to_date
-to_version=$target
-log "candidate: $from_version -> $target"
+[ "${#candidates[@]}" -gt 0 ] || record ok up_to_date
 
-vr_rc=0
-vr_out=$(bash scripts/verify-release.sh --auto "$target") || vr_rc=$?
-printf '%s\n' "$vr_out"
-case $vr_rc in
-  0) ;;
-  3) record refused not_signed ;;
-  4) record refused too_young ;;
-  5) record refused commit_mismatch ;;
-  6) record refused signature_invalid ;;
-  *) record refused manifest_invalid ;;
-esac
+# mark_bad TAG REASON: never try TAG again; the reason goes to bad-versions.log.
+mark_bad() {
+  printf '%s\n' "$1" >> "$BAD"
+  printf '%s %s %s\n' "$(now)" "$1" "$2" >> "$BAD.log"
+}
+
+target=""
+vr_out=""
+last_code=""
+tried=0
+for tag in "${candidates[@]}"; do
+  [ "$tried" -lt 3 ] || break
+  tried=$((tried + 1))
+  to_version=$tag
+  log "candidate: $from_version -> $tag"
+  vr_rc=0
+  vr_out=$(bash scripts/verify-release.sh --auto "$tag") || vr_rc=$?
+  printf '%s\n' "$vr_out"
+  case $vr_rc in
+    0) target=$tag; break ;;
+    4) record refused too_young ;;
+    9) record failed download_failed ;;
+    3) last_code=not_signed ;;
+    5) last_code=commit_mismatch ;;
+    6) last_code=signature_invalid ;;
+    *) last_code=manifest_invalid ;;
+  esac
+  # A release that cannot be verified is never retried; the next one may be fine.
+  mark_bad "$tag" "$last_code"
+done
+[ -n "$target" ] || record refused "${last_code:-manifest_invalid}"
+to_version=$target
 
 expect=$(mktemp "$STATE_DIR/.expect.XXXXXX")
 printf '%s\n' "$vr_out" > "$expect"
