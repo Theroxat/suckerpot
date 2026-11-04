@@ -24,8 +24,11 @@
 # Prints key=value lines on stdout (version, commit, released_at, age_h, auto_min_age_h, major)
 # and a human summary on stderr. Exit codes: 0 verified, 1 failure, 2 usage, 3 no manifest (with
 # --auto always; without it only for a release older than v0.6.0, which has none), 4 too young (--auto),
-# 5 the manifest does not match the tag (commit, version, major or defaults), 6 bad signature,
-# 9 a download failed (a network problem, not a verdict on the release: try again later).
+# 5 the manifest does not match the tag (commit, version, major or defaults), 6 the signature
+# was REJECTED by cosign (a real verdict), 9 no verdict could be reached: a download failed or
+# answered something odd, the cosign image could not be fetched or started, Sigstore could not be
+# reached, a local temp file could not be made. 9 is about this machine or the network, never
+# about the release: the caller tries again later and must not hold it against the release.
 #
 # cosign runs in a pinned container, like scripts/verify-images.sh (host traffic: the download
 # and Sigstore are contacted from this machine, not through the VPN).
@@ -66,7 +69,7 @@ repo=${prefix#ghcr.io/}
 escaped=$(printf '%s' "$repo" | sed 's/\./\\./g')
 identity="^https://github\\.com/$escaped/\\.github/workflows/release\\.yml@refs/tags/$(printf '%s' "$tag" | sed 's/\./\\./g')\$"
 
-work=$(mktemp -d)
+work=$(mktemp -d) || die "could not make a temporary folder" 9
 trap 'rm -rf "$work"' EXIT
 # The container user (65532) must read the files; they are public release assets.
 chmod 755 "$work"
@@ -95,22 +98,39 @@ fi
 [ "$code" = 200 ] || die "downloading the release manifest answered HTTP $code" 9
 code=$(fetch "$base/$BUNDLE_NAME" "$work/$BUNDLE_NAME") \
   || die "could not download the manifest signature of $tag" 9
-[ "$code" = 200 ] || die "the manifest signature of $tag answered HTTP $code (not signed?)" 6
+if [ "$code" = 404 ]; then die "the manifest of $tag has no signature (not signed)" 3; fi
+[ "$code" = 200 ] || die "the manifest signature of $tag answered HTTP $code" 9
 chmod 644 "$work/$MANIFEST_NAME" "$work/$BUNDLE_NAME"
 
 # ---- 2. the signature (before anything in the file is trusted or even parsed)
 size=$(wc -c < "$work/$MANIFEST_NAME" | tr -d ' ')
 { [ "$size" -gt 0 ] && [ "$size" -le 16384 ]; } || die "the release manifest has a bad size"
-if ! docker run --rm --user 65532:65532 --read-only --cap-drop ALL \
+# The verifier itself must be available before its answer means anything.
+docker image inspect "$COSIGN_IMAGE" > /dev/null 2>&1 \
+  || docker pull --quiet "$COSIGN_IMAGE" > /dev/null 2>&1 \
+  || die "could not get the signature verifier image (is Docker running? is the registry reachable?)" 9
+cosign_rc=0
+docker run --rm --user 65532:65532 --read-only --cap-drop ALL \
   --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m,uid=65532,gid=65532 \
   -e HOME=/tmp -e TUF_ROOT=/tmp/tuf -v "$work:/m:ro" \
   "$COSIGN_IMAGE" verify-blob \
   --bundle "/m/$BUNDLE_NAME" \
   --certificate-identity-regexp "(?i)$identity" \
   --certificate-oidc-issuer "$ISSUER" \
-  "/m/$MANIFEST_NAME" > "$work/cosign.out" 2> "$work/cosign.err"; then
+  "/m/$MANIFEST_NAME" > "$work/cosign.out" 2> "$work/cosign.err" || cosign_rc=$?
+if [ "$cosign_rc" != 0 ]; then
   sed 's/^/          /' "$work/cosign.err" | tail -n 3 >&2
-  die "the signature of the release manifest of $tag is not valid" 6
+  # 125-127 and 137: docker could not start the container. Network or TUF trouble, or no recognised
+  # rejection from cosign: no verdict. Only cosign's own words for "this signature is not valid"
+  # count as a rejection.
+  case $cosign_rc in 125 | 126 | 127 | 137) die "the signature verifier could not run (exit $cosign_rc)" 9 ;; esac
+  if grep -qiE 'dial tcp|no such host|timeout|timed out|connection (refused|reset)|temporary failure|TUF|tuf|unable to (fetch|get|initialize)|error (updating|initializing)|rate limit|too many requests|status code 5|EOF|network is unreachable|context deadline' "$work/cosign.err"; then
+    die "the signature of $tag could not be checked (Sigstore or the network did not answer)" 9
+  fi
+  if grep -qiE 'none of the expected identities matched|no matching signatures|invalid signature|signature (is )?(invalid|verification failed)|certificate identity|expected (issuer|identity)|certificate .*(not|invalid)|bundle .*(invalid|does not match)|tlog entry|rekor entry' "$work/cosign.err"; then
+    die "the signature of the release manifest of $tag is not valid" 6
+  fi
+  die "the signature verifier gave no clear answer for $tag (try again later)" 9
 fi
 
 # ---- 3. fields (the file is flat JSON written by the release workflow)

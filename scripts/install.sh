@@ -981,8 +981,10 @@ if [ "$stack" = participant ]; then
     echo "Never forward the admin SSH port of this machine."
   fi
   echo "Use port forwards, not your router's DMZ. A DMZ puts every service of this machine on the"
-  echo "internet, the real sshd included. It is acceptable only if this machine runs nothing else,"
-  echo "its admin SSH port is not 22 and the host firewall is loaded."
+  echo "internet, the real sshd included. It is acceptable only if this machine runs nothing else"
+  echo "and its admin SSH port is not 22. The host firewall does not filter internet traffic to this"
+  echo "machine's own services: under a DMZ the admin SSH faces the internet, so allow key-only SSH"
+  echo "and add a rule on the router or on this machine for the admin port."
   # The host firewall (scripts/host/): offered here, never fatal, only asked on a terminal.
   # shellcheck source=scripts/lib/firewall.sh
   . scripts/lib/firewall.sh

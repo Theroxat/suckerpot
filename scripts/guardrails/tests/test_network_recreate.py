@@ -1,5 +1,6 @@
 """Update and rollback when Docker cannot change an existing network: one recreate, never `-v`."""
 
+import pytest
 from conftest import Sandbox
 from test_update import ENV, prepare, run_update, write_state
 
@@ -57,6 +58,38 @@ def test_an_unrelated_failure_is_not_retried(sandbox: Sandbox) -> None:
     assert rc != 0
     assert not any("compose down" in c for c in sandbox.calls())
     assert sandbox.calls().count(UP) == 1
+
+
+def test_lines_that_only_mention_networks_do_not_trigger_a_down(sandbox: Sandbox) -> None:
+    prepare(sandbox)
+    wrap(sandbox)
+    sandbox.env["SHIM_UP1_ERR"] = (
+        " Network demo_sp-backend Created\n Network demo_sp-ingress Created\n"
+        " Container demo-migrate-1 Error\ndependency failed to start: container migrate exited (1)"
+    )
+    rc, _ = run_update(sandbox, "--yes")
+    assert rc != 0
+    assert not any("compose down" in c for c in sandbox.calls())
+    assert sandbox.calls().count(UP) == 1
+
+
+@pytest.mark.parametrize(
+    "wording",
+    [
+        "Network demo_sp-ingress needs to be recreated - option gateway_mode_ipv4 has changed",
+        "failed to remove network demo_sp-ingress: network has active endpoints",
+        "network demo_sp-ingress was found but has incorrect label com.docker.compose.network",
+        "network sp-hubgate declared as external, but could not be found",
+        "network demo_sp-ingress: config for the network changed",
+    ],
+)
+def test_compose_wordings_that_ask_for_a_recreate(sandbox: Sandbox, wording: str) -> None:
+    prepare(sandbox)
+    wrap(sandbox)
+    sandbox.env["SHIM_UP1_ERR"] = wording
+    rc, out = run_update(sandbox, "--yes")
+    assert rc == 0, out
+    assert "docker compose down --remove-orphans" in sandbox.calls()
 
 
 def test_it_recreates_only_once(sandbox: Sandbox) -> None:

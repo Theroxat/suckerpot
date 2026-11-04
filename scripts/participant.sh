@@ -235,8 +235,10 @@ case $cmd in
     compose_up --remove-orphans || { revert; die "the stack did not become healthy; .env was put back (run: ./scripts/install.sh --repair)"; }
     if [ "$1" = --remove ]; then
       echo "participant: the VPN was removed. The hub now sees this machine's address (direct path)."
+      echo "participant: re-run ./scripts/participant.sh firewall so the host firewall matches this path."
     else
       echo "participant: all network traffic now goes through your VPN."
+      echo "participant: re-run ./scripts/participant.sh firewall so the host firewall allows the VPN endpoint."
     fi
     ;;
 

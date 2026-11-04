@@ -9,20 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- `./scripts/participant.sh ports-check [--wait SECONDS] [--since ISO | --since-install]` tells whether the internet reaches your sensors, and the participant installer runs it at the end and offers to re-check after you open the ports on your router. It makes no outside connection: it counts sessions from public addresses that your sensors already recorded, prints no address, and exits 0 (reached) or 3 (nothing yet). `status.sh` points to it.
+- `./scripts/participant.sh ports-check [--wait SECONDS] [--since ISO | --since-install]` tells whether the internet reaches your sensors, and the participant installer runs it at the end and offers to re-check after you open the ports on your router. It makes no outside connection: it counts sessions from public addresses that your sensors already recorded, prints no address, reads the database in a read-only transaction, and exits 0 (reached) or 3 (nothing yet). `status.sh` points to it.
 
 ### Changed
 
 - The participant installer no longer prints a fixed "14 days" date. The hub decides the probation period; `./scripts/status.sh` shows the date from which the sensor counts.
-- Participant docs and installer summary: use port forwards rather than a DMZ, explain the DMZ risk, and say precisely when the route-out restriction holds (host firewall loaded).
+- Participant docs and installer summary: use port forwards rather than a DMZ, explain the DMZ risk, and say precisely when the route-out restriction holds (host firewall loaded) and that the firewall does not filter internet traffic to the machine's own services.
 
 ### Security
 
-- The installers offer to install the host firewall at the end (participant mode; asks before using sudo, never blocks, prints the two commands otherwise), and `./scripts/participant.sh firewall [install|uninstall|status]` does it later.
-- Updates and rollbacks recreate the stack once (`down --remove-orphans`, never `-v`) when Docker cannot change an existing network; a foreign container attached to one of our networks stops the run with instructions instead of being disconnected.
+- The installers offer to install the host firewall at the end (participant mode; asks before using sudo, never blocks, prints the two commands otherwise; `participant.sh vpn` reminds you to re-run it), and `./scripts/participant.sh firewall [install|uninstall|status]` does it later.
+- Updates and rollbacks recreate the stack once (`down --remove-orphans`, never `-v`) when compose says an existing network cannot be reused (matched on its wording, not on any mention of a network); a foreign container attached to one of our networks stops the run with instructions instead of being disconnected.
 - CI pins the TimescaleDB test image by digest, like `docker-compose.yml`.
 - Automatic updates: the minimum release age is now at least 48 h whatever the release's own manifest says; `AUTO_UPDATE_MIN_AGE_H` in `.env` can raise it.
-- Automatic updates: a release that fails verification is marked bad with its reason and the next newest release of the same major version is tried (3 at most per run), so one bad tag no longer blocks updates.
+- Automatic updates: a release that is unsigned, does not match its tag or has a signature cosign rejects is marked bad with its reason (network, Docker, Sigstore or disk problems are never held against a release) and the next newest release of the same major version is tried (3 at most per run), so one bad tag no longer blocks updates.
 - The installer warns when Docker Engine is older than 28, where internal networks are not isolated from the host.
 
 ## [0.8.0] - 2026-11-04

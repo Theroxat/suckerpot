@@ -1207,5 +1207,6 @@ def test_participant_summary_recommends_forwards_over_a_dmz(psb: Sandbox) -> Non
     set_engine(psb, "28.0.0")
     rc, out = p_real(psb)
     assert rc == 0, out
+    assert "does not filter internet traffic to this" in out
     assert "Use port forwards, not your router's DMZ" in out
-    assert "the host firewall is loaded" in out
+    assert "admin SSH faces the internet" in out

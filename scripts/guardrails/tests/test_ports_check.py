@@ -18,9 +18,9 @@ LIB = ROOT / "scripts/lib/ports-check.sh"
 FILTER = ROOT / "scripts/lib/ports_check_filter.py"
 
 DB_ROWS = (
-    '  "compose exec -T db sh -c"*)\n'
+    '  "compose exec -T -e PGOPTIONS="*" db sh -c"*)\n'
     '    echo "docker $*" >> "$SHIM_LOG"\n'
-    "    cat > /dev/null\n"
+    '    cat > "$SHIM_DIR/db-sql"\n'
     '    [ ! -f "$SHIM_DIR/db-fail" ] || exit 1\n'
     '    cat "$SHIM_DIR/db-rows" 2>/dev/null; exit 0 ;;\n'
     '  "compose exec -T ingest python -I -c"*)\n'
@@ -94,7 +94,8 @@ def test_count_is_distinct_public_addresses_per_sensor() -> None:
 def test_the_sql_is_read_only_and_the_timestamp_validated() -> None:
     text = LIB.read_text()
     assert "ports_check_valid_ts" in text
-    assert "default_transaction_read_only=on" in text
+    assert "-e PGOPTIONS='-c default_transaction_read_only=on'" in text
+    assert "BEGIN READ ONLY;" in text and "COMMIT;" in text
     assert "LIMIT 50000" in text
     # The addresses are filtered in the ingest container, not in SQL, and never printed.
     assert "python -I -c" in text
@@ -170,7 +171,7 @@ def test_wait_polls_until_the_deadline(installed: Sandbox) -> None:
     before = len(installed.calls())
     rc, _ = _check(installed, "--wait", "30")
     assert rc == 3
-    queries = [c for c in installed.calls()[before:] if "exec -T db sh -c" in c]
+    queries = [c for c in installed.calls()[before:] if " db sh -c" in c]
     assert len(queries) == 4  # now, +10, +20, +30 seconds (sleep is a fake)
 
 
@@ -204,7 +205,7 @@ def test_bad_arguments_are_refused_before_any_query(installed: Sandbox, args: li
     before = len(installed.calls())
     rc, _ = _check(installed, *args)
     assert rc == 64
-    assert not [c for c in installed.calls()[before:] if "exec -T db" in c]
+    assert not [c for c in installed.calls()[before:] if " db sh -c" in c]
 
 
 def test_since_is_passed_to_the_query(installed: Sandbox) -> None:
@@ -277,10 +278,10 @@ def test_prompt_recheck_loops_until_reached(psb: Sandbox) -> None:
     # The fake database answers "nothing" for the first check (90 s: 10 polls) and the first recheck (60 s: 7 polls), then one session on ssh.
     wrap_docker(
         psb,
-        '  "compose exec -T db sh -c"*)\n'
+        '  "compose exec -T -e PGOPTIONS="*" db sh -c"*)\n'
         '    echo "docker $*" >> "$SHIM_LOG"\n'
         "    cat > /dev/null\n"
-        '    n=$(grep -c "exec -T db sh -c" "$SHIM_LOG")\n'
+        '    n=$(grep -c " db sh -c" "$SHIM_LOG")\n'
         '    [ "$n" -lt 18 ] || echo "ssh 8.8.8.8"; exit 0 ;;\n'
         '  "compose exec -T ingest python -I -c"*)\n'
         '    exec "$SHIM_PYTHON" -I -c "$8" ;;',
@@ -319,3 +320,29 @@ def test_only_private_sources_means_nothing_reached(installed: Sandbox) -> None:
     (installed.shim / "db-rows").write_text("ssh 127.0.0.1\nweb fe80::1\nssh ::ffff:127.0.0.1\n")
     rc, out = _check(installed, "--wait", "0")
     assert rc == 3, out
+
+
+def test_the_real_read_only_mechanism_reaches_the_database_container(installed: Sandbox) -> None:
+    before = len(installed.calls())
+    rc, _ = _check(installed, "--wait", "0")
+    assert rc == 3
+    query = next(c for c in installed.calls()[before:] if " db sh -c" in c)
+    # `docker compose exec` does not forward the caller's environment: the option is a -e flag.
+    assert "exec -T -e PGOPTIONS=-c default_transaction_read_only=on db sh -c" in query
+    sql = (installed.shim / "db-sql").read_text()
+    assert sql.startswith("BEGIN READ ONLY;\n") and sql.rstrip().endswith("COMMIT;")
+
+
+def test_a_bad_poll_interval_falls_back_to_10_seconds(installed: Sandbox) -> None:
+    for bad in ("0", "abc", "-3", "1.5", ""):
+        before = len(installed.calls())
+        proc = installed.run(
+            "scripts/participant.sh",
+            "ports-check",
+            "--wait",
+            "30",
+            extra_env={"PORTS_CHECK_INTERVAL": bad},
+        )
+        assert proc.returncode == 3, bad
+        queries = [c for c in installed.calls()[before:] if " db sh -c" in c]
+        assert len(queries) == 4, bad
