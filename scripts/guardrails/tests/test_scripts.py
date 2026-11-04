@@ -483,6 +483,19 @@ def test_env_set_allows_the_verify_switches_and_never_the_consent(
     assert "NETWORK_CONSENT" not in parse_env(sandbox.root / ".env")
 
 
+def test_env_set_can_clear_the_consent_record_but_never_set_it(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    record = "v2:sources,payloads,c2,files,rechecks:2026-11-03"
+    sandbox.write_env(f"COMPOSE_PROJECT_NAME=demo\nNETWORK_CONSENT={record}\n")
+    refused = sandbox.run("scripts/env-set.sh", "set", "NETWORK_CONSENT=x")
+    assert refused.returncode != 0
+    assert parse_env(sandbox.root / ".env")["NETWORK_CONSENT"] == record
+    cleared = sandbox.run("scripts/env-set.sh", "set", "NETWORK_CONSENT=")
+    assert cleared.returncode == 0, cleared.stderr
+    assert parse_env(sandbox.root / ".env").get("NETWORK_CONSENT", "") == ""
+
+
 def test_env_set_auto_update_flag_points_at_the_schedule_command(
     sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
 ) -> None:

@@ -29,6 +29,7 @@ HUB_STALE_HOURS = 26
 ERROR_CODES = {"hub_signature", "guard_failed"}
 KNOWN_TEXT = {
     "consent_outdated": "the consent text is newer than your agreement: run ./scripts/participant.sh join",
+    "consent_stale": "the install-time agreement is more than 7 days old and was not used: run ./scripts/participant.sh join to agree again",
     "hub_key_differs_from_release": "the hub key differs from the release's key list",
     "waiting_self_address": "the node has not learned its own address yet",
     "hub_signature": "the hub's answer failed the signature check",

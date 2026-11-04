@@ -513,7 +513,8 @@ if [ "$stack" = full ] && [ "$fresh" = 1 ] && [ "$no_network" = 0 ]; then
     join_network=1
   else
     printf 'Join the Selfhostr network? [Y/n] ' >&2
-    IFS= read -r a <&3 || a=""
+    # End of input is not a yes: only an explicit Enter or y is.
+    IFS= read -r a <&3 || die "no answer to the network question; use --yes or --no-network"
     case $a in
       "" | y | Y | yes | YES | Yes) join_network=1 ;;
       n | N | no | NO | No) pseudonym=""; log "network declined" ;;
@@ -752,6 +753,7 @@ else
 
     printf '\n# Added by the Selfhostr installer\n' >> "$tmp"
     setv UPDATE_CHECK_ENABLED "$update_check"
+    setv NETWORK_DEFAULT_PINNED 1
     setv SUCKERPOT_INSTALL_MODE "$mode"
     if [ "$mode" = images ]; then
       setv SUCKERPOT_IMAGE_PREFIX "$image_prefix"

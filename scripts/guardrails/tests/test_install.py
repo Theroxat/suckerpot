@@ -219,8 +219,8 @@ def test_interactive_answers_come_from_the_terminal(
     sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
 ) -> None:
     answers = sandbox.root / "answers"
-    # mode, sensors, access, admin user, password x2, wireguard, public address
-    answers.write_text("source\nssh,telnet\nl\nowner\n" + PASSWORD + "\n" + PASSWORD + "\n\n\n")
+    # mode, sensors, access, admin user, password x2, wireguard, public address, network
+    answers.write_text("source\nssh,telnet\nl\nowner\n" + PASSWORD + "\n" + PASSWORD + "\n\n\n\n\n")
     target = sandbox.root / "i.env"
     proc = sandbox.run(
         "scripts/install.sh",
@@ -1123,6 +1123,29 @@ def test_answering_no_to_the_network_question_writes_nothing(
 def test_a_garbled_network_answer_is_refused(sandbox: Sandbox) -> None:
     _, rc, out = _interactive(sandbox, "maybe\n")
     assert rc != 0 and "answer y or n" in out
+
+
+def test_end_of_input_is_not_a_yes_to_the_network_question(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    target, rc, out = _interactive(sandbox, "")
+    assert rc != 0 and "no answer to the network question" in out
+    assert not target.exists() or "NETWORK_CONSENT" not in parse_env(target)
+
+
+def test_the_consent_text_is_exact_about_the_vpn_and_the_address(sandbox: Sandbox) -> None:
+    _, rc, out = dry_run(sandbox)
+    assert rc == 0, out
+    assert "nothing leaves at all" in out
+    assert "until your own public address is confirmed" in out
+
+
+def test_a_fresh_install_carries_the_network_default_marker(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    target, rc, out = dry_run(sandbox, "--no-network")
+    assert rc == 0, out
+    assert parse_env(target)["NETWORK_DEFAULT_PINNED"] == "1"
 
 
 def test_no_network_is_a_full_mode_flag(psb: Sandbox) -> None:

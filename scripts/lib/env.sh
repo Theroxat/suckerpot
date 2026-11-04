@@ -367,8 +367,9 @@ consent_screen_full() {
   echo "  - takedown checks for addresses the network reported."
   echo "Never shared: passwords, commands, your ports, your own address or names in any payload."
   echo
-  echo "All of it leaves through your VPN, never from this machine's own address. Until a VPN is"
-  echo "configured (Settings > VPN) and your own public address is confirmed, nothing is sent."
+  echo "Joining and every network call go through your VPN once one is configured (Settings > VPN),"
+  echo "never from this machine's own address; with no VPN, nothing leaves at all. Nothing about your"
+  echo "sensors is submitted until your own public address is confirmed."
   echo "Leave at any time in the dashboard (Network page). A leave is final: an update or a restart"
   echo "never joins you again."
   echo

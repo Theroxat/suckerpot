@@ -210,6 +210,9 @@ class NetworkWorker(FeatureWorker):
                 self.consent_state if self.consent_state != participant.MISSING else None
             )
             return m
+        if not participant.is_fresh(self.consent, self._now().date()):
+            self._consent_reason = participant.STALE
+            return m
         country = self.network.country if valid_country(self.network.country) else None
         await store.update(
             desired="member",

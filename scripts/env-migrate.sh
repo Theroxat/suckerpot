@@ -6,6 +6,7 @@
 # - Adds every secret of SECRET_VARS that is missing from .env, with a generated value
 #   (never POSTGRES_PASSWORD: the database owner password lives in the data volume).
 # - Adds the non-secret variables of MIGRATE_DEFAULTS that are missing, with their default.
+# - Pins NETWORK_ENABLED=false on an install that predates the network default (see below).
 # - Never changes a line that already exists.
 # - Prints the NAMES it added, empty secrets it left alone, and optional variables that
 #   .env.example has and .env does not. Never prints a value.
@@ -65,6 +66,21 @@ for pair in "${MIGRATE_DEFAULTS[@]}"; do
     added+=("$name")
   fi
 done
+
+# M33 made the network feature on by default. An install made before that has no
+# NETWORK_DEFAULT_PINNED marker: if it also has no active NETWORK_ENABLED line, its owner never
+# opted in (or turned it off by removing the line), so keep the old default, off. The marker makes
+# this a one-time decision; installs made by the M33 installer carry it from the start.
+if ! env_has .env NETWORK_DEFAULT_PINNED; then
+  add_header
+  if ! env_has .env NETWORK_ENABLED; then
+    printf 'NETWORK_ENABLED=false\n' >> .env
+    added+=(NETWORK_ENABLED)
+    echo "env-migrate: NETWORK_ENABLED had no value; kept it off as before this version (turn it on: just set NETWORK_ENABLED=true)"
+  fi
+  printf 'NETWORK_DEFAULT_PINNED=1\n' >> .env
+  added+=(NETWORK_DEFAULT_PINNED)
+fi
 chmod 600 .env
 
 new_optional=()

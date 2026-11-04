@@ -122,6 +122,39 @@ async def test_full_mode_joins_from_a_record_too() -> None:
     assert hub.bodies[-1]["pseudonym"] == GENERATED
 
 
+@pytest.mark.parametrize("mode", ["full", "participant"])
+async def test_a_stale_record_never_joins(mode: str) -> None:
+    """A record older than 7 days is spent: a restored database must not undo a leave."""
+    store = MemoryStore()
+    worker, hub = make(
+        store, stack_mode=mode, consent="v2:sources,payloads,c2,files,rechecks:2026-10-26"
+    )
+    await worker.run_once()
+    assert hub.calls == [] and store.m.desired == "off" and store.m.state == "off"
+    assert worker.reason == participant.STALE
+
+
+async def test_a_record_a_week_old_still_joins() -> None:
+    store = MemoryStore()
+    worker, _ = make(
+        store, stack_mode="full", consent="v2:sources,payloads,c2,files,rechecks:2026-10-27"
+    )
+    await worker.run_once()
+    assert store.m.state == "member"
+
+
+def test_auto_confirm_needs_participant_mode() -> None:
+    from ingest.abuse.selfterms import auto_confirm_enabled
+
+    assert not auto_confirm_enabled({"SELF_TERMS_AUTO_CONFIRM": "true"})
+    assert not auto_confirm_enabled(
+        {"SELF_TERMS_AUTO_CONFIRM": "true", "SUCKERPOT_STACK_MODE": "full"}
+    )
+    assert auto_confirm_enabled(
+        {"SELF_TERMS_AUTO_CONFIRM": "true", "SUCKERPOT_STACK_MODE": "participant"}
+    )
+
+
 async def test_full_mode_without_a_record_stays_out() -> None:
     """An install that never answered the question (an upgrade) is not joined silently."""
     store = MemoryStore()
@@ -301,7 +334,7 @@ def test_effective_rows_confirm_learned_addresses_only_when_asked() -> None:
         SelfTermRow(kind="name", value="owner-box.example.net", source="learned"),
     ]
     assert not any(r.confirmed for r in effective_rows(rows, {}))
-    auto_env = {"SELF_TERMS_AUTO_CONFIRM": "true"}
+    auto_env = {"SELF_TERMS_AUTO_CONFIRM": "true", "SUCKERPOT_STACK_MODE": "participant"}
     young = effective_rows(rows, auto_env, {"8.8.4.4": MIN_LEARNED_DAYS - 1})
     assert not any(r.confirmed for r in young if r.source == "learned")
     # a decoy seen on too few days is still redacted (literal text term) but never counts

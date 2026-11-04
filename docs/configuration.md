@@ -665,7 +665,7 @@ Participant mode is described in [Join the network](participate.md). The install
 | `COMPOSE_PROFILES` | `egress` (full) | compose | `direct` starts `hubproxy` (no VPN). `egress` starts the VPN. Never both |
 | `EGRESS_MODE` | `vpn` | `ingest` | `direct` reaches only the hub, through `hubproxy`. `vpn` uses the VPN proxy |
 | `HUBPROXY_ALLOW` | the hub host, port 443 | `hubproxy` | Comma-separated `host:443` pairs, at most two. Direct mode only |
-| `NETWORK_CONSENT` | empty | `ingest` | Consent record `v2:<list>:<UTC day>`, written by the installer (participant mode, or a yes to the network question in full mode) or `participant.sh join`. `ingest` joins from it once, and never again after a leave. Never set it with `just set`. `ingest` does not join on a version it does not know (`consent_outdated`) |
+| `NETWORK_CONSENT` | empty | `ingest` | Consent record `v2:<list>:<UTC day>`, written by the installer (participant mode, or a yes to the network question in full mode) or `participant.sh join`. `ingest` joins from it once, and never again after a leave. `ingest` ignores a record older than 7 days. `just set NETWORK_CONSENT=` clears it; `just set` refuses any non-empty value. `ingest` does not join on a version it does not know (`consent_outdated`) |
 | `NETWORK_PSEUDONYM` | random | `ingest` | Optional pseudonym |
 | `NETWORK_COUNTRY`, `NETWORK_SHOW_COUNTRY` | empty, `false` | `ingest` | Optional two-letter country, shown only if you opt in and enough members share it |
 | `NETWORK_VERIFY_REVEALS` | `false` (`true` in participant mode) | `ingest` | Answer the hub when it asks for a link that several sensors saw |

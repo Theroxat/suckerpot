@@ -254,6 +254,36 @@ def test_migrate_twice_changes_nothing_the_second_time(sandbox: Sandbox) -> None
     assert "added 0 variable(s)" in again.stdout
 
 
+def test_migrate_pins_the_network_off_on_an_install_that_predates_the_default(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    sandbox.write_env(BASE_ENV + "# NETWORK_ENABLED=true\n")
+    assert sandbox.run("scripts/env-migrate.sh").returncode == 0
+    env = parse_env(sandbox.root / ".env")
+    assert env["NETWORK_ENABLED"] == "false" and env["NETWORK_DEFAULT_PINNED"] == "1"
+    # The owner turns it on afterwards: a second update must not pin it again.
+    assert sandbox.run("scripts/env-set.sh", "set", "NETWORK_ENABLED=true").returncode == 0
+    assert sandbox.run("scripts/env-migrate.sh").returncode == 0
+    assert parse_env(sandbox.root / ".env")["NETWORK_ENABLED"] == "true"
+
+
+def test_migrate_keeps_an_active_network_line(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    sandbox.write_env(BASE_ENV + "NETWORK_ENABLED=true\n")
+    assert sandbox.run("scripts/env-migrate.sh").returncode == 0
+    env = parse_env(sandbox.root / ".env")
+    assert env["NETWORK_ENABLED"] == "true" and env["NETWORK_DEFAULT_PINNED"] == "1"
+
+
+def test_migrate_leaves_an_install_with_the_marker_alone(
+    sandbox: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    sandbox.write_env(BASE_ENV + "NETWORK_DEFAULT_PINNED=1\n")
+    assert sandbox.run("scripts/env-migrate.sh").returncode == 0
+    assert "NETWORK_ENABLED" not in parse_env(sandbox.root / ".env")
+
+
 def test_lib_settable_patterns_match_the_design() -> None:
     text = (ROOT / "scripts/lib/env.sh").read_text()
     for pattern in ("'*_ENABLED'", "'*_HOST_PORT'", "DASHBOARD_BIND", "'SITE_*'", "'SENSOR_*'"):
