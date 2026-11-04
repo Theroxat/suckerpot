@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The project moved from `github.com/Theroxat/suckerpot` to `github.com/selfhostr/suckerpot`. Release images are now published as `ghcr.io/selfhostr/suckerpot-*` and signed by the release workflow of the new repository, and the documentation is at `https://suckerpot.selfhostr.io/docs/`. `scripts/env-migrate.sh` rewrites the old default `SUCKERPOT_IMAGE_PREFIX` and `UPDATE_CHECK_REPO` in an existing `.env`; the signature checks are as strict as before (exact repository, `release.yml`, exact tag). An install on v0.7.1 verifies releases against the old repository, so its first update needs `SUCKERPOT_IMAGE_PREFIX=ghcr.io/selfhostr/suckerpot` set in `.env` by hand; see `docs/updates.md`.
 - The network is now called the SuckerPot network, and the blocklists the SuckerPot blocklists. Selfhostr is the small organisation that makes SuckerPot, no longer the name of the product or the network.
 - New addresses: the site is `https://suckerpot.selfhostr.io/` (hosted on Cloudflare Pages), the hub is `https://relay.selfhostr.io` and the feeds are `https://lists.selfhostr.io/v1`. The old `selfhostr.io` site, `hub.selfhostr.io` and `feeds.selfhostr.io` are gone. Nodes pick up the new hub address with the next release; the hub keys are unchanged. `abuse@selfhostr.io` stays.
 

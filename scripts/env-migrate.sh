@@ -7,7 +7,9 @@
 #   (never POSTGRES_PASSWORD: the database owner password lives in the data volume).
 # - Adds the non-secret variables of MIGRATE_DEFAULTS that are missing, with their default.
 # - Pins NETWORK_ENABLED=false on an install that predates the network default (see below).
-# - Never changes a line that already exists.
+# - Moves the two repository settings of the Theroxat -> selfhostr move (image prefix and update
+#   check repository) when they hold exactly the old default value; any other value is yours and stays.
+# - Never changes any other line that already exists.
 # - Prints the NAMES it added, empty secrets it left alone, and optional variables that
 #   .env.example has and .env does not. Never prints a value.
 set -euo pipefail
@@ -80,6 +82,20 @@ if ! env_has .env NETWORK_DEFAULT_PINNED; then
   fi
   printf 'NETWORK_DEFAULT_PINNED=1\n' >> .env
   added+=(NETWORK_DEFAULT_PINNED)
+fi
+
+# The project moved to the selfhostr organisation: an install made before that pinned the old image
+# prefix (the installer writes it) and may carry the old update-check repository. Only the exact
+# old defaults are rewritten, so a fork or a mirror keeps its own value. This does not weaken the
+# signature checks: the verifiers still demand the release workflow of the repository named by
+# the prefix.
+if [ "$(env_get SUCKERPOT_IMAGE_PREFIX)" = "ghcr.io/theroxat/suckerpot" ]; then
+  env_set_line .env SUCKERPOT_IMAGE_PREFIX "ghcr.io/selfhostr/suckerpot"
+  echo "env-migrate: SUCKERPOT_IMAGE_PREFIX now points at ghcr.io/selfhostr/suckerpot (the project moved)"
+fi
+if [ "$(env_get UPDATE_CHECK_REPO)" = "Theroxat/suckerpot" ]; then
+  env_set_line .env UPDATE_CHECK_REPO "selfhostr/suckerpot"
+  echo "env-migrate: UPDATE_CHECK_REPO now points at selfhostr/suckerpot (the project moved)"
 fi
 chmod 600 .env
 

@@ -273,7 +273,7 @@ def test_full_install_with_fake_docker(
     for name in SECRET_NAMES:
         assert env[name] not in calls
         assert env[name] not in out
-    assert "docker pull --quiet ghcr.io/theroxat/suckerpot-api@sha256:" in calls
+    assert "docker pull --quiet ghcr.io/selfhostr/suckerpot-api@sha256:" in calls
     assert "--network none" in calls
     assert "docker volume create suckerpot_db-data" in calls
     assert "docker compose pull --policy missing" in calls
@@ -788,7 +788,7 @@ def test_participant_install_with_fake_docker(
     assert "healthz" not in calls
     assert "docker compose up -d --no-build --pull never --wait --wait-timeout 600" in calls
     assert "docker volume create suckerpot_vpn-config" in calls
-    assert "docker pull --quiet ghcr.io/theroxat/suckerpot-ingest@sha256:" in calls
+    assert "docker pull --quiet ghcr.io/selfhostr/suckerpot-ingest@sha256:" in calls
     # Nothing secret leaves the .env, the log or the screen.
     log = (psb.root / "install.log").read_text()
     for name in SECRET_NAMES:

@@ -14,7 +14,7 @@
 # --only restricts the check (and the pull) to the listed image names, e.g. "api".
 #
 # The version comes from the argument, then SUCKERPOT_VERSION (environment or .env). The registry
-# prefix comes from SUCKERPOT_IMAGE_PREFIX (same lookup, default ghcr.io/theroxat/suckerpot); the
+# prefix comes from SUCKERPOT_IMAGE_PREFIX (same lookup, default ghcr.io/selfhostr/suckerpot); the
 # GitHub repository whose workflow must have signed the images is taken from that prefix
 # (ghcr.io/<owner>/<repo>), so a fork verifies its own releases.
 #
@@ -87,7 +87,7 @@ if [ "$ships_hubproxy" = 0 ]; then
   esac
 fi
 
-prefix=$(get SUCKERPOT_IMAGE_PREFIX ghcr.io/theroxat/suckerpot)
+prefix=$(get SUCKERPOT_IMAGE_PREFIX ghcr.io/selfhostr/suckerpot)
 printf '%s' "$prefix" | grep -Eq '^ghcr\.io/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$' \
   || die "SUCKERPOT_IMAGE_PREFIX must look like ghcr.io/<owner>/<name>"
 repo=${prefix#ghcr.io/}
