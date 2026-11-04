@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from suckerpot_db import AlertChannelRow, EnrichmentStatusRow, EventRow
+from suckerpot_db import AlertChannelRow, EnrichmentStatusRow
 from suckerpot_db.models import ReportImapRow, ReportImapStateRow
 from suckerpot_db.trusted_exits import ACTIVE_SELF_NETWORKS_SQL
 
@@ -29,7 +29,7 @@ from api.deps import DbSession
 from api.egress import _checked_at
 from api.network import recent_submission
 from api.provider_keys import _configured
-from api.sensors import SENSOR_LABELS, SENSORS
+from api.sensors import SENSOR_LABELS, SENSORS, latest_event_per_sensor
 from api.setup_wizard import build_ports, last_events, sensor_enabled
 from api.version import load_version
 
@@ -87,14 +87,7 @@ def _reason(detail: dict[str, Any] | None) -> str:
 
 
 async def _sensors(db: AsyncSession, now: datetime) -> SetupItem:
-    rows = (
-        await db.execute(
-            select(EventRow.sensor)
-            .where(EventRow.ts >= now - SILENT_AFTER)
-            .group_by(EventRow.sensor)
-        )
-    ).all()
-    active = {r.sensor for r in rows}
+    active = set(await latest_event_per_sensor(db, now - SILENT_AFTER))
     enabled = [s for s in SENSORS if sensor_enabled(s)]  # a disabled sensor is not "silent"
     silent = [SENSOR_LABELS.get(s, s) for s in enabled if s not in active]
     href = "/settings"

@@ -16,16 +16,16 @@ from typing import Literal, Self
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from suckerpot_db import EventRow, SetupProgressRow
+from suckerpot_db import SetupProgressRow
 
 from api import audit as audit_db
 from api import auth as auth_mod
 from api.authz import require_admin
 from api.deps import DbSession
-from api.sensors import SENSOR_LABELS
+from api.sensors import latest_event_per_sensor
 
 router = APIRouter(tags=["settings"])
 
@@ -241,15 +241,8 @@ def build_ports(
 
 
 async def last_events(db: AsyncSession, now: datetime) -> dict[str, datetime]:
-    """Newest event per sensor in the last 24 hours (one grouped read)."""
-    rows = (
-        await db.execute(
-            select(EventRow.sensor, func.max(EventRow.ts))
-            .where(EventRow.ts >= now - RECEIVING_WINDOW)
-            .group_by(EventRow.sensor)
-        )
-    ).all()
-    return {sensor: ts for sensor, ts in rows if sensor in SENSOR_LABELS}
+    """Newest event per sensor in the last 24 hours (index lookups, not a grouped scan)."""
+    return await latest_event_per_sensor(db, now - RECEIVING_WINDOW)
 
 
 @router.get("/setup/ports", response_model=Ports, dependencies=[Depends(require_admin)])
