@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 
 /**
  * A host command to copy. The dashboard never edits `.env` and never runs anything (M28 P5):
- * the owner pastes this into a terminal on the machine that hosts Selfhostr.
+ * the owner pastes this into a terminal on the machine that hosts SuckerPot.
  */
 export function CommandBox({
   command,

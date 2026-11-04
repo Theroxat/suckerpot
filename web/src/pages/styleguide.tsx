@@ -731,7 +731,7 @@ export function StyleguidePage() {
       <Section
         id="components"
         title="Components"
-        description="shadcn/ui primitives restyled through tokens, plus the Selfhostr building blocks."
+        description="shadcn/ui primitives restyled through tokens, plus the SuckerPot building blocks."
       >
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Specimen label="Button">

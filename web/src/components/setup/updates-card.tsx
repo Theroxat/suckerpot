@@ -72,7 +72,7 @@ export function UpdatesCard() {
             <CommandBox
               command="just update"
               label="Command to update"
-              hint="Run it on the machine that hosts Selfhostr. It takes a database backup first and can be rolled back."
+              hint="Run it on the machine that hosts SuckerPot. It takes a database backup first and can be rolled back."
             />
           ) : null}
           {canWrite && v.check === "off" ? (

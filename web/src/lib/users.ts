@@ -99,7 +99,7 @@ const roleWord = (value: unknown) => (value === "admin" ? "administrator" : text
 /** "abuseipdb" reads as "AbuseIPDB", as on the Settings page. */
 const providerName = (id: string) => (id in PROVIDER_NAMES ? PROVIDER_NAMES[id as ProviderId] : id)
 
-/** Entries written by Selfhostr itself (the automatic lockout), not by a person. */
+/** Entries written by SuckerPot itself (the automatic lockout), not by a person. */
 export function isSystemActor(e: AuditEntry): boolean {
   const id = e.details.actor_id
   return id === undefined ? e.actor === "system" : id === "system"

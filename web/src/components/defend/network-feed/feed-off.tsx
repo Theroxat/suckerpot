@@ -19,7 +19,7 @@ export function FeedOff({ status, onHowTo }: { status: FeedStatus; onHowTo: () =
       <EmptyState
         icon={Rss}
         title="The community lists are not fetched here"
-        description="The Selfhostr network publishes free lists of malware hosts and attack sources. A host is listed only when at least 5 independent sensors confirmed it, and the lists stay empty until enough members exist. Using them is optional."
+        description="The SuckerPot network publishes free lists of malware hosts and attack sources. A host is listed only when at least 5 independent sensors confirmed it, and the lists stay empty until enough members exist. Using them is optional."
         action={
           <Button variant="outline" size="sm" onClick={onHowTo}>
             <ListChecks aria-hidden />

@@ -1,5 +1,5 @@
 /**
- * The Selfhostr network (M29, docs/design/m29.md sections 7 and 9.6): shapes of the node API
+ * The SuckerPot network (M29, docs/design/m29.md sections 7 and 9.6): shapes of the node API
  * under `/api/v1/network`, the plain-English sentences of the pages, the consent list and the
  * calls. The mocks in `src/mocks/network.ts` match these types exactly (a test checks it).
  *
@@ -357,15 +357,15 @@ export function describeStatus(s: NetworkStatus, impact?: NetworkImpact): string
   if (!s.hub_configured) return "No network hub is configured, so the network cannot be joined yet."
   switch (s.state) {
     case "off":
-      return "You are not part of the Selfhostr network. Nothing leaves this system."
+      return "You are not part of the SuckerPot network. Nothing leaves this system."
     case "enrolling":
-      return "Joining the Selfhostr network. This can take a few minutes."
+      return "Joining the SuckerPot network. This can take a few minutes."
     case "leaving":
       return "Leaving the network. Your data is being deleted at the hub."
     case "error":
       return "Joining the network did not work yet. Nothing has been sent."
     case "member":
-      return impact ? impactFinding(impact) : "You are part of the Selfhostr network."
+      return impact ? impactFinding(impact) : "You are part of the SuckerPot network."
   }
 }
 
@@ -479,7 +479,15 @@ export function daysToTakedown(t: NetworkTarget): number | null {
 // --- Pseudonym ------------------------------------------------------------------------
 
 export const PSEUDONYM_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 _.-]{1,22}[A-Za-z0-9]$/
-const RESERVED = new Set(["admin", "administrator", "hub", "official", "moderator", "selfhostr"])
+const RESERVED = new Set([
+  "admin",
+  "administrator",
+  "hub",
+  "official",
+  "moderator",
+  "selfhostr",
+  "suckerpot",
+])
 
 /** The same rules as the server (docs/design/m29.md 9.7). Empty is fine: it stays anonymous. */
 export function validatePseudonym(raw: string): string | null {

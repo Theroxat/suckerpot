@@ -119,7 +119,7 @@ export function PortsNotes() {
         <code className="font-mono">docs/deployment.md</code>.
       </li>
       <li>
-        Selfhostr never learns your public address. A sensor shows as receiving once a first visitor
+        SuckerPot never learns your public address. A sensor shows as receiving once a first visitor
         arrives, which usually takes a few minutes.
       </li>
     </ul>

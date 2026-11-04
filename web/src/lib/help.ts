@@ -85,7 +85,7 @@ export const HELP = {
   },
   "blocklists-network": {
     title: "Community lists",
-    body: "Free lists of malware hosts, command servers and attack sources, each confirmed by at least five independent sensors in the Selfhostr network. They stay empty until enough members exist. Copy a list address into OPNsense, pfSense or nftables and pick the format; using them is optional and needs no account.",
+    body: "Free lists of malware hosts, command servers and attack sources, each confirmed by at least five independent sensors in the SuckerPot network. They stay empty until enough members exist. Copy a list address into OPNsense, pfSense or nftables and pick the format; using them is optional and needs no account.",
   },
   detections: {
     title: "Detections",
@@ -109,7 +109,7 @@ export const HELP = {
   },
   abuse: {
     title: "Abuse reports",
-    body: "Drafts of reports for the networks that host attackers, with the abuse contact looked up over RDAP through the VPN. The To send queue walks through the ready ones; Selfhostr sends a report only if you set up SMTP and choose a sending mode. Open a draft to read the identity check first.",
+    body: "Drafts of reports for the networks that host attackers, with the abuse contact looked up over RDAP through the VPN. The To send queue walks through the ready ones; SuckerPot sends a report only if you set up SMTP and choose a sending mode. Open a draft to read the identity check first.",
   },
   "abuse-results": {
     title: "Results",
@@ -125,7 +125,7 @@ export const HELP = {
   },
   "abuse-report": {
     title: "Abuse report",
-    body: "One draft report for one abuse desk. The identity check says what was masked, or why the report is blocked, against your own addresses and the terms you listed in Settings → Reporting. Review it, then copy the message and send it yourself and mark it as sent, or let Selfhostr send it if you set up SMTP sending (Send now, or automatically after a waiting time, with Cancel).",
+    body: "One draft report for one abuse desk. The identity check says what was masked, or why the report is blocked, against your own addresses and the terms you listed in Settings → Reporting. Review it, then copy the message and send it yourself and mark it as sent, or let SuckerPot send it if you set up SMTP sending (Send now, or automatically after a waiting time, with Cancel).",
   },
   "settings-general": {
     title: "General",
@@ -153,7 +153,7 @@ export const HELP = {
   },
   "settings-reporting": {
     title: "Reporting",
-    body: "The settings used in abuse reports: your reply contact (required), optional texts around the facts, and the list of terms that must never appear in a report. Leave the texts empty to send only the facts. Selfhostr sends a report only if you set up SMTP and choose a sending mode.",
+    body: "The settings used in abuse reports: your reply contact (required), optional texts around the facts, and the list of terms that must never appear in a report. Leave the texts empty to send only the facts. SuckerPot sends a report only if you set up SMTP and choose a sending mode.",
   },
   "settings-vpn": {
     title: "VPN",
@@ -169,7 +169,7 @@ export const HELP = {
   },
   network: {
     title: "Network",
-    body: "The Selfhostr network pools what many installations see, so an attacker seen by five or more sensors gets one strong report instead of many weak ones. It is off until an administrator joins, and members share only the items listed on this page. Open a target to see how it ended, or leave from Your node.",
+    body: "The SuckerPot network pools what many installations see, so an attacker seen by five or more sensors gets one strong report instead of many weak ones. It is off until an administrator joins, and members share only the items listed on this page. Open a target to see how it ended, or leave from Your node.",
   },
   "network-members": {
     title: "Members",
@@ -177,7 +177,7 @@ export const HELP = {
   },
   "settings-network": {
     title: "Network",
-    body: "Join or leave the Selfhostr network, and change your pseudonym and country. Joining is optional, asks for your password and starts with nothing ticked. You can read every batch that was sent, and leaving deletes your data here and at the hub.",
+    body: "Join or leave the SuckerPot network, and change your pseudonym and country. Joining is optional, asks for your password and starts with nothing ticked. You can read every batch that was sent, and leaving deletes your data here and at the hub.",
   },
   styleguide: {
     title: "Styleguide",

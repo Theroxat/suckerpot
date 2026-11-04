@@ -42,7 +42,7 @@ export function JoinDialog({
         if (!next) reset()
         onOpenChange(next)
       }}
-      title="Join the Selfhostr network"
+      title="Join the SuckerPot network"
       description="Help the network take down attack sources. You can leave at any time with one button."
       hint="Joining asks for your own dashboard password again."
       focusPassword={false}
