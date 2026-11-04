@@ -219,3 +219,8 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - Dashboard: the join dialog lists what is shared and asks only for the password; leave is one button; setup step 8 joins directly.
 - Fixed: the setup wizard's sensor list timed out on busy systems (24 h group-by over ~1.3 M events); it now reads the newest event per sensor from the `(sensor, ts)` index.
 - Security review PASS; its two medium and five low findings fixed. Lint, typecheck, unit, integration, guardrails and the participant end-to-end test (48/48) green. One collector timing test failed once and passed on rerun.
+
+## 2026-11-04 — v0.7.0 released
+
+- Tag `v0.7.0` built, signed and published by the Release workflow. `scripts/verify-release.sh v0.7.0` checks the manifest (commit a5000af); `just verify-images v0.7.0` reports all 19 image signatures valid.
+- Docs build fixed: `design/m33` added to the docs toctree.

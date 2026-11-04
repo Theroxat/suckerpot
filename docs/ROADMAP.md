@@ -409,4 +409,4 @@ Owner decision (2026-11-04): joining the network is the recommended default and 
 - [x] Dashboard: the join dialog shows what is shared and asks only for the password; leave is one button; a node that left can join again; setup step 8 has the join button.
 - [x] Setup wizard sensor list read from the `(sensor, ts)` index (it timed out on busy systems).
 - [x] Security review (PASS; the stale consent record, upgrade pin, end-of-input and wording findings fixed), deploy.
-- [ ] Release.
+- [x] Release (v0.7.0).
