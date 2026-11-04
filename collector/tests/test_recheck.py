@@ -37,8 +37,8 @@ T0 = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 def settings(**kw: object) -> CollectorSettings:
     base: dict[str, object] = {
         "max_bytes": 64 * 1024,
-        "timeout_s": 5,
-        "connect_timeout_s": 2,
+        "timeout_s": 30,
+        "connect_timeout_s": 10,
         "max_redirects": 3,
         "host_interval_s": 0.0,
     }
