@@ -95,6 +95,10 @@ The time is a random minute between 03:00 and 05:59 local time, chosen at instal
 
 The outcome of the last run is in `.suckerpot-state/auto-update.json`, and the log is in `.suckerpot-state/auto-update.log` (rotated at 1 MiB). `./scripts/status.sh` shows both.
 
+### The one-time network recreate
+
+A release can change the name or the options of a Docker network, and Docker cannot change those on a network that exists. When `docker compose up` fails for that reason during an update (or a rollback), the script runs `docker compose down --remove-orphans` once and starts the stack again. Volumes are never removed. The services are down for a short time. If a container from another project is attached to one of the SuckerPot networks, the `down` cannot remove it: the script stops and prints the network, the container and the `docker network disconnect` command. It never disconnects a foreign container for you.
+
 ### Turn it on or off
 
 ```bash
