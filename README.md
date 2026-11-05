@@ -10,8 +10,6 @@
 
 </div>
 
-Screenshots: [screenshots/](screenshots/)
-
 ## Overview
 
 - **Twelve sensors.** Fake remote shells, web and API services, databases, and Windows and VoIP services take the attacks. Each one records what the attacker does and never runs it.
@@ -20,7 +18,7 @@ Screenshots: [screenshots/](screenshots/)
 
 Free, for good. MIT licence, no paid edition.
 
-> **SuckerPot is meant to be attacked.** Deploy it only on an isolated host or VM that you are ready to lose, and keep nothing that matters on it. Screenshots use synthetic demo data and documentation IP addresses.
+> **SuckerPot is meant to be attacked.** Deploy it only on an isolated host or VM that you are ready to lose, and keep nothing that matters on it.
 
 ## Quick start
 
@@ -50,7 +48,7 @@ Only want to help the SuckerPot network? `./scripts/install.sh --participant` in
 - **Anonymous abuse-report drafts**, with an identity check before anything leaves.
 - **Hardened by default**: non-root, read-only containers, isolated networks, one Redis ACL user per sensor.
 
-Details and screenshots: [What SuckerPot does](docs/features.md).
+Details: [What SuckerPot does](docs/features.md).
 
 ## Architecture
 
