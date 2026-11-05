@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 280" role="img" aria-label="SuckerPot: A honeypot you can actually read.">
+  <defs><pattern id="g" width="44" height="44" patternUnits="userSpaceOnUse"><path d="M44 0H0V44" fill="none" stroke="#ffffff" stroke-opacity=".05"/></pattern></defs>
+  <rect width="1280" height="280" rx="18" fill="#07080a"/>
+  <rect width="1280" height="280" rx="18" fill="url(#g)"/>
+  <g transform="translate(64 72) scale(2.1875)"><rect width="64" height="64" rx="15" fill="#111419"/><path d="M32 8c10 12 17 21 17 29a17 17 0 0 1-34 0c0-8 7-17 17-29z" fill="#a78bfa"/><ellipse cx="32" cy="37" rx="10.5" ry="7" fill="#111419"/><circle cx="32" cy="37" r="3.5" fill="#eceef1"/></g>
+  <text x="228" y="134" fill="#eceef1" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="60" font-weight="600" letter-spacing="-1.2">SuckerPot</text>
+  <text x="230" y="184" fill="#c9ccd1" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="28">A honeypot you can actually read.</text>
+  <text x="1216" y="244" text-anchor="end" fill="#8b9098" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="17">a selfhostr project</text>
+</svg>

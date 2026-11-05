@@ -1,4 +1,4 @@
-# Deployment
+# Deploy SuckerPot to the internet
 
 This page is the checklist for putting SuckerPot on the internet. Follow the steps in order. Do not skip the firewall, the snapshot or the verification.
 
