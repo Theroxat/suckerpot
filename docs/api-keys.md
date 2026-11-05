@@ -1,4 +1,4 @@
-# Provider API keys
+# Add provider API keys
 
 SuckerPot works without any API key. Every key below is optional. Each one adds one more source of context to the dashboard. Without it, that source is simply empty, and nothing else breaks.
 

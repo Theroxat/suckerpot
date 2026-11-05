@@ -1,4 +1,4 @@
-# Defend: blocklists, detection rules and your exposure
+# Defend with blocklists, rules and your exposure
 
 The Defend pages turn what the honeypot saw into things you can use at work: lists to load into a firewall, rules to load into a SIEM or an intrusion detection system, and a short checklist per attack type. Everything here is built from data already in the database. Nothing is scanned, resolved or contacted, and nothing is reported to anyone.
 

@@ -1,4 +1,4 @@
-# Demo data
+# Load demo data
 
 `just demo` fills SuckerPot with synthetic attack data. Use it to try the pipeline and the dashboard, to develop against it, and to make screenshots.
 

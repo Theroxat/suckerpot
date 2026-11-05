@@ -1,4 +1,4 @@
-# Replies to reports
+# Handle replies to reports
 
 SuckerPot can read the answers to your abuse reports. It reads a mailbox that you set up for reports, sorts each reply by what it says, and links it to the report it answers. The report page then shows the outcome: an automatic receipt, a ticket number, a resolution, a rejection or a bounce.
 
