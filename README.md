@@ -4,11 +4,6 @@
 
 <h3>A self-hosted honeypot with one dashboard that tells each attack as a short story.</h3>
 
-<a href="https://suckerpot.selfhostr.io"><img src="https://raw.githubusercontent.com/selfhostr/.github/main/profile/assets/btn-site.svg" alt="Website" height="40"></a>
-<a href="https://suckerpot.selfhostr.io/docs/"><img src="https://raw.githubusercontent.com/selfhostr/.github/main/profile/assets/btn-docs.svg" alt="Documentation" height="40"></a>
-<a href="https://suckerpot.selfhostr.io/demo/"><img src="https://raw.githubusercontent.com/selfhostr/.github/main/profile/assets/btn-demo.svg" alt="Live demo" height="40"></a>
-<a href="https://github.com/selfhostr/suckerpot/releases"><img src="https://raw.githubusercontent.com/selfhostr/.github/main/profile/assets/btn-releases.svg" alt="Releases" height="40"></a>
-
 <br><br>
 
 [![CI](https://img.shields.io/github/actions/workflow/status/selfhostr/suckerpot/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/selfhostr/suckerpot/actions/workflows/ci.yml)
@@ -32,6 +27,8 @@ Free, for good. MIT licence, no paid edition.
 > **SuckerPot is meant to be attacked.** Deploy it only on an isolated host or VM that you are ready to lose, and keep nothing that matters on it. Screenshots use synthetic demo data and documentation IP addresses.
 
 ## Quick start
+
+Try the [live demo](https://suckerpot.selfhostr.io/demo/) first.
 
 You need Docker with the compose plugin, on a machine you can afford to lose.
 
