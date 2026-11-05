@@ -252,3 +252,94 @@ updates:
     groups:
       docker_sensors_telnet:
         patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/analysis"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_analysis:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/collector"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_collector:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/egress"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_egress:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/hub"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_hub:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/hubproxy"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_hubproxy:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/netproto"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_netproto:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/reporting"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_reporting:
+        patterns: ["*"]
+  - package-ecosystem: "uv"
+    directory: "/scripts/guardrails"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv_scripts_guardrails:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/collector"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_collector:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/hub"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_hub:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/hubproxy"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker_hubproxy:
+        patterns: ["*"]
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      compose_root:
+        patterns: ["*"]
+  - package-ecosystem: "docker-compose"
+    directory: "/hub"
+    schedule:
+      interval: "weekly"
+    groups:
+      compose_hub:
+        patterns: ["*"]
