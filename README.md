@@ -177,7 +177,7 @@ Shipped through `v0.9.0`. See [docs/ROADMAP.md](docs/ROADMAP.md) for every miles
 
 SuckerPot is free and has no company behind it. If it saves you time, you can support its development:
 
-- **GitHub Sponsors** (recurring): [GitHub Sponsors.com/selfhostr](https://github.com/sponsors/selfhostr)
+- **GitHub Sponsors** (recurring or one-off): [github.com/sponsors/selfhostr](https://github.com/sponsors/selfhostr)
 - **Bitcoin**: `bc1phcqfc46ev9ztpuxyh3fmz6aaktshnz8z4ve9jk7pxdcyu9ks37wqq2kjgd`
 - **Ethereum**: `0x67Cd93028943308B8c12782C9ad078D253278f40`
 - **Solana**: `63u8bhkf63HBcNYbRRyaHPtfRtSUmbugtwaauzAxHtb3`
