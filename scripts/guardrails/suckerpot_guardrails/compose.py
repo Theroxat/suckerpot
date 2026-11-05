@@ -614,7 +614,7 @@ def _sysctls(service: Mapping[str, Any]) -> dict[str, str]:
 
 
 def check_hardening(services: Mapping[str, Any]) -> list[str]:
-    """CLAUDE.md section 5 for every service: one loop, explicit exemptions with reasons."""
+    """Isolation rules for every service: one loop, explicit exemptions with reasons."""
     problems: list[str] = []
     for name, svc in services.items():
         svc = svc or {}

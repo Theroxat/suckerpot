@@ -192,7 +192,7 @@ The `compose` job is the only place where the placeholder secrets are allowed. I
 
 ## These docs
 
-The documentation is the Markdown in `docs/`. It reads on GitHub as it is, and it is published at https://suckerpot.selfhostr.io/docs/ by the shared Selfhostr docs kit (Starlight), which lives outside this repository. The kit converts these files on each publish: the `{toctree}` blocks in `docs/index.md` become the sidebar, and MyST admonitions such as `{note}` and `{warning}` become callouts. Keep using that syntax, and link pages with relative `.md` paths.
+The documentation is the Markdown in `docs/`. It reads on GitHub as it is, and it is published at https://suckerpot.selfhostr.io/docs/ by the shared selfhostr docs kit (Starlight), which lives outside this repository. The kit converts these files on each publish: the `{toctree}` blocks in `docs/index.md` become the sidebar, and MyST admonitions such as `{note}` and `{warning}` become callouts. Keep using that syntax, and link pages with relative `.md` paths.
 
 ## Before you commit
 

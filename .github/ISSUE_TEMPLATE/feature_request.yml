@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest something SuckerPot should do.
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that is hard or impossible today? Describe the situation, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: How you imagine it working, if you have an idea. Demo data only, never real attack data.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you have tried
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be willing to work on this with some guidance.
