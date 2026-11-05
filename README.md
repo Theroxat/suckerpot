@@ -4,17 +4,13 @@
 
 <h3>A self-hosted honeypot with one dashboard that tells each attack as a short story.</h3>
 
-<br><br>
-
 [![CI](https://img.shields.io/github/actions/workflow/status/selfhostr/suckerpot/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/selfhostr/suckerpot/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/selfhostr/suckerpot/badge)](https://scorecard.dev/viewer/?uri=github.com/selfhostr/suckerpot)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-<br><br>
-
-<img src="docs/screenshots/demo.webp" alt="The SuckerPot Live page: sensor counters, a live feed of attacks with tags such as recon, php2shell and malware-drop, and the sensor filters" width="100%">
-
 </div>
+
+Screenshots: [screenshots/](screenshots/)
 
 ## Overview
 
