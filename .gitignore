@@ -53,3 +53,5 @@ install.log
 
 # Local orchestration handoff (never commit)
 .handoff/
+.claude
+CLAUDE.md
