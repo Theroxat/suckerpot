@@ -21,7 +21,6 @@ SuckerPot is built to be attacked. Deploy it only on a dedicated, isolated machi
 | Databases | Redis, MySQL, MSSQL | Redis 7.2 with no password; MySQL 8.0 and SQL Server with weak logins |
 | Windows and VoIP | RDP, SMB, SIP | A Windows Server with NLA; a Windows file service (observation only); an Asterisk-style PBX on UDP and TCP |
 
-
 Each sensor records what the attacker does and never runs it. SIP answers are capped so that the sensor cannot be used to amplify a flood.
 
 - **Enrichment and tags.** GeoIP and ASN from DB-IP Lite (no key needed) or MaxMind GeoLite2, optional AbuseIPDB and GreyNoise Community reputation with a 24 h cache and enforced daily quotas, and every key is optional (see [Provider API keys](api-keys.md)), and a declarative YAML rules engine (no regular expressions) for tags such as `recon`, `mirai`, `crypto-miner`, `malware-drop` and `php2shell`.
@@ -43,35 +42,6 @@ Each sensor records what the attacker does and never runs it. SIP answers are ca
 - **Retention and backups.** Raw events kept 90 days, aggregates forever, compression after 7 days, a disk guard, and `just backup` / `just restore`.
 - **Hardened by default.** Non-root, read-only containers with all capabilities dropped and `no-new-privileges`; isolated networks with an internal backend; one Redis ACL user per sensor, limited to `XADD` on its own stream; least-privilege database roles; no outbound route for the API; and an nftables [host firewall template](scripts/host/firewall.nft).
 
-## Screenshots
+## Live demo
 
-All screenshots use synthetic demo data and documentation IP addresses.
-
-<p>
-  <img src="screenshots/today.png" alt="The Today page: a few plain-English cards on what changed in the last 24 hours, new campaigns and what to block" width="49%">
-  <img src="screenshots/live.png" alt="The Live page: a world map with attack arcs, a stats strip, a ticker of new events and rankings of addresses, countries and networks" width="49%">
-</p>
-<p>
-  <img src="screenshots/campaigns.png" alt="The Campaigns page: groups of sessions that share a script, payload host or exploit, each with a short story" width="49%">
-  <img src="screenshots/techniques.png" alt="The Techniques page: a heatmap of MITRE ATT&CK techniques per day" width="49%">
-</p>
-<p>
-  <img src="screenshots/scripts.png" alt="The Scripts page: a library of attacker command scripts, each with a plain-English explanation" width="49%">
-  <img src="screenshots/defend.png" alt="The Defend page: a scored blocklist with a reason for every point and export options for firewalls" width="49%">
-</p>
-<p>
-  <img src="screenshots/attacks.png" alt="The Attacks page: one line per session, such as 'tried 93 SSH passwords and got in, then ran 10 commands'" width="49%">
-  <img src="screenshots/session.png" alt="A session detail page with the terminal replay of an SSH session and its timeline" width="49%">
-</p>
-<p>
-  <img src="screenshots/settings.png" alt="The Settings page: sensor health, API keys, enrichment quotas, storage and retention" width="49%">
-  <img src="screenshots/attacks-light.png" alt="The Attacks page in light mode" width="49%">
-</p>
-<p>
-  <img src="screenshots/settings-network.png" alt="Settings, Network tab: a member of the SuckerPot network with a pseudonym, what is shared and what is never shared" width="49%">
-  <img src="screenshots/setup-network.png" alt="The setup wizard, SuckerPot network step: what you share, and a Join the network button that you can also skip" width="49%">
-</p>
-<p>
-  <img src="screenshots/live-mobile.png" alt="The Live page on a phone, in dark mode" width="30%">
-  <img src="screenshots/attacks-mobile.png" alt="The Attacks page on a phone, in dark mode" width="30%">
-</p>
+See every page with synthetic data in the [live demo](https://suckerpot.selfhostr.io/demo/).

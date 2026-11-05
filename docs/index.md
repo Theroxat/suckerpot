@@ -4,8 +4,6 @@ SuckerPot is a self-hosted honeypot with one readable dashboard. A few fake serv
 
 Most honeypot stacks are a pile of separate tools and dashboards that are hard to read. SuckerPot goes the other way: few sensors, built well, and one dashboard that is the product. Each page opens with a plain-English finding, every IP, country, tag or URL is a link to a filtered view, and every filter lives in the URL so you can share it.
 
-![The SuckerPot Live page: sensor counters, a live feed of attacks and the sensor filters](screenshots/live.png)
-
 ```{warning}
 SuckerPot is built to be attacked. Deploy it only on a dedicated, isolated machine that you are ready to lose. Read [Getting started](getting-started.md) before you install it.
 ```
