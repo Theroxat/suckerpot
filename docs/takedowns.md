@@ -1,4 +1,4 @@
-# Takedowns
+# Track takedowns
 
 SuckerPot follows what happens to the targets in your reports. Is the malware file still served? Is the attacking address still active? How long did the takedown take, and which providers act?
 

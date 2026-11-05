@@ -1,4 +1,4 @@
-# Updates and rollback
+# Update and roll back
 
 SuckerPot updates with one command, `just update`. Before anything changes, the update takes a database dump. If the update fails, or you want to go back, `just rollback` puts the previous code, images and database back.
 
