@@ -1,4 +1,4 @@
-# Gitleaks configuration for SuckerPot (public repo, see CLAUDE.md section 6).
+# Gitleaks configuration for SuckerPot (public repo: no secrets, real addresses or captured data).
 # Extends the default ruleset and adds a rule for private IPv4 addresses.
 
 title = "SuckerPot gitleaks config"

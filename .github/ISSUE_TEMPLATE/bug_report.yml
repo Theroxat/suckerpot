@@ -1,0 +1,56 @@
+name: Bug report
+description: Something does not work as described.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Security problems go to
+        https://github.com/selfhostr/suckerpot/security/advisories/new instead, not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+      placeholder: |
+        1. Ran `docker compose up -d --build --wait`
+        2. Opened the Live page
+        3. Expected events from the SSH sensor; got none
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release tag or commit hash.
+      placeholder: v0.1.0, commit abc1234
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - A sensor (ssh, telnet, web, rdp)
+        - Ingest
+        - API
+        - Dashboard
+        - Docker Compose or deployment
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        `docker compose logs --tail 100 <service>`.
+        Redact secrets, real IP addresses and any captured attacker data.
+      render: text
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Host OS and architecture, `docker compose version`, browser if the UI is involved.

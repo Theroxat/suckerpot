@@ -16,7 +16,7 @@ Start here:
 - **Take the first steps.** [Getting started](getting-started.md) covers the warnings, the requirements and the first login.
 - **Understand the main idea.** [What SuckerPot does](features.md) lists the sensors, the dashboard and the analysis features. [The SuckerPot network](network.md) explains the opt-in sharing.
 
-SuckerPot is made by Selfhostr, an organisation that builds self-hosted tools. Technical names (packages, volumes, environment variables) use the `suckerpot` prefix. The current version and every change are in the [changelog](https://github.com/selfhostr/suckerpot/blob/main/CHANGELOG.md). The new analysis features are off until you turn them on.
+SuckerPot is made by selfhostr, an organisation that builds self-hosted tools. Technical names (packages, volumes, environment variables) use the `suckerpot` prefix. The current version and every change are in the [changelog](https://github.com/selfhostr/suckerpot/blob/main/CHANGELOG.md). The new analysis features are off until you turn them on.
 
 ```{toctree}
 :maxdepth: 1
