@@ -80,7 +80,7 @@ x-feed-env: &feed-env
 services:
   caddy:
     # 2.10.2 answers 206 to a plain gzip request on precompressed files; 2.11.x does not.
-    image: caddy:2.11.2-alpine@sha256:834468128c7696cec0ceea6172f7d692daf645ae51983ca76e39da54a97c570d
+    image: caddy:2.11.7-alpine@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5
     <<: *hardening
     user: "65532:65532"
     # The Caddy binary carries the file capability cap_net_bind_service; with every capability
@@ -235,7 +235,7 @@ services:
         condition: service_healthy
 
   hub-db:
-    image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+    image: postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
     <<: *hardening
     user: "999:999"
     environment:
@@ -280,7 +280,7 @@ services:
   # observations: keep the volume private. A node that leaves is gone from the live database at
   # once and from the dumps within 7 days.
   hub-backup:
-    image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+    image: postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
     <<: *hardening
     user: "999:999"
     environment:

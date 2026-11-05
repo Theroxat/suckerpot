@@ -25,7 +25,7 @@ x-test-env: &test-env
 
 services:
   hub-db:
-    image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+    image: postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
     <<: *hardening
     user: "999:999"
     environment:
@@ -99,7 +99,7 @@ services:
   # test container that mounts the volume, Caddy serves it, and a REAL minisign answers
   # verify/sign requests dropped in the `verify-io` volume (tests/e2e/minisign-daemon.sh).
   feeds-init:
-    image: alpine:3.21@sha256:ee16d92f96db08d9d2d07da48555a27f3a69d8f0759021dbc601195ed0d2b5bd
+    image: alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
     <<: *hardening
     user: "0:0"
     command: ["chmod", "0777", "/srv/feeds", "/io"]
@@ -112,7 +112,7 @@ services:
     # Upstream minisign from the pinned Alpine release. Interoperability check only.
     build:
       dockerfile_inline: |
-        FROM alpine:3.21@sha256:ee16d92f96db08d9d2d07da48555a27f3a69d8f0759021dbc601195ed0d2b5bd
+        FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
         RUN apk add --no-cache minisign=0.11-r1
     <<: *hardening
     user: "10002:10002"
@@ -131,7 +131,7 @@ services:
   # The real Caddyfile, plain HTTP: the ports below replace the public host names, so there is no
   # certificate. Reachable inside the compose network only (nothing is published).
   feeds-caddy:
-    image: caddy:2.11.2-alpine@sha256:834468128c7696cec0ceea6172f7d692daf645ae51983ca76e39da54a97c570d
+    image: caddy:2.11.7-alpine@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5
     <<: *hardening
     user: "65532:65532"
     cap_add: [NET_BIND_SERVICE]  # the binary's file capability; see docker-compose.yml
@@ -160,7 +160,7 @@ services:
   # public certificate, no published port; the name never leaves the throwaway Docker networks.
   hub-edge:
     profiles: [participant-e2e]
-    image: caddy:2.11.2-alpine@sha256:834468128c7696cec0ceea6172f7d692daf645ae51983ca76e39da54a97c570d
+    image: caddy:2.11.7-alpine@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5
     <<: *hardening
     user: "65532:65532"
     cap_add: [NET_BIND_SERVICE]  # the binary's file capability; see docker-compose.yml
