@@ -5,7 +5,7 @@ description = "SuckerPot web sensor: an Apache + mod_php look-alike hosting Word
 requires-python = ">=3.13"
 dependencies = [
     "suckerpot-common",
-    "cryptography>=44,<48",
+    "cryptography>=44,<51",
     "defusedxml>=0.7.1,<0.8",
 ]
 
