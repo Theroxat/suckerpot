@@ -1,0 +1,43 @@
+name: Scorecard
+
+# OpenSSF Scorecard: scores the repository's security practices. Results land
+# in the Security tab and, with publish_results, on
+# https://scorecard.dev/viewer/?uri=github.com/selfhostr/suckerpot (refreshed on
+# every push to main). scorecard-action refuses to publish from a workflow with
+# top-level env/defaults or extra steps: keep this file minimal.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 5 * * 1"
+  # Re-scores Branch-Protection as soon as the rules change.
+  branch_protection_rule:
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      # Upload the SARIF to the Security tab.
+      security-events: write
+      # Publish the results (OIDC).
+      id-token: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard

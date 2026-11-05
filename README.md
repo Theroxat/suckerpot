@@ -12,6 +12,7 @@
 ![Sensors](https://img.shields.io/badge/sensors-12-8b5cf6)
 [![Docker Compose](https://img.shields.io/badge/stack-docker%20compose-2496ed?logo=docker&logoColor=white)](docker-compose.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/selfhostr/suckerpot/badge)](https://scorecard.dev/viewer/?uri=github.com/selfhostr/suckerpot)
 
 </div>
 
