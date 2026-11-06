@@ -27,7 +27,7 @@ Try the [live demo](https://suckerpot.selfhostr.io/demo/) first.
 You need Docker with the compose plugin, on a machine you can afford to lose.
 
 ```bash
-git clone --depth 1 --branch v0.9.0 https://github.com/selfhostr/suckerpot.git
+git clone --depth 1 --branch v0.10.0 https://github.com/selfhostr/suckerpot.git
 cd suckerpot
 ./scripts/install.sh
 ```
@@ -66,7 +66,7 @@ See [Security](docs/SECURITY.md) for the threat model.
 
 ## Status
 
-Alpha, version `v0.9.0`. Before 1.0 the API, the database schema and the installer can change between minor versions. The [changelog](CHANGELOG.md) lists every change and how to upgrade.
+Alpha, version `v0.10.0`. Before 1.0 the API, the database schema and the installer can change between minor versions. The [changelog](CHANGELOG.md) lists every change and how to upgrade.
 
 ## Contributing
 
