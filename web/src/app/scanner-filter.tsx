@@ -32,7 +32,7 @@ function store(hide: boolean) {
 
 function initial(): boolean {
   const flag = new URLSearchParams(window.location.search).get("scanners")
-  let hide = true
+  let hide: boolean
   if (flag === "show" || flag === "hide") {
     hide = flag === "hide"
     store(hide)
