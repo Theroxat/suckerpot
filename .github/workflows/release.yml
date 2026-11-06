@@ -51,7 +51,7 @@ jobs:
       publish: ${{ steps.v.outputs.publish }}
       prefix: ${{ steps.v.outputs.prefix }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Refuse a release whose network defaults still hold a placeholder
@@ -139,7 +139,7 @@ jobs:
           - sensor-sip
           - sensor-synology
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Select the build context
@@ -204,7 +204,7 @@ jobs:
           fi
       - name: Keep the digest for the merge job
         if: needs.prepare.outputs.publish == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digest-${{ matrix.image }}-${{ matrix.platform.arch }}
           path: digests/digest
@@ -246,7 +246,7 @@ jobs:
           - sensor-synology
     steps:
       - name: Fetch the digests of both architectures
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: digest-${{ matrix.image }}-*
       - name: Install cosign (pinned release, checked against its SHA-256)
@@ -307,7 +307,7 @@ jobs:
           mkdir -p merged
           printf '%s' "$DIGEST" > merged/digest
       - name: Hand the digest to the manifest job
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: merged-${{ matrix.image }}
           path: merged/digest
@@ -326,7 +326,7 @@ jobs:
     env:
       PROJECT: sp-release-smoke
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Log in to GHCR (the packages may still be private)
@@ -384,11 +384,11 @@ jobs:
         redis migrate ingest api collector hubproxy demo sensor-ssh sensor-rdp sensor-telnet sensor-web
         sensor-redis sensor-docker sensor-mysql sensor-mssql sensor-adb sensor-smb sensor-sip sensor-synology
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Fetch the signed digests
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: merged-*
       - name: Install cosign (pinned release, checked against its SHA-256)
@@ -423,7 +423,7 @@ jobs:
             --certificate-identity-regexp '^https://github\.com/.+/\.github/workflows/release\.yml@refs/tags/v' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com release-manifest.json
       - name: Keep the manifest for the attach job
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-manifest
           path: |
@@ -442,7 +442,7 @@ jobs:
       contents: write # create the release if needed and upload two assets, nothing else
     steps:
       - name: Fetch the signed manifest
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-manifest
       - name: Attach it to the GitHub release
