@@ -246,3 +246,8 @@ Newest entries at the bottom. One entry per milestone or significant step: date,
 - Checked on this host with a throwaway project: compose recreates a changed network by itself, and refuses with "has active endpoints" when a container of another project is attached; the update path stops with instructions in that case.
 - Lint, typecheck, unit tests (Python and vitest), guardrails (742 passed) and web build green.
 
+## 2026-11-06 — v0.10.0 (dependency refresh)
+
+- One coordinated upgrade replaces the 24 open Dependabot pull requests: Python 3.15 and uv 0.13 in every image (Debian trixie), Node 26, react-router 8, ESLint 10, Redis 8.10, TimescaleDB 2.31, gluetun v3.41.3, hub Caddy 2.11.9 and Alpine 3.24, Actions majors pinned by SHA.
+- Found and fixed on the way: the TimescaleDB 2.31 concurrent-refresh error in the `migrate` backfill (now retried), the redis-py 8 reply types in ingest, the SQLAlchemy 2.1 types in the api, a timing-dependent api test.
+- Lint, typecheck, unit and integration tests (Python and vitest), guardrails, hub integration tests, web build and every image build green; CI green.

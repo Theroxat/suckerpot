@@ -430,3 +430,9 @@ Owner request (2026-11-04): a second person joins as a participant; the three-co
 - [x] Generic hardening guardrail over every service; third-party images by digest.
 - [x] Automatic updates: 48 h age floor no release can lower, only real verdicts mark a release bad, next candidate tried.
 - [x] Two security reviews (first FAIL, all findings fixed; second PASS), release (v0.9.0).
+
+## Dependency refresh (v0.10.0)
+
+- [x] Every dependency upgraded in one coordinated change: Python 3.15, Node 26, Redis 8, TimescaleDB 2.31, web and GitHub Actions majors; TypeScript 7, PostgreSQL 18 (hub) and pnpm 11 held back with a reason.
+- [x] Dependabot monthly, grouped per ecosystem (minor/patch and majors).
+- [x] Release (v0.10.0).

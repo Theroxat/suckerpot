@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-06
+
+### Upgrading
+
+- Images are rebuilt on Python 3.15 and Debian trixie: participants pull the new signed images as usual (`just update v0.10.0`), source installs rebuild with `docker compose up -d --build`.
+- The database image moves to TimescaleDB 2.31, still on PostgreSQL 17, so the data volume is reused as is. An existing database keeps loading its current TimescaleDB extension version until `ALTER EXTENSION timescaledb UPDATE;` is run, which is optional.
+
 ### Changed
 
 - Every dependency is upgraded in one go:
@@ -25,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - With TimescaleDB 2.31, the aggregate backfill run by `migrate` failed with SQLSTATE 55P03 when the hourly refresh policy ran at the same moment. It now retries with a short backoff.
 - Ingest reads both reply shapes of `XREADGROUP` that redis-py 8 declares.
+- API types follow SQLAlchemy 2.1, which types `Select` and `Row` by their columns.
 
 ### Deliberately held back
 
@@ -258,7 +266,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Isolation: four networks with an internal backend, one Redis ACL user per sensor limited to `XADD` on its own stream, least-privilege database roles, no outbound route for the API, non-root read-only containers with all capabilities dropped.
 - The first review of the M1 stack found unbounded stream growth, egress, poison-message and default-credential issues; all were fixed and the second pass passed.
 
-[Unreleased]: https://github.com/selfhostr/suckerpot/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/selfhostr/suckerpot/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/selfhostr/suckerpot/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/selfhostr/suckerpot/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/selfhostr/suckerpot/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/selfhostr/suckerpot/compare/v0.7.0...v0.7.1

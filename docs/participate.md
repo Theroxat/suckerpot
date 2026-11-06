@@ -22,7 +22,7 @@ The full list of checks is in [Install SuckerPot](install.md#requirements).
 ## The three commands
 
 ```bash
-git clone --depth 1 --branch v0.9.0 https://github.com/selfhostr/suckerpot.git
+git clone --depth 1 --branch v0.10.0 https://github.com/selfhostr/suckerpot.git
 cd suckerpot
 ./scripts/install.sh --participant
 ```
