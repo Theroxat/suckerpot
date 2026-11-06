@@ -17,9 +17,10 @@ connection, because a refresh cannot run inside a transaction block).
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 
-from sqlalchemy import text
+from sqlalchemy import TextClause, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import DBAPIError
 
@@ -29,6 +30,9 @@ MAX_RETENTION_DAYS = 3650
 COMPRESS_AFTER_DAYS = 7
 DEFAULT_INDICATOR_MAX_ROWS = 500_000
 REFRESH_WINDOW_DAYS = 3
+# Backfill refresh vs a running refresh policy: seconds to wait before each retry (about 60 s).
+REFRESH_RETRY_DELAYS = (0.5, 1.0, 2.0, 4.0, 8.0, 15.0, 30.0)
+LOCK_NOT_AVAILABLE = "55P03"
 MAINTENANCE_PROC = "suckerpot_maintenance"
 INDICATOR_PRUNE_PROC = "suckerpot_indicator_prune"  # created by migration 0009
 AUDIT_PRUNE_PROC = "suckerpot_audit_prune"  # created by migration 0010
@@ -338,7 +342,8 @@ def backfill(conn: Connection, days: int) -> None:
     if oldest is None:
         return
     for view in AGGREGATES:
-        conn.execute(
+        _refresh(
+            conn,
             text(
                 f"CALL refresh_continuous_aggregate('{view}', "
                 "greatest(CAST(:oldest AS timestamptz), "
@@ -347,6 +352,29 @@ def backfill(conn: Connection, days: int) -> None:
             ),
             {"d": days, "oldest": oldest},
         )
+
+
+def _refresh(
+    conn: Connection,
+    statement: TextClause,
+    params: Mapping[str, object],
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """Run one aggregate refresh, waiting out a refresh policy that runs at the same moment.
+
+    With TimescaleDB 2.31 (not 2.22), an overlapping refresh fails at once with SQLSTATE 55P03
+    ("due to a concurrent refresh") instead of waiting for the lock. The concurrent one is the
+    hourly policy job doing the same work, so retry with a short backoff; any other error is
+    raised at once.
+    """
+    for delay in (*REFRESH_RETRY_DELAYS, None):
+        try:
+            conn.execute(statement, params)
+            return
+        except DBAPIError as exc:
+            if delay is None or getattr(exc.orig, "sqlstate", None) != LOCK_NOT_AVAILABLE:
+                raise
+        sleep(delay)
 
 
 def apply_retention(conn: Connection, env: Mapping[str, str] | None = None) -> int:
