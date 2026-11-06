@@ -295,7 +295,7 @@ async def enrichment_settings(session: DbSession, request: Request) -> Enrichmen
                 updated_at=updated,
                 age_days=round((now - updated).total_seconds() / 86400, 1),
             )
-        except (KeyError, ValueError, TypeError):
+        except KeyError, ValueError, TypeError:
             continue
     attribution = {"dbip": DBIP_ATTRIBUTION, "maxmind": MAXMIND_ATTRIBUTION}.get(provider)
     geoip = GeoipStatus(
@@ -327,7 +327,7 @@ async def enrichment_settings(session: DbSession, request: Request) -> Enrichmen
         if isinstance(raw, dict):
             try:
                 checked = datetime.fromisoformat(str(raw["checked_at"]))
-            except (KeyError, ValueError):
+            except KeyError, ValueError:
                 checked = None
             test = KeyTest(ok=bool(raw.get("ok")), error=raw.get("error"), checked_at=checked)
         req = tests.get(name)

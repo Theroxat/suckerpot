@@ -20,7 +20,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 from redis.asyncio import Redis
@@ -265,7 +265,10 @@ class Consumer:
             block=None if draining else self.s.block_ms,
         )
         out: list[tuple[str, list[Message]]] = []
-        for name, msgs in res or []:
+        # redis-py 8 types the reply as the RESP2 list shape or the RESP3 map shape. The client
+        # keeps the default (legacy) response shapes, a list of [stream, messages]; accept both.
+        pairs: Iterable[Any] = res.items() if isinstance(res, dict) else (res or [])
+        for name, msgs in pairs:
             if msgs:
                 key = name.decode() if isinstance(name, bytes) else str(name)
                 out.append((key, list(msgs)))

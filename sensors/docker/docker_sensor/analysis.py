@@ -86,7 +86,7 @@ def bounded_json(
         return None
     try:
         return json.loads(raw)
-    except (ValueError, RecursionError, UnicodeDecodeError):
+    except ValueError, RecursionError, UnicodeDecodeError:
         return None
 
 

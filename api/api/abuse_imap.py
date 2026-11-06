@@ -192,7 +192,8 @@ class Profile:
 async def load_profile(db: AsyncSession) -> Profile | None:
     """Everything but the password (the role cannot read it)."""
     row = (await db.execute(select(*_PROFILE_COLUMNS).where(ReportImapRow.id == 1))).first()
-    return None if row is None else Profile(*row)
+    # Same values; mypy cannot spread SQLAlchemy 2.1's variadic Row type into the dataclass.
+    return None if row is None else Profile(*tuple(row))
 
 
 def _request_out(row: ReportImapRequestRow) -> RequestOut:

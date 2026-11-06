@@ -21,7 +21,7 @@ jobs:
   gitleaks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -40,13 +40,13 @@ jobs:
   python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           # Same minor as the service images; uv would otherwise pick the newest Python.
-          python-version: "3.13"
+          python-version: "3.15"
       - name: Lint, type-check and test each package
         run: |
           set -euo pipefail
@@ -76,16 +76,16 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # The pnpm version comes from "packageManager" in web/package.json.
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           package_json_file: web/package.json
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - name: Install
@@ -103,16 +103,16 @@ jobs:
     runs-on: ubuntu-latest
     # Same image as `just screenshots`. Mock data only (documentation IPs).
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      image: mcr.microsoft.com/playwright:v1.65.0-noble
       options: --ipc=host
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           package_json_file: web/package.json
       - name: Install
@@ -124,7 +124,7 @@ jobs:
         env:
           CI: "1"
           HOME: /root
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: web-screenshots
@@ -136,7 +136,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       db:
-        image: timescale/timescaledb:2.22.1-pg17@sha256:fba60021a224479e174ae1ec577c1a0576d5185b09fe9e622f1d19e4bf5bab0d
+        image: timescale/timescaledb:2.31.0-pg17@sha256:b56a3f51991df1f79d0c1a0841cad5c5fa8058fdd6a3ee6886394a6d4c174538
         env:
           POSTGRES_DB: suckerpot_test
           POSTGRES_USER: suckerpot
@@ -149,7 +149,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
       redis:
-        image: redis:7.4.11-alpine3.21
+        image: redis:8.10.3-alpine3.23@sha256:71885d8cc6e42f2bc0aa2eb853bfc4be200b5108a46ac50e117ae1df0531fb80
         ports:
           - 6379:6379
         options: >-
@@ -172,13 +172,13 @@ jobs:
       SUCKERPOT_ALLOW_DEFAULT_SECRETS: "1"
       DB_DIR: ${{ github.workspace }}/db
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           # Same minor as the service images; uv would otherwise pick the newest Python.
-          python-version: "3.13"
+          python-version: "3.15"
       - name: Migrate the test database
         working-directory: db
         run: |
@@ -209,7 +209,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       db:
-        image: postgres:17.6-bookworm
+        image: postgres:17.11-bookworm@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994
         env:
           POSTGRES_DB: hub_test
           POSTGRES_USER: hub
@@ -224,12 +224,12 @@ jobs:
     env:
       HUB_TEST_DATABASE_URL: postgresql+asyncpg://hub:ci-only-password@127.0.0.1:5432/hub_test
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          python-version: "3.13"
+          python-version: "3.15"
       - name: Hub integration and end-to-end tests
         working-directory: hub
         run: |
@@ -240,7 +240,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Prepare .env
@@ -354,7 +354,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # The installer refuses to run with less than 15 GiB free under Docker's data folder, and

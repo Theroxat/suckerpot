@@ -14,7 +14,7 @@ cleanup() {
 trap cleanup EXIT; cleanup
 docker build -q -f sensors/rdp/Dockerfile -t "$IMG" . >/dev/null
 docker network create "$NET" >/dev/null
-docker run -d --name "$REDIS" --network "$NET" redis:7.4-alpine >/dev/null
+docker run -d --name "$REDIS" --network "$NET" redis:8.10-alpine >/dev/null
 docker run -d --name "$NAME" --network "$NET" --read-only --tmpfs /tmp --cap-drop ALL \
   --security-opt no-new-privileges:true --memory 128m --cpus 0.5 --pids-limit 128 \
   -v "$NAME-data:/data" -e REDIS_HOST="$REDIS" -e EVENTS_STREAM=events:rdp "$IMG" >/dev/null
@@ -28,10 +28,10 @@ echo "--- nmap -sV + rdp scripts"
 docker run --rm --network "$NET" instrumentisto/nmap -Pn -sV -p 3389 \
   --script rdp-ntlm-info,rdp-enum-encryption,ssl-cert "$NAME" | sed -n '/^PORT/,/^Service detection/p'
 echo "--- xfreerdp +auth-only"
-docker run --rm --network "$NET" alpine:3.20 sh -c "apk add -q freerdp xvfb-run >/dev/null 2>&1; xfreerdp /version 2>&1 | grep -i 'version' | head -1; \
+docker run --rm --network "$NET" alpine:3.24 sh -c "apk add -q freerdp xvfb-run >/dev/null 2>&1; xfreerdp /version 2>&1 | grep -i 'version' | head -1; \
   timeout 30 xvfb-run -a xfreerdp /v:$NAME /u:administrator /p:Winter2026 /cert:ignore +auth-only; echo exit=\$?" 2>&1 | tail -8
 echo "--- non-RDP traffic"
-docker run --rm --network "$NET" alpine:3.20 sh -c "printf 'GET / HTTP/1.1\r\nHost: x\r\n\r\n' | nc -w 3 $NAME 3389 | od -c | head -2; echo http_done"
+docker run --rm --network "$NET" alpine:3.24 sh -c "printf 'GET / HTTP/1.1\r\nHost: x\r\n\r\n' | nc -w 3 $NAME 3389 | od -c | head -2; echo http_done"
 sleep 1
 echo "--- events (type, username / kind, reason)"
 docker exec "$REDIS" redis-cli XRANGE events:rdp - + | grep '^{' | \

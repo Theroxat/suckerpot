@@ -18,12 +18,12 @@ cleanup() {
 trap cleanup EXIT; cleanup
 docker build -q -f sensors/sip/Dockerfile -t "$IMG" . >/dev/null
 docker build -q -t "$TOOLS" - >/dev/null <<'DOCKERFILE'
-FROM python:3.13.17-slim-bookworm
+FROM python:3.15.2-slim-trixie
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends sipsak netcat-openbsd >/dev/null \
     && pip install -q --no-cache-dir sipvicious && rm -rf /var/lib/apt/lists/*
 DOCKERFILE
 docker network create "$NET" >/dev/null
-docker run -d --name "$STREAM" --network "$NET" redis:7.4-alpine >/dev/null
+docker run -d --name "$STREAM" --network "$NET" redis:8.10-alpine >/dev/null
 docker run -d --name "$NAME" --network "$NET" --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
   --cap-drop ALL --security-opt no-new-privileges:true --memory 128m --memory-swap 128m \
   --cpus 0.5 --pids-limit 128 -v "$NAME-data:/data" \

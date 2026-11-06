@@ -68,7 +68,7 @@ async def session(
                 if body[:1] == b"\xfe":
                     ended += 1
             done[0] += 1
-    except (asyncio.IncompleteReadError, ConnectionError, TimeoutError, OSError):
+    except asyncio.IncompleteReadError, ConnectionError, TimeoutError, OSError:
         pass
     finally:
         writer.transport.abort()

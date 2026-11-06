@@ -405,7 +405,7 @@ class AuthService:
     def verify_hash(self, hashed: str, password: str) -> bool:
         try:
             return self._hasher.verify(hashed, password)
-        except (VerificationError, InvalidHashError):
+        except VerificationError, InvalidHashError:
             return False
 
     async def check_hash(self, hashed: str | None, password: str) -> bool:
@@ -710,7 +710,7 @@ class AuthMiddleware:
             principal = await self.auth.resolve(
                 self.auth.session_token(scope), _session_factory(scope.get("app"))
             )
-        except (SQLAlchemyError, OSError):
+        except SQLAlchemyError, OSError:
             log.warning("session lookup failed: database unavailable")
             await JSONResponse({"detail": "Service unavailable"}, status_code=503)(
                 scope, receive, send
@@ -821,7 +821,7 @@ async def _owner_touch(
             else:
                 await accounts.dummy_write(db)
             await db.commit()
-    except (SQLAlchemyError, OSError):
+    except SQLAlchemyError, OSError:
         log.warning("owner sign-in could not use the database")
 
 
@@ -882,7 +882,7 @@ async def _authenticate(
                 log.warning("account locked after repeated failures from many sources")
             await db.commit()
             return None
-    except (SQLAlchemyError, OSError):
+    except SQLAlchemyError, OSError:
         log.warning("dashboard login: database unavailable")
         if not hashed:
             await service.check_hash(None, body.password)
@@ -910,7 +910,7 @@ async def login(body: LoginBody, request: Request) -> Response:
         return JSONResponse(
             {"detail": "Too many attempts"}, status_code=429, headers={"Retry-After": "2"}
         )
-    except (SQLAlchemyError, OSError):
+    except SQLAlchemyError, OSError:
         log.warning("dashboard login failed: database unavailable")
         return JSONResponse({"detail": "Sign-in is temporarily unavailable"}, status_code=503)
     if result is None:
@@ -958,7 +958,7 @@ async def logout(request: Request) -> Response:
 async def me(request: Request) -> Response:
     try:
         principal = await current_principal(request)
-    except (SQLAlchemyError, OSError):
+    except SQLAlchemyError, OSError:
         return JSONResponse({"detail": "Service unavailable"}, status_code=503)
     if principal is None:
         return JSONResponse({"detail": "Not authenticated"}, status_code=401)
@@ -1000,7 +1000,7 @@ async def change_password(body: PasswordBody, request: Request) -> Response:
         return _problem(403, "Cross-origin request refused", "origin")
     try:
         principal = await current_principal(request)
-    except (SQLAlchemyError, OSError):
+    except SQLAlchemyError, OSError:
         return _problem(503, "Service unavailable", "unavailable")
     if principal is None:
         return _problem(401, "Not authenticated", "unauthenticated")
@@ -1059,7 +1059,7 @@ async def change_password(body: PasswordBody, request: Request) -> Response:
             status_code=429,
             headers={"Retry-After": "2"},
         )
-    except (SQLAlchemyError, OSError):
+    except SQLAlchemyError, OSError:
         return _problem(503, "Service unavailable", "unavailable")
     # The browser that changed the password stays signed in; every other session just died.
     service.revoke(info)

@@ -408,7 +408,7 @@ async def test_redis_to_timescale_end_to_end(
     await sensor.publish_many(events[:3])
     await admin.xgroup_create("itest:ssh", "ingest", id="0", mkstream=True)
     await admin.xgroup_create("itest:web", "ingest", id="0", mkstream=True)
-    got = await admin.xreadgroup("ingest", "dead-host", {"itest:ssh": ">"}, count=10)
+    got: Any = await admin.xreadgroup("ingest", "dead-host", {"itest:ssh": ">"}, count=10)
     assert len(got[0][1]) == 3
     await sensor.publish_many(events[3:])
     # A forged event: web sensor name on the ssh stream (accepted by Redis, dropped by ingest).

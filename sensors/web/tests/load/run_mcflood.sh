@@ -6,7 +6,7 @@
 # Usage: run_mcflood.sh <image> [ips=5] [threads=4] [seconds=60]
 set -euo pipefail
 IMAGE=${1:?image}; IPS=${2:-5}; THREADS=${3:-4}; DUR=${4:-60}
-NET=sp-mc-net; SENSOR=sp-web; HERE=$(cd "$(dirname "$0")" && pwd); PY=python:3.13.17-slim-bookworm
+NET=sp-mc-net; SENSOR=sp-web; HERE=$(cd "$(dirname "$0")" && pwd); PY=python:3.15.2-slim-trixie
 cleanup() {
   docker rm -f $(docker ps -aq --filter "label=sp-mc=1") >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true

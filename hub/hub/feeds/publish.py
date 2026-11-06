@@ -86,7 +86,7 @@ def read_index(root: Path) -> IndexFile | None:
     path = root / INDEX
     try:
         return IndexFile.model_validate_json(path.read_bytes())
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
 
 

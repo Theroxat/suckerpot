@@ -243,7 +243,7 @@ class HubProxy:
         try:
             async with asyncio.timeout(RESOLVE_TIMEOUT):
                 answers = await self._resolver(host)
-        except (TimeoutError, OSError):
+        except TimeoutError, OSError:
             self.counters["refused_resolution"] += 1
             return None
         # Any non-global answer taints the whole response (rebinding or poisoned DNS).
@@ -254,7 +254,7 @@ class HubProxy:
             try:
                 async with asyncio.timeout(CONNECT_TIMEOUT):
                     return await self._connector(ip, HTTPS_PORT)
-            except (TimeoutError, OSError):
+            except TimeoutError, OSError:
                 continue
         self.counters["refused_connect"] += 1
         return None
@@ -270,7 +270,7 @@ class HubProxy:
                 dst.write(chunk)
                 async with asyncio.timeout(IDLE_TIMEOUT):
                     await dst.drain()
-        except (TimeoutError, OSError):
+        except TimeoutError, OSError:
             pass
         finally:
             with suppress(Exception):

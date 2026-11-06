@@ -821,7 +821,7 @@ class ShellSession:
                 return await asyncio.wait_for(self.p.stdin.read(size), self.cfg.idle_timeout)
             except asyncssh.TerminalSizeChanged:
                 continue
-            except (asyncssh.BreakReceived, asyncssh.SignalReceived):
+            except asyncssh.BreakReceived, asyncssh.SignalReceived:
                 return b"\x03"
             except TimeoutError:
                 self.o.reason = "idle timeout"
@@ -1063,7 +1063,7 @@ class ShellSession:
                         }
                     )
                 self.p.stdout.write(b"\0")
-        except (TimeoutError, asyncssh.Error, ConnectionError):
+        except TimeoutError, asyncssh.Error, ConnectionError:
             pass
         self.o.commands += 1
         self.o.emit(

@@ -529,7 +529,7 @@ async def list_outbox(
             ts, oid = datetime.fromisoformat(str(values[0])), int(values[1])
             if ts.tzinfo is None:
                 raise InvalidCursorError("malformed cursor")
-        except (InvalidCursorError, ValueError, IndexError, TypeError):
+        except InvalidCursorError, ValueError, IndexError, TypeError:
             return _error(400, "Invalid cursor.", "bad_cursor")
         stmt = stmt.where((o.created_at < ts) | ((o.created_at == ts) & (o.id < oid)))
     rows = (await session.execute(stmt)).all()

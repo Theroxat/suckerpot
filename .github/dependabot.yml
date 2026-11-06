@@ -1,345 +1,123 @@
 version: 2
+# One update entry per ecosystem, covering every directory of that ecosystem, so that one bump
+# shared by many packages (a base image, a library) arrives as ONE pull request. In each ecosystem,
+# minor and patch updates are grouped together and major updates come in a separate group, to be
+# reviewed (and migrated) on their own.
 updates:
   - package-ecosystem: "uv"
-    directory: "/sensors/common"
+    directories:
+      - "/analysis"
+      - "/api"
+      - "/collector"
+      - "/db"
+      - "/egress"
+      - "/hub"
+      - "/hubproxy"
+      - "/ingest"
+      - "/netproto"
+      - "/reporting"
+      - "/scripts/demo"
+      - "/scripts/guardrails"
+      - "/sensors/adb"
+      - "/sensors/common"
+      - "/sensors/docker"
+      - "/sensors/mssql"
+      - "/sensors/mysql"
+      - "/sensors/rdp"
+      - "/sensors/redis"
+      - "/sensors/sip"
+      - "/sensors/smb"
+      - "/sensors/ssh"
+      - "/sensors/synology"
+      - "/sensors/telnet"
+      - "/sensors/web"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
-      uv_sensors_common:
+      uv-minor-patch:
         patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/ssh"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_ssh:
+        update-types: ["minor", "patch"]
+      uv-major:
         patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/scripts/demo"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_scripts_demo:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/db"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_db:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/ingest"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_ingest:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/api"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_api:
-        patterns: ["*"]
+        update-types: ["major"]
+
   - package-ecosystem: "npm"
     directory: "/web"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
-      npm_web:
+      npm-minor-patch:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+      npm-major:
+        patterns: ["*"]
+        update-types: ["major"]
+    ignore:
+      # typescript-eslint (the lint toolchain) declares a peer range of typescript <6.1.0, so a new
+      # TypeScript major breaks `pnpm run lint`. Move TypeScript by hand once typescript-eslint
+      # supports it.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
-      github_actions_root:
+      actions-minor-patch:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+      actions-major:
+        patterns: ["*"]
+        update-types: ["major"]
+
   - package-ecosystem: "docker"
-    directory: "/sensors/ssh"
+    directories:
+      - "/api"
+      - "/collector"
+      - "/db"
+      - "/hub"
+      - "/hubproxy"
+      - "/ingest"
+      - "/redis"
+      - "/scripts/demo"
+      - "/sensors/adb"
+      - "/sensors/docker"
+      - "/sensors/mssql"
+      - "/sensors/mysql"
+      - "/sensors/rdp"
+      - "/sensors/redis"
+      - "/sensors/sip"
+      - "/sensors/smb"
+      - "/sensors/ssh"
+      - "/sensors/synology"
+      - "/sensors/telnet"
+      - "/sensors/web"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
-      docker_sensors_ssh:
+      docker-minor-patch:
         patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/scripts/demo"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_scripts_demo:
+        update-types: ["minor", "patch"]
+      docker-major:
         patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/redis"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_redis:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/db"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_db:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/ingest"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_ingest:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/api"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_api:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/redis"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_redis:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/sensors/redis"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_sensors_redis:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/docker"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_docker:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/sensors/docker"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_sensors_docker:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/mysql"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_mysql:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/sensors/mysql"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_sensors_mysql:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/mssql"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_mssql:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/sensors/mssql"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_sensors_mssql:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/adb"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_adb:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/sensors/adb"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_sensors_adb:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/smb"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_smb:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/sensors/smb"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_sensors_smb:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/sip"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_sip:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/sensors/sip"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_sensors_sip:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/synology"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_synology:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/sensors/synology"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_sensors_synology:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/rdp"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_rdp:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/sensors/rdp"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_sensors_rdp:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/web"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_web:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/sensors/web"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_sensors_web:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/sensors/telnet"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_sensors_telnet:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/sensors/telnet"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_sensors_telnet:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/analysis"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_analysis:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/collector"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_collector:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/egress"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_egress:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/hub"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_hub:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/hubproxy"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_hubproxy:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/netproto"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_netproto:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/reporting"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_reporting:
-        patterns: ["*"]
-  - package-ecosystem: "uv"
-    directory: "/scripts/guardrails"
-    schedule:
-      interval: "weekly"
-    groups:
-      uv_scripts_guardrails:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/collector"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_collector:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/hub"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_hub:
-        patterns: ["*"]
-  - package-ecosystem: "docker"
-    directory: "/hubproxy"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker_hubproxy:
-        patterns: ["*"]
+        update-types: ["major"]
+
   - package-ecosystem: "docker-compose"
-    directory: "/"
+    directories:
+      - "/"
+      - "/hub"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
-      compose_root:
+      compose-minor-patch:
         patterns: ["*"]
-  - package-ecosystem: "docker-compose"
-    directory: "/hub"
-    schedule:
-      interval: "weekly"
-    groups:
-      compose_hub:
+        update-types: ["minor", "patch"]
+      compose-major:
         patterns: ["*"]
+        update-types: ["major"]
+    ignore:
+      # The hub database stays on PostgreSQL 17: a major upgrade needs a data migration
+      # (pg_upgrade or dump and restore, and PostgreSQL 18 images also moved PGDATA), done by hand.
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]

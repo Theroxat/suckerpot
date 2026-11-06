@@ -491,7 +491,7 @@ class Session:
                 data = await self.reader.read(READ_CHUNK)
         except TimeoutError:
             raise _Closed("timeout") from None
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             raise _Closed("client_reset") from None
         if not data:
             raise _Closed("client_closed")
@@ -592,7 +592,7 @@ class Session:
             else:
                 self.writer.write(data)
                 await self._drain()
-        except (ssl.SSLError, ConnectionError, OSError):
+        except ssl.SSLError, ConnectionError, OSError:
             transport.abort()
             raise _Closed("client_reset") from None
         finally:

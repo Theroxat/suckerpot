@@ -78,7 +78,7 @@ def install_spa(app: FastAPI, dist: Path) -> None:
         try:
             candidate = (root / full_path).resolve()
             servable = bool(full_path) and candidate.is_file() and candidate.is_relative_to(root)
-        except (ValueError, OSError):  # NUL byte, over-long name, ...
+        except ValueError, OSError:  # NUL byte, over-long name, ...
             servable = False
         if servable and candidate != index:
             return FileResponse(candidate, headers={"Cache-Control": "public, max-age=3600"})

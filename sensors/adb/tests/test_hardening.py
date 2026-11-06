@@ -32,7 +32,7 @@ async def _eof(client, timeout: float = 3.0) -> bytes:  # type: ignore[no-untype
         async with asyncio.timeout(timeout):
             data: bytes = await client.reader.read(1 << 20)
             return data
-    except (ConnectionError, OSError, TimeoutError):
+    except ConnectionError, OSError, TimeoutError:
         return b""
 
 
@@ -64,7 +64,7 @@ async def test_new_connection_rate_per_ip(make_harness) -> None:  # type: ignore
             try:
                 await c.recv(0.5)
                 served += 1
-            except (asyncio.IncompleteReadError, TimeoutError, ConnectionError):
+            except asyncio.IncompleteReadError, TimeoutError, ConnectionError:
                 pass
             await c.close()
         assert served == 3 and h.sensor.rate_rejected == 3
@@ -89,7 +89,7 @@ async def test_slow_drip_header_cannot_hold_a_slot(make_harness) -> None:  # typ
                     c.writer.write(bytes([byte]))
                     await c.writer.drain()
                     await asyncio.sleep(0.3)
-        except (ConnectionError, OSError, TimeoutError):
+        except ConnectionError, OSError, TimeoutError:
             pass
         assert time.monotonic() - start < 4.5
         await asyncio.sleep(0.2)
@@ -138,7 +138,7 @@ async def test_input_volume_limit(make_harness) -> None:  # type: ignore[no-unty
                 await c.send(A_OKAY, 7, 7)
                 c.writer.write(pack(A_WRTE, 9, 9, b"A" * 2000))
                 await c.writer.drain()
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             pass
         await _eof(c)
         await asyncio.sleep(0.2)
@@ -187,7 +187,7 @@ async def test_unacknowledged_output_is_cut_off(make_harness) -> None:  # type: 
                     command, arg0, _, data = await c.recv()
                     if command == A_WRTE:
                         total += len(data)  # never acknowledged
-        except (TimeoutError, asyncio.IncompleteReadError):
+        except TimeoutError, asyncio.IncompleteReadError:
             pass
         assert total > 0
 
@@ -206,7 +206,7 @@ async def test_command_and_output_limits(make_harness) -> None:  # type: ignore[
         try:
             for _ in range(10):
                 await c.shell("cat /proc/cpuinfo")
-        except (EOFError, asyncio.IncompleteReadError, ConnectionError, OSError, AssertionError):
+        except EOFError, asyncio.IncompleteReadError, ConnectionError, OSError, AssertionError:
             pass
         await asyncio.sleep(0.3)
         assert (await h.events("disconnect"))[0].data["reason"] == "output limit"
@@ -226,7 +226,7 @@ async def test_client_that_never_reads_is_dropped(make_harness) -> None:  # type
         while h.sensor.stats()["connections"] and time.monotonic() < deadline:
             try:
                 await asyncio.wait_for(c.writer.drain(), 0.2)
-            except (TimeoutError, ConnectionError, OSError):
+            except TimeoutError, ConnectionError, OSError:
                 pass
             await asyncio.sleep(0.1)
         assert h.sensor.stats()["connections"] == 0
@@ -335,7 +335,7 @@ async def test_connection_flood_is_survivable(make_harness) -> None:  # type: ig
                 await w.drain()
                 await asyncio.wait_for(r.read(64), 1)
                 w.close()
-            except (ConnectionError, OSError, TimeoutError):
+            except ConnectionError, OSError, TimeoutError:
                 pass
 
         await asyncio.gather(*(one() for _ in range(300)))

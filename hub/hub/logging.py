@@ -27,7 +27,7 @@ class PrivacyFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         try:
             message = record.getMessage()
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             message = str(record.msg)
         record.msg = scrub(message)
         record.args = None

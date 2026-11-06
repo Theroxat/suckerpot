@@ -2,10 +2,10 @@
 name = "suckerpot-db"
 version = "0.1.0"
 description = "SuckerPot database models, engine helpers and Alembic migrations"
-requires-python = ">=3.13"
+requires-python = ">=3.15"
 dependencies = [
-    "sqlalchemy[asyncio]>=2.0.36,<2.1",
-    "asyncpg>=0.30,<0.32",
+    "sqlalchemy[asyncio]>=2.0.36,<2.2",
+    "asyncpg>=0.32,<0.33",
     "alembic>=1.14,<2",
     "cryptography>=44",
 ]
@@ -27,7 +27,7 @@ packages = ["suckerpot_db"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py315"
 extend-exclude = [".venv"]
 
 [tool.ruff.lint]
@@ -39,7 +39,7 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 
 [tool.mypy]
 strict = true
-python_version = "3.13"
+python_version = "3.15"
 plugins = []
 exclude = ["^\\.venv/"]
 

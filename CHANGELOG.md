@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Every dependency is upgraded in one go:
+  - Python 3.13 -> 3.15 (`python:3.15.2-slim-trixie`) in every image, and uv 0.8.24 -> 0.13.7. The test and tooling image is `ghcr.io/astral-sh/uv:0.13.7-python3.15-trixie-slim` (uv no longer publishes bookworm variants), CI uses Python 3.15, and every package targets 3.15 (`requires-python`, ruff, mypy). Debian moves from bookworm to trixie in the Python and Node images. `ruff format` now writes `except A, B:` without parentheses (PEP 758), and string annotations are unquoted.
+  - Every `uv.lock` is refreshed. Notable: asyncpg 0.32 (first release with Python 3.15 wheels), SQLAlchemy 2.1, redis-py 8 (RESP3 on the wire by default, same response shapes). The `db` package now allows `sqlalchemy <2.2` and `asyncpg >=0.32,<0.33`, `ingest` allows `redis <9`.
+  - PyYAML has no Python 3.15 wheel yet: it is built from its source archive, without the libyaml C extension (pure Python, slower). It only reads rule and configuration files and writes small report documents.
+  - Node 22 -> 26 in the web build stage and the justfile. Node 25+ no longer bundles corepack, so a pinned corepack (0.36.0) is installed first; it still provides the pnpm version from `packageManager` (pnpm 10.34.9).
+  - Web: react-router 8, ESLint 10 and @eslint/js 10, TypeScript 6.0 (`baseUrl` removed, path aliases via `paths`), @types/node 26, jsdom 31, Playwright 1.65 (screenshot image `v1.65.0-noble`) and the latest minor of every other package.
+  - Redis 7.4 -> 8.10 (`redis:8.10.3-alpine3.23`); the configuration and the ACL file are unchanged.
+  - TimescaleDB 2.22.1 -> 2.31.0 (still PostgreSQL 17), gluetun v3.41.1 -> v3.41.3.
+  - Hub: PostgreSQL 17.6 -> 17.11, Caddy 2.11.2 -> 2.11.9, Alpine 3.21 -> 3.24.
+  - GitHub Actions: checkout v7, setup-uv v10, setup-node v7, pnpm/action-setup v6, upload-artifact v7, download-artifact v8.
+- Dependabot runs monthly, with one entry per ecosystem over all its directories: minor and patch updates come as one grouped pull request per ecosystem, major updates as another.
+
+### Fixed
+
+- With TimescaleDB 2.31, the aggregate backfill run by `migrate` failed with SQLSTATE 55P03 when the hourly refresh policy ran at the same moment. It now retries with a short backoff.
+- Ingest reads both reply shapes of `XREADGROUP` that redis-py 8 declares.
+
+### Deliberately held back
+
+- The hub stays on PostgreSQL 17. PostgreSQL 18 images moved `PGDATA` and an existing hub database needs a `pg_upgrade` or a dump and restore, so the major upgrade is done by hand; Dependabot ignores PostgreSQL majors.
+- TypeScript stays on 6.0: typescript-eslint, the lint toolchain, does not support TypeScript 7 yet (its peer range is `<6.1.0`). Dependabot ignores TypeScript majors until it does.
+- pnpm stays on 10.x (latest 10.34.9); pnpm 11 and 12 are majors with a new lockfile and settings format, left for a separate change.
+
 ## [0.9.0] - 2026-11-04
 
 ### Added

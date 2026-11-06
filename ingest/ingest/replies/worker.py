@@ -448,7 +448,7 @@ class ReplyWorker(FeatureWorker):
                         code, moved = await self._one(
                             mailbox, profile, item, validity, recent, counters, now
                         )
-                    except (MailboxError, SQLAlchemyError, asyncio.CancelledError):
+                    except MailboxError, SQLAlchemyError, asyncio.CancelledError:
                         raise
                     except Exception as exc:  # a bug on one mail must not stall the others
                         log.warning("reply skipped (%s)", type(exc).__name__)

@@ -120,7 +120,7 @@ class ScriptWorker(FeatureWorker):
             if row is not None:
                 try:
                     return datetime.fromisoformat(row.value["ts"]), str(row.value["session_id"])
-                except (KeyError, ValueError, TypeError):
+                except KeyError, ValueError, TypeError:
                     pass
             start = (
                 await db.execute(

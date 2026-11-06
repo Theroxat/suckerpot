@@ -81,7 +81,7 @@ async def list_reports(
     if cursor:
         try:
             after = date.fromisoformat(str(decode_cursor(cursor)[0]))
-        except (InvalidCursorError, ValueError, IndexError):
+        except InvalidCursorError, ValueError, IndexError:
             return reauth.error(400, "Invalid cursor.", "bad_cursor")
         stmt = stmt.where(WeeklyReportRow.week_start < after)
     rows = list((await session.scalars(stmt)).all())

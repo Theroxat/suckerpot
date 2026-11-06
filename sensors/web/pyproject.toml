@@ -2,7 +2,7 @@
 name = "suckerpot-sensor-web"
 version = "0.1.0"
 description = "SuckerPot web sensor: an Apache + mod_php look-alike hosting WordPress and phpMyAdmin."
-requires-python = ">=3.13"
+requires-python = ">=3.15"
 dependencies = [
     "suckerpot-common",
     "cryptography>=44,<51",
@@ -30,7 +30,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py315"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
@@ -44,7 +44,7 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 [tool.mypy]
 strict = true
 exclude = ["tests/flood.py"]  # manual load tool, runs in a throwaway container
-python_version = "3.13"
+python_version = "3.15"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

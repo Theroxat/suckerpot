@@ -63,7 +63,7 @@ _CHARSETS: Final = (
 def _canonical(name: str) -> str | None:
     try:
         return codecs.lookup(name).name
-    except (LookupError, ValueError):
+    except LookupError, ValueError:
         return None
 
 
@@ -334,13 +334,13 @@ def _date(value: str | None) -> datetime | None:
         return None
     try:
         parsed = email.utils.parsedate_to_datetime(value[:MAX_HEADER_VALUE])
-    except (TypeError, ValueError, IndexError, OverflowError):
+    except TypeError, ValueError, IndexError, OverflowError:
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     try:
         return parsed.astimezone(UTC)
-    except (OverflowError, ValueError):
+    except OverflowError, ValueError:
         return None
 
 

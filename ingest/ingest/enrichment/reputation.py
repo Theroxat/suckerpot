@@ -185,7 +185,7 @@ class ReputationWorker:
                 int(data.get("totalReports", 0)),
                 _parse_when(data.get("lastReportedAt")),
             )
-        except (ValueError, KeyError, TypeError):
+        except ValueError, KeyError, TypeError:
             raise ProviderError("error") from None
 
     async def check_greynoise(self, ip: str) -> GreyNoiseResult:
@@ -209,7 +209,7 @@ class ReputationWorker:
                 cls[:32] if isinstance(cls, str) else None,
                 name[:128] if isinstance(name, str) else None,
             )
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             raise ProviderError("error") from None
 
     # ---- persistence ----------------------------------------------------------------------

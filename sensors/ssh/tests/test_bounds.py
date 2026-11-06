@@ -493,7 +493,7 @@ async def test_rejected_real_connections_are_counted(make_harness) -> None:  # t
                 conn.close()
                 await conn.wait_closed()
                 ok += 1
-            except (asyncssh.Error, OSError):
+            except asyncssh.Error, OSError:
                 pass
         assert ok == 2 and h.sensor.rate_rejected == 2
         h.sink.flush_summaries()

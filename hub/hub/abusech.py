@@ -256,7 +256,7 @@ class AbusechClient:
                     if size > MAX_BODY:
                         return UNKNOWN_OUTCOME
                     chunks.append(chunk)
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ProxyError):
+        except httpx.ConnectError, httpx.ConnectTimeout, httpx.ProxyError:
             return HTTP_ERROR  # the request did not get through
         except httpx.HTTPError:
             return UNKNOWN_OUTCOME  # it may have been received: never retried
@@ -267,7 +267,7 @@ class AbusechClient:
         if raw:
             try:
                 payload = json.loads(raw)
-            except (ValueError, RecursionError):
+            except ValueError, RecursionError:
                 payload = None
         if status == 200 and payload is None:
             return UNKNOWN_OUTCOME

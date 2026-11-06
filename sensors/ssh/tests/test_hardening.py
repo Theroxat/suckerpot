@@ -181,7 +181,7 @@ async def test_1000_channels_are_refused_and_connection_dropped(make_harness) ->
             try:
                 await conn.create_process(term_type="xterm")
                 opened += 1
-            except (asyncssh.Error, OSError):
+            except asyncssh.Error, OSError:
                 if conn.is_closed():
                     break
         assert opened <= 2
@@ -198,7 +198,7 @@ async def test_forward_flood_disconnects(make_harness) -> None:  # type: ignore[
         for _ in range(30):
             try:
                 await conn.open_connection("198.51.100.99", 25)
-            except (asyncssh.Error, OSError):
+            except asyncssh.Error, OSError:
                 if conn.is_closed():
                     break
         await asyncio.sleep(0.2)
@@ -247,7 +247,7 @@ async def test_pipelined_auth_is_capped(make_harness) -> None:  # type: ignore[n
         for i in range(2000):
             try:
                 await conn.send_userauth_request(b"password", Boolean(False), String(f"guess{i}"))
-            except (asyncssh.Error, OSError):
+            except asyncssh.Error, OSError:
                 break
         await asyncio.sleep(0.5)
         elapsed = time.perf_counter() - start
@@ -338,7 +338,7 @@ async def test_suppressed_count_reported_on_disconnect(make_harness) -> None:  #
         for i in range(10):
             try:
                 await conn.open_connection("198.51.100.99", 25 + i)
-            except (asyncssh.Error, OSError):
+            except asyncssh.Error, OSError:
                 pass
         conn.close()
         await asyncio.sleep(0.2)

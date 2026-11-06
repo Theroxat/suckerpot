@@ -46,7 +46,7 @@ async def flood(proc: asyncssh.SSHClientProcess[bytes], seconds: float, line: by
             proc.stdin.write(chunk)
             await asyncio.wait_for(proc.stdin.drain(), 5)
             sent += len(chunk)
-    except (asyncssh.Error, ConnectionError, OSError, TimeoutError):
+    except asyncssh.Error, ConnectionError, OSError, TimeoutError:
         pass
     return sent
 
@@ -55,7 +55,7 @@ async def drain_output(proc: asyncssh.SSHClientProcess[bytes]) -> None:
     try:
         while await proc.stdout.read(65536):
             pass
-    except (asyncssh.Error, ConnectionError, OSError):
+    except asyncssh.Error, ConnectionError, OSError:
         pass
 
 

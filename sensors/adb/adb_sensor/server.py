@@ -88,7 +88,7 @@ def cgroup_fraction(base: str = CGROUP_DIR) -> float | None:
         if limit_text == "max":
             return None
         return current / max(1, int(limit_text))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
 
 
@@ -468,7 +468,7 @@ class Connection:
             await asyncio.wait_for(self.writer.drain(), self.cfg.write_timeout)
         except TimeoutError:
             raise _End("write timeout") from None
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             raise _End("connection lost") from None
 
     async def _read_message(self) -> tuple[int, int, int, bytes]:
@@ -486,7 +486,7 @@ class Connection:
             raise _End(reason) from None
         except asyncio.IncompleteReadError:
             raise _End("closed by client") from None
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             raise _End("connection lost") from None
         try:
             rest = await asyncio.wait_for(
@@ -498,7 +498,7 @@ class Connection:
         except asyncio.IncompleteReadError as exc:
             self._note_raw(first + exc.partial)
             raise _End("closed by client") from None
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             raise _End("connection lost") from None
         raw = first + rest
         self._note_raw(raw)
@@ -521,7 +521,7 @@ class Connection:
                 raise _End("message timeout") from None
             except asyncio.IncompleteReadError:
                 raise _End("closed by client") from None
-            except (ConnectionError, OSError):
+            except ConnectionError, OSError:
                 raise _End("connection lost") from None
             finally:
                 self.pending_payload = 0

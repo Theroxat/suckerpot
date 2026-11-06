@@ -160,7 +160,7 @@ def identify(data: bytes) -> FileInfo:
     """Return kind, arch, bits, endianness, linking and packer. Never raises."""
     try:
         info = _identify(data)
-    except (struct.error, IndexError, ValueError):  # defensive: parsers are bounds-checked
+    except struct.error, IndexError, ValueError:  # defensive: parsers are bounds-checked
         info = FileInfo(kind="data")
     packer = _packer(data)
     if packer and info.kind in {"elf", "pe", "macho"}:

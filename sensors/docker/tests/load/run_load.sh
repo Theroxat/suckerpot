@@ -5,7 +5,7 @@ set -e
 MODE=${1:-mixed}
 SECS=${2:-40}
 for i in $(seq 1 19); do
-  docker run -d --rm --name sp-docker-lt-cl$i --network sp-docker-lt-net --memory 48m -v "$(git rev-parse --show-toplevel)/sensors/docker/tests/flood.py":/flood.py:ro python:3.13.17-slim-bookworm python /flood.py sensor 2375 $MODE 8 $SECS >/dev/null
+  docker run -d --rm --name sp-docker-lt-cl$i --network sp-docker-lt-net --memory 48m -v "$(git rev-parse --show-toplevel)/sensors/docker/tests/flood.py":/flood.py:ro python:3.15.2-slim-trixie python /flood.py sensor 2375 $MODE 8 $SECS >/dev/null
 done
 for t in 5 15 25 35 45; do
   sleep 10

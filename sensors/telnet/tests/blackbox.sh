@@ -38,7 +38,7 @@ expect -c '
   expect " $ "; send "exit\r"
   expect eof' 2>&1 | tr -d '\r'
 INNER
-docker run --rm --network "$NET" -v /tmp/sp-tn-client.sh:/c.sh:ro alpine:3.20 sh /c.sh
+docker run --rm --network "$NET" -v /tmp/sp-tn-client.sh:/c.sh:ro alpine:3.24 sh /c.sh
 echo "--- nmap -sV"
 docker run --rm --network "$NET" instrumentisto/nmap -sV -p 2323 "$NAME" | grep -E "^2323|Service Info|telnet"
 docker run --rm --network "$NET" instrumentisto/nmap -p 2323 --script telnet-encryption,telnet-ntlm-info "$NAME" | grep -E "^2323|\|"

@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
 # Build context: repository root. One image, two services: `python -m collector fetch` (collector)
 # and `python -m collector analyze` (analyzer). Compose sets the command, networks and DB role.
-FROM ghcr.io/astral-sh/uv:0.8.24 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
 
-FROM python:3.13.17-slim-bookworm AS builder
+FROM python:3.15.2-slim-trixie AS builder
 COPY --from=uv /uv /usr/local/bin/uv
-# py-tlsh has no cp313 wheel: it is compiled here, only the finished venv reaches the runtime image.
+# py-tlsh has no cp315 wheel: it is compiled here, only the finished venv reaches the runtime image.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends g++ cmake make \
     && rm -rf /var/lib/apt/lists/*
@@ -22,7 +22,7 @@ COPY collector/collector ./collector/collector
 WORKDIR /src/collector
 RUN uv sync --frozen --no-dev --no-editable --extra tlsh
 
-FROM python:3.13.17-slim-bookworm
+FROM python:3.15.2-slim-trixie
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH=/opt/venv/bin:$PATH \
     RULES_DIR=/app/rules/yara QUARANTINE_DIR=/quarantine HEARTBEAT_PATH=/tmp/heartbeat
 RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid 10001 --no-create-home app

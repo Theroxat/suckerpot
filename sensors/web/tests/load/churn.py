@@ -53,7 +53,7 @@ def main() -> None:
             opened += 1
             while len(held) > args.max_held:
                 held.pop(0).close()
-        except (OSError, ssl.SSLError):
+        except OSError, ssl.SSLError:
             fails += 1
         time.sleep(args.interval)
     print(f"opened={opened} fails={fails}", flush=True)

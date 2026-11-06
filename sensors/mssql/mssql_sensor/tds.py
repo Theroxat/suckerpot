@@ -388,7 +388,7 @@ def parse_rpc(payload: bytes) -> tuple[str, str]:
                             first = raw[: len(raw) & ~1].decode("utf-16-le", "replace")
                         else:
                             first = raw.decode("latin-1")
-    except (IndexError, struct.error):
+    except IndexError, struct.error:
         first = ""
     return proc, first
 

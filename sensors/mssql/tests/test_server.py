@@ -251,7 +251,7 @@ async def test_non_reading_client_is_aborted(make_harness: HarnessFactory) -> No
             w.write(big)
             try:
                 await asyncio.wait_for(w.drain(), 0.2)
-            except (TimeoutError, ConnectionError):
+            except TimeoutError, ConnectionError:
                 break
         t0 = time.monotonic()
         async with asyncio.timeout(15):

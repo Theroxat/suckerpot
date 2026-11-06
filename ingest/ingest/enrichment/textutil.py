@@ -25,6 +25,6 @@ def parse_when(value: Any) -> datetime | None:
             return datetime.strptime(value.removesuffix(" UTC")[:19], "%Y-%m-%d %H:%M:%S").replace(
                 tzinfo=UTC
             )
-    except (ValueError, OverflowError, OSError):
+    except ValueError, OverflowError, OSError:
         return None
     return None

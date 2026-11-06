@@ -1,6 +1,6 @@
 # Small image so that the entrypoint and config are baked in and the container
 # can run with a read-only root filesystem, as a non-root user, with no bind mounts.
-FROM redis:7.4.11-alpine3.21
+FROM redis:8.10.3-alpine3.23
 
 COPY redis.conf /etc/redis/redis.conf
 COPY entrypoint.sh /usr/local/bin/suckerpot-redis-entrypoint

@@ -128,7 +128,7 @@ All twelve sensors are in `docker-compose.yml`.
 
 ## Python packages
 
-Each package has its own `pyproject.toml` and a committed `uv.lock`. The code targets Python 3.13. The tools are `uv`, `ruff` (line length 100), `mypy` (strict) and `pytest`.
+Each package has its own `pyproject.toml` and a committed `uv.lock`. The code targets Python 3.15. The tools are `uv`, `ruff` (line length 100), `mypy` (strict) and `pytest`.
 
 | Directory | Distribution name | Import name | Purpose |
 | --- | --- | --- | --- |
@@ -160,7 +160,7 @@ Packages depend on each other by path. For example, `ingest` depends on `suckerp
 
 Every service image is built from a multi-stage Dockerfile:
 
-- A pinned Python base image (`python:3.13.x-slim-bookworm`).
+- A pinned Python base image (`python:3.15.x-slim-trixie`).
 - The `uv` binary copied from a pinned `uv` image.
 - A final stage with a non-root user, no build tools and `PYTHONDONTWRITEBYTECODE=1`.
 - A health check.

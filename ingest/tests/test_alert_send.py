@@ -67,7 +67,7 @@ async def test_closed_gate_sends_nothing_and_is_retryable() -> None:
     assert err.value.code == "egress_closed" and err.value.retryable
 
 
-async def test_closed_gate_blocks_mail_before_the_thread(smtp: "type[FakeSMTP]") -> None:
+async def test_closed_gate_blocks_mail_before_the_thread(smtp: type[FakeSMTP]) -> None:
     s, _ = sender(
         lambda _r: httpx.Response(204),
         settings=MAIL,
@@ -131,7 +131,7 @@ async def test_teams_card_is_sent() -> None:
 
 
 class FakeSMTP:
-    instances: ClassVar[list["FakeSMTP"]] = []
+    instances: ClassVar[list[FakeSMTP]] = []
     fail: ClassVar[Exception | None] = None
     starttls_fails: ClassVar[bool] = False
 
@@ -141,7 +141,7 @@ class FakeSMTP:
         self.sent: tuple[Any, list[str]] | None = None
         FakeSMTP.instances.append(self)
 
-    def __enter__(self) -> "FakeSMTP":
+    def __enter__(self) -> FakeSMTP:
         return self
 
     def __exit__(self, *_a: object) -> None:
@@ -288,7 +288,7 @@ async def test_closed_gate_alert_mail_makes_no_connection_at_all() -> None:
         while not stop.is_set():
             try:
                 conn, _ = server.accept()
-            except (TimeoutError, OSError):
+            except TimeoutError, OSError:
                 continue
             accepted.append(1)
             conn.close()

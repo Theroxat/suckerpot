@@ -54,7 +54,7 @@ def unseal(box: SecretBox | None, ciphertext: bytes, nonce: bytes, public: bytes
     try:
         seed = sign.b64u_decode(box.decrypt(AAD, ciphertext, nonce).key)
         identity = Identity(seed=seed, public=sign.public_key_of(seed))
-    except (SecretError, ValueError):
+    except SecretError, ValueError:
         raise NoSettingsKey from None
     if identity.public != public:
         raise NoSettingsKey

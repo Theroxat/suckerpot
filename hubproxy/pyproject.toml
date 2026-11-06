@@ -2,7 +2,7 @@
 name = "suckerpot-hubproxy"
 version = "0.1.0"
 description = "SuckerPot hubproxy: allow-list CONNECT forward proxy for participant installs without a VPN"
-requires-python = ">=3.13"
+requires-python = ">=3.15"
 dependencies = []
 
 [dependency-groups]
@@ -22,7 +22,7 @@ packages = ["hubproxy"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py315"
 extend-exclude = [".venv"]
 
 [tool.ruff.lint]
@@ -33,7 +33,7 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 
 [tool.mypy]
 strict = true
-python_version = "3.13"
+python_version = "3.15"
 exclude = ["^\\.venv/"]
 
 [tool.pytest.ini_options]

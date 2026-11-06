@@ -207,7 +207,7 @@ async def test_poller_advances_past_bad_rows(monkeypatch: pytest.MonkeyPatch) ->
         return [bad]
 
     class Ctx:
-        async def __aenter__(self) -> "Ctx":
+        async def __aenter__(self) -> Ctx:
             return self
 
         async def __aexit__(self, *a: Any) -> None:

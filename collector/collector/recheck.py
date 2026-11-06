@@ -223,11 +223,11 @@ async def probe(
         return done(REFUSED)
     except EgressClosed:
         raise
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.ConnectError, httpx.ConnectTimeout:
         raise ProxySideError from None
     except httpx.ProxyError:
         return done(UNREACHABLE)  # the proxy could not reach the target (DNS, refusal)
-    except (TimeoutError, httpx.TimeoutException):
+    except TimeoutError, httpx.TimeoutException:
         return done(TIMEOUT)
     except httpx.HTTPError:
         return done(UNREACHABLE)
@@ -380,7 +380,7 @@ class Rechecker:
                         # orphan in quarantine), only hash it.
                         budget=budget if target.fetch_target_id is not None else 0,
                     )
-                except (EgressClosed, ProxySideError):
+                except EgressClosed, ProxySideError:
                     await self._refund(day)  # nothing reached the target: no row, no quota
                     return False
                 finally:

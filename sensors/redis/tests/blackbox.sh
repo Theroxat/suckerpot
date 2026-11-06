@@ -16,7 +16,7 @@ trap cleanup EXIT; cleanup
 docker build -q -f sensors/redis/Dockerfile -t "$IMG" . >/dev/null
 # --internal: no route out of the network, like the sensors-redis network in compose.
 docker network create --internal "$NET" >/dev/null
-docker run -d --name "$STREAM" --network "$NET" redis:7.4-alpine >/dev/null
+docker run -d --name "$STREAM" --network "$NET" redis:8.10-alpine >/dev/null
 docker run -d --name "$NAME" --network "$NET" --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
   --cap-drop ALL --security-opt no-new-privileges:true --memory 256m --memory-swap 256m \
   --cpus 0.5 --pids-limit 128 -v "$NAME-data:/data" \
@@ -27,7 +27,7 @@ for _ in $(seq 1 30); do
 done
 [ "$(docker inspect -f '{{.State.Health.Status}}' "$NAME")" = healthy ] || { echo "not healthy"; exit 1; }
 echo HEALTHY
-CLI="docker run --rm --network $NET redis:7.4-alpine redis-cli -h $NAME"
+CLI="docker run --rm --network $NET redis:8.10-alpine redis-cli -h $NAME"
 
 echo "--- redis-cli basics"
 $CLI PING
@@ -36,7 +36,7 @@ $CLI SET foo bar
 $CLI --version
 
 echo "--- kinsing/cron chain (one connection, as bots do)"
-docker run --rm --network "$NET" redis:7.4-alpine sh -c "redis-cli -h $NAME <<'CMDS'
+docker run --rm --network "$NET" redis:8.10-alpine sh -c "redis-cli -h $NAME <<'CMDS'
 FLUSHALL
 CONFIG SET dir /var/spool/cron/
 CONFIG SET dbfilename root
@@ -60,7 +60,7 @@ for host in ('1.1.1.1', '203.0.113.1'):
 "
 
 echo "--- redis-py (this client also joins the default bridge to pip install)"
-docker create --name sp-redis-bb-py --network "$NET" python:3.13.17-slim-bookworm sh -c "pip install -q redis 2>&1 | tail -1; python - <<'PY'
+docker create --name sp-redis-bb-py --network "$NET" python:3.15.2-slim-trixie sh -c "pip install -q redis 2>&1 | tail -1; python - <<'PY'
 import redis
 r = redis.Redis(host='$NAME')
 print(r.ping(), r.set('a', 1), r.get('a'), r.info('server')['redis_version'], r.dbsize())
@@ -75,7 +75,7 @@ echo "--- nmap -sV"
 docker run --rm --network "$NET" instrumentisto/nmap -Pn -sV -p 6379 "$NAME" | sed -n '/^PORT/,/^Service detection/p'
 
 echo "--- cross-protocol and garbage"
-docker run --rm --network "$NET" alpine:3.20 sh -c "printf 'POST / HTTP/1.1\r\nHost: x\r\n\r\n' | nc -w 2 $NAME 6379 | od -c | head -2; echo post_done; printf 'GET / HTTP/1.0\r\n\r\n' | nc -w 2 $NAME 6379"
+docker run --rm --network "$NET" alpine:3.24 sh -c "printf 'POST / HTTP/1.1\r\nHost: x\r\n\r\n' | nc -w 2 $NAME 6379 | od -c | head -2; echo post_done; printf 'GET / HTTP/1.0\r\n\r\n' | nc -w 2 $NAME 6379"
 sleep 1
 echo "--- events"
 docker exec "$STREAM" redis-cli XRANGE events:redis - + | grep '^{' | \

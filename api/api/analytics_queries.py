@@ -317,7 +317,7 @@ async def top_values(db: AsyncSession, field: str, ip: str, limit: int = 10) -> 
 
 def heatmap_stmt(
     window: Window, sensor: Sequence[str] | None, include_benign: bool = True
-) -> Select[Any]:
+) -> Select[int, int, int]:
     local = func.timezone(literal_column("'UTC'"), EventRow.ts)
     dow = (extract("isodow", local) - 1).label("dow")
     hour = extract("hour", local).label("hour")

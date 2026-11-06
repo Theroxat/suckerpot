@@ -136,7 +136,7 @@ async def test_parallel_flood(make_harness: HarnessFactory) -> None:
                 async with asyncio.timeout(5):
                     while await reader.read(4096):
                         pass
-            except (ConnectionError, OSError):
+            except ConnectionError, OSError:
                 pass
             writer.close()
 

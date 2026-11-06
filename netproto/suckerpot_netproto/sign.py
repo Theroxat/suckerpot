@@ -156,7 +156,7 @@ def _verify(public: bytes, signature_b64u: str, message: str) -> bool:
         if len(sig) != 64 or len(public) != 32:
             return False
         Ed25519PublicKey.from_public_bytes(public).verify(sig, message.encode("utf-8"))
-    except (ValueError, InvalidSignature):
+    except ValueError, InvalidSignature:
         return False
     return True
 

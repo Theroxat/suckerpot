@@ -6,15 +6,18 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 # Recipe arguments reach scripts as "$@" (never pasted into the command line).
 set positional-arguments
 
-uv_image := "ghcr.io/astral-sh/uv:0.8.24-python3.13-bookworm-slim"
+uv_image := "ghcr.io/astral-sh/uv:0.13.7-python3.15-trixie-slim"
 uv_cache := "suckerpot-uv-cache"
 # No default project name on purpose: recipes that touch the live stack need COMPOSE_PROJECT_NAME
 # and SUCKERPOT_VOLUME_PREFIX from .env (see _need-project), so a checkout without .env can never act on the live volumes.
-node_image := "node:22.21.1-bookworm-slim"
-playwright_image := "mcr.microsoft.com/playwright:v1.64.1-noble"
+node_image := "node:26.13.0-trixie-slim"
+playwright_image := "mcr.microsoft.com/playwright:v1.65.0-noble"
 web_cache := "suckerpot-web-cache"
-web_env := "-e HOME=/tmp -e CI=1 -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e COREPACK_HOME=/cache/corepack -e npm_config_store_dir=/cache/pnpm-store"
-pnpm_setup := "mkdir -p /tmp/bin && corepack enable --install-directory /tmp/bin && export PATH=/tmp/bin:$PATH"
+web_env := "-e HOME=/tmp -e CI=1 -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e COREPACK_HOME=/cache/corepack -e npm_config_store_dir=/cache/pnpm-store -e npm_config_cache=/cache/npm -e npm_config_update_notifier=false -e npm_config_fund=false -e npm_config_audit=false"
+# Node 25+ no longer bundles corepack: install a pinned one first. It then provides the exact pnpm
+# version named by "packageManager" in web/package.json.
+corepack_version := "0.36.0"
+pnpm_setup := "npm install -g --silent --prefix /tmp/corepack corepack@" + corepack_version + " && mkdir -p /tmp/bin && /tmp/corepack/bin/corepack enable --install-directory /tmp/bin && export PATH=/tmp/bin:$PATH"
 packages := "sensors/common sensors/ssh sensors/rdp sensors/web sensors/telnet sensors/redis sensors/docker sensors/mysql sensors/mssql sensors/adb sensors/smb sensors/sip sensors/synology scripts/demo scripts/guardrails egress analysis reporting netproto collector hubproxy db ingest api hub"
 
 # Fails unless COMPOSE_PROJECT_NAME and SUCKERPOT_VOLUME_PREFIX are set (from .env). Dependency of every recipe that uses the live stack.

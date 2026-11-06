@@ -417,7 +417,7 @@ async def list_targets(
             values = decode_cursor(cursor)
             params["c_day"] = date.fromisoformat(str(values[0]))
             params["c_id"] = str(values[1])
-        except (InvalidCursorError, ValueError, IndexError):
+        except InvalidCursorError, ValueError, IndexError:
             return error(400, "Invalid cursor.", "invalid_cursor")
         where.append("(last_day, hub_id) < (:c_day, :c_id)")
     rows = list(

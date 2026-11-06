@@ -458,7 +458,7 @@ class Session:
                 data = await self.reader.read(min(limit, room))
         except TimeoutError:
             raise _Closed("timeout") from None
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             raise _Closed("client_reset") from None
         if not data:
             raise _Closed("client_closed")
@@ -488,7 +488,7 @@ class Session:
                 await self.writer.drain()
         except TimeoutError:
             raise _Closed("timeout") from None
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             raise _Closed("client_reset") from None
         finally:
             self.sensor.buffered -= len(data)

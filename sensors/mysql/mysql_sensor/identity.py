@@ -173,7 +173,7 @@ def _tls_current(directory: Path, version: str, now: datetime) -> bool:
             and cert.serial_number == 2
             and cert.not_valid_after_utc - RENEW_BEFORE > now
         )
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return False
 
 
@@ -181,7 +181,7 @@ def _load_rsa(directory: Path) -> tuple[rsa.RSAPrivateKey, bytes] | None:
     try:
         key = serialization.load_pem_private_key((directory / RSA_PRIVATE).read_bytes(), None)
         pub = (directory / RSA_PUBLIC).read_bytes()
-    except (OSError, ValueError, TypeError):
+    except OSError, ValueError, TypeError:
         return None
     if not isinstance(key, rsa.RSAPrivateKey) or not pub.startswith(b"-----BEGIN PUBLIC KEY"):
         return None

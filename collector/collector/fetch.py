@@ -109,7 +109,7 @@ class Fetcher:
                         return await self._body(resp, limit, budget, done)
         except UrlRefused as exc:
             return done(REFUSED, exc.code)
-        except (TimeoutError, httpx.TimeoutException):
+        except TimeoutError, httpx.TimeoutException:
             return done(TIMEOUT)
         except httpx.HTTPError:
             return done(NETWORK)

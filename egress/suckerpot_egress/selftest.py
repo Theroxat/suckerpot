@@ -97,7 +97,7 @@ def refused(settings: EgressSettings, target: str) -> bool:
     host, port = _split_target(target)
     try:
         connect_via_proxy(settings, host, port, timeout=PROBE_TIMEOUT_S, validate=False).close()
-    except (TunnelError, OSError):
+    except TunnelError, OSError:
         return True
     return False
 
@@ -106,7 +106,7 @@ def accepted(settings: EgressSettings, target: str) -> bool:
     host, port = _split_target(target)
     try:
         connect_via_proxy(settings, host, port, timeout=PROBE_TIMEOUT_S).close()
-    except (TunnelError, OSError):
+    except TunnelError, OSError:
         return False
     return True
 

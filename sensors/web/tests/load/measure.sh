@@ -32,7 +32,7 @@ mem() { docker stats --no-stream --format '{{.MemUsage}}' "$SENSOR" | cut -d/ -f
 base=$(mem)
 flag=""; [ "$MODE" = tls ] && flag="--tls"
 docker run -d --name sp-measure-c --label sp-measure=1 --network "$NET" \
-  -v "$HERE/churn.py:/churn.py:ro" python:3.13.17-slim-bookworm \
+  -v "$HERE/churn.py:/churn.py:ro" python:3.15.2-slim-trixie \
   python -I /churn.py --host "$SENSOR" --pipeline "$PIPE" --interval 0.02 \
   --count "$N" --duration 60 --hold 120 $flag >/dev/null
 for _ in $(seq 1 120); do docker logs sp-measure-c 2>&1 | grep -q opened= && break; sleep 0.5; done

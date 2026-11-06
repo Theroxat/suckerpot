@@ -336,7 +336,7 @@ class Listener:
         while not self._stop.is_set():
             try:
                 conn, _ = self.sock.accept()
-            except (TimeoutError, OSError):
+            except TimeoutError, OSError:
                 continue
             self.connections += 1
             conn.settimeout(1.0)
@@ -535,7 +535,7 @@ class Dripper:
         while not self._stop.is_set():
             try:
                 conn, _ = self.sock.accept()
-            except (TimeoutError, OSError):
+            except TimeoutError, OSError:
                 continue
             try:
                 conn.settimeout(2.0)

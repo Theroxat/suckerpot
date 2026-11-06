@@ -2,7 +2,7 @@
 name = "suckerpot-hub"
 version = "0.1.0"
 description = "SuckerPot network hub: signed API, consensus, reputation and grouped abuse reports (a separate deployable)"
-requires-python = ">=3.13"
+requires-python = ">=3.15"
 dependencies = [
     "suckerpot-netproto",
     "fastapi>=0.115,<1",
@@ -36,7 +36,7 @@ packages = ["hub"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py315"
 extend-exclude = [".venv"]
 
 [tool.ruff.lint]
@@ -54,7 +54,7 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 
 [tool.mypy]
 strict = true
-python_version = "3.13"
+python_version = "3.15"
 exclude = ["^\\.venv/", "^secrets/"]
 plugins = ["pydantic.mypy"]
 

@@ -154,7 +154,7 @@ def parse_http_date(value: str) -> float | None:
 
     try:
         return parsedate_to_datetime(value).timestamp()
-    except (TypeError, ValueError, IndexError, OverflowError):
+    except TypeError, ValueError, IndexError, OverflowError:
         return None
 
 

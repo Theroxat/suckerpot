@@ -691,7 +691,7 @@ async def _session_watch(auth: Any, token: str | None, factory: Any) -> bool:
         await asyncio.sleep(SESSION_RECHECK_S)
         try:
             principal = await auth.resolve(token, factory)
-        except (SQLAlchemyError, OSError):
+        except SQLAlchemyError, OSError:
             failures += 1
             if failures >= MAX_SESSION_CHECK_FAILURES:
                 return False
@@ -720,7 +720,7 @@ async def live(ws: WebSocket) -> None:
     factory = ws.app.state.session_factory
     try:
         principal = await auth.resolve(auth.session_token(ws.scope), factory)
-    except (SQLAlchemyError, OSError):
+    except SQLAlchemyError, OSError:
         await ws.close(code=1013)
         return
     # Both roles may watch; a user who still has to choose a password may not.

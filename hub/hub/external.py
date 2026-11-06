@@ -83,7 +83,7 @@ class Corroborator:
                 return False
             data = resp.json().get("data", {})
             return int(data.get("abuseConfidenceScore", 0)) >= ABUSE_CONFIDENCE_MIN
-        except (httpx.HTTPError, ValueError, TypeError):
+        except httpx.HTTPError, ValueError, TypeError:
             log.warning("abuseipdb lookup failed")
             return False
 
@@ -96,6 +96,6 @@ class Corroborator:
             if resp.status_code != 200:
                 return False
             return str(resp.json().get("classification", "")).lower() == "malicious"
-        except (httpx.HTTPError, ValueError, TypeError):
+        except httpx.HTTPError, ValueError, TypeError:
             log.warning("greynoise lookup failed")
             return False

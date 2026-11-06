@@ -154,7 +154,7 @@ class ConnReader:
             data = await asyncio.wait_for(self._r.read(16384), max(limit, 0.001))
         except TimeoutError:
             raise HeaderTimeout from None
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             raise ClientGone from None
         if not data:
             raise ClientGone
@@ -202,7 +202,7 @@ class ConnReader:
                 data = await asyncio.wait_for(self._r.read(16384), idle)
             except TimeoutError:
                 return None
-            except (ConnectionError, OSError):
+            except ConnectionError, OSError:
                 return None
             if not data:
                 return None

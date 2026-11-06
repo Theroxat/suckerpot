@@ -10,7 +10,7 @@
 set -euo pipefail
 IMAGE=${1:?image}; PLAIN=${2:?plain clients}; TLS=${3:?tls clients}; PIPE=${4:?pipeline}
 DUR=${5:?seconds}; LABEL=${6:-run}
-NET=sp-load-net; SENSOR=sp-web; CLIENT_IMAGE=python:3.13.17-slim-bookworm
+NET=sp-load-net; SENSOR=sp-web; CLIENT_IMAGE=python:3.15.2-slim-trixie
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 cleanup() {

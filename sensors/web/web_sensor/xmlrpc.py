@@ -96,7 +96,7 @@ def parse_call(body: bytes) -> Call:
     """Parse a ``methodCall`` document. Raises :class:`XmlRpcError` with WordPress's codes."""
     try:
         root = SafeET.fromstring(body, forbid_dtd=True, forbid_entities=True, forbid_external=True)
-    except (ParseError, DefusedXmlException, ValueError, RecursionError):
+    except ParseError, DefusedXmlException, ValueError, RecursionError:
         raise XmlRpcError(-32700, "parse error. not well formed") from None
     if root.tag != "methodCall":
         raise XmlRpcError(

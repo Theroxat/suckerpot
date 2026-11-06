@@ -1187,7 +1187,7 @@ class DockerApi:
             return False
         try:
             data = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
-        except (binascii.Error, ValueError):
+        except binascii.Error, ValueError:
             return False
         obj = analysis.bounded_json(data, max_bytes=4096, max_depth=6)
         if not isinstance(obj, dict) or not obj:

@@ -170,7 +170,7 @@ def network_info(doc: Mapping[str, Any], ip: str) -> NetworkInfo:
                 last, ipaddress.IPv6Address
             ):
                 candidates.extend(islice(ipaddress.summarize_address_range(first, last), 64))
-    except (ValueError, TypeError, KeyError, AttributeError):
+    except ValueError, TypeError, KeyError, AttributeError:
         candidates = []
     min_len = 8 if addr.version == 4 else 16  # a "whole internet" answer is not a network
     for net in candidates:

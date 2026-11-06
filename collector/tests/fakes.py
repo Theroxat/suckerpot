@@ -68,7 +68,7 @@ class FakeProxy:
             else:
                 writer.write(reply.body)
             await writer.drain()
-        except (asyncio.IncompleteReadError, ConnectionError, ValueError):
+        except asyncio.IncompleteReadError, ConnectionError, ValueError:
             pass
         finally:
             writer.close()

@@ -11,7 +11,7 @@ MARK="e2e$(date +%s)"
 
 echo "== real SSH login against 127.0.0.1:${SSH_PORT}"
 # Host networking: the container reaches the published port like any local client.
-docker run --rm --network host alpine:3.21 sh -c "
+docker run --rm --network host alpine:3.24 sh -c "
   apk add -q --no-cache openssh-client sshpass >/dev/null
   opts='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p ${SSH_PORT}'
   # one failed login with a recognisable user name, then a successful one
