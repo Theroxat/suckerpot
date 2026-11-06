@@ -218,8 +218,18 @@ def test_rate_limit_tracking_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None
     assert len(svc._per_ip) == 3
 
 
-async def test_verify_is_off_the_event_loop() -> None:
+async def test_verify_is_off_the_event_loop(monkeypatch: pytest.MonkeyPatch) -> None:
     svc = AuthService(settings())
+    real_verify = svc._verify
+
+    def slow_verify(password: str) -> bool:
+        # The FAST test hash is checked in microseconds, so whether the loop got a turn depended
+        # on thread scheduling. A real argon2 check takes tens of milliseconds: model that, so a
+        # check run on the loop thread can never let the ticker run, and one off it always does.
+        time.sleep(0.05)
+        return real_verify(password)
+
+    monkeypatch.setattr(svc, "_verify", slow_verify)
     ticks = 0
 
     async def ticker() -> None:
