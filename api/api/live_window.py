@@ -336,6 +336,7 @@ async def _compute(
                 by_sensor=n_sensor.get(a, {}),
             )
             for a, n, ips, c, o, last in net_rows
+            if a is not None  # the query already excludes NULL ASNs; this narrows the type
         ]
 
     return LiveWindow(

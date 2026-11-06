@@ -794,6 +794,8 @@ async def _flow(
             )
         ).all()
         for c, asn, n_ips, n, org in rows:
+            if c is None:  # country IN (...) never matches NULL; this narrows the type
+                continue
             ips[c] = ips.get(c, 0) + n_ips
             if asn is not None and (c not in best_asn or n > best_asn[c][1]):
                 best_asn[c] = (asn, n, org)
