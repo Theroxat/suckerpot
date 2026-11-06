@@ -3,9 +3,10 @@
 FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
 
 # Web UI build. Node is only used in this stage and never ends up in the final image.
-FROM --platform=$BUILDPLATFORM node:22.21.1-bookworm-slim AS web-build
+FROM --platform=$BUILDPLATFORM node:26.13.0-trixie-slim AS web-build
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=1
-RUN corepack enable
+# Node 25+ no longer bundles corepack: install a pinned release (same as the justfile).
+RUN npm install -g --no-fund --no-audit --no-update-notifier corepack@0.36.0 && corepack enable
 WORKDIR /web
 # The package manager version comes from "packageManager" in package.json.
 COPY web/package.json web/pnpm-lock.yaml ./
