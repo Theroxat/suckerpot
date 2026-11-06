@@ -314,9 +314,9 @@ def test_third_party_images_are_pinned_by_tag_and_digest() -> None:
 @pytest.mark.parametrize(
     "image",
     [
-        "timescale/timescaledb:2.22.1-pg17",
+        "timescale/timescaledb:2.31.0-pg17",
         "timescale/timescaledb@sha256:" + "a" * 64,
-        "timescale/timescaledb:2.22.1-pg17@sha256:" + "a" * 63,
+        "timescale/timescaledb:2.31.0-pg17@sha256:" + "a" * 63,
     ],
 )
 def test_unpinned_third_party_image_is_refused(good: dict[str, Any], image: str) -> None:

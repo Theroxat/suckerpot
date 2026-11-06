@@ -419,7 +419,7 @@
     ],
     "timeout": "10s"
    },
-   "image": "timescale/timescaledb:2.22.1-pg17@sha256:fba60021a224479e174ae1ec577c1a0576d5185b09fe9e622f1d19e4bf5bab0d",
+   "image": "timescale/timescaledb:2.31.0-pg17@sha256:b56a3f51991df1f79d0c1a0841cad5c5fa8058fdd6a3ee6886394a6d4c174538",
    "logging": {
     "driver": "json-file",
     "options": {
@@ -596,7 +596,7 @@
     ],
     "timeout": "5s"
    },
-   "image": "timescale/timescaledb:2.22.1-pg17@sha256:fba60021a224479e174ae1ec577c1a0576d5185b09fe9e622f1d19e4bf5bab0d",
+   "image": "timescale/timescaledb:2.31.0-pg17@sha256:b56a3f51991df1f79d0c1a0841cad5c5fa8058fdd6a3ee6886394a6d4c174538",
    "logging": {
     "driver": "json-file",
     "options": {
@@ -2106,7 +2106,7 @@
     ],
     "timeout": "5s"
    },
-   "image": "qmcgaw/gluetun:v3.41.1@sha256:1a5bf4b4820a879cdf8d93d7ef0d2d963af56670c9ebff8981860b6804ebc8ab",
+   "image": "qmcgaw/gluetun:v3.41.3@sha256:fa19cc76b2af13d57a8d3dc3066f2ada061b1c761b8aecf989b3877c0486e027",
    "logging": {
     "driver": "json-file",
     "options": {

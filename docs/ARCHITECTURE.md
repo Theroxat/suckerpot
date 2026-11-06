@@ -68,7 +68,7 @@ Host (nftables table "suckerpot_host", see Deployment)
 | Service | Networks | Role | Status |
 | --- | --- | --- | --- |
 | `redis` | `sensors-ssh`, `sensors-rdp`, `sensors-telnet`, `sensors-web`, `sensors-redis`, `sensors-docker`, `sensors-mysql`, `sensors-mssql`, `sensors-adb`, `sensors-smb`, `sensors-sip`, `sensors-synology`, `tools`, `backend` | Redis Streams queue. Named ACL users (see below). AOF persistence on `redis-data`. | Built |
-| `db` | `backend`, `samples` | PostgreSQL 17 with TimescaleDB 2.22.1, on `db-data`. Runs only as the owner role. | Built |
+| `db` | `backend`, `samples` | PostgreSQL 17 with TimescaleDB 2.31.0, on `db-data`. Runs only as the owner role. | Built |
 | `migrate` | `backend` | One-shot. Checks the secrets policy, runs `alembic upgrade head`, then re-applies the application roles and their passwords, and exits with code 0. | Built |
 | `ingest` | `backend`, `egress-proxy` | Reads all sensor streams, validates events, enriches and tags them, writes them to the database. Outbound calls go through the `vpn` proxy only. | Built. GeoIP files live on the `geoip-data` volume. |
 | `api` | `backend`, `dashboard` | FastAPI (512 MB memory limit). REST endpoints, WebSocket feed, `/healthz`, and the built web UI when present. The only service with a dashboard port. | Built |
@@ -440,7 +440,7 @@ The WebSocket checks the `Origin` header. Requests with no `Origin` (non-browser
 | Sensors | Python 3.15, asyncio, asyncssh (SSH), raw asyncio (Telnet, RDP, ADB, Redis, MySQL, MSSQL, SMB and SIP), hand-written HTTP servers (web, Docker API and Synology DSM, the last one over TLS too) |
 | Ingest and API | FastAPI, SQLAlchemy 2 with asyncpg, Alembic |
 | Queue | Redis 7.4 Streams |
-| Database | PostgreSQL 17 with TimescaleDB 2.22.1 |
+| Database | PostgreSQL 17 with TimescaleDB 2.31.0 |
 | Enrichment | MaxMind GeoLite2 or DB-IP Lite (local files), AbuseIPDB, GreyNoise Community, abuse.ch URLhaus and ThreatFox, VirusTotal (hashes only) |
 | Alerts and reports | Discord and Microsoft Teams webhooks, SMTP over TLS, the Anthropic API for the optional explainer |
 | Web UI | React, Vite, TypeScript (strict), Tailwind, shadcn/ui, TanStack Query. The Live page is a flat SVG map, with no WebGL. Terminal replay planned. |
