@@ -75,7 +75,7 @@ def load_or_create_profile(data_dir: str) -> Profile:
         created = float(doc["created"])
         if len(secret) >= 16:
             return build_profile(secret, created)
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         pass
     secret = secrets.token_bytes(32)
     created = float(int(time.time()))

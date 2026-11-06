@@ -634,7 +634,7 @@ class WebSensor:
                 for off in range(0, len(data), chunk):
                     writer.write(view[off : off + chunk])
                     await asyncio.wait_for(writer.drain(), chunk_timeout)
-        except (TimeoutError, ConnectionError, OSError):
+        except TimeoutError, ConnectionError, OSError:
             if conn.reason != "memory-pressure":
                 conn.reason = "write-failed"
             return False
@@ -705,7 +705,7 @@ class WebSensor:
             req = await cr.read_request(first=True)
         except HttpError as err:
             req = err.req
-        except (HeaderTimeout, ClientGone):
+        except HeaderTimeout, ClientGone:
             pass
         conn.requests += 1
         conn.reason = "plain-http-on-tls"
@@ -951,7 +951,7 @@ async def _peek(loop: asyncio.AbstractEventLoop, sock: socket.socket, wait: floa
     try:
         await asyncio.wait_for(fut, wait)
         return sock.recv(16, socket.MSG_PEEK)
-    except (TimeoutError, OSError):
+    except TimeoutError, OSError:
         return b""
     finally:
         loop.remove_reader(fd)
@@ -1001,7 +1001,7 @@ async def _close(
                     if not data:
                         break
                     budget -= len(data)
-    except (TimeoutError, OSError, RuntimeError, asyncio.CancelledError):
+    except TimeoutError, OSError, RuntimeError, asyncio.CancelledError:
         pass
     finally:
         with contextlib.suppress(Exception):

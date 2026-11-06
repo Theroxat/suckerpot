@@ -211,7 +211,7 @@ class Sensor:
                     try:
                         async with asyncio.timeout(cfg.write_timeout):
                             await writer.drain()
-                    except (TimeoutError, ConnectionError, OSError):
+                    except TimeoutError, ConnectionError, OSError:
                         return
                 await asyncio.sleep(0)  # one message per loop turn
                 continue
@@ -221,7 +221,7 @@ class Sensor:
             wait = min(left, cfg.first_data_timeout if messages == 0 else cfg.idle_timeout)
             try:
                 chunk = await asyncio.wait_for(reader.read(4096), wait)
-            except (TimeoutError, ConnectionError, OSError):
+            except TimeoutError, ConnectionError, OSError:
                 return
             if not chunk:
                 return

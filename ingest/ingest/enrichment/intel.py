@@ -240,7 +240,7 @@ class IntelWorker:
             raise ProviderError("error", "json too deep")
         try:
             return status, json.loads(raw)
-        except (ValueError, RecursionError):
+        except ValueError, RecursionError:
             raise ProviderError("error", "bad json") from None
 
     def _abusech_headers(self) -> dict[str, str]:
@@ -366,7 +366,7 @@ class IntelWorker:
             attrs = payload["data"]["attributes"]
             stats = attrs.get("last_analysis_stats") or {}
             malicious = int(stats.get("malicious", 0)) + int(stats.get("suspicious", 0))
-        except (KeyError, TypeError, ValueError, AttributeError):
+        except KeyError, TypeError, ValueError, AttributeError:
             raise ProviderError("error") from None
         cls = attrs.get("popular_threat_classification")
         family = threat = None

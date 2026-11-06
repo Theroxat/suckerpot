@@ -82,7 +82,7 @@ def _decode_b64(raw: str) -> str | None:
     cleaned += "=" * (-len(cleaned) % 4)
     try:
         decoded = base64.b64decode(cleaned, validate=True)
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         return None
     text = decoded.decode("utf-8", errors="replace")
     if _printable_ratio(text) < 0.9:

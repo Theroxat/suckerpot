@@ -228,7 +228,7 @@ class Sender:
             raise SendError("tls") from None
         except smtplib.SMTPNotSupportedError:
             raise SendError("tls") from None  # no STARTTLS offered
-        except (smtplib.SMTPServerDisconnected, TimeoutError, OSError):
+        except smtplib.SMTPServerDisconnected, TimeoutError, OSError:
             raise SendError("network", retryable=True) from None
         except smtplib.SMTPResponseException as exc:
             raise SendError("smtp_error", retryable=400 <= exc.smtp_code < 500) from None

@@ -609,7 +609,7 @@ async def list_targets(
             where.append("(t.reported_at, t.id) < (:cts, :cid)")
             params["cts"] = datetime.fromisoformat(str(ts))
             params["cid"] = int(last_id)
-        except (InvalidCursorError, ValueError, TypeError):
+        except InvalidCursorError, ValueError, TypeError:
             return error(400, "Invalid cursor", "invalid_cursor")
     sql = (
         f"{TARGET_SELECT} WHERE {' AND '.join(where)} "

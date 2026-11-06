@@ -47,7 +47,7 @@ async def pipe_conn(host: str, port: int, seconds: float) -> None:
     await loop.sock_connect(s, (host, port))
     try:
         await asyncio.wait_for(loop.sock_sendall(s, PIPE), seconds)
-    except (TimeoutError, OSError):
+    except TimeoutError, OSError:
         pass
     await asyncio.sleep(seconds)
     s.close()
@@ -80,7 +80,7 @@ async def victim(host: str, port: int, seconds: float) -> None:
             w.write(b"GET /_ping HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
             ok = (await asyncio.wait_for(r.read(300), 5)).startswith(b"HTTP/1.1 200")
             w.close()
-        except (OSError, TimeoutError):
+        except OSError, TimeoutError:
             ok = False
         lat.append((loop.time() - t0, ok))
         await asyncio.sleep(0.5)

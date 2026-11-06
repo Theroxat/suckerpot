@@ -387,7 +387,7 @@ async def list_submissions(
             where.append("(created_at, id) < (:cts, :cid)")
             params["cts"] = datetime.fromisoformat(str(ts))
             params["cid"] = int(last_id)
-        except (InvalidCursorError, ValueError, TypeError):
+        except InvalidCursorError, ValueError, TypeError:
             return error(400, "Invalid cursor", "invalid_cursor")
     params["n"] = limit + 1
     sql = (

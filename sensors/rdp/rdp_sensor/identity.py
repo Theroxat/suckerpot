@@ -209,7 +209,7 @@ def load_or_create_identity(
             return Identity(
                 name, cert_path, key_path, cert.not_valid_after_utc, netbios_domain, dns_domain
             )
-    except (OSError, ValueError):
+    except OSError, ValueError:
         pass
     cert_pem, key_pem, not_after = _generate_cert(name, current, backdate=not cert_path.exists())
     write_private(key_path, key_pem)

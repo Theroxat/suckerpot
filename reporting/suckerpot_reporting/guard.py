@@ -162,7 +162,7 @@ def _mime_strings(raw: bytes) -> Iterator[str]:
             yield name
             try:
                 decoded = str(email.header.make_header(email.header.decode_header(str(value))))
-            except (email.errors.HeaderParseError, UnicodeDecodeError, LookupError, ValueError):
+            except email.errors.HeaderParseError, UnicodeDecodeError, LookupError, ValueError:
                 decoded = str(value)
             yield decoded
         if part.is_multipart():

@@ -373,7 +373,7 @@ class ExplainerWorker(FeatureWorker):
                 for b in doc.get("content", [])
                 if isinstance(b, dict) and b.get("type") == "text"
             )
-        except (ValueError, TypeError, AttributeError):
+        except ValueError, TypeError, AttributeError:
             raise ExplainError("bad_answer") from None
         # The tokens are spent whatever the answer turns out to be: record them first, before
         # anything below can raise (a refusal, a cut-off answer, bad JSON).

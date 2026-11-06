@@ -22,7 +22,7 @@ ORIGIN = {"Origin": "http://testserver"}
 class NoUsers:
     """A database session where no dashboard user exists and every write is accepted."""
 
-    async def __aenter__(self) -> "NoUsers":
+    async def __aenter__(self) -> NoUsers:
         return self
 
     async def __aexit__(self, *a: object) -> None:
@@ -281,7 +281,7 @@ def test_websocket_accepts_session_then_closes_on_logout(
     monkeypatch.setattr(live, "SESSION_RECHECK_S", 0.05)
 
     class FakeSession:
-        async def __aenter__(self) -> "FakeSession":
+        async def __aenter__(self) -> FakeSession:
             return self
 
         async def __aexit__(self, *a: object) -> None:

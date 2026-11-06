@@ -617,7 +617,7 @@ def _tls_close_notify(h: Harness, partial: bytes | None) -> bool:
             s.sendall(partial)
         try:
             s.unwrap()
-        except (ssl.SSLError, OSError):
+        except ssl.SSLError, OSError:
             pass
     return True
 

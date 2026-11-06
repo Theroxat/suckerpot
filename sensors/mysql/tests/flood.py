@@ -49,7 +49,7 @@ async def one(host: str, mode: str, deadline: float) -> None:
                 await w.drain()
                 await asyncio.sleep(12)
             w.transport.abort()
-        except (OSError, TimeoutError):
+        except OSError, TimeoutError:
             await asyncio.sleep(0.2)
 
 

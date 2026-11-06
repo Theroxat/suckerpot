@@ -139,7 +139,7 @@ def _valid_key(value: str) -> bool:
         return False
     try:
         raw = base64.b64decode(value, validate=True)
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         return False
     return len(raw) == 32 and base64.b64encode(raw).decode("ascii") == value  # canonical only
 
@@ -382,7 +382,7 @@ def read_meta() -> dict[str, Any] | None:
         if not (directory / ENV_FILE).is_file():
             return None
         raw = json.loads((directory / META_FILE).read_text(encoding="ascii"))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     return raw if isinstance(raw, dict) else {}
 
@@ -707,7 +707,7 @@ def _read_restart(directory: Path) -> datetime | None:
         value = datetime.fromisoformat(
             (directory / RESTART_FILE).read_text(encoding="ascii")[:64].strip()
         )
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 

@@ -48,7 +48,7 @@ async def test_flooding_ips_do_not_starve_a_victim(make_harness: HarnessFactory)
             while time.monotonic() < end:
                 try:
                     await _session(h.port, source)
-                except (OSError, asyncio.IncompleteReadError, TimeoutError):
+                except OSError, asyncio.IncompleteReadError, TimeoutError:
                     await asyncio.sleep(0.01)
 
         victim_sessions = 0

@@ -263,7 +263,7 @@ class EventSink:
         try:
             if cap_data:
                 data = truncate_data(data, max_string=max_string)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             self.invalid += 1
             return False
         size = approx_size(data) + _EVENT_OVERHEAD
@@ -295,7 +295,7 @@ class EventSink:
                 type=type_,
                 data=data,
             )
-        except (ValidationError, ValueError, TypeError):
+        except ValidationError, ValueError, TypeError:
             self.invalid += 1
             log.warning("event rejected by schema validation (type=%s)", type_)
             return False

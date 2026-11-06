@@ -131,7 +131,7 @@ class AbusechClient:
                     chunks.append(chunk)
         except EgressClosed:
             raise
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ProxyError):
+        except httpx.ConnectError, httpx.ConnectTimeout, httpx.ProxyError:
             return HTTP_ERROR  # the request did not get through
         except httpx.HTTPError:
             return UNKNOWN_OUTCOME  # it may have been received
@@ -142,7 +142,7 @@ class AbusechClient:
         if raw and not exceeds_depth(raw):
             try:
                 payload = json.loads(raw)
-            except (ValueError, RecursionError):
+            except ValueError, RecursionError:
                 payload = None
         if status == 200 and payload is None:
             return UNKNOWN_OUTCOME

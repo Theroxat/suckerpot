@@ -69,14 +69,14 @@ esc = html.escape
 def _n(value: Any) -> str:
     try:
         return f"{int(value):,}"
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return "0"
 
 
 def _int(value: Any) -> int:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0
 
 

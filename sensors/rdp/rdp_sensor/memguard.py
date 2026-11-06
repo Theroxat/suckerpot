@@ -24,7 +24,7 @@ _CGROUP = Path("/sys/fs/cgroup")
 def _read_int(path: Path) -> int | None:
     try:
         raw = path.read_text(encoding="ascii").strip()
-    except (OSError, UnicodeDecodeError):
+    except OSError, UnicodeDecodeError:
         return None
     return int(raw) if raw.isdigit() else None
 
@@ -32,7 +32,7 @@ def _read_int(path: Path) -> int | None:
 def _inactive_file(stat: Path) -> int:
     try:
         text = stat.read_text(encoding="ascii")
-    except (OSError, UnicodeDecodeError):
+    except OSError, UnicodeDecodeError:
         return 0
     for line in text.splitlines():
         key, _, value = line.partition(" ")
@@ -46,7 +46,7 @@ def _rss() -> int | None:
     try:
         fields = Path("/proc/self/statm").read_text(encoding="ascii").split()
         return int(fields[1]) * os.sysconf("SC_PAGE_SIZE")
-    except (OSError, ValueError, IndexError):
+    except OSError, ValueError, IndexError:
         return None
 
 

@@ -14,7 +14,7 @@ def check(port: int = 8000) -> bool:
         resp = conn.getresponse()
         data = json.loads(resp.read(4096))
         conn.close()
-    except (OSError, ValueError, http.client.HTTPException):
+    except OSError, ValueError, http.client.HTTPException:
         return False
     return resp.status == 200 and isinstance(data, dict) and data.get("ok") is True
 

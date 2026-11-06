@@ -142,7 +142,7 @@ def clean_entries(
         try:
             entry = coerce_entry(item if isinstance(item, FeedEntry) else dict(item))
             check_entry_for_list(ctx.list_id, entry, allow_documentation=ctx.allow_documentation)
-        except (FeedError, ValueError):
+        except FeedError, ValueError:
             dropped += 1
             continue
         if entry.value in seen:

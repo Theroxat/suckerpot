@@ -307,7 +307,7 @@ async def feed_entries(
         try:
             values = decode_cursor(cursor)
             c_day, c_list, c_value = date.fromisoformat(str(values[0])), str(values[1]), values[2]
-        except (InvalidCursorError, ValueError, IndexError):
+        except InvalidCursorError, ValueError, IndexError:
             return error(400, "Invalid cursor.", "invalid_cursor")
         before = or_(
             last < c_day,

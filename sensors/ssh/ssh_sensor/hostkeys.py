@@ -67,7 +67,7 @@ def load_or_create_host_keys(directory: str | Path) -> list[asyncssh.SSHKey]:
         if path.exists():
             try:
                 key = asyncssh.read_private_key(str(path))
-            except (asyncssh.KeyImportError, OSError, ValueError):
+            except asyncssh.KeyImportError, OSError, ValueError:
                 log.warning("host key %s is unreadable, regenerating", name)
         if key is None:
             key = asyncssh.generate_private_key(algorithm, **kwargs)  # type: ignore[arg-type]

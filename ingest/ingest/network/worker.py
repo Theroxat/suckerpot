@@ -308,7 +308,7 @@ class NetworkWorker(FeatureWorker):
             await store.wipe(leave_error="leave_unconfirmed")  # the key is gone: cannot sign
             self.state = "off"
             return
-        except (EgressClosed, HubUnavailable, ProtoError):
+        except EgressClosed, HubUnavailable, ProtoError:
             if now - m.leave_requested_at > LEAVE_GIVE_UP:
                 await store.wipe(leave_error="leave_unconfirmed")
                 self.state = "off"

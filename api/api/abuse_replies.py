@@ -346,7 +346,7 @@ async def import_reply(request: Request, db: DbSession) -> Response:
     else:
         try:
             parsed = ImportJson.model_validate(json.loads(body))
-        except (ValueError, ValidationError):
+        except ValueError, ValidationError:
             return error(
                 422, "Send {raw, report?} as JSON or an .eml as a form upload.", "bad_body"
             )

@@ -117,7 +117,7 @@ class SecretBox:
             key, account = data["k"], data["a"]
             if not isinstance(key, str) or not (account is None or isinstance(account, str)):
                 raise TypeError
-        except (InvalidTag, ValueError, KeyError, TypeError):
+        except InvalidTag, ValueError, KeyError, TypeError:
             raise SecretError("cannot decrypt the stored key") from None
         return Credential(key=key, account_id=account)
 
@@ -134,7 +134,7 @@ def box_from_env(env: Mapping[str, str] | None = None) -> SecretBox | None:
         return None
     try:
         master = base64.b64decode(raw + "=" * (-len(raw) % 4), altchars=b"-_", validate=True)
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         raise SecretError(f"{ENV_VAR} must be base64 (openssl rand -base64 32)") from None
     for name, value in e.items():
         if (

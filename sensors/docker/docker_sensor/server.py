@@ -515,7 +515,7 @@ class DockerSensor:
                 finally:
                     conn.inflight -= len(part)
                     self.budget.release(len(part))
-        except (TimeoutError, ConnectionError, OSError):
+        except TimeoutError, ConnectionError, OSError:
             if conn.reason != "memory-pressure":
                 conn.reason = "write-failed"
             return False
@@ -822,7 +822,7 @@ async def _close(writer: asyncio.StreamWriter, force: bool = False) -> None:
         if writer.can_write_eof():
             with contextlib.suppress(Exception):
                 writer.write_eof()
-    except (TimeoutError, OSError, RuntimeError, asyncio.CancelledError):
+    except TimeoutError, OSError, RuntimeError, asyncio.CancelledError:
         pass
     finally:
         with contextlib.suppress(Exception):

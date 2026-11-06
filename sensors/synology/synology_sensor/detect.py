@@ -128,7 +128,7 @@ def _multipart(body: bytes, boundary: str, out: Analysis) -> None:
 def _json_params(body: bytes, out: Analysis) -> None:
     try:
         doc = json.loads(body[:65536])
-    except (ValueError, RecursionError):
+    except ValueError, RecursionError:
         return
     if not isinstance(doc, dict):
         return

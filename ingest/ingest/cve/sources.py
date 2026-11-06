@@ -214,7 +214,7 @@ async def fetch_json_with_headers(
         raise SourceError("too_deep")
     try:
         return json.loads(bytes(body)), resp_headers
-    except (ValueError, RecursionError):  # backstop: nested JSON must not crash the job
+    except ValueError, RecursionError:  # backstop: nested JSON must not crash the job
         raise SourceError("error") from None
 
 

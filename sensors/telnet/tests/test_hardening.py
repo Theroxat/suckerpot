@@ -15,7 +15,7 @@ from telnet_sensor.watchdog import LoopWatchdog
 async def _eof(client, timeout: float = 3.0) -> bytes:  # type: ignore[no-untyped-def]
     try:
         data = await client.read_all(timeout)
-    except (ConnectionError, OSError):  # closing with unread input from a flooder resets
+    except ConnectionError, OSError:  # closing with unread input from a flooder resets
         return b""
     return bytes(data[client.pos :])
 
@@ -47,7 +47,7 @@ async def test_new_connection_rate_per_ip(make_harness) -> None:  # type: ignore
             try:
                 await c.until(b"login: ", 0.5)
                 served += 1
-            except (EOFError, TimeoutError):
+            except EOFError, TimeoutError:
                 pass
             await c.close()
         assert served == 3 and h.sensor.rate_rejected == 3
@@ -72,7 +72,7 @@ async def test_slow_drip_cannot_hold_the_login(make_harness) -> None:  # type: i
                 while True:
                     await c.send("r")
                     await asyncio.sleep(0.2)
-        except (ConnectionError, OSError, TimeoutError):
+        except ConnectionError, OSError, TimeoutError:
             pass
         assert time.monotonic() - start < 3.5
         assert h.sensor.stats()["connections"] == 0
@@ -97,7 +97,7 @@ async def test_input_volume_limit(make_harness) -> None:  # type: ignore[no-unty
             for _ in range(100):
                 await c.send(b"\xff\xfb\x18" * 300)
                 await asyncio.sleep(0)
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             pass
         await _eof(c)
         assert h.sensor.stats()["connections"] == 0
@@ -129,7 +129,7 @@ async def test_command_and_output_limits(make_harness) -> None:  # type: ignore[
             for _ in range(30):
                 await c.send("cat /proc/cpuinfo\r\n")
                 await asyncio.sleep(0.02)
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             pass
         await _eof(c)
         assert (await h.events("disconnect"))[0].data["reason"] == "output limit"
@@ -148,7 +148,7 @@ async def test_client_that_never_reads_is_dropped(make_harness) -> None:  # type
         while h.sensor.stats()["connections"] and time.monotonic() < deadline:
             try:
                 await asyncio.wait_for(c.writer.drain(), 0.2)
-            except (TimeoutError, ConnectionError, OSError):
+            except TimeoutError, ConnectionError, OSError:
                 pass
             await asyncio.sleep(0.1)
         assert h.sensor.stats()["connections"] == 0
@@ -186,7 +186,7 @@ async def test_connection_flood_is_survivable(make_harness) -> None:  # type: ig
                 await w.drain()
                 await asyncio.wait_for(r.read(64), 1)
                 w.close()
-            except (ConnectionError, OSError, TimeoutError):
+            except ConnectionError, OSError, TimeoutError:
                 pass
 
         await asyncio.gather(*(one() for _ in range(300)))

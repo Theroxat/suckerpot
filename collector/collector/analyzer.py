@@ -89,7 +89,7 @@ class AnalyzerService:
         started = time.monotonic()
         try:
             data = await asyncio.to_thread(self.store.read, sha, MAX_INPUT)
-        except (OSError, TooLarge):
+        except OSError, TooLarge:
             return await self._fail(sha, "failed", "file_missing", started)
         if hashlib.sha256(data).hexdigest() != sha:
             return await self._fail(sha, "failed", "hash_mismatch", started)

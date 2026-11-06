@@ -215,7 +215,7 @@ class AbuseWorker(FeatureWorker):
         if is_open and (self.bootstrap_at is None or now - self.bootstrap_at > BOOTSTRAP_MAX_AGE):
             try:
                 await self.refresh_bootstrap()
-            except (EgressClosed, QuotaExhausted):
+            except EgressClosed, QuotaExhausted:
                 pass
             except RdapError as exc:
                 log.info("rdap bootstrap refresh failed (%s)", exc)

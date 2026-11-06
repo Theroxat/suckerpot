@@ -88,7 +88,7 @@ class GeoResolver:
             if path.is_file():
                 try:
                     reader = maxminddb.open_database(str(path))
-                except (OSError, ValueError, maxminddb.InvalidDatabaseError):
+                except OSError, ValueError, maxminddb.InvalidDatabaseError:
                     log.warning("ignoring unreadable GeoIP database %s", name)
                     continue
                 self.files[names[0].split("-")[-1].split(".")[0].lower()] = name
@@ -133,7 +133,7 @@ class GeoResolver:
                     number = rec.get("autonomous_system_number")
                     asn = number if isinstance(number, int) and 0 < number < 2**32 else None
                     org = _clip(rec.get("autonomous_system_organization"), 128)
-        except (ValueError, maxminddb.InvalidDatabaseError):
+        except ValueError, maxminddb.InvalidDatabaseError:
             return EMPTY
         return GeoInfo(country, city, asn, org)
 

@@ -111,7 +111,7 @@ def _verify_and_install(candidate: Path, target: Path) -> None:
         with maxminddb.open_database(str(candidate)) as reader:
             if reader.metadata().node_count <= 0:
                 raise DownloadError("empty database")
-    except (OSError, ValueError, maxminddb.InvalidDatabaseError):
+    except OSError, ValueError, maxminddb.InvalidDatabaseError:
         raise DownloadError("downloaded file is not a valid MMDB") from None
     candidate.chmod(0o644)
     os.replace(candidate, target)  # atomic on the same filesystem
@@ -233,7 +233,7 @@ class GeoManager:
                     expected = (await client.get(sum_url, auth=auth)).text.split()[0]
                     if expected.lower() != digest:
                         raise DownloadError("checksum mismatch")
-                except (httpx.HTTPError, IndexError):
+                except httpx.HTTPError, IndexError:
                     log.info("no checksum available for %s", edition)
                 tar = True
             else:

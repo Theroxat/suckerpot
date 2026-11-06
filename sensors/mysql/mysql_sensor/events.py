@@ -362,7 +362,7 @@ class EventSink:
                 type=type_,
                 data=truncate_data(data, max_string=4096),
             )
-        except (ValidationError, ValueError, TypeError):
+        except ValidationError, ValueError, TypeError:
             self.invalid += 1
             log.warning("event rejected by schema validation (type=%s)", type_)
             return False

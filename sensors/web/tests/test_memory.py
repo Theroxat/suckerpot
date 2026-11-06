@@ -57,7 +57,7 @@ async def _fetch(port: int, data: bytes, wait: float = 3.0) -> tuple[bytes, floa
             if not chunk:
                 break
             out += chunk
-    except (TimeoutError, ConnectionError):
+    except TimeoutError, ConnectionError:
         pass
     writer.close()
     return out, time.monotonic() - start

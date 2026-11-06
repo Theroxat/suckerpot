@@ -433,7 +433,7 @@ class Session:
                 data = await self.reader.read(min(READ_CHUNK, room))
         except TimeoutError:
             raise _Closed("tls_timeout" if due else "timeout") from None
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             raise _Closed("client_reset") from None
         if not data:
             raise _Closed("client_closed")
@@ -456,7 +456,7 @@ class Session:
         except TimeoutError:
             self.abort()  # a peer that does not read must not pin memory
             raise _Closed("write_timeout") from None
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             raise _Closed("client_reset") from None
 
     async def _pay(self, base: bool = True) -> None:

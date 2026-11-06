@@ -380,7 +380,7 @@ def to_feed_entry(r: EntryRow) -> FeedEntry | None:
             expires=r.expires.isoformat(),
             reported=r.reported,
         )
-    except (ValidationError, ValueError):
+    except ValidationError, ValueError:
         return None
 
 
@@ -452,7 +452,7 @@ async def _audit(session: AsyncSession, action: str, detail: dict[str, Any]) -> 
 def _load_secret(path: str) -> minisign.SecretKey | None:
     try:
         return minisign.parse_secret_key(Path(path).read_text(encoding="ascii"))
-    except (OSError, FeedError, ValueError):
+    except OSError, FeedError, ValueError:
         return None
 
 

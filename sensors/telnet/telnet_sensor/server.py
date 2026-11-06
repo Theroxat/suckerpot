@@ -279,7 +279,7 @@ class Connection:
             await asyncio.wait_for(self.writer.drain(), self.cfg.write_timeout)
         except TimeoutError:
             raise _End("write timeout") from None
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             raise _End("connection lost") from None
 
     async def _fill(self, until: float | None = None) -> None:
@@ -299,7 +299,7 @@ class Connection:
             chunk = await asyncio.wait_for(self.reader.read(_READ_SIZE), wait)
         except TimeoutError:
             raise _End(reason) from None
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             raise _End("connection lost") from None
         if not chunk:
             raise _End("closed by client")

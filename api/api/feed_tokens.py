@@ -33,7 +33,7 @@ def hash_token(text: str) -> bytes | None:
         return None
     try:
         raw = base64.urlsafe_b64decode(text + "=")
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         return None
     if len(raw) != 32 or base64.urlsafe_b64encode(raw).decode().rstrip("=") != text:
         return None  # a second spelling of the same bytes is not a token

@@ -573,7 +573,7 @@ def cmd_base64(sh: Shell, io: CmdIO) -> int:
                 src = src[:limit]
             try:
                 raw = base64.b64decode(src, validate=False)
-            except (binascii.Error, ValueError):
+            except binascii.Error, ValueError:
                 io.error("base64: invalid input\n")
                 return 1
             io.write(raw[:room].decode("utf-8", "replace"))

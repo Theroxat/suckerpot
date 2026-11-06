@@ -40,7 +40,7 @@ async def _feed(proc: asyncio.subprocess.Process, data: bytes) -> None:
         stdin.write(data)
         await stdin.drain()
         stdin.close()
-    except (BrokenPipeError, ConnectionResetError):
+    except BrokenPipeError, ConnectionResetError:
         pass  # the child exited early; the exit code explains why
 
 

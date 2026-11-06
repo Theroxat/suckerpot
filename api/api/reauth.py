@@ -49,7 +49,7 @@ async def guard(
     service: auth_mod.AuthService = request.app.state.auth
     try:
         principal = await current_principal(request)
-    except (SQLAlchemyError, OSError):
+    except SQLAlchemyError, OSError:
         return None, error(503, "Service unavailable", "unavailable")
     actor = principal.username if principal else "unknown"
     if not service.settings.disabled and not same_origin(request):
@@ -68,7 +68,7 @@ async def guard(
         ok = await _password_ok(service, request, principal, password)
     except LoginBusy:
         return principal, error(429, "Too many attempts", "rate_limited", {"Retry-After": "2"})
-    except (SQLAlchemyError, OSError):
+    except SQLAlchemyError, OSError:
         return principal, error(503, "Service unavailable", "unavailable")
     if not ok:
         service.record_failure(ip, REAUTH_SCOPE)

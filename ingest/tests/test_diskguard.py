@@ -9,10 +9,10 @@ MB = 1024 * 1024
 
 
 class FakeSession:
-    def __init__(self, owner: "FakeFactory") -> None:
+    def __init__(self, owner: FakeFactory) -> None:
         self.owner = owner
 
-    async def __aenter__(self) -> "FakeSession":
+    async def __aenter__(self) -> FakeSession:
         return self
 
     async def __aexit__(self, *exc: object) -> None:

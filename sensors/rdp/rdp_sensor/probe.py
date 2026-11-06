@@ -164,7 +164,7 @@ def parse_client_hello(record: bytes) -> dict[str, Any] | None:
                         i += 1 + n
                 elif ext_type == 43 and ext:
                     versions = _u16_list(ext[1 : 1 + ext[0]])
-    except (ValueError, IndexError, struct.error):
+    except ValueError, IndexError, struct.error:
         return None
 
     def join(values: list[int]) -> str:

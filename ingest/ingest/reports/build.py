@@ -64,7 +64,7 @@ SENSOR_ADVICE = {
 def zone(name: str) -> ZoneInfo:
     try:
         return ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError):
+    except ZoneInfoNotFoundError, ValueError:
         return ZoneInfo("UTC")
 
 
