@@ -29,7 +29,7 @@ echo "$OUT" | grep -q "Linux srv-web01" && echo "$OUT" | grep -q "command not fo
 for i in 1 2 3 4 5 6 7; do ssh-keygen -q -t ed25519 -N '' -f /tmp/k$i; done
 ssh $O -o IdentitiesOnly=yes -i /tmp/k1 -i /tmp/k2 -i /tmp/k3 -i /tmp/k4 -i /tmp/k5 -i /tmp/k6 -i /tmp/k7 root@sp-ssh-bb true 2>&1 | grep -q "Too many authentication failures" && echo MAXTRIES_OK
 INNER
-docker run --rm --network "$NET" -v /tmp/sp-bb-client.sh:/c.sh:ro alpine:3.20 sh /c.sh
+docker run --rm --network "$NET" -v /tmp/sp-bb-client.sh:/c.sh:ro alpine:3.24 sh /c.sh
 docker run --rm --network "$NET" instrumentisto/nmap -sV -p 2222 "$NAME" | grep -E "^2222|Service Info"
 docker logs "$NAME" 2>&1 | grep -ci "honeypot\|suckerpot\|asyncssh" | sed 's/^/giveaway_lines_in_logs=/'
 rm -f /tmp/sp-bb-client.sh

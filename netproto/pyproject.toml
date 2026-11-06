@@ -2,7 +2,7 @@
 name = "suckerpot-netproto"
 version = "0.1.0"
 description = "SuckerPot network protocol spn/1: wire models, signatures, blinding, proof of work and buckets (pure functions, no I/O)"
-requires-python = ">=3.13"
+requires-python = ">=3.15"
 dependencies = [
     "pydantic>=2.9,<3",
     "cryptography>=44",
@@ -26,7 +26,7 @@ artifacts = ["suckerpot_netproto/data/*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py315"
 extend-exclude = [".venv"]
 
 [tool.ruff.lint]
@@ -37,7 +37,7 @@ select = ["E", "F", "I", "B", "UP", "S", "RUF"]
 
 [tool.mypy]
 strict = true
-python_version = "3.13"
+python_version = "3.15"
 exclude = ["^\\.venv/"]
 plugins = ["pydantic.mypy"]
 

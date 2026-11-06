@@ -38,7 +38,7 @@ services:
   ingest:
     image: "local/${COMPOSE_PROJECT_NAME:?}-ingest:test"
     volumes:
-      - ./e2e-ca-bundle.pem:/opt/venv/lib/python3.13/site-packages/certifi/cacert.pem:ro
+      - ./e2e-ca-bundle.pem:/opt/venv/lib/python3.15/site-packages/certifi/cacert.pem:ro
   api:
     image: "local/${COMPOSE_PROJECT_NAME:?}-api:test"
   collector:

@@ -7,7 +7,7 @@ set -euo pipefail
 NET=sp-docker-bb
 IMG=sp-docker-bb:dev
 docker network create --internal $NET >/dev/null
-docker run -d --rm --name sp-docker-bb-redis --network $NET --network-alias redis redis:7.4-alpine >/dev/null
+docker run -d --rm --name sp-docker-bb-redis --network $NET --network-alias redis redis:8.10-alpine >/dev/null
 docker build -q -f sensors/docker/Dockerfile -t $IMG . >/dev/null
 docker run -d --rm --name sp-docker-bb --network $NET --network-alias sensor \
   -e REDIS_HOST=redis -e EVENTS_STREAM=events:docker \

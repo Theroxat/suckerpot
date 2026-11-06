@@ -437,7 +437,7 @@ The WebSocket checks the `Origin` header. Requests with no `Origin` (non-browser
 
 | Layer | Choice |
 | --- | --- |
-| Sensors | Python 3.13, asyncio, asyncssh (SSH), raw asyncio (Telnet, RDP, ADB, Redis, MySQL, MSSQL, SMB and SIP), hand-written HTTP servers (web, Docker API and Synology DSM, the last one over TLS too) |
+| Sensors | Python 3.15, asyncio, asyncssh (SSH), raw asyncio (Telnet, RDP, ADB, Redis, MySQL, MSSQL, SMB and SIP), hand-written HTTP servers (web, Docker API and Synology DSM, the last one over TLS too) |
 | Ingest and API | FastAPI, SQLAlchemy 2 with asyncpg, Alembic |
 | Queue | Redis 7.4 Streams |
 | Database | PostgreSQL 17 with TimescaleDB 2.22.1 |

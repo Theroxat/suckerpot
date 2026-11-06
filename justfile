@@ -6,7 +6,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 # Recipe arguments reach scripts as "$@" (never pasted into the command line).
 set positional-arguments
 
-uv_image := "ghcr.io/astral-sh/uv:0.8.24-python3.13-bookworm-slim"
+uv_image := "ghcr.io/astral-sh/uv:0.13.7-python3.15-trixie-slim"
 uv_cache := "suckerpot-uv-cache"
 # No default project name on purpose: recipes that touch the live stack need COMPOSE_PROJECT_NAME
 # and SUCKERPOT_VOLUME_PREFIX from .env (see _need-project), so a checkout without .env can never act on the live volumes.

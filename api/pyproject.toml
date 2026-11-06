@@ -2,7 +2,7 @@
 name = "suckerpot-api"
 version = "0.1.0"
 description = "SuckerPot REST API"
-requires-python = ">=3.13"
+requires-python = ">=3.15"
 dependencies = [
     "suckerpot-db",
     "suckerpot-netproto",
@@ -38,7 +38,7 @@ packages = ["api"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py315"
 extend-exclude = [".venv"]
 
 [tool.ruff.lint]
@@ -51,7 +51,7 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 
 [tool.mypy]
 strict = true
-python_version = "3.13"
+python_version = "3.15"
 exclude = ["^\\.venv/"]
 
 [tool.pytest.ini_options]

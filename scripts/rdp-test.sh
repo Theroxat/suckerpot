@@ -9,7 +9,7 @@ RDP_PORT=${RDP_HOST_PORT:-3389}
 API_URL=${API_URL:-http://127.0.0.1:${DASHBOARD_PORT:-8443}}
 
 echo "== RDP connection request against 127.0.0.1:${RDP_PORT}"
-docker run --rm --network host -v "$PWD/scripts:/s:ro" python:3.13.17-slim-bookworm \
+docker run --rm --network host -v "$PWD/scripts:/s:ro" python:3.15.2-slim-trixie \
   python -I /s/rdp-test.py 127.0.0.1 "${RDP_PORT}" ci-user
 
 echo "== waiting for the events to reach the API (max 60 s)"

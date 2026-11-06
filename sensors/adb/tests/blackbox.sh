@@ -14,7 +14,7 @@ cleanup() {
 trap cleanup EXIT; cleanup
 docker build -q -f sensors/adb/Dockerfile -t "$IMG" . >/dev/null
 docker network create "$NET" >/dev/null
-docker run -d --name "$REDIS" --network "$NET" --memory 64m redis:7.4-alpine >/dev/null
+docker run -d --name "$REDIS" --network "$NET" --memory 64m redis:8.10-alpine >/dev/null
 docker run -d --name "$NAME" --network "$NET" --read-only --tmpfs /tmp --cap-drop ALL \
   --security-opt no-new-privileges:true --memory 256m --memory-swap 256m --cpus 0.5 --pids-limit 128 \
   -v "$NAME-data:/data" -e REDIS_HOST="$REDIS" -e EVENTS_STREAM=events:adb "$IMG" >/dev/null
@@ -65,7 +65,7 @@ adb -s sp-adb-bb:5555 reboot
 sleep 1
 adb disconnect >/dev/null 2>&1
 INNER
-docker run --rm --network "$NET" -v /tmp/sp-adb-client.sh:/c.sh:ro alpine:3.20 sh /c.sh
+docker run --rm --network "$NET" -v /tmp/sp-adb-client.sh:/c.sh:ro alpine:3.24 sh /c.sh
 echo "--- nmap -sV"
 docker run --rm --network "$NET" instrumentisto/nmap -sV -p 5555 "$NAME" | grep -E "^5555|Service Info|adb|CNXN" || true
 docker run --rm --network "$NET" instrumentisto/nmap -sV --version-all -p 5555 "$NAME" | grep -E "^5555|SF|Service" | head -5 || true
