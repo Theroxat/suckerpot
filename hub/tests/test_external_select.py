@@ -146,7 +146,12 @@ def ext_settings(feed_dir: Path, key_file: Path, **over: Any) -> Any:
 
 
 async def seed(
-    env: Env, values: Iterable[str], *, last: date = TODAY, ok: bool = True, ports: tuple[int, ...] = (443,)
+    env: Env,
+    values: Iterable[str],
+    *,
+    last: date = TODAY,
+    ok: bool = True,
+    ports: tuple[int, ...] = (443,),
 ) -> None:
     async with env.worker() as ses:
         for v in values:

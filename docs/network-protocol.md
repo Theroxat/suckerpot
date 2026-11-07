@@ -446,3 +446,12 @@ Parsers are size capped (default 16 MiB per file, 256 KiB for the index), refuse
 ### Golden vectors
 
 `netproto/tests/feed_vectors/` holds `keys.json` (a fixed test key, never used anywhere else) and `golden/`: every file of three lists (`outbound`, `inbound`, `outbound-domains`), `index.json` with its signature, and signatures of three files. Ed25519 is deterministic, so another implementation must reproduce every byte. To regenerate, run `python -m tests.test_feeds_common` in `netproto/` and review the diff; only do it when the spec changes.
+
+## External tier (M36, additive, outside `spn/1`)
+
+`https://<feeds host>/v1/external/` holds a separate tier built from a public CC0 list (today abuse.ch Feodo Tracker). Nothing in `spn/1` changes: no endpoint, no field, `protocols` stays `["spn/1"]`.
+
+- `index.json` has `schema: "selfhostr-external/1"`, the fields of `selfhostr-feeds/1`, `lists` (one list, id `external-outbound`, formats `txt`, `txt-v4`, `txt-v6`, `nft`, `ipset`, `rsc`, `csv`, `json`) and `sources: [{id, name, licence, url}]`. Its serial is independent of the main index. It is signed with the feed key; the signed file name is `index.json` and the schema keeps the two indexes from replacing each other.
+- `external-outbound.json` has `schema: "selfhostr-external-feed/1"`, `list`, `direction`, `serial`, `generated_at`, `valid_until`, `licence`, `notice`, `sources` and `entries`. An entry: `{"value": "203.0.113.45", "family": 4, "list": "external-outbound", "categories": ["c2"], "sources": ["feodotracker"], "families": [], "ports": [443], "first_seen": "2026-11-02", "last_seen": "2026-11-06", "expires": "2026-11-13"}`.
+- `suckerpot_netproto.feeds.external` has the models, renderers, parsers and `verify_external_index` / `verify_external_file`. `IndexFile` and `LIST_IDS` do not change: a node that reads the main index still rejects an `external-*` list in it.
+- Golden vectors are in `netproto/tests/feed_vectors/external/`; regenerate with `python -m tests.test_feeds_external` in `netproto/` and review the diff.

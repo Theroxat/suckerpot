@@ -387,6 +387,16 @@ The script needs `curl`, `minisign`, `sha256sum`, `mktemp`, `date`, `sort`, `gre
 
 The index has a `next_key_id` field, reserved for a future key change. It is `null` now. If it ever holds a value, read the project's notice before you change keys. Do not accept a new key from the feed itself.
 
+## The external tier (not confirmed by the network)
+
+A second, separate set of files lives under `https://<feeds host>/v1/external/`: the abuse.ch **Feodo Tracker** recommended botnet C2 address list (CC0 1.0), filtered with the same exclusions and signed with the same feed key. It is a copy of public data, **not confirmed by the SuckerPot network**, and it does not depend on what members see: the same bytes are served with zero members. It is small (tens to a few hundred addresses). Its worth is precision and not having to ask abuse.ch yourself.
+
+- `index.json` there has its own schema (`selfhostr-external/1`), its own serial and a `sources` list. Older software never reads it, and `/v1/index.json` and the five lists are unchanged.
+- One list, `external-outbound`, in `txt`, `txt-v4`, `txt-v6`, `nft` (table `selfhostr_ext`), `ipset` (`external_outbound_v4`, `external_outbound_v6`), `rsc`, `csv` and `json`. The text and script headers and the JSON `notice` name the source and say "Not confirmed by the SuckerPot network".
+- An entry has `value`, `family`, `list`, `categories` (`c2`), `sources`, `families`, `ports`, `first_seen`, `last_seen` and `expires`. The dates are the days the hub saw the address in the source. An address leaves when the source drops it, and the list expires 7 days after the last successful fetch.
+- Verify it exactly like the main feed: check the signed serial, `valid_until` and each file's sha256 against that `index.json`.
+- URLhaus, ThreatFox and MalwareBazaar data is never republished or mirrored.
+
 ## Licence: CC0 1.0
 
 The lists and the files are released under **CC0 1.0 Universal**, the public-domain dedication. You may copy, change, mix and redistribute them, for any purpose, with no permission and no attribution. The full text is at <https://creativecommons.org/publicdomain/zero/1.0/legalcode>.

@@ -546,6 +546,29 @@ Add these to your checks. A held run or a failed run needs a look.
 
 Feed tests run in `just test`. The end-to-end feed test runs in `just hub-integration`, including a minisign check of the published files.
 
+## External tier (M36)
+
+The worker can republish a public CC0 list, today the abuse.ch **Feodo Tracker** recommended botnet C2 address blocklist, as a separate signed tier under `https://<HUB_FEEDS_DOMAIN>/v1/external/`. It gives a new member something useful before the network has enough nodes to confirm anything. Design: [M36](../docs/design/m36.md).
+
+The tier is a copy of public data, filtered with the same exclusions as the feeds (reserved space, never-list, allow-list, delisting decisions on `outbound`, CDN and Tor ranges). It is **not confirmed by the network**: it is never intersected with member sightings, never enters targets, consensus, reports, abuse.ch submissions or the five lists, and the main `/v1/index.json` stays byte-identical whether it is on or off. Every file says so and names the source.
+
+It is **off by default**.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `HUB_EXTERNAL_FEED_MODE` | `off` | `off`: nothing is fetched or published. `publish`: fetch the sources, then render and sign `/v1/external/`. Needs `HUB_FEED_MODE` other than `off` |
+| `HUB_EXTERNAL_SOURCES` | `feodotracker` | Sources of `hub/hub/data/external.yaml` to publish. Only `publish: true` entries with `licence: CC0-1.0` load. `urlhaus`, `threatfox` and `malwarebazaar` are refused at start, in the loader and by a test: they have no licence statement and their terms forbid copying |
+| `HUB_EXTERNAL_INTERVAL_MIN` | `60` | Fetch period in minutes (never below 30) |
+
+How it works:
+
+- The fixed URL is in `external.yaml` (`https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.json`). It is fetched only through the hub's egress proxy, like every other hub outbound call, with no redirect, a size cap, a generic client identity and a shrink check (a list that loses over half its entries keeps the last copy). Nothing a node or a visitor sends can trigger a fetch.
+- Stored in `external_entries` / `external_feed_state` (migration `h0011`). An address the source drops leaves the published list within one cycle. If fetches keep failing, entries expire 7 days after the last time the hub saw them. Nothing is published until one fetch has succeeded.
+- Files: `external-outbound.{txt,v4.txt,v6.txt,nft,ipset,rsc,csv,json}`, `index.json` (schema `selfhostr-external/1`, own serial, signed with the feed key), `readme.txt`, each with `.minisig` and `.gz`. The nft table is `selfhostr_ext` and the ipset names are `external_outbound_v4` and `external_outbound_v6`, so they never collide with the network lists.
+- The same change breaker as the lists applies after the first publication. `docker compose run --rm hub-admin external status` shows the last run and per-source fetch state (no addresses); `external release` approves a held change.
+
+To turn it on: `HUB_FEED_MODE` set, `HUB_EXTERNAL_FEED_MODE=publish` in `hub/.env`, then `docker compose up -d hub-worker`. The directory appears after the first successful fetch. To unpublish, switch it off and delete the `external/` folder of the feeds volume. Not implemented: hub-internal corroboration from URLhaus and ThreatFox exports (design D4).
+
 ## Public network observatory
 
 The worker can publish `network.json` on the feed site: anonymised figures about the network for the project site (node counts, the bootstrap state, confirmations, reports, takedowns and the attack traffic the network sees). The design, the schema and every anonymity rule are in [M34](../docs/design/m34.md); the public description is in [The SuckerPot network](../docs/network.md#public-network-figures).
