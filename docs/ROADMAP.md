@@ -448,4 +448,4 @@ Owner request (2026-11-07): the project site shows public, anonymised figures ab
 - [x] Tests: every anonymity rule, a key walker over the whole document, publication with feed mode off, freeze-once, end-to-end through the real Caddyfile.
 - [x] Docs: network guide, feeds guide, hub operator guide, changelog.
 - [ ] Observatory page on the project site.
-- [ ] Security review.
+- [x] Security review (PASS after one round of fixes: eligible nodes only, outcome precision tied to the consensus thresholds, weekly bootstrap, coarse low-volume fields, CVE tags, complete weeks, no UPDATE grant; then weekly rounded totals and a settled weekly count).

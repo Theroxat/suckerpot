@@ -163,6 +163,7 @@ class ObservatoryInput:
     days: list[DayRow] = field(default_factory=list)
     items: list[ItemRow] = field(default_factory=list)
     outcomes: list[OutcomeDay] = field(default_factory=list)
+    # Sent over ``totals_span`` (30 days, or the last complete weeks in rounded mode).
     reports_sent_30d: int = 0
     abusech_sent_30d: int = 0
     takedown_gaps: list[int] = field(default_factory=list)
@@ -325,6 +326,21 @@ def build_window(
     }
 
 
+ROUNDED_WEEKS = 4
+# The weekly bootstrap figures are counted from this weekday on (Thursday): the batch of the
+# Sunday before can arrive until Wednesday (MAX_BATCH_AGE_DAYS), so the week is settled then.
+WEEK_SETTLED_WEEKDAY = buckets.MAX_BATCH_AGE_DAYS
+
+
+def totals_span(out_last: date, mode: str) -> tuple[date, date]:
+    """Days the outcome totals cover: the last 30 days (exact), or the last ``ROUNDED_WEEKS``
+    complete ISO weeks (rounded), so a rounding edge never moves with day resolution."""
+    if mode != ROUNDED:
+        return out_last - timedelta(days=29), out_last
+    end = out_last if out_last.weekday() == 6 else out_last - timedelta(days=out_last.weekday() + 1)
+    return end - timedelta(days=7 * ROUNDED_WEEKS - 1), end
+
+
 def build_outcomes(inp: ObservatoryInput) -> dict[str, Any]:
     """Outcomes over 90 days. Exact daily figures only with production consensus thresholds."""
     out_last = inp.today - timedelta(days=OUTCOME_LAG_DAYS)
@@ -332,11 +348,12 @@ def build_outcomes(inp: ObservatoryInput) -> dict[str, Any]:
     by_day = {o.day: o for o in inp.outcomes}
     calendar = [out_first + timedelta(days=i) for i in range(SERIES_DAYS)]
     days = [by_day.get(d, OutcomeDay(d)) for d in calendar]
-    last30 = days[-30:]
+    t_first, t_last = totals_span(out_last, inp.outcome_mode)
+    covered = [o for o in days if t_first <= o.day <= t_last]
     totals = {
-        "confirmed_30d": sum(o.confirmed for o in last30),
-        "reported_30d": sum(o.reported for o in last30),
-        "taken_down_30d": sum(o.taken_down for o in last30),
+        "confirmed_30d": sum(o.confirmed for o in covered),
+        "reported_30d": sum(o.reported for o in covered),
+        "taken_down_30d": sum(o.taken_down for o in covered),
         "reports_sent_30d": inp.reports_sent_30d,
         "abusech_sent_30d": inp.abusech_sent_30d,
     }
@@ -344,6 +361,8 @@ def build_outcomes(inp: ObservatoryInput) -> dict[str, Any]:
         "first_day": out_first.isoformat(),
         "last_day": out_last.isoformat(),
         "precision": inp.outcome_mode,
+        "totals_first_day": t_first.isoformat(),
+        "totals_last_day": t_last.isoformat(),
     }
     if inp.outcome_mode == EXACT:
         doc.update(totals)
@@ -381,7 +400,15 @@ def build_outcomes(inp: ObservatoryInput) -> dict[str, Any]:
         doc.update({"median_days_to_takedown": None, "daily": None, "weekly": weekly})
         return doc
     doc.update({k: None for k in totals})
-    doc.update({"median_days_to_takedown": None, "daily": None, "weekly": None})
+    doc.update(
+        {
+            "totals_first_day": None,
+            "totals_last_day": None,
+            "median_days_to_takedown": None,
+            "daily": None,
+            "weekly": None,
+        }
+    )
     return doc
 
 
@@ -540,17 +567,31 @@ async def weekly_nodes(session: AsyncSession, s: Settings, today: date) -> tuple
     """(week, eligible, active) counted once per ISO week from batches before that week.
 
     Stored in ``worker_state`` so that a node skipping a day mid-week changes nothing published.
+    A week is counted only from its Thursday on, when the batches of the Sunday before can no
+    longer arrive; until then the previous count stays (or, with none yet, the previous week is
+    counted now). Batch markers are kept 14 days, so the oldest days of the look-back may be
+    gone by then: that can only make the count smaller.
     """
     week = _week_start(today)
     query = text("SELECT value FROM worker_state WHERE key = :k")
     row = (await session.execute(query, {"k": WEEK_KEY})).first()
+    cached: dict[str, Any] | None = None
     if row is not None:
         try:
-            cached = json.loads(row[0])
-            if cached.get("week") == week.isoformat():
-                return week, int(cached["eligible"]), int(cached["active"])
+            loaded = json.loads(row[0])
+            cached = {
+                "week": date.fromisoformat(loaded["week"]),
+                "eligible": int(loaded["eligible"]),
+                "active": int(loaded["active"]),
+            }
         except ValueError, KeyError, TypeError:
-            pass
+            cached = None
+    if cached is not None and cached["week"] == week:
+        return week, cached["eligible"], cached["active"]
+    if today.weekday() < WEEK_SETTLED_WEEKDAY:
+        if cached is not None:
+            return cached["week"], cached["eligible"], cached["active"]
+        week -= timedelta(days=7)
     eligible = len(await consensus.eligible_nodes(session, s, week))
     active = int(
         (
@@ -633,8 +674,8 @@ async def load(session: AsyncSession, s: Settings, today: date) -> ObservatoryIn
         ):
             tallies[r.day][column] = int(r.n)
     inp.outcomes = [OutcomeDay(d, **t) for d, t in sorted(tallies.items())]
-    w_first = out_last - timedelta(days=29)
-    window = {"a": _midnight(w_first), "b": _midnight(out_last + timedelta(days=1))}
+    w_first, w_last = totals_span(out_last, inp.outcome_mode)
+    window = {"a": _midnight(w_first), "b": _midnight(w_last + timedelta(days=1))}
     inp.reports_sent_30d = int(
         (
             await session.execute(
@@ -664,7 +705,7 @@ async def load(session: AsyncSession, s: Settings, today: date) -> ObservatoryIn
                 "SELECT taken_down_day - reported_day FROM targets "
                 "WHERE taken_down_day BETWEEN :a AND :b AND reported_day IS NOT NULL"
             ),
-            {"a": w_first, "b": out_last},
+            {"a": w_first, "b": w_last},
         )
     ]
     return inp

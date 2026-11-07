@@ -132,8 +132,8 @@ The hub can publish one more public file, `network.json`, next to the lists on t
 | Section | What it says |
 | --- | --- |
 | Nodes | Members, nodes that sent a batch last week, and countries shown by at least three members |
-| Bootstrap | How many eligible nodes consensus needs (`HUB_MIN_NODES`) and how many are still missing, counted once a week |
-| Outcomes | Targets confirmed, reported and taken down per day over 90 days, reports and abuse.ch submissions sent in 30 days, the median time to takedown. Exact only when the hub runs the production consensus thresholds; otherwise weekly and rounded to tens, or nothing at all when a confirmation could rest on fewer than three nodes |
+| Bootstrap | How many eligible nodes consensus needs (`HUB_MIN_NODES`) and how many are still missing, counted once a week once that week's late batches are in |
+| Outcomes | Targets confirmed, reported and taken down per day over 90 days, reports and abuse.ch submissions sent in 30 days, the median time to takedown. Exact only when the hub runs the production consensus thresholds; otherwise weekly and rounded to tens (totals over the last four complete weeks), or nothing at all when a confirmation could rest on fewer than three nodes |
 | Activity | Attacking addresses per day and how many logged in, ran commands, downloaded or sent exploits; download links, files and command servers seen; the most targeted services, the most frequent tags and malware families over 30 days |
 
 How the file protects members:

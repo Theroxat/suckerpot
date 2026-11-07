@@ -441,9 +441,12 @@ def test_rounded_outcomes_have_no_daily_series_and_only_tens() -> None:
     out = obs.render(inp)["outcomes"]
     assert out["precision"] == "rounded" and out["daily"] is None
     assert out["median_days_to_takedown"] is None
-    assert (
-        out["confirmed_30d"] == 60 and out["reported_30d"] == 20 and out["reports_sent_30d"] == 10
-    )
+    # Totals cover the last 4 complete ISO weeks (OUT_LAST is a Thursday): 16 days of the 20.
+    end = OUT_LAST - timedelta(days=OUT_LAST.weekday() + 1)
+    assert out["totals_last_day"] == end.isoformat()
+    assert out["totals_first_day"] == (end - timedelta(days=27)).isoformat()
+    assert out["confirmed_30d"] == 50 and out["reported_30d"] == 20
+    assert out["reports_sent_30d"] == 10
     assert out["weekly"] and all(
         date.fromisoformat(w["start"]).weekday() == 0 for w in out["weekly"]
     )
@@ -453,6 +456,22 @@ def test_rounded_outcomes_have_no_daily_series_and_only_tens() -> None:
     for _, _, value in walk(out):
         if isinstance(value, int) and not isinstance(value, bool):
             assert value % 10 == 0
+
+
+def test_rounded_totals_do_not_move_within_a_week() -> None:
+    """Sliding sums would cross a rounding edge with day resolution; complete weeks do not."""
+    base = date(2026, 11, 9)  # a Monday
+    outcomes = [OutcomeDay(base - timedelta(days=i), confirmed=1) for i in range(90)]
+    seen = set()
+    # The span moves once a week, on Tuesday, when Sunday becomes a complete outcome day.
+    for shift in range(1, 8):
+        today = base + timedelta(days=shift)
+        doc = obs.render(scenario(1, today=today, outcomes=outcomes, outcome_mode="rounded"))
+        out = doc["outcomes"]
+        seen.add((out["totals_first_day"], out["totals_last_day"], out["confirmed_30d"]))
+    assert len(seen) == 1
+    assert obs.totals_span(date(2026, 11, 8), "rounded")[1] == date(2026, 11, 8)
+    assert obs.totals_span(date(2026, 11, 5), "exact") == (date(2026, 10, 7), date(2026, 11, 5))
 
 
 def test_suppressed_outcomes_publish_no_number() -> None:
@@ -706,8 +725,22 @@ async def test_bootstrap_is_counted_once_per_week(env: Env) -> None:
         await s.execute(text("DELETE FROM batches WHERE node_id = :n"), {"n": ids[0]})
         await s.commit()
         assert await obs.weekly_nodes(s, env.settings, TODAY) == (week, 3, 3)
-        nxt = await obs.weekly_nodes(s, env.settings, TODAY + timedelta(days=1))
-    assert nxt[0] == week + timedelta(days=7)
+        # Monday to Wednesday: late Sunday batches may still arrive, the last count stays.
+        for d in (1, 2, 3):
+            got = await obs.weekly_nodes(s, env.settings, TODAY + timedelta(days=d))
+            assert got == (week, 3, 3)
+        # From Thursday on, the new week is counted.
+        thursday = await obs.weekly_nodes(s, env.settings, TODAY + timedelta(days=4))
+    assert thursday[0] == week + timedelta(days=7)
+
+
+@pytest.mark.integration
+async def test_without_a_count_monday_counts_the_previous_week(env: Env) -> None:
+    monday = TODAY + timedelta(days=1)
+    prev = monday - timedelta(days=7)
+    await add_nodes(env.worker, 2, today=prev)
+    async with env.worker() as s:
+        assert await obs.weekly_nodes(s, env.settings, monday) == (prev, 2, 2)
 
 
 @pytest.mark.integration
