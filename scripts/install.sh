@@ -624,7 +624,7 @@ if [ "$fresh" = 1 ]; then
       # shellcheck source=scripts/lib/firewall.sh
       . scripts/lib/firewall.sh
       read -r fw_port fw_src <<< "$(fw_admin_port)"
-      if [ "$fw_src" != default ]; then admin_ssh_port=$fw_port; fi
+      if [ "$fw_src" != default ] && [ "$fw_port" != 22 ]; then admin_ssh_port=$fw_port; fi
     fi
     if [ "$noask" = 0 ]; then
       ask admin_ssh_port "Port of this machine's own admin SSH (so no sensor can take it; empty = none)" "$admin_ssh_port"
