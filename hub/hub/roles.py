@@ -77,7 +77,8 @@ WORKER_TABLES = (
     "takedown_votes, reports, recipient_log, node_stats_weekly, network_daily, network_summary, "
     "never_list, hub_audit, worker_state, payload_links, target_hosts, feed_entries, feed_runs, "
     "feed_daily, feed_allow, feed_auto_ranges, delist_challenges, delist_requests, "
-    "abusech_submissions, node_roles, verify_tasks, verify_attestations, verify_daily"
+    "abusech_submissions, node_roles, verify_tasks, verify_attestations, verify_daily, "
+    "observatory_daily"
 )
 
 
