@@ -36,7 +36,7 @@ The installer creates the secrets, starts the stack and prints the address of th
 
 Before you expose anything, follow the [go-live checklist](https://suckerpot.selfhostr.io/docs/deployment/) and apply [scripts/host/firewall.nft](scripts/host/firewall.nft). Keep the dashboard port filtered upstream. Back up with `just backup`.
 
-Only want to help the SuckerPot network? `./scripts/install.sh --participant` installs sensors without a dashboard. See [Join the network](https://suckerpot.selfhostr.io/docs/participate/).
+Only want to help the SuckerPot network? `./scripts/install.sh --participant` installs sensors without a dashboard. See [Join the network](https://suckerpot.selfhostr.io/docs/participate/). No spare machine? A 1 GiB VPS works with `--lite`: [VPS guide](https://suckerpot.selfhostr.io/docs/vps/).
 
 ## Features
 
