@@ -1210,3 +1210,66 @@ def test_participant_summary_recommends_forwards_over_a_dmz(psb: Sandbox) -> Non
     assert "does not filter internet traffic to this" in out
     assert "Use port forwards, not your router's DMZ" in out
     assert "admin SSH faces the internet" in out
+
+
+# --- M35: --lite -----------------------------------------------------------------------------
+
+
+def _lite_run(sb: Sandbox, *extra: str) -> tuple[int, str]:
+    proc = sb.run("scripts/install.sh", "--participant", "--yes", "--version", "v0.8.0", *extra)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def _with_overlays(sb: Sandbox, mem_kb: int) -> None:
+    (sb.root / "docker-compose.lowmem.yml").write_text("services: {}\n")
+    (sb.root / "docker-compose.lite.yml").write_text("services: {}\n")
+    (sb.shim / "meminfo").write_text(f"MemTotal:        {mem_kb} kB\n")
+
+
+def test_participant_lite_stacks_the_overlays_and_picks_four_sensors(
+    psb: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    _with_overlays(psb, 990000)
+    rc, out = _lite_run(psb, "--lite")
+    assert rc == 0, out
+    env = parse_env(psb.root / ".env")
+    assert env["COMPOSE_FILE"] == (
+        "docker-compose.yml:docker-compose.lowmem.yml:docker-compose.lite.yml"
+        ":docker-compose.participant.yml"
+    )
+    names = ("ssh", "telnet", "web", "redis", "docker", "adb", "rdp")
+    on = {s for s in names if env[f"SENSOR_{s.upper()}"] == "1"}
+    assert on == {"ssh", "telnet", "web", "redis"}
+
+
+def test_participant_lite_keeps_an_explicit_sensor_list(
+    psb: Sandbox, parse_env: Callable[[Path], dict[str, str]]
+) -> None:
+    _with_overlays(psb, 990000)
+    rc, out = _lite_run(psb, "--lite", "--sensors", "ssh,adb")
+    assert rc == 0, out
+    env = parse_env(psb.root / ".env")
+    assert env["SENSOR_ADB"] == "1" and env["SENSOR_WEB"] == "0"
+
+
+def test_lite_refuses_lowmem_off(psb: Sandbox) -> None:
+    _with_overlays(psb, 990000)
+    rc, out = _lite_run(psb, "--lite", "--lowmem", "off")
+    assert rc != 0 and "--lite" in out
+
+
+def test_lite_refuses_less_than_one_gib(psb: Sandbox) -> None:
+    _with_overlays(psb, 500000)
+    rc, out = _lite_run(psb, "--lite")
+    assert rc != 0 and "1 GiB" in out
+
+
+def test_lite_is_a_participant_flag(sandbox: Sandbox) -> None:
+    proc = sandbox.run("scripts/install.sh", "--yes", "--lite", "--dry-run", "--env-out", "x")
+    assert proc.returncode != 0 and "--participant" in proc.stdout + proc.stderr
+
+
+def test_default_participant_install_still_needs_two_gib(psb: Sandbox) -> None:
+    _with_overlays(psb, 990000)
+    rc, out = _lite_run(psb, "--sensors", "ssh,web")
+    assert rc != 0 and "2 GiB" in out
