@@ -1,4 +1,4 @@
-"""The lite overlay (M35) may only lower the limits of db, redis and ingest, on top of lowmem."""
+"""The lite overlay (M35) may only lower the limits of db and redis, on top of lowmem."""
 
 import re
 from pathlib import Path
@@ -13,7 +13,7 @@ LITE = ROOT / "docker-compose.lite.yml"
 PARTICIPANT = ROOT / "docker-compose.participant.yml"
 
 RESOURCE_KEYS = {"mem_limit", "memswap_limit", "shm_size", "command", "environment"}
-SERVICES = {"db", "redis", "ingest"}
+SERVICES = {"db", "redis"}
 
 
 def _bytes(value: str) -> int:
@@ -22,7 +22,7 @@ def _bytes(value: str) -> int:
     return int(match.group(1)) * (1024**2 if match.group(2) == "m" else 1024**3)
 
 
-def test_overlay_only_sets_resource_keys_of_three_services() -> None:
+def test_overlay_only_sets_resource_keys_of_two_services() -> None:
     overlay = load_compose([LITE])
     assert set(overlay) == {"services"}
     assert set(overlay["services"]) == SERVICES
@@ -56,6 +56,11 @@ def test_lite_changes_nothing_but_resources() -> None:
     for name, svc in low["services"].items():
         for key in set(svc) - RESOURCE_KEYS:
             assert lite["services"][name].get(key) == svc[key], (name, key)
+
+
+def test_ingest_keeps_the_lowmem_limit() -> None:
+    low = load_compose([BASE, LOWMEM])["services"]["ingest"]["mem_limit"]
+    assert load_compose([BASE, LOWMEM, LITE])["services"]["ingest"]["mem_limit"] == low
 
 
 def test_redis_ceiling_stays_under_its_container_limit() -> None:

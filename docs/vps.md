@@ -34,7 +34,7 @@ Any provider works. Choose one that allows Linux with a public IPv4 address and 
 
 `--lite` is for fresh participant installs only. It does two things:
 
-1. **Lower memory limits.** It adds `docker-compose.lite.yml` on top of the low-memory overlay. The database, Redis and ingest get smaller limits and smaller buffers. Sensor limits stay at the low-memory values (128 MiB each).
+1. **Lower memory limits.** It adds `docker-compose.lite.yml` on top of the low-memory overlay. The database and Redis get smaller limits and smaller buffers. Ingest and the sensors keep the low-memory values (320 MiB and 128 MiB each): ingest also runs the status and update commands inside its own limit, so it is not squeezed.
 2. **Four sensors by default**: SSH, Telnet, web and Redis. Pass `--sensors LIST` to choose others.
 
 The installer writes the overlays to `COMPOSE_FILE` in `.env`, so every later start and every automatic update keeps them. Nothing about security changes: the same read-only containers, dropped capabilities, `no-new-privileges`, process limits, internal networks and hub allow-list apply. A guardrail test fails if the lite overlay ever sets anything other than memory figures.
@@ -47,9 +47,11 @@ Rendered with `docker compose config`, direct mode (no VPN), counting every cont
 | --- | --- | --- |
 | Participant, default | 6 (ssh, telnet, web, redis, docker, adb) | 3,248 MiB |
 | Participant, low-memory overlay (small machines) | the same 6 | 1,936 MiB |
-| Participant, `--lite` | 4 (ssh, telnet, web, redis) | 1,360 MiB |
+| Participant, `--lite` | 4 (ssh, telnet, web, redis) | 1,424 MiB |
 
-A limit is a ceiling, not what the containers use. Real use is lower, but a burst of attacks can push each container towards its limit, which is why swap matters on a 1 GiB machine. Under pressure the sensors refuse new connections before they run out of memory, so you capture fewer sessions rather than crash.
+A limit is a ceiling, not what the containers use. Real use is lower, but a burst of attacks can push each container towards its limit. Under pressure the sensors refuse new connections before they run out of memory, so you capture fewer sessions rather than crash.
+
+Know the limits of a 1 GiB machine. Containers never use swap (each memory limit equals its swap limit), so host swap only gives the whole machine some headroom. If the machine as a whole runs out of memory, the kernel may kill and restart a container, the database included. Your data stays consistent: sensors drop events when Redis is unavailable instead of buffering them, and ingest confirms an event only after it is saved. What can suffer is availability: a few minutes of missing events during a restart. A 2 GiB machine avoids this.
 
 ### Why these four sensors
 
@@ -63,7 +65,7 @@ Docker (2375) and ADB (5555) are also useful. They are not in the lite set becau
 
 ### Add swap
 
-A 1 GiB machine needs swap. Check what you have:
+A 1 GiB machine should have swap, as headroom for the host (the installer warns below 512 MiB and asks before it continues). Check what you have:
 
 ```bash
 free -m
@@ -87,7 +89,7 @@ The SSH sensor listens on port 22, because that is where attackers look. Your ow
 
 The steps below keep your current session open the whole time. Never close it until the last step works.
 
-Pick a free port above 1024 for your admin SSH. This page uses `52022` as an example; choose your own, and do not reuse a sensor port (22, 23, 80, 443, 6379, 2375, 3306, 3389, 5555).
+Pick a free port above 1024 for your admin SSH. This page uses `52022` as an example; choose your own, and do not reuse a sensor port. The sensors use 22, 23, 80, 443, 445, 1433, 2375, 3306, 3389, 5000, 5001, 5060, 5555 and 6379; pick a number outside that list.
 
 ### 1. Allow the new port first
 
@@ -130,7 +132,7 @@ The empty `ListenStream=` line clears the default port 22. Both address lines ar
 sudo ss -ltnp | grep -E ':(22|52022)\b'
 ```
 
-You must see `52022` and no listener on port 22. Your open session stays connected, because `sshd` keeps running for existing connections.
+You must see `52022` and no listener on port 22. If `ss` still shows port 22, restart the service too: `sudo systemctl restart ssh.service`. Your open session stays connected, because `sshd` keeps running for existing connections.
 
 ### 3b. Debian, and older Ubuntu
 
@@ -156,9 +158,21 @@ Leave the first session open. In a new terminal on your computer:
 ssh -p 52022 your-user@203.0.113.10
 ```
 
-(Replace the address with your VPS address.) Only when this login works, close the old session. If it fails, fix it from the session that is still open: undo the drop-in (delete the file, run `daemon-reload` and restart as above) and try again.
+(Replace the address with your VPS address.) Do not close the old session yet: it stays open until the end of step 5. If this login fails, fix it from the session that is still open: undo the drop-in (delete the file, run `daemon-reload` and restart as above) and try again.
 
-### 5. Free port 22 for the sensor
+### 5. Turn off password logins
+
+Attackers will try passwords on your admin port as well. Allow keys only. First make sure your key login works in the second terminal (step 4), then:
+
+```bash
+echo 'PasswordAuthentication no' | sudo tee /etc/ssh/sshd_config.d/20-keys-only.conf
+sudo sshd -t
+sudo systemctl reload ssh
+```
+
+On Ubuntu with `ssh.socket`, `reload ssh` still works (use `ssh.service` if your system names it so). Some images already set `PasswordAuthentication yes` in a file that sorts earlier, which wins: check with `sudo sshd -T | grep -i passwordauthentication`, which must print `no`. Then open a third terminal and log in with your key, still before you close the old session. If it fails, undo the file from the open session.
+
+### 6. Free port 22 for the sensor
 
 If a provider rule limited port 22 to your own address, remove it, and remove the `ufw` rule for 22 if you added one. Port 22 is about to belong to the SSH sensor and must be open to everyone. Make sure nothing still listens on it: `sudo ss -ltnp | grep ':22 '` must print nothing.
 
@@ -170,7 +184,7 @@ cd suckerpot
 ./scripts/install.sh --participant --lite
 ```
 
-The installer finds your admin SSH port and the host firewall protects it. It never edits your `sshd` configuration. Say yes to the host firewall when it asks. More about the installer: [Join the network](participate.md).
+The installer finds your admin SSH port from what `sshd` listens on (here 52022) and records it as `ADMIN_SSH_PORT`, so the host firewall protects it. You can check it with `grep ADMIN_SSH_PORT .env`. It never edits your `sshd` configuration. Say yes to the host firewall when it asks. More about the installer: [Join the network](participate.md).
 
 ## Open the ports in the provider panel
 

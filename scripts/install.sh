@@ -196,6 +196,9 @@ if [ -e .env ]; then
     if [ -f scripts/status.sh ]; then bash scripts/status.sh || true; fi
     exit 0
   elif [ "$cur_stack" = participant ] && [ "$stack" = full ]; then
+    case ":$(env_get COMPOSE_FILE docker-compose.yml):" in
+      *:docker-compose.lite.yml:*) die "a lite node cannot switch to full mode: its memory limits and database settings are too small for the dashboard. Reinstall without --lite." ;;
+    esac
     switching=1
   else
     die "switching a full install to participant mode would remove the dashboard; not supported"
@@ -302,15 +305,29 @@ else
   meminfo=${SELFHOSTR_MEMINFO:-/proc/meminfo}
   mem_kb=$(awk '/^MemTotal:/ {print $2}' "$meminfo" 2> /dev/null || true)
   [[ ${mem_kb:-} =~ ^[0-9]+$ ]] || die "cannot read the memory size from $meminfo"
-  if [ "$fresh" = 1 ]; then
+  if [ "$fresh" = 1 ] || [ "$switching" = 1 ]; then
     if [ "$lite" = 1 ]; then
       # A "1 GiB" machine reports a little less than 1 GiB to the kernel.
       if [ "$mem_kb" -lt $((1024 * 1024 - 131072)) ]; then
         die "less than 1 GiB of memory: even --lite needs a machine with 1 GiB (and some swap)"
       fi
+      # Containers never swap (memswap_limit equals mem_limit). Host swap only gives the host room
+      # when a burst of attacks pushes the whole machine, so the global OOM killer is less likely
+      # to restart the database.
+      swap_kb=$(awk '/^SwapTotal:/ {print $2}' "$meminfo" 2> /dev/null || true)
+      [[ ${swap_kb:-} =~ ^[0-9]+$ ]] || swap_kb=0
+      if [ "$swap_kb" -lt $((512 * 1024)) ]; then
+        warn "this machine has less than 512 MiB of swap. On 1 GiB, a burst of attacks can make the kernel kill a container (the database included). Add 1 GiB of swap first (docs/vps.md)."
+        if [ "$assume_yes" = 0 ]; then
+          ask a "Continue without enough swap? (yes/no)" no
+          case $a in y | yes) ;; *) die "add swap, then run the installer again" ;; esac
+        fi
+      fi
     elif [ "$mem_kb" -lt $((2 * 1024 * 1024 - 65536)) ]; then
       die "less than 2 GiB of memory: SuckerPot needs at least 2 GiB (with --lowmem on), or 1 GiB with --participant --lite"
     fi
+  fi
+  if [ "$fresh" = 1 ]; then
 
     root=$(docker info --format '{{.DockerRootDir}}' 2> /dev/null || true)
     free_kb=${SELFHOSTR_FREE_DISK_KB:-$(df -Pk "${root:-/}" 2> /dev/null | awk 'NR==2 {print $4}')}
@@ -601,6 +618,14 @@ fi
 if [ "$fresh" = 1 ]; then
   if [ -z "$admin_ssh_port" ]; then
     if [ "$ssh_moved" = 1 ] || { [ "$dry_run" = 0 ] && is_busy 22; }; then admin_ssh_port=22; fi
+    if [ -z "$admin_ssh_port" ] && [ "$dry_run" = 0 ] && [ "$stack" = participant ]; then
+      # Port 22 is free: the admin SSH may already have been moved (docs/vps.md). Use what sshd
+      # is configured for, so the host firewall protects that port.
+      # shellcheck source=scripts/lib/firewall.sh
+      . scripts/lib/firewall.sh
+      read -r fw_port fw_src <<< "$(fw_admin_port)"
+      if [ "$fw_src" != default ]; then admin_ssh_port=$fw_port; fi
+    fi
     if [ "$noask" = 0 ]; then
       ask admin_ssh_port "Port of this machine's own admin SSH (so no sensor can take it; empty = none)" "$admin_ssh_port"
     fi
