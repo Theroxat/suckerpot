@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Hub: public network observatory (design M34). With `HUB_OBSERVATORY_ENABLED=true` (off by default) the worker publishes `network.json` (schema `selfhostr-network-stats/1`, CC0) on the feed site once a day, independent of `HUB_FEED_MODE`: node counts, the bootstrap state against `HUB_MIN_NODES`, confirmations, reports and takedowns, attack traffic per day and the most targeted services, tags and malware families. Every figure is a network total from consensus-eligible nodes only, at day level, published with a delay, rounded, and coarse (weekly, one significant figure, small figures left out) while fewer than three eligible nodes contribute; outcomes are exact only with production consensus thresholds, and bootstrap figures are counted once a week. No per-node value appears. Caddy allows one browser origin to read it (`HUB_OBSERVATORY_ORIGIN`, default `https://suckerpot.selfhostr.io`, `GET` only).
+- Hub migration `h0010`: `observatory_daily`, network-wide aggregates of each final day, counted once (the worker role cannot update them) and kept 400 days.
+
 ## [0.10.0] - 2026-11-06
 
 ### Upgrading
