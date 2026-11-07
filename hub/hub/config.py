@@ -13,6 +13,8 @@ from pathlib import Path
 
 from suckerpot_netproto import sign
 
+from .external_feed import sources as external_sources
+
 
 class ConfigError(RuntimeError):
     """A setting is missing or invalid. The message never contains a value."""
@@ -128,6 +130,11 @@ class Settings:
     # Public network observatory (design M34): network.json in HUB_FEED_DIR, once a day. Off until
     # the operator turns it on; independent of HUB_FEED_MODE.
     observatory_enabled: bool = False
+    # External tier (design M36): CC0 third-party lists republished under /v1/external/. Off by
+    # default; "publish" fetches the sources named below, then renders and signs the files.
+    external_feed_mode: str = "off"
+    external_sources: tuple[str, ...] = ("feodotracker",)
+    external_interval_min: int = 60
     # Public delisting (design M30 section 9): proof-of-work bits, requests per day, and how many
     # inbound values may be hidden at once, per day, before an operator has looked at them.
     delist_pow_difficulty: int = 20
@@ -180,6 +187,23 @@ class Settings:
         verify_mode = e.get("HUB_VERIFY_MODE", "off") or "off"
         if verify_mode not in {"off", "review", "auto"}:
             raise ConfigError("HUB_VERIFY_MODE must be off, review or auto")
+        external_mode = e.get("HUB_EXTERNAL_FEED_MODE", "off") or "off"
+        if external_mode not in {"off", "publish"}:
+            raise ConfigError("HUB_EXTERNAL_FEED_MODE must be off or publish")
+        if external_mode == "publish" and feed_mode == "off":
+            raise ConfigError("HUB_EXTERNAL_FEED_MODE=publish needs HUB_FEED_MODE other than off")
+        ext_names = tuple(
+            v.strip()
+            for v in (e.get("HUB_EXTERNAL_SOURCES", "") or "feodotracker").split(",")
+            if v.strip()
+        )
+        try:
+            if any(n.lower() in external_sources.FORBIDDEN_IDS for n in ext_names):
+                raise external_sources.SourceError("forbidden_source")
+            if external_mode == "publish":
+                external_sources.selected(ext_names)
+        except external_sources.SourceError as exc:
+            raise ConfigError(f"HUB_EXTERNAL_SOURCES is refused: {exc}") from exc
         delay_min = _int(e, "HUB_VERIFY_DELAY_MIN_H", 6, 0, 720)
         delay_max = _int(e, "HUB_VERIFY_DELAY_MAX_H", 30, 0, 720)
         if delay_max < delay_min:
@@ -219,6 +243,9 @@ class Settings:
             ),
             external_ranges_enabled=_bool(e, "HUB_EXTERNAL_RANGES_ENABLED", True),
             observatory_enabled=_bool(e, "HUB_OBSERVATORY_ENABLED"),
+            external_feed_mode=external_mode,
+            external_sources=ext_names,
+            external_interval_min=_int(e, "HUB_EXTERNAL_INTERVAL_MIN", 60, 30),
             delist_pow_difficulty=_int(e, "HUB_DELIST_POW_DIFFICULTY", 20, 0, 32),
             delist_daily_cap=_int(e, "HUB_DELIST_DAILY_CAP", 200, 0),
             delist_auto_suppress_daily=_int(e, "HUB_DELIST_AUTO_SUPPRESS_DAILY", 50, 0),

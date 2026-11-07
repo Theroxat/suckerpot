@@ -3,7 +3,7 @@
 Commands: gen-signing-key, gen-feed-key, show-public-key, reports list|show|approve|cancel,
 abusech list|approve|reject|cancel, target dispute, never add|remove|list,
 node suspend|unsuspend|role grant|role revoke|roles, verify status|list|show|approve|refuse,
-stats, feeds
+stats, external status|release, feeds
 status|diff|release|discard|pause|resume|rebuild, allow add|remove|list, delist
 list|show|accept|reject, ranges status|refresh. Every change writes ``hub_audit`` with the action
 and counts only (no node data, no addresses). Key generation touches no database.
@@ -29,6 +29,7 @@ from suckerpot_netproto.feeds import minisign
 from . import abusech, egress_check, reputation
 from .config import ConfigError, Settings, load_signing_key
 from .db import make_engine, make_sessionmaker, utcnow
+from .external_feed import job as external_job
 from .feeds import job as feed_job
 from .feeds.select import BASE_LISTS as DELIST_LISTS
 from .reports import tunnel as report_tunnel
@@ -130,6 +131,11 @@ def _parser() -> argparse.ArgumentParser:
         fs.add_parser(name)
     for name in ("diff", "release", "discard"):
         fs.add_parser(name).add_argument("serial", type=int)
+
+    ex = sub.add_parser("external", help="external tier (M36): CC0 lists under /v1/external/")
+    exs = ex.add_subparsers(dest="action", required=True)
+    exs.add_parser("status")
+    exs.add_parser("release", help="approve the held change (breaker)")
 
     a = sub.add_parser("allow")
     als = a.add_subparsers(dest="action", required=True)
@@ -316,6 +322,8 @@ async def _dispatch(
 ) -> int:
     if args.cmd == "feeds":
         return await _feeds(args, session, who, out, settings)
+    if args.cmd == "external":
+        return await _external(args, session, who, out)
     if args.cmd == "allow":
         return await _allow(args, session, who, out)
     if args.cmd == "delist":
@@ -1004,6 +1012,21 @@ async def _delist(args: argparse.Namespace, session: AsyncSession, who: str, out
     )
     await session.commit()
     out(f"{args.action}ed {row.id} ({outcome})")
+    return 0
+
+
+async def _external(args: argparse.Namespace, session: AsyncSession, who: str, out: Out) -> int:
+    if args.action == "status":
+        info = await external_job.status(session)
+        out(json.dumps(info, default=str, indent=2))
+        return 0
+    released = await external_job.release(session)
+    if not released:
+        out("nothing is held")
+        return 1
+    await _audit(session, who, "external.release")
+    await session.commit()
+    out("released: the next worker run publishes the held change")
     return 0
 
 

@@ -461,3 +461,27 @@ class ObservatoryDaily(Base):
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     total: Mapped[int] = mapped_column(Integer)
     nodes: Mapped[int] = mapped_column(Integer)
+
+
+class ExternalEntry(Base):
+    """The hub's copy of a CC0 external list (migration h0011). No node data, no client address."""
+
+    __tablename__ = "external_entries"
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, primary_key=True)
+    family: Mapped[int] = mapped_column(SmallInteger)
+    ports: Mapped[list[int]] = mapped_column(ARRAY(Integer), server_default=text("'{}'"))
+    families: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    first_seen: Mapped[date] = mapped_column(Date)
+    last_seen: Mapped[date] = mapped_column(Date, index=True)
+
+
+class ExternalFeedState(Base):
+    __tablename__ = "external_feed_state"
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    last_try_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    entry_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))

@@ -9,6 +9,7 @@
   decided delisting requests 180 days (open ones wait for their decision, without contact and
   evidence after 180 days), expired allow-list
   rows and payload links straight away;
+* external tier: the stored CC0 copy 30 days after the hub last saw a value in the source;
 * verification tasks (clear link included) and their attestations: 14 days after the task ended;
   the daily counters stay;
 * observatory aggregates (network-wide, no node reference): 400 days;
@@ -35,6 +36,7 @@ FEED_REMOVED_DAYS = 90
 FEED_RUN_DAYS = 30
 DELIST_EVIDENCE_DAYS = 30
 DELIST_REQUEST_DAYS = 180
+EXTERNAL_STALE_DAYS = 30  # public CC0 copy; published entries expire after 7
 VERIFY_TASK_DAYS = 14  # clear links go with their task (H9); attestations cascade
 OBSERVATORY_DAYS = 400  # network-wide daily aggregates of the observatory (no node reference)
 
@@ -149,6 +151,14 @@ async def run_retention(
         "feed_allow",
         "DELETE FROM feed_allow WHERE expires_day < :t",
         {"t": today},
+        out,
+    )
+    # External tier (M36): a copy that has not been refreshed for 30 days is long expired.
+    await _delete(
+        session,
+        "external_entries",
+        "DELETE FROM external_entries WHERE last_seen < :c",
+        {"c": today - timedelta(days=EXTERNAL_STALE_DAYS)},
         out,
     )
     await _delete(

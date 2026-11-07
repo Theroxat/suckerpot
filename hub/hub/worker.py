@@ -26,6 +26,8 @@ from . import logging as hub_logging
 from .config import Settings
 from .db import make_engine, make_sessionmaker, utcnow
 from .external import Corroborator
+from .external_feed import fetch as external_fetch
+from .external_feed import job as external_job
 from .feeds import external as feed_ranges
 from .feeds import job as feed_job
 from .never import load_never
@@ -55,6 +57,8 @@ class WorkerContext:
     # Sends one submission to abuse.ch. None (the default) never contacts anything.
     abusech_submit: abusech.Submitter | None = None
     ranges: Callable[[AsyncSession, Settings, datetime], Awaitable[dict[str, str]]] | None = None
+    # Fetches the CC0 external lists (M36). None (the default) never contacts anything.
+    external: Callable[[AsyncSession, Settings, datetime], Awaitable[dict[str, str]]] | None = None
 
 
 @dataclass
@@ -146,6 +150,15 @@ async def run_cycle(ctx: WorkerContext) -> CycleReport:
         return feed_job.summary(await feed_job.run_once(ses, s, now, corroborate=ctx.corroborate))
 
     await step("feeds", do_feeds)
+
+    if ctx.external is not None:
+        fetch_external = ctx.external
+        await step("external_fetch", lambda ses: fetch_external(ses, s, now))
+
+    async def do_external(ses: AsyncSession) -> object:
+        return external_job.summary(await external_job.run_once(ses, s, now))
+
+    await step("external", do_external)
     await step("reputation", lambda ses: reputation.run_daily(ses, s, today))
 
     async def do_stats(ses: AsyncSession) -> object:
@@ -242,6 +255,7 @@ async def main_async(argv: list[str]) -> int:
         ctx.resolver = directory.resolve
         ctx.mailer = report_send.smtp_mailer(s, ctx.clock)
         ctx.ranges = feed_ranges.refresh
+        ctx.external = external_fetch.refresh
         abusech_client = abusech.AbusechClient() if s.abusech_active else None
         if abusech_client is not None:
             ctx.abusech_submit = abusech_client.submit

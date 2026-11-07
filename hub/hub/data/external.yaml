@@ -1,0 +1,35 @@
+# Third-party lists the hub republishes under /v1/external/ (design M36 section 7).
+#
+# This is the ONLY list of sources and hosts the external job contacts. Fixed schedule, fixed
+# URLs: nothing a node or a visitor sends can make the hub fetch another address. Every URL is
+# https on the default port, with no credentials, no query string and no redirect, and is fetched
+# through the hub's egress proxy like every other hub outbound call.
+#
+# Per source:
+#   id        short lower-case id, shown in the published files ("sources" field)
+#   name      attribution shown in file headers
+#   licence   SPDX id of the data licence. `publish: true` is only accepted with CC0-1.0
+#   publish   true = the data may be republished in the public external files
+#   url       exact download URL
+#   page      human page of the source (documentation only)
+#   format    parser: "feodo-json" (JSON array of objects with ip_address, port, malware, ...)
+#   max_bytes download cap
+#   min_count fewer addresses than this means the answer is broken and is refused
+#
+# Never listed here (the loader and a test refuse them, whatever the flags say): URLhaus,
+# ThreatFox and MalwareBazaar. They have no licence statement and their terms of use forbid
+# copying and derivative works, so they are never republished or mirrored. SSL Blacklist is not
+# included (design M36 D6): its address list is not part of this release.
+#
+# Feodo Tracker: the "recommended" botnet C2 IP blocklist, the source's own high-precision
+# subset (D2). The JSON form carries the port. CC0-1.0 per the abuse.ch terms of use.
+sources:
+  - id: feodotracker
+    name: abuse.ch Feodo Tracker
+    licence: CC0-1.0
+    publish: true
+    url: https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.json
+    page: https://feodotracker.abuse.ch/blocklist/
+    format: feodo-json
+    max_bytes: 2097152
+    min_count: 1
