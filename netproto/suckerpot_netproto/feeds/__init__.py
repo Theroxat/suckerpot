@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from . import minisign
 from .errors import FeedError
+from .external import EXTERNAL_LIST_IDS, ExternalEntry, ExternalIndexFile
 from .models import (
     LIST_IDS,
     FeedEntry,
@@ -44,7 +45,10 @@ from .render import (
 )
 
 __all__ = [
+    "EXTERNAL_LIST_IDS",
     "LIST_IDS",
+    "ExternalEntry",
+    "ExternalIndexFile",
     "FeedEntry",
     "FeedError",
     "FeedList",

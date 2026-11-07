@@ -1,0 +1,15 @@
+# selfhostr external-outbound serial 4812 generated 2026-11-01T13:00:00Z licence CC0-1.0 source abuse.ch Feodo Tracker. Not confirmed by the SuckerPot network.
+create external_outbound_v4 hash:net family inet hashsize 4096 maxelem 32768 -exist
+create external_outbound_v4-new hash:net family inet hashsize 4096 maxelem 32768 -exist
+flush external_outbound_v4-new
+add external_outbound_v4-new 192.0.2.77
+add external_outbound_v4-new 198.51.100.9
+add external_outbound_v4-new 203.0.113.45
+swap external_outbound_v4-new external_outbound_v4
+destroy external_outbound_v4-new
+create external_outbound_v6 hash:net family inet6 hashsize 1024 maxelem 32768 -exist
+create external_outbound_v6-new hash:net family inet6 hashsize 1024 maxelem 32768 -exist
+flush external_outbound_v6-new
+add external_outbound_v6-new 2001:db8::45
+swap external_outbound_v6-new external_outbound_v6
+destroy external_outbound_v6-new

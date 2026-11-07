@@ -1,0 +1,5 @@
+value,family,list,categories,sources,families,ports,first_seen,last_seen,expires
+192.0.2.77,4,external-outbound,c2,feodotracker,,,2026-11-02,2026-11-06,2026-11-13
+198.51.100.9,4,external-outbound,c2,feodotracker,generic,447;8080,2026-11-02,2026-11-06,2026-11-13
+203.0.113.45,4,external-outbound,c2,feodotracker,,443,2026-11-02,2026-11-06,2026-11-13
+2001:db8::45,6,external-outbound,c2,feodotracker,,,2026-11-02,2026-11-06,2026-11-13
