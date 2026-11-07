@@ -562,7 +562,9 @@ To turn it on, set `HUB_OBSERVATORY_ENABLED=true` in `hub/.env` and run `docker 
 Things to know:
 
 - Each final day (four days back, when no batch for it can arrive) is counted once into `observatory_daily` and never recounted. Only days still covered by the observations (`HUB_OBS_RETENTION_DAYS`) can be counted, so a newly enabled observatory starts with about ten days of history and builds up from there.
-- `min_nodes` in the file is `HUB_MIN_NODES`. Keep the observatory off on a hub that runs with relaxed development thresholds (`HUB_MIN_NODES` below 3): confirmations could then rest on one node.
+- Only nodes eligible for consensus count. `min_nodes` in the file is `HUB_MIN_NODES`.
+- Relaxed thresholds are handled in code: with any eligibility setting below its default, the activity figures stay coarse; with relaxed consensus (`HUB_MIN_NODES`, `HUB_MIN_WEIGHT`, `HUB_COHORT_MAX_SHARE`) the outcomes are weekly and rounded to tens, and with `HUB_MIN_NODES` below 3 no outcome number is published.
+- The bootstrap figures are counted once per ISO week and kept in `worker_state`.
 - The file is not signed and not listed in the feed index. It is informational.
 
 ## Operator CLI
