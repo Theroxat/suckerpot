@@ -3,10 +3,11 @@
 Three parts:
 
 * ``freeze_days``: once a day is final (no batch for it can arrive any more), its network-wide
-  aggregates are computed ONCE from ``observations`` into ``observatory_daily``, and never again.
-  A node that joins, leaves or sends late therefore cannot move a number that was already
-  published, so two versions of the file cannot be subtracted to isolate one node.
-* ``load``: reads what the document needs (frozen days, outcome counts, node counts).
+  aggregates are computed ONCE from the observations of ELIGIBLE nodes (the consensus rule: age,
+  active days, reputation, standing) into ``observatory_daily``, and never again. A node that
+  joins, leaves or sends late cannot move a number that was already published, and freshly
+  enrolled nodes neither count towards the thresholds nor add to the figures.
+* ``load``: reads what the document needs (frozen days, outcome counts, weekly node counts).
 * ``render``: a pure function that applies every anonymity rule (tests drive it directly).
 
 ``publish`` writes the file atomically next to the feed files. It does not depend on
@@ -15,12 +16,13 @@ Three parts:
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import statistics
 import uuid
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
@@ -48,11 +50,15 @@ OUTCOME_LAG_DAYS = 2
 SERIES_DAYS = 90
 WINDOW_DAYS = 30
 RETENTION_DAYS = 400
-# Below this many contributing nodes a figure is coarse: weekly, one significant figure.
+# k: a figure needs this many eligible nodes behind it, otherwise it is coarse or null.
 MIN_NODES_STANDARD = buckets.MIN_COUNTRIES_SHOWN
-# An item (service, tag, family) needs this much support over the window to be named.
+# An item (service, tag, family) needs this much support over the window to be named...
 ITEM_MIN = 20
-# From MIN_NODES_STANDARD nodes up, an item must also have been seen by two nodes on one day.
+# ...and in coarse mode much more, spread over at least ITEM_MIN_WEEKS different ISO weeks.
+ITEM_MIN_COARSE = 100
+ITEM_MIN_WEEKS = 4
+# In standard mode an item must have been seen by two eligible nodes on one day. A CVE tag (its
+# digits are chosen by the attacker) always needs that, and is never named in coarse mode.
 ITEM_MIN_NODES = 2
 TOP_TAGS = 10
 TOP_FAMILIES = 10
@@ -62,8 +68,46 @@ SHARE_STEP_STANDARD = 1
 ACTIVITY_FIELDS = ("login", "command", "download", "exploit")
 KIND_FIELDS = ("payload_urls", "files", "c2")
 SERIES_FIELDS = ("sources", *ACTIVITY_FIELDS, *KIND_FIELDS)
+# Fields a coarse week may show. The others are low-volume: a few hundred attacker requests could
+# move them, so they stay null until k eligible nodes stand behind them.
+COARSE_FIELDS = frozenset({"sources", "login", "command"})
 COARSE = "coarse"
 STANDARD = "standard"
+
+EXACT = "exact"
+ROUNDED = "rounded"
+SUPPRESSED = "suppressed"
+
+WEEK_KEY = "observatory_week"
+
+# The production thresholds are the code defaults of Settings, never repeated here.
+_PRODUCTION = Settings()
+
+
+def eligibility_relaxed(s: Settings) -> bool:
+    """Eligibility weaker than production: STANDARD precision is refused entirely."""
+    p = _PRODUCTION
+    return (
+        s.node_min_age_days < p.node_min_age_days
+        or s.node_min_active_days < p.node_min_active_days
+        or s.min_reputation < p.min_reputation
+    )
+
+
+def outcome_precision(s: Settings) -> str:
+    """``exact`` only with production consensus; ``rounded`` (weekly, tens) when relaxed;
+    ``suppressed`` when a confirmation could rest on fewer than k nodes."""
+    p = _PRODUCTION
+    if s.min_nodes < MIN_NODES_STANDARD:
+        return SUPPRESSED
+    if (
+        s.min_nodes < p.min_nodes
+        or s.min_weight < p.min_weight
+        or s.cohort_max_share > p.cohort_max_share
+        or eligibility_relaxed(s)
+    ):
+        return ROUNDED
+    return EXACT
 
 
 # --- inputs -------------------------------------------------------------------------------------
@@ -71,11 +115,19 @@ STANDARD = "standard"
 
 @dataclass(frozen=True)
 class DayRow:
-    """One frozen day: contributing nodes and the distinct counts of ``SERIES_FIELDS``."""
+    """One frozen day: eligible nodes with attacking addresses that day (``nodes``, the k of the
+    day), the distinct counts of ``SERIES_FIELDS`` and the eligible nodes behind each of them
+    (``field_nodes``; a missing field defaults to ``nodes``)."""
 
     day: date
     nodes: int
     values: Mapping[str, int]
+    field_nodes: Mapping[str, int] | None = None
+
+    def nodes_of(self, f: str) -> int:
+        if self.field_nodes is None:
+            return self.nodes
+        return self.field_nodes.get(f, 0)
 
 
 @dataclass(frozen=True)
@@ -102,10 +154,10 @@ class ObservatoryInput:
     today: date
     min_nodes: int
     members: int = 0
-    active_7d: int = 0
-    eligible: int = 0
-    # Earliest day each candidate node can be eligible (internal: never published per node).
-    earliest_eligible: list[date] = field(default_factory=list)
+    # Counted once per ISO week (``week``), from batches before that week.
+    week: date | None = None
+    eligible_week: int = 0
+    active_last_week: int = 0
     # Members per country among those who chose to show one (filtered by ``render``).
     country_members: Mapping[str, int] = field(default_factory=dict)
     days: list[DayRow] = field(default_factory=list)
@@ -114,9 +166,11 @@ class ObservatoryInput:
     reports_sent_30d: int = 0
     abusech_sent_30d: int = 0
     takedown_gaps: list[int] = field(default_factory=list)
+    allow_standard: bool = True
+    outcome_mode: str = EXACT
 
 
-# --- rounding and the per-node eligibility estimate (pure) -------------------------------------
+# --- rounding (pure) ---------------------------------------------------------------------------
 
 
 def round_figure(n: int, significant: int) -> int:
@@ -127,49 +181,15 @@ def round_figure(n: int, significant: int) -> int:
     return ((n + step // 2) // step) * step
 
 
+def round_tens(n: int) -> int:
+    return ((max(0, n) + 5) // 10) * 10
+
+
 def round_share(part: int, whole: int, step: int) -> int:
     """Percentage of ``whole``, rounded half up to a multiple of ``step``."""
     if whole <= 0 or part <= 0:
         return 0
     return int(part * 100 / whole / step + 0.5) * step
-
-
-def earliest_eligible(
-    today: date,
-    enrolled: date,
-    batch_days: Iterable[date],
-    *,
-    min_age_days: int,
-    min_active_days: int,
-) -> date:
-    """First day a node can be eligible if it sends a batch every day from now on.
-
-    Same rule as ``consensus.eligible_nodes``: enrolled at least ``min_age_days`` ago and at least
-    ``min_active_days`` days with a batch in the 14 days before the day.
-    """
-    seen = {d for d in batch_days if today - timedelta(days=14) <= d < today}
-    wait_age = max(0, (enrolled + timedelta(days=min_age_days) - today).days)
-    for j in range(wait_age + 15):
-        day = today + timedelta(days=j)
-        if day - timedelta(days=min_age_days) < enrolled:
-            continue
-        past = sum(1 for d in seen if d >= day - timedelta(days=14))
-        if past + min(j, 14) >= min_active_days:
-            return day
-    return today + timedelta(days=wait_age + 14)
-
-
-def first_consensus_day(
-    today: date, min_nodes: int, eligible: int, earliest: Sequence[date]
-) -> date | None:
-    """Earliest day the eligible-node count can reach ``min_nodes``, or None when there are not
-    enough members yet to get there."""
-    if eligible >= min_nodes:
-        return today
-    ordered = sorted(earliest)
-    if len(ordered) < min_nodes:
-        return None
-    return max(today, ordered[min_nodes - 1])
 
 
 # --- render (pure) ------------------------------------------------------------------------------
@@ -187,43 +207,46 @@ def _entry(
     return out
 
 
-def build_series(rows: Sequence[DayRow], first: date, last: date) -> list[dict[str, Any]]:
-    """Per-day figures from ``first`` to ``last``, grouped by ISO week.
+def build_series(
+    rows: Sequence[DayRow], first: date, last: date, *, allow_standard: bool = True
+) -> list[dict[str, Any]]:
+    """Per-day figures from ``first`` to ``last``, by complete ISO week only.
 
-    A week in which every day had at least ``MIN_NODES_STANDARD`` contributing nodes is published
-    day by day with two significant figures. Any other week is ONE coarse entry: the average per
-    reporting day, one significant figure (null when no node reported that week). A coarse entry
-    always covers a complete ISO week: a partial week at either end is left out (the trailing one
-    appears once it is complete). A single node's day off, or its exact daily volume, is never
-    visible.
+    A week in which every day had at least k eligible nodes is published day by day with two
+    significant figures; a field with fewer than k eligible nodes behind it that day is null. Any
+    other week is ONE coarse entry: the average per reporting day of ``COARSE_FIELDS``, one
+    significant figure, the other fields null (all null when no node reported that week). A
+    partial week at either end is left out, so a published entry never changes shape later.
     """
     by_day = {r.day: r for r in rows}
     out: list[dict[str, Any]] = []
     week = _week_start(first)
     while week <= last:
-        span = [d for d in (week + timedelta(days=i) for i in range(7)) if first <= d <= last]
+        span = [week + timedelta(days=i) for i in range(7)]
+        if span[0] < first or span[-1] > last:
+            week += timedelta(days=7)
+            continue
         week_rows = [by_day.get(d) for d in span]
         full = [r for r in week_rows if r is not None and r.nodes >= MIN_NODES_STANDARD]
-        if len(full) == len(span):
+        if allow_standard and len(full) == 7:
             for r in full:
-                out.append(
-                    _entry(
-                        r.day,
-                        1,
-                        STANDARD,
-                        {f: round_figure(r.values.get(f, 0), 2) for f in SERIES_FIELDS},
-                    )
-                )
-        elif len(span) == 7:
+                values: dict[str, int | None] = {
+                    f: round_figure(r.values.get(f, 0), 2)
+                    if r.nodes_of(f) >= MIN_NODES_STANDARD
+                    else None
+                    for f in SERIES_FIELDS
+                }
+                out.append(_entry(r.day, 1, STANDARD, values))
+        else:
             reporting = [r for r in week_rows if r is not None and r.nodes > 0]
-            values: dict[str, int | None] = {}
+            coarse: dict[str, int | None] = {}
             for f in SERIES_FIELDS:
-                if reporting:
+                if reporting and f in COARSE_FIELDS:
                     mean = sum(r.values.get(f, 0) for r in reporting) / len(reporting)
-                    values[f] = round_figure(int(mean + 0.5), 1)
+                    coarse[f] = round_figure(int(mean + 0.5), 1)
                 else:
-                    values[f] = None
-            out.append(_entry(span[0], len(span), COARSE, values))
+                    coarse[f] = None
+            out.append(_entry(week, 7, COARSE, coarse))
         week += timedelta(days=7)
     return out
 
@@ -238,21 +261,35 @@ def _allowed(metric: str, key: str) -> bool:
     return False
 
 
+def _is_cve(metric: str, key: str) -> bool:
+    return metric == "tag" and key not in enums.TAGS_V1
+
+
 def build_window(
-    rows: Sequence[DayRow], items: Sequence[ItemRow], first: date, last: date
+    rows: Sequence[DayRow],
+    items: Sequence[ItemRow],
+    first: date,
+    last: date,
+    *,
+    allow_standard: bool = True,
 ) -> dict[str, Any]:
     """Services, tags and families over the window, as shares of daily distinct counts."""
     reporting = [r for r in rows if first <= r.day <= last and r.nodes > 0]
-    coarse = not reporting or any(r.nodes < MIN_NODES_STANDARD for r in reporting)
+    coarse = (
+        not allow_standard or not reporting or any(r.nodes < MIN_NODES_STANDARD for r in reporting)
+    )
     step = SHARE_STEP_COARSE if coarse else SHARE_STEP_STANDARD
     days = {r.day for r in reporting}
     totals: dict[tuple[str, str], int] = defaultdict(int)
     peak_nodes: dict[tuple[str, str], int] = defaultdict(int)
+    weeks: dict[tuple[str, str], set[date]] = defaultdict(set)
     for it in items:
-        if it.day not in days or not _allowed(it.metric, it.key):
+        if it.day not in days or not _allowed(it.metric, it.key) or it.total <= 0:
             continue
-        totals[(it.metric, it.key)] += it.total
-        peak_nodes[(it.metric, it.key)] = max(peak_nodes[(it.metric, it.key)], it.nodes)
+        k = (it.metric, it.key)
+        totals[k] += it.total
+        peak_nodes[k] = max(peak_nodes[k], it.nodes)
+        weeks[k].add(_week_start(it.day))
     whole = {
         "service": sum(r.values.get("sources", 0) for r in reporting),
         "tag": sum(r.values.get("sources", 0) for r in reporting),
@@ -262,9 +299,14 @@ def build_window(
     def listing(metric: str, top: int | None) -> list[dict[str, Any]]:
         picked = []
         for (m, key), total in totals.items():
-            if m != metric or total < ITEM_MIN:
+            if m != metric:
                 continue
-            if not coarse and peak_nodes[(m, key)] < ITEM_MIN_NODES:
+            if coarse:
+                if _is_cve(m, key) or total < ITEM_MIN_COARSE:
+                    continue
+                if len(weeks[(m, key)]) < ITEM_MIN_WEEKS:
+                    continue
+            elif total < ITEM_MIN or peak_nodes[(m, key)] < ITEM_MIN_NODES:
                 continue
             share = round_share(total, whole[metric], step)
             if share > 0:
@@ -283,6 +325,66 @@ def build_window(
     }
 
 
+def build_outcomes(inp: ObservatoryInput) -> dict[str, Any]:
+    """Outcomes over 90 days. Exact daily figures only with production consensus thresholds."""
+    out_last = inp.today - timedelta(days=OUTCOME_LAG_DAYS)
+    out_first = out_last - timedelta(days=SERIES_DAYS - 1)
+    by_day = {o.day: o for o in inp.outcomes}
+    calendar = [out_first + timedelta(days=i) for i in range(SERIES_DAYS)]
+    days = [by_day.get(d, OutcomeDay(d)) for d in calendar]
+    last30 = days[-30:]
+    totals = {
+        "confirmed_30d": sum(o.confirmed for o in last30),
+        "reported_30d": sum(o.reported for o in last30),
+        "taken_down_30d": sum(o.taken_down for o in last30),
+        "reports_sent_30d": inp.reports_sent_30d,
+        "abusech_sent_30d": inp.abusech_sent_30d,
+    }
+    doc: dict[str, Any] = {
+        "first_day": out_first.isoformat(),
+        "last_day": out_last.isoformat(),
+        "precision": inp.outcome_mode,
+    }
+    if inp.outcome_mode == EXACT:
+        doc.update(totals)
+        doc["median_days_to_takedown"] = (
+            round(statistics.median(inp.takedown_gaps)) if inp.takedown_gaps else None
+        )
+        doc["daily"] = [
+            {
+                "day": o.day.isoformat(),
+                "confirmed": o.confirmed,
+                "reported": o.reported,
+                "taken_down": o.taken_down,
+            }
+            for o in days
+        ]
+        doc["weekly"] = None
+        return doc
+    if inp.outcome_mode == ROUNDED:
+        doc.update({k: round_tens(v) for k, v in totals.items()})
+        weekly = []
+        start = _week_start(out_first)
+        if start < out_first:
+            start += timedelta(days=7)
+        while start + timedelta(days=6) <= out_last:
+            span = [o for o in days if start <= o.day < start + timedelta(days=7)]
+            weekly.append(
+                {
+                    "start": start.isoformat(),
+                    "confirmed": round_tens(sum(o.confirmed for o in span)),
+                    "reported": round_tens(sum(o.reported for o in span)),
+                    "taken_down": round_tens(sum(o.taken_down for o in span)),
+                }
+            )
+            start += timedelta(days=7)
+        doc.update({"median_days_to_takedown": None, "daily": None, "weekly": weekly})
+        return doc
+    doc.update({k: None for k in totals})
+    doc.update({"median_days_to_takedown": None, "daily": None, "weekly": None})
+    return doc
+
+
 def render(inp: ObservatoryInput) -> dict[str, Any]:
     today = inp.today
     # Activity: final days only.
@@ -290,62 +392,36 @@ def render(inp: ObservatoryInput) -> dict[str, Any]:
     frozen = sorted((r for r in inp.days if r.day <= act_last), key=lambda r: r.day)
     if frozen:
         act_first = max(act_last - timedelta(days=SERIES_DAYS - 1), frozen[0].day)
-        series = build_series(frozen, act_first, act_last)
+        series = build_series(frozen, act_first, act_last, allow_standard=inp.allow_standard)
     else:
         series = []
-    window = build_window(frozen, inp.items, act_last - timedelta(days=WINDOW_DAYS - 1), act_last)
-    # Outcomes: complete days, at least 24 h after their end.
-    out_last = today - timedelta(days=OUTCOME_LAG_DAYS)
-    out_first = out_last - timedelta(days=SERIES_DAYS - 1)
-    by_day = {o.day: o for o in inp.outcomes}
-    daily = []
-    for i in range(SERIES_DAYS):
-        d = out_first + timedelta(days=i)
-        o = by_day.get(d, OutcomeDay(d))
-        daily.append(
-            {
-                "day": d.isoformat(),
-                "confirmed": o.confirmed,
-                "reported": o.reported,
-                "taken_down": o.taken_down,
-            }
-        )
-    last30 = daily[-30:]
-    first_day = first_consensus_day(today, inp.min_nodes, inp.eligible, inp.earliest_eligible)
+    window = build_window(
+        frozen,
+        inp.items,
+        act_last - timedelta(days=WINDOW_DAYS - 1),
+        act_last,
+        allow_standard=inp.allow_standard,
+    )
     countries = sorted(
         (cc, n) for cc, n in inp.country_members.items() if n >= buckets.MIN_COUNTRIES_SHOWN
     )
+    week = inp.week or _week_start(today)
     return {
         "schema": SCHEMA,
         "generated_day": today.isoformat(),
         "licence": LICENCE,
         "nodes": {
             "members": inp.members,
-            "active_7d": inp.active_7d,
-            "eligible": inp.eligible,
+            "active_last_week": inp.active_last_week,
             "countries": [{"cc": cc, "members": n} for cc, n in countries],
         },
         "bootstrap": {
+            "week": week.isoformat(),
             "min_nodes": inp.min_nodes,
-            "eligible_nodes": inp.eligible,
-            "nodes_missing": max(0, inp.min_nodes - inp.eligible),
-            "consensus_possible": inp.eligible >= inp.min_nodes,
-            "first_consensus_day": first_day.isoformat() if first_day else None,
-            "days_until_first_consensus": (first_day - today).days if first_day else None,
+            "nodes_missing": max(0, inp.min_nodes - inp.eligible_week),
+            "consensus_possible": inp.eligible_week >= inp.min_nodes,
         },
-        "outcomes": {
-            "first_day": out_first.isoformat(),
-            "last_day": out_last.isoformat(),
-            "confirmed_30d": sum(d["confirmed"] for d in last30),
-            "reported_30d": sum(d["reported"] for d in last30),
-            "taken_down_30d": sum(d["taken_down"] for d in last30),
-            "reports_sent_30d": inp.reports_sent_30d,
-            "abusech_sent_30d": inp.abusech_sent_30d,
-            "median_days_to_takedown": round(statistics.median(inp.takedown_gaps))
-            if inp.takedown_gaps
-            else None,
-            "daily": daily,
-        },
+        "outcomes": build_outcomes(inp),
         "activity": {
             "last_day": act_last.isoformat(),
             "series": series,
@@ -357,6 +433,8 @@ def render(inp: ObservatoryInput) -> dict[str, Any]:
             "activity_lag_days": FINAL_LAG_DAYS,
             "outcome_lag_days": OUTCOME_LAG_DAYS,
             "item_min": ITEM_MIN,
+            "item_min_coarse": ITEM_MIN_COARSE,
+            "item_min_weeks_coarse": ITEM_MIN_WEEKS,
         },
     }
 
@@ -369,36 +447,45 @@ def render_bytes(inp: ObservatoryInput) -> bytes:
 
 _ITEM_QUERIES = {
     "activity": "SELECT k AS key, count(DISTINCT value) AS total, count(DISTINCT node_id) AS nodes "
-    "FROM observations, unnest(activity) AS k WHERE day = :d AND kind = 'ip' GROUP BY k",
+    "FROM observations, unnest(activity) AS k "
+    "WHERE day = :d AND kind = 'ip' AND node_id = ANY(:nodes) GROUP BY k",
     "service": "SELECT k AS key, count(DISTINCT value) AS total, count(DISTINCT node_id) AS nodes "
-    "FROM observations, unnest(services) AS k WHERE day = :d AND kind = 'ip' GROUP BY k",
+    "FROM observations, unnest(services) AS k "
+    "WHERE day = :d AND kind = 'ip' AND node_id = ANY(:nodes) GROUP BY k",
     "tag": "SELECT k AS key, count(DISTINCT value) AS total, count(DISTINCT node_id) AS nodes "
-    "FROM observations, unnest(tags) AS k WHERE day = :d AND kind = 'ip' GROUP BY k",
+    "FROM observations, unnest(tags) AS k "
+    "WHERE day = :d AND kind = 'ip' AND node_id = ANY(:nodes) GROUP BY k",
     "family": "SELECT k AS key, count(DISTINCT value) AS total, count(DISTINCT node_id) AS nodes "
-    "FROM observations, unnest(families) AS k WHERE day = :d AND kind = 'sha256' GROUP BY k",
+    "FROM observations, unnest(families) AS k "
+    "WHERE day = :d AND kind = 'sha256' AND node_id = ANY(:nodes) GROUP BY k",
     "kind": "SELECT CASE kind WHEN 'url' THEN 'payload_urls' WHEN 'sha256' THEN 'files' "
     "ELSE 'c2' END AS key, count(DISTINCT kind || '|' || value) AS total, "
     "count(DISTINCT node_id) AS nodes FROM observations WHERE day = :d "
-    "AND kind IN ('url', 'sha256', 'c2_ip', 'c2_domain') GROUP BY 1",
+    "AND kind IN ('url', 'sha256', 'c2_ip', 'c2_domain') AND node_id = ANY(:nodes) GROUP BY 1",
 }
 
 
-async def freeze_day(session: AsyncSession, day: date) -> None:
-    """Store the aggregates of one final day. A day already stored is left as it is."""
+async def freeze_day(session: AsyncSession, day: date, nodes: Sequence[uuid.UUID]) -> None:
+    """Store the aggregates of one final day from the observations of ``nodes`` only.
+
+    The ``total`` row counts distinct attacking addresses and the eligible nodes that reported at
+    least one (the k of the day). A day already stored is left as it is.
+    """
+    params = {"d": day, "nodes": list(nodes)}
     head = (
         await session.execute(
             text(
-                "SELECT count(DISTINCT value) FILTER (WHERE kind = 'ip') AS total, "
-                "count(DISTINCT node_id) AS nodes FROM observations WHERE day = :d"
+                "SELECT count(DISTINCT value) AS total, count(DISTINCT node_id) AS nodes "
+                "FROM observations WHERE day = :d AND kind = 'ip' AND node_id = ANY(:nodes)"
             ),
-            {"d": day},
+            params,
         )
     ).one()
     rows: list[dict[str, Any]] = [
         {"d": day, "m": "total", "k": "", "t": int(head.total), "n": int(head.nodes)}
     ]
     for metric, sql in _ITEM_QUERIES.items():
-        for r in await session.execute(text(sql), {"d": day}):
+        for r in await session.execute(text(sql), params):
             rows.append(
                 {"d": day, "m": metric, "k": str(r.key), "t": int(r.total), "n": int(r.nodes)}
             )
@@ -412,7 +499,12 @@ async def freeze_day(session: AsyncSession, day: date) -> None:
 
 
 async def freeze_days(session: AsyncSession, s: Settings, today: date) -> int:
-    """Freeze every final day still covered by the observations. Returns the days stored."""
+    """Freeze every final day still covered by the observations. Returns the days stored.
+
+    Only nodes eligible under the consensus rule at the time of the freeze count. Eligibility is
+    taken at the freeze rather than on the day itself because batch markers are kept 14 days only:
+    the day's own 14-day look-back is no longer complete four days later.
+    """
     last = today - timedelta(days=FINAL_LAG_DAYS)
     first = today - timedelta(days=s.obs_retention_days)
     if first > last:
@@ -426,15 +518,15 @@ async def freeze_days(session: AsyncSession, s: Settings, today: date) -> int:
             {"a": first, "b": last},
         )
     }
-    stored = 0
-    d = first
-    while d <= last:
-        if d not in done:
-            await freeze_day(session, d)
-            stored += 1
-        d += timedelta(days=1)
+    todo = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+    todo = [d for d in todo if d not in done]
+    if not todo:
+        return 0
+    nodes = list(await consensus.eligible_nodes(session, s, today))
+    for d in todo:
+        await freeze_day(session, d, nodes)
     await session.commit()
-    return stored
+    return len(todo)
 
 
 # --- load (database) ------------------------------------------------------------------------------
@@ -444,44 +536,55 @@ def _midnight(d: date) -> datetime:
     return datetime.combine(d, time(0), tzinfo=UTC)
 
 
-async def load(session: AsyncSession, s: Settings, today: date) -> ObservatoryInput:
-    inp = ObservatoryInput(today=today, min_nodes=s.min_nodes)
-    # Nodes.
-    counts = (
-        await session.execute(
-            text(
-                "SELECT (SELECT count(*) FROM nodes) AS members, "
-                "(SELECT count(DISTINCT node_id) FROM batches "
-                " WHERE day >= :recent AND day < :today) AS active"
-            ),
-            {"today": today, "recent": today - timedelta(days=7)},
-        )
-    ).one()
-    inp.members, inp.active_7d = int(counts.members), int(counts.active)
-    inp.eligible = len(await consensus.eligible_nodes(session, s, today))
-    days_of: dict[uuid.UUID, list[date]] = defaultdict(list)
-    enrolled: dict[uuid.UUID, date] = {}
-    for r in await session.execute(
+async def weekly_nodes(session: AsyncSession, s: Settings, today: date) -> tuple[date, int, int]:
+    """(week, eligible, active) counted once per ISO week from batches before that week.
+
+    Stored in ``worker_state`` so that a node skipping a day mid-week changes nothing published.
+    """
+    week = _week_start(today)
+    query = text("SELECT value FROM worker_state WHERE key = :k")
+    row = (await session.execute(query, {"k": WEEK_KEY})).first()
+    if row is not None:
+        try:
+            cached = json.loads(row[0])
+            if cached.get("week") == week.isoformat():
+                return week, int(cached["eligible"]), int(cached["active"])
+        except ValueError, KeyError, TypeError:
+            pass
+    eligible = len(await consensus.eligible_nodes(session, s, week))
+    active = int(
+        (
+            await session.execute(
+                text(
+                    "SELECT count(DISTINCT node_id) FROM batches "
+                    "WHERE items > 0 AND day >= :a AND day < :b"
+                ),
+                {"a": week - timedelta(days=7), "b": week},
+            )
+        ).scalar_one()
+    )
+    value = json.dumps({"week": week.isoformat(), "eligible": eligible, "active": active})
+    await session.execute(
         text(
-            "SELECT n.id, n.enrolled_day, b.day FROM nodes n "
-            "JOIN batches b ON b.node_id = n.id AND b.items > 0 "
-            "AND b.day >= :since AND b.day < :today "
-            "WHERE n.standing = 'active' AND n.reputation >= CAST(:min_rep AS real)"
+            "INSERT INTO worker_state (key, value) VALUES (:k, :v) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
         ),
-        {"since": today - timedelta(days=14), "today": today, "min_rep": s.min_reputation},
-    ):
-        enrolled[r.id] = r.enrolled_day
-        days_of[r.id].append(r.day)
-    inp.earliest_eligible = [
-        earliest_eligible(
-            today,
-            enrolled[n],
-            days_of[n],
-            min_age_days=s.node_min_age_days,
-            min_active_days=s.node_min_active_days,
-        )
-        for n in enrolled
-    ]
+        {"k": WEEK_KEY, "v": value},
+    )
+    await session.commit()
+    return week, eligible, active
+
+
+async def load(session: AsyncSession, s: Settings, today: date) -> ObservatoryInput:
+    inp = ObservatoryInput(
+        today=today,
+        min_nodes=s.min_nodes,
+        allow_standard=not eligibility_relaxed(s),
+        outcome_mode=outcome_precision(s),
+    )
+    # Nodes.
+    inp.members = int((await session.execute(text("SELECT count(*) FROM nodes"))).scalar_one())
+    inp.week, inp.eligible_week, inp.active_last_week = await weekly_nodes(session, s, today)
     inp.country_members = {
         str(r.cc): int(r.n)
         for r in await session.execute(
@@ -496,6 +599,7 @@ async def load(session: AsyncSession, s: Settings, today: date) -> ObservatoryIn
     since = today - timedelta(days=FINAL_LAG_DAYS + SERIES_DAYS)
     heads: dict[date, int] = {}
     values: dict[date, dict[str, int]] = defaultdict(dict)
+    field_nodes: dict[date, dict[str, int]] = defaultdict(dict)
     for r in await session.execute(
         text(
             "SELECT day, metric, key, total, nodes FROM observatory_daily "
@@ -506,13 +610,15 @@ async def load(session: AsyncSession, s: Settings, today: date) -> ObservatoryIn
         if r.metric == "total":
             heads[r.day] = int(r.nodes)
             values[r.day]["sources"] = int(r.total)
-        elif r.metric == "activity" and r.key in ACTIVITY_FIELDS:
+            field_nodes[r.day]["sources"] = int(r.nodes)
+        elif (r.metric == "activity" and r.key in ACTIVITY_FIELDS) or (
+            r.metric == "kind" and r.key in KIND_FIELDS
+        ):
             values[r.day][r.key] = int(r.total)
-        elif r.metric == "kind" and r.key in KIND_FIELDS:
-            values[r.day][r.key] = int(r.total)
+            field_nodes[r.day][r.key] = int(r.nodes)
         elif r.metric in ("service", "tag", "family"):
             inp.items.append(ItemRow(r.day, r.metric, r.key, int(r.total), int(r.nodes)))
-    inp.days = [DayRow(d, n, values[d]) for d, n in sorted(heads.items())]
+    inp.days = [DayRow(d, n, values[d], field_nodes[d]) for d, n in sorted(heads.items())]
     # Outcomes.
     out_last = today - timedelta(days=OUTCOME_LAG_DAYS)
     out_first = out_last - timedelta(days=SERIES_DAYS - 1)
@@ -586,6 +692,7 @@ __all__ = [
     "ObservatoryInput",
     "freeze_days",
     "load",
+    "outcome_precision",
     "publish",
     "render",
     "render_bytes",

@@ -6,12 +6,14 @@ import gzip
 import json
 import re
 import stat
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from hub import observatory as obs
 from hub.config import Settings
@@ -23,7 +25,8 @@ from .seed import TODAY, add_nodes, observe
 
 HUB = Path(__file__).resolve().parent.parent
 D0 = date(2026, 11, 7)  # a Saturday
-LAST = D0 - timedelta(days=obs.FINAL_LAG_DAYS)  # last published activity day
+LAST = D0 - timedelta(days=obs.FINAL_LAG_DAYS)  # last published activity day (a Tuesday)
+LAST_SUNDAY = LAST - timedelta(days=LAST.weekday() + 1)
 
 # Keys (or key parts) that must never appear anywhere in the document.
 FORBIDDEN_TOKENS = {
@@ -46,6 +49,7 @@ FORBIDDEN_TOKENS = {
 }
 IP_LIKE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$|^[0-9a-f:]*:[0-9a-f:]+$", re.I)
 HEX_ID = re.compile(r"^[0-9a-f]{8,}$", re.I)
+LOW_VOLUME = ("download", "exploit", "payload_urls", "files", "c2")
 
 
 def walk(doc: Any, path: str = "$") -> list[tuple[str, str, Any]]:
@@ -97,8 +101,7 @@ def scenario(nodes: int, *, days: int = 35, **over: Any) -> ObservatoryInput:
         "today": D0,
         "min_nodes": 5,
         "members": nodes,
-        "active_7d": nodes,
-        "eligible": 0,
+        "eligible_week": 0,
         "days": rows,
         "items": items,
     }
@@ -135,6 +138,11 @@ def test_round_figure_never_returns_an_exact_small_count() -> None:
             assert obs.round_figure(n, sig) % 10 == 0
 
 
+@pytest.mark.parametrize(("n", "want"), [(0, 0), (4, 0), (5, 10), (14, 10), (15, 20), (-2, 0)])
+def test_round_tens(n: int, want: int) -> None:
+    assert obs.round_tens(n) == want
+
+
 @pytest.mark.parametrize(
     ("part", "whole", "step", "want"),
     [(0, 10, 1, 0), (5, 0, 1, 0), (1, 3, 1, 33), (1, 3, 5, 35), (2, 100, 5, 0), (3, 100, 5, 5)],
@@ -143,59 +151,65 @@ def test_round_share(part: int, whole: int, step: int, want: int) -> None:
     assert obs.round_share(part, whole, step) == want
 
 
+# --- thresholds read from the settings -------------------------------------------------------------
+
+
+def test_production_settings_allow_exact_outcomes_and_standard_precision() -> None:
+    s = Settings()
+    assert obs.outcome_precision(s) == "exact" and not obs.eligibility_relaxed(s)
+
+
+@pytest.mark.parametrize(
+    ("over", "want"),
+    [
+        ({"min_nodes": 4}, "rounded"),
+        ({"min_nodes": 3}, "rounded"),
+        ({"min_weight": 1.0}, "rounded"),
+        ({"cohort_max_share": 1.0}, "rounded"),
+        ({"node_min_age_days": 0}, "rounded"),
+        ({"node_min_active_days": 1}, "rounded"),
+        ({"min_reputation": 0.0}, "rounded"),
+        ({"min_nodes": 2}, "suppressed"),
+        ({"min_nodes": 1}, "suppressed"),
+    ],
+)
+def test_relaxed_consensus_never_gives_exact_outcomes(over: dict[str, Any], want: str) -> None:
+    assert obs.outcome_precision(replace(Settings(), **over)) == want
+
+
+@pytest.mark.parametrize(
+    "over", [{"node_min_age_days": 13}, {"node_min_active_days": 6}, {"min_reputation": 0.1}]
+)
+def test_relaxed_eligibility_refuses_standard_precision(over: dict[str, Any]) -> None:
+    assert obs.eligibility_relaxed(replace(Settings(), **over))
+
+
+def test_settings_values_are_never_hardcoded() -> None:
+    source = (HUB / "hub" / "observatory.py").read_text()
+    assert "min_nodes=s.min_nodes" in source and "_PRODUCTION = Settings()" in source
+    assert not re.search(r"(min_nodes|min_weight|node_min_\w+)\s*[<>]=?\s*\d", source)
+
+
 # --- bootstrap ----------------------------------------------------------------------------------
 
 
-def test_earliest_eligible_waits_for_age_and_active_days() -> None:
-    enrolled = D0 - timedelta(days=3)
-    got = obs.earliest_eligible(D0, enrolled, [], min_age_days=14, min_active_days=7)
-    assert got == enrolled + timedelta(days=14)
-    # Old enough, 4 batch days in the window: 3 more days of batches are needed.
-    batches = [D0 - timedelta(days=i) for i in (1, 2, 3, 4)]
-    old = D0 - timedelta(days=60)
-    got = obs.earliest_eligible(D0, old, batches, min_age_days=14, min_active_days=7)
-    assert got == D0 + timedelta(days=3)
-    # Already eligible: today.
-    batches = [D0 - timedelta(days=i) for i in range(1, 8)]
-    assert obs.earliest_eligible(D0, old, batches, min_age_days=14, min_active_days=7) == D0
-
-
-def test_first_consensus_day() -> None:
-    assert obs.first_consensus_day(D0, 5, 0, [D0]) is None
-    days = [D0 + timedelta(days=i) for i in (0, 2, 4, 9, 11, 30)]
-    assert obs.first_consensus_day(D0, 5, 1, days) == D0 + timedelta(days=11)
-    assert obs.first_consensus_day(D0, 5, 5, []) == D0
-
-
 def test_bootstrap_with_one_node_says_how_many_are_missing() -> None:
-    doc = obs.render(scenario(1, earliest_eligible=[D0 + timedelta(days=3)]))
-    boot = doc["bootstrap"]
-    assert boot == {
+    doc = obs.render(scenario(1, eligible_week=1, week=date(2026, 11, 2)))
+    assert doc["bootstrap"] == {
+        "week": "2026-11-02",
         "min_nodes": 5,
-        "eligible_nodes": 0,
-        "nodes_missing": 5,
+        "nodes_missing": 4,
         "consensus_possible": False,
-        "first_consensus_day": None,
-        "days_until_first_consensus": None,
     }
     assert doc["nodes"]["members"] == 1
+    assert "eligible" not in json.dumps(doc["nodes"])
 
 
-def test_bootstrap_reads_min_nodes_from_the_settings_value() -> None:
-    doc = obs.render(scenario(2, min_nodes=2, eligible=2))
+def test_bootstrap_reads_min_nodes_from_the_input() -> None:
+    doc = obs.render(scenario(2, min_nodes=2, eligible_week=2))
     assert doc["bootstrap"]["min_nodes"] == 2 and doc["bootstrap"]["consensus_possible"]
-    assert doc["bootstrap"]["days_until_first_consensus"] == 0
-    five = [D0 + timedelta(days=i) for i in (0, 1, 2, 3, 6)]
-    doc = obs.render(scenario(5, min_nodes=5, eligible=2, earliest_eligible=five))
-    assert doc["bootstrap"]["first_consensus_day"] == (D0 + timedelta(days=6)).isoformat()
-    assert doc["bootstrap"]["days_until_first_consensus"] == 6
-    assert doc["bootstrap"]["nodes_missing"] == 3
-
-
-def test_settings_min_nodes_is_never_hardcoded() -> None:
-    source = (HUB / "hub" / "observatory.py").read_text()
-    assert "min_nodes=s.min_nodes" in source
-    assert not re.search(r"min_nodes\s*=\s*\d", source)
+    assert doc["bootstrap"]["nodes_missing"] == 0
+    assert "first_consensus_day" not in doc["bootstrap"]
 
 
 # --- countries (k = 3) ------------------------------------------------------------------------------
@@ -217,16 +231,16 @@ def test_below_three_nodes_the_series_is_weekly_and_coarse(nodes: int) -> None:
     series = doc["activity"]["series"]
     assert series, "attack figures are shown from day one"
     for entry in series:
-        assert entry["precision"] == "coarse"
-        assert entry["days"] == 7  # complete ISO weeks only
+        assert entry["precision"] == "coarse" and entry["days"] == 7
+        assert date.fromisoformat(entry["start"]).weekday() == 0
         for f in obs.SERIES_FIELDS:
             v = entry[f]
             assert v is None or v == obs.round_figure(v, 1)  # one significant figure
-    assert series[-1]["sources"] == 1000  # 1234 per day, one significant figure
-    starts = [date.fromisoformat(e["start"]) for e in series]
-    assert all(s.weekday() == 0 for s in starts)
+        for f in LOW_VOLUME:
+            assert entry[f] is None, f"{f} must stay null below k"
+    assert series[-1]["sources"] == 1000 and series[-1]["login"] == 500
     # The partial weeks at both ends (LAST is a Tuesday) are left out.
-    assert starts[-1] + timedelta(days=6) < LAST
+    assert date.fromisoformat(series[-1]["start"]) + timedelta(days=6) == LAST_SUNDAY
     assert doc["activity"]["window"]["precision"] == "coarse"
 
 
@@ -244,20 +258,38 @@ def test_a_single_nodes_day_off_is_not_visible() -> None:
 
 def test_a_week_with_no_report_at_all_is_null_not_zero() -> None:
     inp = scenario(1)
-    week = LAST - timedelta(days=LAST.weekday()) - timedelta(days=14)
+    week = LAST_SUNDAY - timedelta(days=6 + 7)
     inp.days = [r for r in inp.days if not week <= r.day < week + timedelta(days=7)]
     doc = obs.render(inp)
     entry = next(e for e in doc["activity"]["series"] if e["start"] == week.isoformat())
     assert entry["sources"] is None and entry["precision"] == "coarse"
 
 
-def test_from_three_nodes_full_weeks_are_daily_with_two_figures() -> None:
+def test_from_three_nodes_complete_weeks_are_daily_with_two_figures() -> None:
     doc = obs.render(scenario(3))
-    daily = [e for e in doc["activity"]["series"] if e["days"] == 1]
+    series = doc["activity"]["series"]
+    daily = [e for e in series if e["days"] == 1]
     assert daily and all(e["precision"] == "standard" for e in daily)
+    assert len(daily) % 7 == 0 and date.fromisoformat(daily[0]["start"]).weekday() == 0
+    assert daily[-1]["start"] == LAST_SUNDAY.isoformat()  # never the partial last week
     assert daily[-1]["sources"] == 1200 and daily[-1]["login"] == 460
     assert daily[-1]["exploit"] == 0  # 3 rounds to tens, never exact
     assert doc["activity"]["window"]["precision"] == "standard"
+
+
+def test_a_field_with_fewer_than_k_nodes_is_null_on_a_standard_day() -> None:
+    inp = scenario(3)
+    nodes = {f: 3 for f in obs.SERIES_FIELDS} | {"download": 1, "c2": 2}
+    inp.days = [DayRow(r.day, r.nodes, r.values, nodes) for r in inp.days]
+    daily = [e for e in obs.render(inp)["activity"]["series"] if e["days"] == 1]
+    assert daily and all(e["download"] is None and e["c2"] is None for e in daily)
+    assert all(e["sources"] == 1200 and e["files"] == 40 for e in daily)
+
+
+def test_relaxed_eligibility_keeps_everything_coarse() -> None:
+    doc = obs.render(scenario(7, allow_standard=False))
+    assert all(e["precision"] == "coarse" for e in doc["activity"]["series"])
+    assert doc["activity"]["window"]["precision"] == "coarse"
 
 
 def test_one_thin_day_makes_its_whole_week_coarse() -> None:
@@ -320,24 +352,50 @@ def test_window_shares_are_finer_from_three_nodes() -> None:
     assert services == {"ssh": 73, "telnet": 24, "web": 3}
 
 
+def test_coarse_items_need_more_support_over_four_weeks() -> None:
+    inp = scenario(1)
+    recent = [LAST - timedelta(days=i) for i in range(16)]  # 3 ISO weeks
+    burst = [ItemRow(d, "tag", "crypto-miner", 500, 1) for d in recent]
+    thin = [ItemRow(LAST - timedelta(days=i), "tag", "malware-drop", 3, 1) for i in range(30)]
+    inp.items = [*inp.items, *burst, *thin]
+    tags = {t["id"] for t in obs.render(inp)["activity"]["window"]["tags"]}
+    assert len({d - timedelta(days=d.weekday()) for d in recent}) < obs.ITEM_MIN_WEEKS
+    assert "crypto-miner" not in tags  # a burst of a few weeks only
+    assert "malware-drop" not in tags  # 90 address-days: below the coarse minimum
+    assert {"mirai", "recon"} <= tags
+
+
+def test_cve_tags_need_two_nodes_and_never_show_in_coarse_mode() -> None:
+    cve = "cve-2026-109618"
+    coarse = scenario(1)
+    coarse.items = [*coarse.items, *(ItemRow(r.day, "tag", cve, 5000, 1) for r in coarse.days)]
+    assert cve not in {t["id"] for t in obs.render(coarse)["activity"]["window"]["tags"]}
+    one = scenario(3)
+    one.items = [*one.items, *(ItemRow(r.day, "tag", cve, 5000, 1) for r in one.days)]
+    assert cve not in {t["id"] for t in obs.render(one)["activity"]["window"]["tags"]}
+    two = scenario(3)
+    two.items = [*two.items, *(ItemRow(r.day, "tag", cve, 5000, 2) for r in two.days)]
+    assert cve in {t["id"] for t in obs.render(two)["activity"]["window"]["tags"]}
+
+
 def test_items_need_support_and_two_nodes_once_the_network_has_three() -> None:
     inp = scenario(3)
-    rare = [ItemRow(LAST, "tag", "cve-2026-109618", obs.ITEM_MIN - 1, 3)]
+    rare = [ItemRow(LAST, "tag", "eternalblue", obs.ITEM_MIN - 1, 3)]
     solo = [ItemRow(LAST - timedelta(days=i), "tag", "crypto-miner", 500, 1) for i in range(5)]
-    inp.items = inp.items + rare + solo
+    inp.items = [*inp.items, *rare, *solo]
     tags = {t["id"] for t in obs.render(inp)["activity"]["window"]["tags"]}
-    assert "cve-2026-109618" not in tags  # too little support
+    assert "eternalblue" not in tags  # too little support
     assert "crypto-miner" not in tags  # only ever one node at a time
     assert {"mirai", "recon"} <= tags
 
 
 def test_unknown_names_from_the_database_are_never_published() -> None:
-    inp = scenario(1)
+    inp = scenario(3)
     inp.items = [
         *inp.items,
-        ItemRow(LAST, "service", "192.0.2.5", 5000, 1),
-        ItemRow(LAST, "tag", "free text", 5000, 1),
-        ItemRow(LAST, "family", "my-own-name", 5000, 1),
+        ItemRow(LAST, "service", "192.0.2.5", 5000, 3),
+        ItemRow(LAST, "tag", "free text", 5000, 3),
+        ItemRow(LAST, "family", "my-own-name", 5000, 3),
     ]
     text_doc = json.dumps(obs.render(inp))
     for bad in ("192.0.2.5", "free text", "my-own-name"):
@@ -354,22 +412,20 @@ def test_top_lists_are_capped() -> None:
 
 # --- outcomes -------------------------------------------------------------------------------------
 
+OUT_LAST = D0 - timedelta(days=obs.OUTCOME_LAG_DAYS)
+OUTCOMES = [
+    OutcomeDay(OUT_LAST, confirmed=2, reported=1),
+    OutcomeDay(OUT_LAST - timedelta(days=40), confirmed=7),
+    OutcomeDay(D0 - timedelta(days=1), confirmed=50),  # too recent: never published
+]
 
-def test_outcomes_are_daily_with_thirty_day_totals() -> None:
-    last = D0 - timedelta(days=obs.OUTCOME_LAG_DAYS)
-    inp = scenario(
-        1,
-        outcomes=[
-            OutcomeDay(last, confirmed=2, reported=1),
-            OutcomeDay(last - timedelta(days=40), confirmed=7),
-            OutcomeDay(D0 - timedelta(days=1), confirmed=50),  # too recent: not published
-        ],
-        reports_sent_30d=1,
-        takedown_gaps=[3, 5, 9],
-    )
+
+def test_exact_outcomes_with_production_thresholds() -> None:
+    inp = scenario(1, outcomes=OUTCOMES, reports_sent_30d=1, takedown_gaps=[3, 5, 9])
     out = obs.render(inp)["outcomes"]
+    assert out["precision"] == "exact" and out["weekly"] is None
     assert out["daily"][-1] == {
-        "day": last.isoformat(),
+        "day": OUT_LAST.isoformat(),
         "confirmed": 2,
         "reported": 1,
         "taken_down": 0,
@@ -379,17 +435,53 @@ def test_outcomes_are_daily_with_thirty_day_totals() -> None:
     assert out["reports_sent_30d"] == 1 and out["median_days_to_takedown"] == 5
 
 
+def test_rounded_outcomes_have_no_daily_series_and_only_tens() -> None:
+    many = [OutcomeDay(OUT_LAST - timedelta(days=i), confirmed=3, reported=1) for i in range(20)]
+    inp = scenario(1, outcomes=many, reports_sent_30d=7, takedown_gaps=[4], outcome_mode="rounded")
+    out = obs.render(inp)["outcomes"]
+    assert out["precision"] == "rounded" and out["daily"] is None
+    assert out["median_days_to_takedown"] is None
+    assert (
+        out["confirmed_30d"] == 60 and out["reported_30d"] == 20 and out["reports_sent_30d"] == 10
+    )
+    assert out["weekly"] and all(
+        date.fromisoformat(w["start"]).weekday() == 0 for w in out["weekly"]
+    )
+    assert all(
+        date.fromisoformat(w["start"]) + timedelta(days=6) <= OUT_LAST for w in out["weekly"]
+    )
+    for _, _, value in walk(out):
+        if isinstance(value, int) and not isinstance(value, bool):
+            assert value % 10 == 0
+
+
+def test_suppressed_outcomes_publish_no_number() -> None:
+    inp = scenario(1, outcomes=OUTCOMES, takedown_gaps=[2], outcome_mode="suppressed")
+    out = obs.render(inp)["outcomes"]
+    assert out["precision"] == "suppressed"
+    assert all(v is None for k, v in out.items() if k not in ("first_day", "last_day", "precision"))
+
+
+def test_a_relaxed_hub_publishes_no_exact_outcome_number() -> None:
+    for s in (replace(Settings(), min_nodes=1), replace(Settings(), min_nodes=4)):
+        inp = scenario(1, outcomes=OUTCOMES, outcome_mode=obs.outcome_precision(s))
+        out = obs.render(inp)["outcomes"]
+        assert out["daily"] is None and out["confirmed_30d"] in (None, 0)
+
+
 # --- the document as a whole ---------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("nodes", [0, 1, 2, 3, 7])
-def test_no_forbidden_key_or_identifying_value_anywhere(nodes: int) -> None:
+@pytest.mark.parametrize("mode", ["exact", "rounded", "suppressed"])
+def test_no_forbidden_key_or_identifying_value_anywhere(nodes: int, mode: str) -> None:
     inp = scenario(
         nodes,
         country_members={"CH": 3, "DE": 1},
-        earliest_eligible=[D0] * nodes,
+        eligible_week=nodes,
         outcomes=[OutcomeDay(D0 - timedelta(days=3), 1, 1, 1)],
         takedown_gaps=[2],
+        outcome_mode=mode,
     )
     doc = obs.render(inp)
     assert_clean(doc)
@@ -469,6 +561,13 @@ def test_observatory_code_makes_no_outbound_call() -> None:
     assert not {"httpx", "requests", "urllib", "aiohttp", "socket"} & set(imports)
 
 
+def test_worker_may_not_update_a_frozen_day() -> None:
+    from hub import roles
+
+    assert "observatory_daily" not in roles.WORKER_TABLES
+    assert roles.WORKER_GRANTS == ("SELECT, INSERT, DELETE ON observatory_daily",)
+
+
 # --- database and worker (integration) -------------------------------------------------------------
 
 DAY = TODAY - timedelta(days=obs.FINAL_LAG_DAYS)
@@ -485,6 +584,10 @@ async def _rows(env: Env) -> list[Any]:
         )
 
 
+def _by_key(rows: list[Any]) -> dict[tuple[date, str, str], tuple[int, int]]:
+    return {(r.day, r.metric, r.key): (r.total, r.nodes) for r in rows}
+
+
 @pytest.mark.integration
 async def test_published_with_feed_mode_off(env_factory: Any, tmp_path: Path) -> None:
     root = tmp_path / "feeds"
@@ -499,11 +602,25 @@ async def test_published_with_feed_mode_off(env_factory: Any, tmp_path: Path) ->
     doc = json.loads((root / "network.json").read_text())
     assert doc["schema"] == obs.SCHEMA and doc["generated_day"] == TODAY.isoformat()
     assert doc["nodes"]["members"] == 2 and doc["bootstrap"]["min_nodes"] == 5
+    assert doc["outcomes"]["precision"] == "exact"
     assert doc["activity"]["series"][-1]["precision"] == "coarse"
     assert_clean(doc)
     assert "192.0.2.10" not in (root / "network.json").read_text()
     second = await run_cycle(ctx)
     assert second.steps["observatory"] == {"frozen": 0, "published": False}
+
+
+@pytest.mark.integration
+async def test_a_relaxed_hub_publishes_no_exact_outcomes(env_factory: Any, tmp_path: Path) -> None:
+    root = tmp_path / "feeds"
+    env: Env = await env_factory(observatory_enabled=True, feed_dir=str(root), min_nodes=1)
+    ids = await add_nodes(env.worker, 1)
+    await observe(env.worker, ids, "sha256", "ab" * 32, [TODAY - timedelta(days=3)] * 1)
+    await observe(env.worker, ids, "sha256", "ab" * 32, [TODAY - timedelta(days=4)])
+    await run_cycle(WorkerContext(settings=env.settings, sessionmaker=env.worker, clock=env.clock))
+    out = json.loads((root / "network.json").read_text())["outcomes"]
+    assert out["precision"] == "suppressed" and out["daily"] is None
+    assert out["confirmed_30d"] is None and out["reports_sent_30d"] is None
 
 
 @pytest.mark.integration
@@ -539,7 +656,7 @@ async def test_a_final_day_is_frozen_once(env: Env) -> None:
     await observe(env.worker, ids, "ip", "192.0.2.30", [TODAY - timedelta(days=1)])
     async with env.worker() as s:
         assert await obs.freeze_days(s, env.settings, TODAY) == env.settings.obs_retention_days - 3
-    rows = {(r.day, r.metric, r.key): (r.total, r.nodes) for r in await _rows(env)}
+    rows = _by_key(await _rows(env))
     assert rows[(DAY, "total", "")] == (3, 3)
     assert rows[(DAY, "service", "ssh")] == (3, 3)
     assert rows[(DAY, "activity", "login")] == (3, 3)
@@ -554,8 +671,43 @@ async def test_a_final_day_is_frozen_once(env: Env) -> None:
         await s.execute(text("DELETE FROM nodes WHERE id = :n"), {"n": ids[2]})
         await s.commit()
         assert await obs.freeze_days(s, env.settings, TODAY) == 0
-    after = {(r.day, r.metric, r.key): (r.total, r.nodes) for r in await _rows(env)}
-    assert after == rows
+    assert _by_key(await _rows(env)) == rows
+
+
+@pytest.mark.integration
+async def test_fresh_sybil_nodes_neither_count_nor_add_figures(env: Env) -> None:
+    (honest,) = await add_nodes(env.worker, 1)
+    fresh = await add_nodes(env.worker, 2, enrolled=[TODAY - timedelta(days=2)] * 2, active_days=2)
+    await observe(env.worker, [honest], "ip", "192.0.2.60", [DAY], tags=["recon"])
+    # The Sybils report the honest node's attacker (a membership probe) and their own.
+    await observe(env.worker, fresh, "ip", "192.0.2.60", [DAY], tags=["recon"])
+    await observe(env.worker, fresh, "ip", "192.0.2.61", [DAY], tags=["crypto-miner"])
+    await observe(env.worker, fresh, "url", "ef" * 32, [DAY], tags=[])
+    async with env.worker() as s:
+        await obs.freeze_days(s, env.settings, TODAY)
+        inp = await obs.load(s, env.settings, TODAY)
+    rows = _by_key(await _rows(env))
+    assert rows[(DAY, "total", "")] == (1, 1)  # one attacker, one eligible node
+    assert rows[(DAY, "tag", "recon")] == (1, 1)
+    assert (DAY, "tag", "crypto-miner") not in rows
+    assert (DAY, "kind", "payload_urls") not in rows
+    doc = obs.render(inp)
+    assert all(e["precision"] == "coarse" for e in doc["activity"]["series"])
+    assert doc["activity"]["window"]["precision"] == "coarse"
+
+
+@pytest.mark.integration
+async def test_bootstrap_is_counted_once_per_week(env: Env) -> None:
+    week = TODAY - timedelta(days=TODAY.weekday())
+    ids = await add_nodes(env.worker, 3, today=week)
+    async with env.worker() as s:
+        assert await obs.weekly_nodes(s, env.settings, TODAY) == (week, 3, 3)
+        # A node skipping days mid-week changes nothing until next week.
+        await s.execute(text("DELETE FROM batches WHERE node_id = :n"), {"n": ids[0]})
+        await s.commit()
+        assert await obs.weekly_nodes(s, env.settings, TODAY) == (week, 3, 3)
+        nxt = await obs.weekly_nodes(s, env.settings, TODAY + timedelta(days=1))
+    assert nxt[0] == week + timedelta(days=7)
 
 
 @pytest.mark.integration
@@ -565,14 +717,28 @@ async def test_load_and_render_from_the_database(env: Env) -> None:
     async with env.worker() as s:
         await obs.freeze_days(s, env.settings, TODAY)
         inp = await obs.load(s, env.settings, TODAY)
-    # add_nodes makes aged nodes with 7 batch days: all three are eligible today.
-    assert inp.members == 3 and inp.active_7d == 3 and inp.eligible == 3
-    assert inp.earliest_eligible == [TODAY] * 3
+    assert inp.members == 3 and inp.allow_standard and inp.outcome_mode == "exact"
     doc = obs.render(inp)
     assert doc["nodes"]["countries"] == [{"cc": "CH", "members": 3}]
     assert doc["activity"]["last_day"] == DAY.isoformat()
     assert_clean(doc)
     assert "192.0.2.50" not in json.dumps(doc)
+
+
+@pytest.mark.integration
+async def test_the_worker_role_cannot_update_observatory_rows(env: Env) -> None:
+    async with env.worker() as s:
+        await s.execute(
+            text(
+                "INSERT INTO observatory_daily (day, metric, key, total, nodes) "
+                "VALUES (:d, 'total', '', 1, 1)"
+            ),
+            {"d": DAY},
+        )
+        await s.commit()
+        with pytest.raises(DBAPIError):
+            await s.execute(text("UPDATE observatory_daily SET total = 2"))
+        await s.rollback()
 
 
 @pytest.mark.integration

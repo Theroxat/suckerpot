@@ -77,9 +77,11 @@ WORKER_TABLES = (
     "takedown_votes, reports, recipient_log, node_stats_weekly, network_daily, network_summary, "
     "never_list, hub_audit, worker_state, payload_links, target_hosts, feed_entries, feed_runs, "
     "feed_daily, feed_allow, feed_auto_ranges, delist_challenges, delist_requests, "
-    "abusech_submissions, node_roles, verify_tasks, verify_attestations, verify_daily, "
-    "observatory_daily"
+    "abusech_submissions, node_roles, verify_tasks, verify_attestations, verify_daily"
 )
+# Tables the worker may not change once written. observatory_daily: a frozen day is never updated
+# (design M34), only inserted and, by retention, deleted.
+WORKER_GRANTS = ("SELECT, INSERT, DELETE ON observatory_daily",)
 
 
 def check_passwords(env: Mapping[str, str]) -> list[str]:
@@ -127,4 +129,6 @@ def apply_roles(conn: Connection, env: Mapping[str, str] | None = None) -> None:
     conn.execute(
         text(f'GRANT SELECT, INSERT, UPDATE, DELETE ON {WORKER_TABLES} TO "{WORKER_ROLE}"')
     )
+    for grant in WORKER_GRANTS:
+        conn.execute(text(f'GRANT {grant} TO "{WORKER_ROLE}"'))
     conn.execute(text(f'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "{WORKER_ROLE}"'))
